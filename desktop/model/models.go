@@ -1068,6 +1068,54 @@ type PermissionRequest struct {
 	// Secret is a secret request: what the bot asks for and where its Runner uses it. The card
 	// takes the values; they go sealed to the Runner and never come back.
 	Secret *SecretAsk
+	// Ask is a question with options: what the bot asks and, once answered, what was picked.
+	Ask *AskQuestion
+}
+
+// AskQuestion is a question a bot asks with options (`ask_user`): one pick, or several with
+// Multiple, and the user's own words with AllowOther.
+type AskQuestion struct {
+	Question   string
+	Options    []AskOption
+	Multiple   bool
+	AllowOther bool
+	// Recommended is the option the bot recommends, by its place; -1 for none.
+	Recommended int
+	// Answer is what the user answered, once they did.
+	Answer *AskAnswer
+}
+
+// AskOption is one option of a question: its words, and a line that says what it means.
+type AskOption struct {
+	Label       string
+	Description string
+}
+
+// AskAnswer is the user's answer: the options picked, by their place, and their own words.
+type AskAnswer struct {
+	Choices []int
+	Other   string
+}
+
+// IsAsk is a question with options: the card offers them in place of Allow and Deny.
+func (r *PermissionRequest) IsAsk() bool { return r.Tool == "ask" && r.Ask != nil }
+
+// AnswerText is what the user answered, as the answered card says it: the labels picked, then
+// their own words.
+func (a *AskQuestion) AnswerText() string {
+	if a.Answer == nil {
+		return ""
+	}
+	var parts []string
+	for _, place := range a.Answer.Choices {
+		if place >= 0 && place < len(a.Options) {
+			parts = append(parts, a.Options[place].Label)
+		}
+	}
+	if a.Answer.Other != "" {
+		parts = append(parts, "“"+a.Answer.Other+"”")
+	}
+	return strings.Join(parts, L(", "))
 }
 
 // SecretUse is where a secret goes.
@@ -1932,6 +1980,8 @@ type Message struct {
 	Output *Output
 	// Notification is how a coordinator's brief, an urgent report, or a quiet check alerts.
 	Notification NotificationTag
+	// EditedAt is when the user edited this message of theirs and sent it again; zero if never.
+	EditedAt time.Time
 }
 
 // ReplyQuote is a message quoted by the user's reply: who wrote it and how it opens, as the CLI

@@ -62,7 +62,12 @@ func sheetAServer(t *testing.T, name string) model.McpServer {
 
 func TestRenderMcpServerSheet(t *testing.T) {
 	_, tt := sheetATester(t, func(m *mainWindow) { m.presentMcpServer(sheetAWorkbench(), "filesystem") })
-	for _, text := range []string{"filesystem", "STATUS", "4 tools", "Reconnect", "TOOLS", "read_text_file", "Reads only", "Environment", "Add Variable", "Done", "Remove…"} {
+	for _, caption := range []string{"Status", "Tools"} {
+		if !showsLine(tt, caption) {
+			t.Errorf("no %q caption in %q", caption, tt.Texts())
+		}
+	}
+	for _, text := range []string{"filesystem", "4 tools", "Reconnect", "read_text_file", "Reads only", "Environment", "Add Variable", "Done", "Remove…"} {
 		if !tt.HasText(text) {
 			t.Errorf("no %q in %q", text, tt.Texts())
 		}
@@ -258,7 +263,7 @@ func TestMcpServerSheetSaves(t *testing.T) {
 		t.Errorf("entry %v", server.Entry)
 	}
 	// Once saved, the sheet follows the server.
-	if !tt.HasText("notes") || !tt.HasText("STATUS") || !tt.HasText("Done") {
+	if !tt.HasText("notes") || !showsLine(tt, "Status") || !tt.HasText("Done") {
 		t.Errorf("after the save: %q", tt.Texts())
 	}
 	sheetAWait(tt, time.Second)

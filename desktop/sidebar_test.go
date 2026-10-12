@@ -2,9 +2,11 @@ package main
 
 import (
 	"image/color"
+	"slices"
 	"testing"
 	"time"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -56,6 +58,39 @@ func TestChatSelectionPaintsOnPressFromOutsideSidebar(t *testing.T) {
 	tt.Release(row.X+row.W/2, row.Y+row.H/2)
 	if m.selection.ChatID != next.ID {
 		t.Fatal("release changed the selection again")
+	}
+}
+
+// The footer's appearance switch says where it goes from the appearance showing, and a click keeps
+// the other one.
+func TestSidebarAppearanceSwitch(t *testing.T) {
+	m := demoWindow(t)
+	tt := ui.NewTester(m.frame(m.view), 1000, 700)
+	var sources []mygo.ThemeSource
+	setThemeSource = func(s mygo.ThemeSource) { sources = append(sources, s) }
+	t.Cleanup(func() { setThemeSource = mygo.Theme.SetSource })
+	runPosts()
+	tt.SetDark(false)
+	tt.Frame()
+	if _, ok := tt.Find(L("Use Dark Appearance")); !ok {
+		t.Fatal("the light appearance does not offer the dark one")
+	}
+	if err := tt.Click(L("Use Dark Appearance")); err != nil {
+		t.Fatal(err)
+	}
+	if got := prefs.get().Appearance; got != "dark" {
+		t.Fatalf("appearance %q, want dark", got)
+	}
+	tt.SetDark(true)
+	tt.Frame()
+	if err := tt.Click(L("Use Light Appearance")); err != nil {
+		t.Fatal(err)
+	}
+	if got := prefs.get().Appearance; got != "light" {
+		t.Fatalf("appearance %q, want light", got)
+	}
+	if want := []mygo.ThemeSource{mygo.ThemeDark, mygo.ThemeLight}; !slices.Equal(sources, want) {
+		t.Fatalf("theme sources %v, want %v", sources, want)
 	}
 }
 

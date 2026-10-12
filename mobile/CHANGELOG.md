@@ -4,6 +4,11 @@ The phone app's release notes, by the version in `app.config.ts`. A release (a `
 tag) takes a version's section as the notes of its GitHub release, and the Android app shows them
 when it offers the update.
 
+## [1.0.5]
+
+- A bot can ask you to choose. The question lists its options, numbered, in the chat: reply with a number or your own words, or tap Skip to leave the choice to the bot. An answer given on a computer shows as "You chose …".
+- The iPhone build is an unsigned .ipa on this project's GitHub releases, not on TestFlight. Install it with a sideloading tool such as AltStore or Sideloadly, which signs it with your Apple ID; remote push notifications do not reach a sideloaded app. The Android app is signed with a new key: uninstall the old build, which deletes its account and chats on this phone, and install this one by hand once. Restore your identity with the backup phrase, or pair again.
+
 ## [1.0.4]
 
 - A chat that asks for a channel gets one reply, "Pending approval", and once you allow it, the bot

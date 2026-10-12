@@ -27,7 +27,7 @@ if (process.argv.length > 2) die(`unknown argument: ${process.argv[2]}`)
 
 const PACKAGE = "app.lorca"
 // SHA-256 of the release key's certificate, as apksigner prints it.
-const CERTIFICATE_SHA256 = "c2e73615dcd09e5580c536b9511b00e89d816b1d18a2aeed71bbef0daa8bd16c"
+const CERTIFICATE_SHA256 = "dcc11cdcb6bbf9602cec70b39455984ed24f1d92fac3bd84b31e5e4dfa9a5751"
 // The ABIs the Rust core is built for (modules/lorca-core/build.ts): phones, and x86_64 for
 // Chromebooks and the emulator. React Native's own libraries follow, so the APK holds no ABI the
 // core cannot load on.

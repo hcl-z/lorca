@@ -8,7 +8,6 @@ import (
 
 	"github.com/egoist/lorca/desktop/model"
 	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -33,12 +32,24 @@ type composerReply struct {
 	text      string
 }
 
+// composerEdit is the user's latest message, taken into the composer to edit and send again.
+type composerEdit struct {
+	messageID string
+	// draft and attachments are what the composer held before, back once the edit is cancelled.
+	draft       string
+	attachments []model.OutgoingAttachment
+}
+
 type composerState struct {
 	draft       string
 	attachments []model.OutgoingAttachment
 	// picked are the bots chosen from the `@` menu, which count while their `@Name` is in the text.
 	picked []string
 	reply  *composerReply
+	// editing is the message of the user's the draft edits, to send again in its place; editError is
+	// why the last try did not go.
+	editing   *composerEdit
+	editError string
 	// mentionIndex is the highlighted bot of the `@` menu; mentionClosed is the menu closed with
 	// Escape until the caret leaves the `@name`.
 	mentionIndex  int
@@ -129,12 +140,8 @@ func (m *mainWindow) pasteImage(s *composerState) bool {
 
 // frostedGlass is the composer's material: Liquid Glass over a blur of what scrolls under it, so
 // the messages behind it frost to faint lines, as under the Mac's NSGlassEffectView.
-type frostedGlass struct{}
-
-func (frostedGlass) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
-	glass.Blur{Radius: 5}.PaintMaterial(p, box, radii)
-	glass.Glass{}.PaintMaterial(p, box, radii)
-}
+// composerControlSize is the composer's round buttons: Attach, Stop, and Send.
+const composerControlSize = 32
 
 func (m *mainWindow) composerView(c *ui.Context, chat *model.Chat, members []*model.Bot, chatS *chatState) ui.Element {
 	p := colors(c)
@@ -184,6 +191,24 @@ func (m *mainWindow) composerView(c *ui.Context, chat *model.Chat, members []*mo
 	}
 
 	send := func() {
+		if edit := s.editing; edit != nil {
+			value := strings.TrimSpace(s.draft)
+			if value == "" {
+				return
+			}
+			s.editError = ""
+			chatS.list.ScrollToEnd()
+			store.Rerun(chatID, edit.messageID, value, func(err error) {
+				if err != nil {
+					s.editError = model.ErrorText(err)
+					return
+				}
+				if s.editing == edit {
+					s.editing, s.draft, s.attachments, s.caret = nil, edit.draft, edit.attachments, len([]rune(edit.draft))
+				}
+			})
+			return
+		}
 		if strings.TrimSpace(s.draft) == "" && len(s.attachments) == 0 {
 			return
 		}
@@ -207,24 +232,33 @@ func (m *mainWindow) composerView(c *ui.Context, chat *model.Chat, members []*mo
 	}
 
 	// One line beside the controls unless the text needs more room: a newline, a wrap, or files.
-	expanded := len(s.attachments) > 0 || s.reply != nil || strings.Contains(s.draft, "\n")
+	expanded := len(s.attachments) > 0 || s.reply != nil || s.editing != nil || strings.Contains(s.draft, "\n")
 	// Keyed, so its state and size stay its own as the button to the latest comes and goes before it.
 	outer := ui.Column(c.Key("composer")).Absolute().Left(0).Right(0).Bottom(0).Padding(8, 20, 14, 20).PassThrough()
 	var field ui.Element
 	outer.Children(func() {
-		field = ui.Grid(c).ColumnTracks(ui.Fixed(28), ui.Fr(1), ui.FitContent()).GapX(8).MinHeight(46).Padding(8).
-			Radius(22).Border(0.5, p.ComposerBorder).Material(frostedGlass{}).Cursor(ui.CursorText)
+		// A solid pill over a blur of what scrolls under it, a hairline around it that darkens while
+		// it has the keyboard, and a soft drop shadow in the light appearance.
+		field = ui.Grid(c).ColumnTracks(ui.Fixed(composerControlSize), ui.Fr(1), ui.FitContent()).GapX(10).MinHeight(composerControlSize+18).Padding(9).
+			Radius(radiusCapsule).Border(1, p.ComposerBorder).Material(glassButton{p.ComposerField}).Cursor(ui.CursorText)
+		if !c.Theme().Dark {
+			field.Shadow(0, 2, 10, 0, ui.RGBA(0, 0, 0, 0.06))
+		}
+		if field.FocusWithin() {
+			field.BorderColor(p.Label3)
+		}
 		if !expanded {
-			width := field.Bounds().W - 16 - 28 - 16 - 28 - 12
+			width := field.Bounds().W - 18 - composerControlSize - 20 - composerControlSize - 12
 			if responding {
-				width -= 32
+				width -= composerControlSize + 4
 			}
 			if w, _ := c.MeasureText(0, ui.Span{Text: s.draft, Size: textMessage}); width > 0 && w > width {
 				expanded = true
 			}
 		}
 		if expanded {
-			field.AlignItems(ui.End).GapY(6).Padding(12, 8, 8, 8)
+			// Taller than one line, the capsule would pinch the text: a rounded rect instead.
+			field.AlignItems(ui.End).GapY(6).Padding(12, 9, 9, 9).Radius(radiusXL + 8)
 		} else {
 			field.AlignItems(ui.Center)
 		}
@@ -240,6 +274,23 @@ func (m *mainWindow) composerView(c *ui.Context, chat *model.Chat, members []*mo
 		}
 		row := 1
 		field.Children(func() {
+			if edit := s.editing; edit != nil {
+				words := firstNonEmpty(s.editError, L("Sending it again replaces the reply."))
+				banner := ui.Row(c.Key("editing")).ColumnSpan(-1).RowStart(row).Gap(6).MinWidth(0).Padding(0, 4, 2, 6).FontSize(12).TextColor(p.Label2)
+				if s.editError != "" {
+					banner.TextColor(p.Red)
+				}
+				banner.Children(func() {
+					symbol(c, "pencil", 13, 2.2)
+					ui.RichText(c, ui.Span{Text: L("Editing your message"), Weight: 600, Color: p.Label}, ui.Span{Text: " " + words}).Grow(1).Shrink(1).MinWidth(0).SingleLine().Tooltip(words)
+					cancel := ui.ButtonBase(c).TextColor(p.Label3).Label(L("Cancel editing")).Tooltip(L("Cancel editing (esc)")).Cursor(ui.CursorPointer)
+					cancel.Children(func() { symbol(c, "xmark.circle.fill", 15, 2) })
+					if cancel.Clicked() {
+						s.cancelEdit()
+					}
+				})
+				row++
+			}
 			if s.reply != nil {
 				reply := s.reply
 				ui.Row(c.Key("reply")).ColumnSpan(-1).RowStart(row).Gap(6).MinWidth(0).Padding(0, 4, 2, 6).FontSize(12).TextColor(p.Label2).Children(func() {
@@ -295,9 +346,15 @@ func (m *mainWindow) composerView(c *ui.Context, chat *model.Chat, members []*mo
 			if expanded {
 				controlsRow = row + 1
 			}
-			attach := ui.ButtonBase(c.Key("attach")).RowStart(controlsRow).ColumnStart(1).Size(28, 28).Radius(14).Center().
-				Background(p.ComposerControl).TextColor(p.Label).Label(L("Attach files")).Tooltip(L("Attach files"))
-			attach.Children(func() { symbol(c, "plus", 16, 2.2) })
+			attach := ui.ButtonBase(c.Key("attach")).RowStart(controlsRow).ColumnStart(1).Size(composerControlSize, composerControlSize).Radius(composerControlSize / 2).Center().
+				Background(p.ComposerControl).TextColor(p.Label2).Label(L("Attach files")).Tooltip(L("Attach files"))
+			if s.editing != nil {
+				// An edit keeps the message's own files; it takes no new ones.
+				attach.Disabled(true)
+			} else if attach.Hovered() {
+				attach.Background(p.ComposerControl.Mix(p.Label, 0.06)).TextColor(p.Label)
+			}
+			attach.Children(func() { symbol(c, "plus", 17, 2) })
 			if attach.Clicked() {
 				chooseFiles(m.win, "", L("Attach files to your message"), L("Attach"), true, false, func(files []fileInfo) {
 					if len(files) > 0 {
@@ -314,10 +371,12 @@ func (m *mainWindow) composerView(c *ui.Context, chat *model.Chat, members []*mo
 			}
 			holder.Children(func() {
 				placeholder := chatPlaceholder(chat, members)
-				if s.reply != nil {
+				if s.editing != nil {
+					placeholder = L("Edit your message…")
+				} else if s.reply != nil {
 					placeholder = L("Reply…")
 				}
-				input := ui.TextAreaBase(c, &s.draft).Lines(1, composerMaxLines).Padding(4, 0).FontSize(textMessage).FixedLineHeight(19).
+				input := ui.TextAreaBase(c, &s.draft).Lines(1, composerMaxLines).Padding(5, 0).FontSize(textMessage + 0.5).FixedLineHeight(20).
 					TextColor(p.Label).Placeholder(placeholder).Label(placeholder).FocusRing(false)
 				// Mentions read as addressed, not as typed punctuation: in the bot's color, bold.
 				for _, mention := range mentionRuns(runes, mentionable) {
@@ -343,6 +402,10 @@ func (m *mainWindow) composerView(c *ui.Context, chat *model.Chat, members []*mo
 							s.mentionClosed = start + 1
 							return true
 						}
+					}
+					if ev.Key == ui.KeyEscape && s.editing != nil {
+						s.cancelEdit()
+						return true
 					}
 					if ev.Key == ui.KeyEscape && s.reply != nil {
 						s.reply = nil
@@ -388,7 +451,7 @@ func (m *mainWindow) composerView(c *ui.Context, chat *model.Chat, members []*mo
 			trailing := ui.Row(c.Key("trailing")).RowStart(controlsRow).ColumnStart(3).Gap(4)
 			trailing.Children(func() {
 				if responding {
-					stop := ui.ButtonBase(c).Size(28, 28).Radius(14).Center().Label(L("Stop responding")).Tooltip(L("Stop responding (%@)", shortcutText("CmdOrCtrl+.")))
+					stop := ui.ButtonBase(c).Size(composerControlSize, composerControlSize).Radius(composerControlSize / 2).Center().Label(L("Stop responding")).Tooltip(L("Stop responding (%@)", shortcutText("CmdOrCtrl+.")))
 					if hasContent {
 						stop.Background(p.ComposerControl).TextColor(p.Label)
 					} else {
@@ -411,14 +474,14 @@ func (m *mainWindow) composerView(c *ui.Context, chat *model.Chat, members []*mo
 					if len(members) > 1 {
 						tooltip += L(" · @ to mention")
 					}
-					button := ui.ButtonBase(c).Size(28, 28).Radius(14).Center().Background(p.ComposerPrimary).TextColor(p.ComposerPrimaryContent).
+					// A solid ink disc whether or not there is anything to send, as the reference keeps it;
+					// it only sends with something typed or attached.
+					button := ui.ButtonBase(c).Size(composerControlSize, composerControlSize).Radius(composerControlSize / 2).Center().Background(p.ComposerPrimary).TextColor(p.ComposerPrimaryContent).
 						Label(L("Send")).Tooltip(tooltip)
-					if !hasContent {
-						// Faded as one piece: a pale disc around an arrow as crisp as the enabled one's,
-						// where an element's opacity would fade the arrow into the disc.
-						button.Background(p.ComposerPrimary.Alpha(0.25)).TextColor(p.ComposerField.Alpha(1))
+					if hasContent && button.Hovered() {
+						button.Background(p.inkHover())
 					}
-					button.Children(func() { symbol(c, "arrow.up", 15, 2.6) })
+					button.Children(func() { symbol(c, "arrow.up", 16, 2.6) })
 					if button.Clicked() && hasContent {
 						send()
 					}
@@ -441,17 +504,17 @@ func (m *mainWindow) mentionPanel(c *ui.Context, field ui.Element, bots []*model
 	p := colors(c)
 	ui.Overlay(c, func() {
 		height := float32(min(len(bots), mentionRows)*mentionRowHeight + 10)
-		panel := ui.Scroll(c).Width(268).Height(height).Padding(5).Radius(10).Background(p.Popover).Shadow(0, 10, 40, 0, p.Shadow).Border(0.5, p.ShadowEdge).
+		panel := ui.Scroll(c).Width(268).Height(height).Padding(5).Radius(radiusXL).Background(p.Popover).Shadow(0, 10, 40, 0, p.Shadow).Border(0.5, p.ShadowEdge).
 			AttachTo(field, ui.AnchorTopLeft, ui.AnchorBottomLeft).Margin(0, 0, 8, 40)
 		panel.Children(func() {
 			for i, bot := range bots {
-				row := ui.Row(c.Key(bot.ID)).Height(mentionRowHeight).Gap(8).Padding(0, 8).Radius(7).Cursor(ui.CursorPointer)
+				row := ui.Row(c.Key(bot.ID)).Height(mentionRowHeight).Gap(8).Padding(0, 8).Radius(radiusMD).Cursor(ui.CursorPointer)
 				highlighted := i == s.mentionIndex
 				if row.Hovered() {
 					s.mentionIndex, highlighted = i, true
 				}
 				if highlighted {
-					row.Background(p.Accent).TextColor(p.White)
+					row.Background(p.Selection).TextColor(p.SelectionText)
 					row.ScrollIntoView()
 				}
 				detail := model.ProviderName(bot.Provider, store.Providers)
@@ -462,10 +525,7 @@ func (m *mainWindow) mentionPanel(c *ui.Context, field ui.Element, bots []*model
 					avatar(c, botAvatar(bot), 22, false)
 					ui.Column(c).MinWidth(0).Shrink(1).Children(func() {
 						ui.Text(c, bot.Name).FontSize(13).FontWeight(500).SingleLine()
-						d := ui.Text(c, detail).FontSize(11).TextColor(p.Label2).SingleLine()
-						if highlighted {
-							d.TextColor(ui.RGBA(255, 255, 255, 0.8))
-						}
+						ui.Text(c, detail).FontSize(11).TextColor(p.Label2).SingleLine()
 					})
 				})
 				if row.Pressed() {
@@ -515,4 +575,24 @@ func mentionRuns(runes []rune, bots []*model.Bot) []mentionRun {
 		}
 	}
 	return runs
+}
+
+// startEdit takes the user's latest message into the composer to edit and send again; what the
+// composer held waits until the edit is sent or cancelled.
+func (s *composerState) startEdit(message *model.Message) {
+	if s.editing == nil {
+		s.editing = &composerEdit{messageID: message.ID, draft: s.draft, attachments: s.attachments}
+	} else {
+		s.editing.messageID = message.ID
+	}
+	s.draft, s.attachments, s.reply, s.editError = message.Body.Text, nil, nil, ""
+	s.caret, s.focus = len([]rune(message.Body.Text)), true
+}
+
+// cancelEdit puts back what the composer held before the edit.
+func (s *composerState) cancelEdit() {
+	if edit := s.editing; edit != nil {
+		s.draft, s.attachments, s.caret = edit.draft, edit.attachments, len([]rune(edit.draft))
+	}
+	s.editing, s.editError, s.focus = nil, "", true
 }

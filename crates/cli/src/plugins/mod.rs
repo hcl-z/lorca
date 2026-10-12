@@ -1094,6 +1094,10 @@ pub async fn serve_request(app: &Arc<App>, verb: &str, body: &Value, requested_b
             let message_id = body["message_id"].as_str().ok_or("missing message_id")?;
             let decision = body["decision"].as_str().and_then(mcp::Decision::parse).ok_or("decision is allow, always, or deny")?;
             let chat_id = body["chat_id"].as_str().ok_or("missing chat_id")?;
+            // A question: the answer is kept on the card first, then the waiting call hears it.
+            if app.message(chat_id, message_id).is_some_and(|message| matches!(&message.body, crate::model::Body::Permission { tool, .. } if tool == crate::ask::TOOL)) {
+                return crate::ask::answer(app, chat_id, message_id, decision, &body);
+            }
             // A secret request: the values are kept here first, then the waiting call hears it.
             if let Some(message) = app.message(chat_id, message_id).filter(|message| matches!(&message.body, crate::model::Body::Permission { tool, .. } if tool == "secret")) {
                 if decision != mcp::Decision::Denied {

@@ -13,11 +13,10 @@
 //                                         cargo-zigbuild; the macOS CLI builds with cargo on a Mac,
 //                                         which alone signs the app and makes its disk image.
 //   bun run release-desktop [platforms]   desktop:build signed with the update key and uploaded to
-//                                         the draft release desktop-v<version> of egoist/lorca
+//                                         the draft release desktop-v<version> of hcl-z/lorca
 //                                         (`mygo build -upload`), which the apps see once it is
-//                                         published. The macOS app is signed with the Developer ID
-//                                         (SIGN_IDENTITY) and notarized with the notarytool profile
-//                                         NOTARY_PROFILE, as `bun run release-mac` is:
+//                                         published. The macOS app is signed ad hoc, with no
+//                                         certificate, as `bun run release-mac` signs the Mac app:
 //                                         docs/releasing-desktop.md.
 
 import { copyFileSync, chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs"
@@ -31,7 +30,7 @@ const DESKTOP = join(ROOT, "desktop")
 const MYGO = ["go", "tool", "mygo"]
 /** `updates.github` and `updates.tagPrefix` of desktop/mygo.config.ts: the newest release with the
  * prefix is where installed apps look. */
-const RELEASES_REPO = "egoist/lorca"
+const RELEASES_REPO = "hcl-z/lorca"
 const TAG_PREFIX = "desktop-v"
 
 /** The Rust target of the CLI each MyGo platform ships, static builds for Linux. */
@@ -122,26 +121,15 @@ function keygenDirectory(): string {
   return join(config, "mygo", "update-keys")
 }
 
-/** The Developer ID that signs the macOS app, as `bun run release-mac` signs the Mac app: a partial
- * name matches while the keychain holds one Developer ID Application certificate. */
-const SIGN_IDENTITY = process.env.SIGN_IDENTITY ?? "Developer ID Application"
-/** The notarytool profile (`xcrun notarytool store-credentials`) that notarizes the macOS app. */
-const NOTARY_PROFILE = process.env.NOTARY_PROFILE ?? "NOTARY"
-
 /** What an upload needs besides the build: the update signing key, from MYGO_UPDATER_PRIVATE_KEY or
  * where `mygo keygen` put it, the GitHub CLI with access to the releases repository (its login, or
- * GH_TOKEN), and for macOS the Developer ID in a keychain, which mygo.config.ts reads with the
- * notarytool profile from SIGN_IDENTITY and NOTARY_PROFILE. Null when something is missing. */
+ * GH_TOKEN), and for macOS a Mac, which signs the app ad hoc: mygo.config.ts signs with a named
+ * identity only when SIGN_IDENTITY is set. Null when something is missing. */
 function releaseEnv(platforms: string[]): Record<string, string> | null {
   const missing: string[] = []
   const env: Record<string, string> = {}
-  if (platforms.some((platform) => platform.startsWith("darwin/"))) {
-    if (process.platform !== "darwin") missing.push("a Mac, which signs and notarizes the macOS app")
-    else if (!Bun.spawnSync(["security", "find-identity", "-v", "-p", "codesigning"]).stdout.toString().includes(SIGN_IDENTITY)) {
-      missing.push(`the signing identity "${SIGN_IDENTITY}" in a keychain, or SIGN_IDENTITY naming yours`)
-    }
-    env.SIGN_IDENTITY = SIGN_IDENTITY
-    env.NOTARY_PROFILE = NOTARY_PROFILE
+  if (platforms.some((platform) => platform.startsWith("darwin/")) && process.platform !== "darwin") {
+    missing.push("a Mac, which builds the macOS app")
   }
   let key = process.env.MYGO_UPDATER_PRIVATE_KEY ?? ""
   if (key === "") {

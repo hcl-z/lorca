@@ -12,7 +12,12 @@ func TestRenderPluginSheet(t *testing.T) {
 		store.AutoReview.Rules = append(store.AutoReview.Rules, model.AutoReviewRule{ID: "rule-1", Text: "Create issues", Behavior: "allow", Tool: "github/create_issue"})
 		m.presentPlugin("github", sheetAWorkbench(), "", "")
 	})
-	for _, text := range []string{"GitHub", "Installed on Workbench.", "STATUS", "Ready", "Always allowed", "create_issue", "Reset", "SIGN-IN", "Signed in", "Sign in again", "Sign Out", "SETUP", "GITHUB_TOKEN", "Keys and sign-ins stay on this device.", "Save", "Remove…", "Done"} {
+	for _, caption := range []string{"Status", "Sign-in", "Setup"} {
+		if !showsLine(tt, caption) {
+			t.Errorf("no %q caption in %q", caption, tt.Texts())
+		}
+	}
+	for _, text := range []string{"GitHub", "Installed on Workbench.", "Ready", "Always allowed", "create_issue", "Reset", "Signed in", "Sign in again", "Sign Out", "GITHUB_TOKEN", "Keys and sign-ins stay on this device.", "Save", "Remove…", "Done"} {
 		if !tt.HasText(text) {
 			t.Errorf("no %q in %q", text, tt.Texts())
 		}
@@ -91,10 +96,13 @@ func TestRenderPluginSheetSignIn(t *testing.T) {
 		}}
 	m.present(s.view, nil)
 	sheetASettle(tt)
-	for _, text := range []string{"Atlassian", "Installed on Studio.", "Waiting for the sign-in", "Site", "www.atlassian.com", "jira", "WDJB-MJHT", "Copy code and open auth.atlassian.com", "confluence", "ATLASSIAN_SITE *", "SKILLS", "triage", "Keys and sign-ins are sent sealed to Studio and stay there."} {
+	for _, text := range []string{"Atlassian", "Installed on Studio.", "Waiting for the sign-in", "Site", "www.atlassian.com", "jira", "WDJB-MJHT", "Copy code and open auth.atlassian.com", "confluence", "ATLASSIAN_SITE *", "triage", "Keys and sign-ins are sent sealed to Studio and stay there."} {
 		if !tt.HasText(text) {
 			t.Errorf("no %q in %q", text, tt.Texts())
 		}
+	}
+	if !showsLine(tt, "Skills") {
+		t.Errorf("no Skills caption in %q", tt.Texts())
 	}
 	sheetARender(t, tt, "plugin-code")
 }

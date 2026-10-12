@@ -312,7 +312,7 @@ func TestOnboardingChinese(t *testing.T) {
 	bot.Name, bot.Description = "Chef", onboardingDefaultDescription
 	o.show(onboardingBot)
 	onboardingSettle(tt)
-	if o.botName != "幕僚长" || o.botDescription == onboardingDefaultDescription {
+	if o.botName != "chief" || o.botDescription == onboardingDefaultDescription {
 		t.Errorf("name %q, description %q", o.botName, o.botDescription)
 	}
 	onboardingRender(t, tt, "zh-bot")

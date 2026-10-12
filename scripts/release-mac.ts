@@ -1,29 +1,31 @@
 // Release the Mac app:
-//   build → Developer ID sign → .dmg → notarize → staple → Sparkle archive → appcast → R2.
+//   build → ad-hoc sign → .dmg → Sparkle archive → appcast → the GitHub release mac-releases.
 //
 //   bun run release-mac 0.2.0        bump "version" in package.json, then release
 //   bun run release-mac              release the version package.json holds
-//   bun run release-mac --local      build, sign, and notarize; publish nothing
+//   bun run release-mac --local      build and pack the disk image; publish nothing
 //   FORCE=1 bun run release-mac      replace a version that is already published
 //   NO_HISTORY=1 bun run release-mac skip the old archives (a full download, no deltas)
 //
-// Notarization signs in with the NOTARY keychain profile, or with an App Store Connect API key when
-// ASC_KEY_PATH (the .p8 file), ASC_KEY_ID, and ASC_ISSUER_ID are set, as the Release Mac app
-// workflow sets them. docs/releasing-mac.md has the one-time setup.
+// No certificate is involved: the app is signed ad hoc, and Sparkle checks each update against the
+// EdDSA key in SPARKLE_PRIVATE_KEY (or SPARKLE_KEY_FILE). Every disk image, archive, delta, and the
+// appcast are assets of one release, mac-releases, in RELEASES_REPO, which the GitHub CLI uploads
+// to with its login or GH_TOKEN. docs/releasing-mac.md has the one-time setup.
 import { $ } from "bun"
 import { existsSync } from "node:fs"
-import { mkdir, rm } from "node:fs/promises"
+import { mkdir, readdir, rm } from "node:fs/promises"
 import { join } from "node:path"
 import {
   APP_NAME,
   buildApp,
   bundlePath,
-  codesign,
   color,
   FEED_URL,
   log,
+  MAC_RELEASE_TAG,
   PACKAGE_JSON,
   readVersion,
+  RELEASES_REPO,
   RELEASES_URL,
   ROOT,
   VERSION_FIELD,
@@ -45,28 +47,22 @@ if (unknown) die(`unknown option: ${unknown}`)
 const positional = args.filter((arg) => !arg.startsWith("--"))
 if (positional.length > 1) die("expected at most one version")
 
-const NOTARY_PROFILE = process.env.NOTARY_PROFILE ?? "NOTARY"
-const apiKey = ["ASC_KEY_PATH", "ASC_KEY_ID", "ASC_ISSUER_ID"].map((name) => process.env[name])
-if (apiKey.some(Boolean) && !apiKey.every(Boolean)) die("set all of ASC_KEY_PATH, ASC_KEY_ID, and ASC_ISSUER_ID, or none")
-const [keyPath, keyID, issuerID] = apiKey
-const notaryAuth = keyPath
-  ? ["--key", keyPath, "--key-id", keyID!, "--issuer", issuerID!]
-  : ["--keychain-profile", NOTARY_PROFILE]
-// A partial name matches while the keychain holds one Developer ID Application certificate.
-const SIGN_IDENTITY = process.env.SIGN_IDENTITY ?? "Developer ID Application"
-const R2_DEST = `${process.env.R2_REMOTE ?? "r2"}:${process.env.R2_BUCKET ?? "lorca-mac-releases"}`
-// A bucket-scoped R2 token cannot create buckets, which rclone otherwise checks before an upload.
-const RCLONE_FLAGS = ["--s3-no-check-bucket"]
 // How many earlier archives generate_appcast builds deltas against.
 const HISTORY_COUNT = Number(process.env.HISTORY_COUNT ?? "3")
 if (!Number.isSafeInteger(HISTORY_COUNT) || HISTORY_COUNT < 0) die("HISTORY_COUNT must be a non-negative integer")
 
-for (const tool of ["cargo", "swift", "ditto", "plutil", "xcrun", "create-dmg", ...(local ? [] : ["rclone"])]) {
+for (const tool of ["cargo", "swift", "ditto", "plutil", "create-dmg", ...(local ? [] : ["gh"])]) {
   if (!Bun.which(tool)) die(`missing required tool: ${tool}`)
 }
 
 const isVersion = (value: string) => /^\d+\.\d+\.\d+$/.test(value)
 const newestFirst = (a: string, b: string) => new Intl.Collator("en", { numeric: true }).compare(b, a)
+
+/** The names of the assets on the release mac-releases, none when the release does not exist yet. */
+async function publishedAssets(): Promise<string[]> {
+  const view = await $`gh release view ${MAC_RELEASE_TAG} --repo ${RELEASES_REPO} --json assets --jq ${".assets[].name"}`.nothrow().quiet()
+  return view.exitCode === 0 ? view.stdout.toString().split("\n").filter(Boolean) : []
+}
 
 // ---- 1. version
 if (positional[0]) {
@@ -85,9 +81,10 @@ const zipName = `${APP_NAME}-${version}.zip`
 const dmgName = `${APP_NAME}-${version}.dmg`
 const dmgPath = join(BUILD_DIR, dmgName)
 
-if (!local && process.env.FORCE !== "1") {
-  const published = await $`rclone lsf ${R2_DEST} ${RCLONE_FLAGS}`.nothrow().quiet().text()
-  if (published.split("\n").includes(zipName)) die(`${zipName} is already published: pass a new version, or set FORCE=1`)
+let published: string[] = []
+if (!local) {
+  published = await publishedAssets()
+  if (published.includes(zipName) && process.env.FORCE !== "1") die(`${zipName} is already published: pass a new version, or set FORCE=1`)
 }
 
 // ---- 2. build and sign
@@ -95,14 +92,15 @@ log(`${color.bold("building")} ${color.dim(`${APP_NAME} ${version}`)}`)
 const app = bundlePath("release")
 // A clean bundle: nothing from an earlier build rides along into the archive. buildApp compiles
 // the Rust CLI (`cargo build --release -p lorca`) and the Markdown library, then the Swift app,
-// copies the CLI into Contents/Resources/bin, embeds Sparkle, and signs.
+// copies the CLI into Contents/Resources/bin, embeds Sparkle, and signs ad hoc.
 await rm(app, { recursive: true, force: true })
-const build = await buildApp("release", { signIdentity: SIGN_IDENTITY, onStep: (step) => log(color.dim(step)) })
+const build = await buildApp("release", { onStep: (step) => log(color.dim(step)) })
 if (!build.ok) die("build failed")
 
 const plist = join(app, "Contents", "Info.plist")
 const built = (await $`plutil -extract CFBundleShortVersionString raw ${plist}`.text()).trim()
 if (built !== version) die(`built ${built}, expected ${version}`)
+await $`codesign --verify --deep --strict ${app}`
 
 // ---- 3. disk image
 log(`packing ${dmgName}`)
@@ -112,20 +110,11 @@ await rm(dmgPath, { force: true })
 await mkdir(staging, { recursive: true })
 await $`ditto ${app} ${join(staging, `${APP_NAME}.app`)}`
 // create-dmg exits non-zero over Finder-scripting hiccups with the image intact, so the file decides.
+// Its codesigning is skipped: the image carries no certificate.
 await $`create-dmg --volname ${`${APP_NAME} ${version}`} --window-size 540 380 --icon-size 128 --icon ${`${APP_NAME}.app`} 150 195 --app-drop-link 390 195 --hide-extension ${`${APP_NAME}.app`} --no-internet-enable ${dmgPath} ${staging}`
   .nothrow()
   .quiet()
 if (!existsSync(dmgPath)) die("create-dmg produced no disk image")
-if (!(await codesign(["--force", "--timestamp", "--sign", SIGN_IDENTITY, dmgPath]))) die("signing the disk image failed")
-
-// ---- 4. notarize and staple
-// Notarizing the disk image notarizes the code inside it, so one submission staples both.
-log(`notarizing ${color.dim(keyPath ? `API key ${keyID}` : `profile ${NOTARY_PROFILE}`)}`)
-await $`xcrun notarytool submit ${dmgPath} ${notaryAuth} --wait`
-await $`xcrun stapler staple ${dmgPath}`
-await $`xcrun stapler staple ${app}`
-await $`codesign --verify --deep --strict ${app}`
-await $`spctl --assess --type execute ${app}`
 
 if (local) {
   log(`${color.green("built")} ${APP_NAME} ${version}; nothing was published`)
@@ -133,22 +122,20 @@ if (local) {
   process.exit(0)
 }
 
-// ---- 5. Sparkle archive, beside the recent ones
+// ---- 4. Sparkle archive, beside the recent ones
 await rm(UPDATES_DIR, { recursive: true, force: true })
 await mkdir(UPDATES_DIR, { recursive: true })
 
 if (process.env.NO_HISTORY !== "1") {
-  const listing = await $`rclone lsjson ${R2_DEST} ${RCLONE_FLAGS} --files-only --include ${"*.zip"} --include ${"appcast.xml"}`.text()
-  const names = (JSON.parse(listing) as { Name: string }[]).map((file) => file.Name)
   const archiveVersion = (name: string) => name.slice(`${APP_NAME}-`.length, -".zip".length)
-  const recent = names
+  const recent = published
     .filter((name) => name.startsWith(`${APP_NAME}-`) && name.endsWith(".zip") && name !== zipName)
     .sort((a, b) => newestFirst(archiveVersion(a), archiveVersion(b)))
     .slice(0, HISTORY_COUNT)
   // The published appcast comes along, so versions older than the pulled archives keep their entries.
-  const history = [...(names.includes("appcast.xml") ? ["appcast.xml"] : []), ...recent]
+  const history = [...(published.includes("appcast.xml") ? ["appcast.xml"] : []), ...recent]
   if (history.length > 0) {
-    await $`rclone copy ${R2_DEST} ${UPDATES_DIR} ${RCLONE_FLAGS} ${history.flatMap((name) => ["--include", `/${name}`])}`
+    await $`gh release download ${MAC_RELEASE_TAG} --repo ${RELEASES_REPO} --dir ${UPDATES_DIR} --clobber ${history.flatMap((name) => ["--pattern", name])}`
   }
   log(recent.length > 0 ? `deltas against ${recent.join(", ")}` : "no earlier archives: this update is a full download")
 }
@@ -160,18 +147,22 @@ const notes = (await changelog.exists()) ? extractReleaseNotes(await changelog.t
 if (notes) await Bun.write(join(UPDATES_DIR, `${APP_NAME}-${version}.md`), `${notes}\n`)
 else log(color.yellow(`CHANGELOG.md has no "${version}" section: releasing without notes`))
 
-// ---- 6. appcast
+// ---- 5. appcast
 log("generating appcast.xml")
 if (!(await generateAppcast(UPDATES_DIR, RELEASES_URL))) die("generate_appcast failed")
 
-// ---- 7. upload
-// An archive never changes under its name. The appcast changes with every release.
-const IMMUTABLE = "Cache-Control: public, max-age=31536000, immutable"
-const FRESH = "Cache-Control: public, max-age=300, must-revalidate"
-log(`uploading to ${R2_DEST}`)
-await $`rclone copyto ${dmgPath} ${`${R2_DEST}/${dmgName}`} ${RCLONE_FLAGS} --header-upload ${IMMUTABLE} --progress`
-await $`rclone copy ${UPDATES_DIR} ${R2_DEST} ${RCLONE_FLAGS} --exclude ${"appcast.xml"} --exclude ${"old_updates/**"} --header-upload ${IMMUTABLE} --progress`
-await $`rclone copyto ${join(UPDATES_DIR, "appcast.xml")} ${`${R2_DEST}/appcast.xml`} ${RCLONE_FLAGS} --header-upload ${FRESH}`
+// ---- 6. upload
+// The release is made once, apart from the repository's latest release, which stays the CLI's. An
+// archive never changes under its name; the appcast changes with every release, and goes last so
+// no app is pointed at an archive that is not there yet.
+log(`uploading to the release ${MAC_RELEASE_TAG} of ${RELEASES_REPO}`)
+const exists = (await $`gh release view ${MAC_RELEASE_TAG} --repo ${RELEASES_REPO}`.nothrow().quiet()).exitCode === 0
+if (!exists) {
+  await $`gh release create ${MAC_RELEASE_TAG} --repo ${RELEASES_REPO} --latest=false --title ${"Lorca for Mac updates"} --notes ${"Disk images, update archives, and the appcast of the Mac app. Download Lorca-<version>.dmg to install; the app updates itself from here."}`
+}
+const archives = (await readdir(UPDATES_DIR)).filter((name) => name !== "appcast.xml" && !name.startsWith(".") && name !== "old_updates")
+await $`gh release upload ${MAC_RELEASE_TAG} --repo ${RELEASES_REPO} --clobber ${dmgPath} ${archives.map((name) => join(UPDATES_DIR, name))}`
+await $`gh release upload ${MAC_RELEASE_TAG} --repo ${RELEASES_REPO} --clobber ${join(UPDATES_DIR, "appcast.xml")}`
 
 const dirty = (await $`git status --porcelain package.json CHANGELOG.md`.nothrow().text()).trim()
 if (dirty) log(color.yellow("package.json or CHANGELOG.md has uncommitted changes: commit them so the tree matches what shipped"))

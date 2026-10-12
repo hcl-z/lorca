@@ -55,13 +55,14 @@ func section(c *ui.Context, title string, style sectionStyle, accessory func(), 
 		if title != "" || accessory != nil {
 			header := ui.Row(c).Gap(8)
 			if style == sectionCaption {
-				header.MinHeight(14).Padding(0, 0, 0, 4).Margin(0, 0, 6, 0)
+				header.MinHeight(16).Padding(0, 2, 0, 2).Margin(0, 0, space2, 0)
 			} else {
 				header.MinHeight(18).Padding(0, 12).Margin(0, 0, 9, 0)
 			}
 			header.Children(func() {
 				if style == sectionCaption {
-					ui.Text(c, strings.ToUpper(title)).Grow(1).FontSize(10).FontWeight(600).TextColor(p.Label3).LetterSpacing(0.2).SingleLine()
+					// A caption in sentence case, quieter than the rows it heads.
+					ui.Text(c, title).Grow(1).FontSize(12).FontWeight(500).TextColor(p.Label2).SingleLine()
 				} else {
 					ui.Text(c, title).Grow(1).FontSize(13).FontWeight(700).TextColor(p.Label).SingleLine()
 				}
@@ -73,26 +74,40 @@ func section(c *ui.Context, title string, style sectionStyle, accessory func(), 
 		if rows == nil {
 			return
 		}
-		k := &card{line: p.Separator}
-		body := ui.Column(c).Background(p.BotBubble).Clip()
+		// The dividers stop at the rows' text margins, so a card reads as one piece.
+		k := &card{line: p.Separator, inset: rowInset}
+		body := ui.Column(c).Background(p.Card).Border(1, p.CardBorder).Clip()
 		if style == sectionCaption {
-			body.Radius(9).Border(1, p.BotBubbleBorder)
+			body.Radius(radiusCard)
 		} else {
-			body.Radius(12)
-			k.inset = 12
+			body.Radius(radiusXL)
 		}
 		body.Children(func() { rows(k) })
 	})
 	return s
 }
 
-// rowBox is a row's box: its children in a line, 32 tall at least.
+// rowInset is a card row's side margin, where its dividers stop.
+const rowInset = 14
+
+// rowBox is a row's box: its children in a line, 36 tall at least.
 func rowBox(c *ui.Context) ui.Element {
-	return ui.Row(c).Gap(10).MinHeight(32).Padding(8, 12).MinWidth(0)
+	return ui.Row(c).Gap(10).MinHeight(rowHeight).Padding(9, rowInset).MinWidth(0)
+}
+
+// rowHeight is a card row's height at least.
+const rowHeight = 36
+
+// hoverRow gives a clickable row its pointer and a fill under it.
+func hoverRow(c *ui.Context, r ui.Element) {
+	r.Cursor(ui.CursorPointer)
+	if r.Hovered() {
+		r.Background(colors(c).RowHover)
+	}
 }
 
 func rowKey(c *ui.Context, label string) ui.Element {
-	return ui.Text(c, label).FontSize(12).TextColor(colors(c).Label2).SingleLine()
+	return ui.Text(c, label).FontSize(12.5).TextColor(colors(c).Label2).SingleLine()
 }
 
 // keyValueRow is a key on the left and a value on the right that wraps and can be selected.
@@ -100,7 +115,7 @@ func keyValueRow(c *ui.Context, k *card, label, value string, mono bool, tint *u
 	r := k.row(rowBox(c).AlignItems(ui.Start).Label(label))
 	r.Children(func() {
 		rowKey(c, label).Padding(1, 0, 0, 0)
-		v := ui.Text(c, value).Grow(1).Shrink(1).MinWidth(0).TextAlign(ui.End).FontSize(12).Selectable()
+		v := ui.Text(c, value).Grow(1).Shrink(1).MinWidth(0).TextAlign(ui.End).FontSize(12.5).Selectable()
 		if mono {
 			v.Font(monoFont).FontSize(11)
 		}
@@ -128,6 +143,9 @@ type botRowResult struct {
 	Avatar    bool
 }
 
+// botRowHeight is a bot's row, at least.
+const botRowHeight = 52
+
 // botRow is a bot, as the inspector, the Device pane, and pickers list them.
 func botRow(c *ui.Context, k *card, bot *model.Bot, o botRowOptions) (ui.Element, botRowResult) {
 	p := colors(c)
@@ -136,31 +154,28 @@ func botRow(c *ui.Context, k *card, bot *model.Bot, o botRowOptions) (ui.Element
 	if o.Title != "" {
 		title, key = o.Title, bot.ID+"|"+o.Title
 	}
-	r := k.row(rowBox(c.Key(key)).MinHeight(46).Padding(0, 10, 0, 12).Gap(9).Label(title))
+	r := k.row(rowBox(c.Key(key)).MinHeight(botRowHeight).Padding(0, 10, 0, 12).Gap(10).Label(title))
 	if o.Clickable {
-		r.Cursor(ui.CursorPointer)
-		if r.Hovered() {
-			r.Background(p.RowHover)
-		}
+		hoverRow(c, r)
 		result.Clicked = r.Clicked()
 	}
 	r.Children(func() {
-		a := avatar(c, botAvatar(bot), 28, o.Working)
+		a := avatar(c, botAvatar(bot), 32, o.Working)
 		if o.AvatarClickable {
 			a.Cursor(ui.CursorPointer).Tooltip(L("Change look"))
 			result.Avatar = a.Clicked()
 		}
 		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(1).Children(func() {
-			ui.Text(c, title).FontSize(13).FontWeight(500).SingleLine()
-			ui.Text(c, o.Detail).FontSize(textCaption).TextColor(p.Label2).SingleLine()
+			ui.Text(c, title).FontSize(13).FontWeight(600).SingleLine()
+			ui.Text(c, o.Detail).FontSize(11.5).TextColor(p.Label2).SingleLine()
 		})
 		if o.AccessorySymbol != "" {
-			b := ui.ButtonBase(c).Size(22, 22).Radius(5).Center().TextColor(p.Label3).Label(o.AccessoryTooltip)
+			b := ui.ButtonBase(c).Size(24, 24).Radius(radiusSM).Center().TextColor(p.Label3).Label(o.AccessoryTooltip)
 			if o.AccessoryTooltip != "" {
 				b.Tooltip(o.AccessoryTooltip)
 			}
 			if b.Hovered() {
-				b.TextColor(p.Label2)
+				b.Background(p.Hover).TextColor(p.Label)
 			}
 			b.Children(func() { symbol(c, o.AccessorySymbol, 14, 1.8) })
 			result.Accessory = b.Clicked()
@@ -215,12 +230,12 @@ type statusRowResult struct {
 func statusRow(c *ui.Context, k *card, o statusRowOptions) (ui.Element, statusRowResult) {
 	p := colors(c)
 	var result statusRowResult
-	r := k.row(rowBox(c).MinHeight(44).Label(o.Title))
+	r := k.row(rowBox(c).MinHeight(48).Label(o.Title))
 	if o.Tooltip != "" {
 		r.Tooltip(o.Tooltip)
 	}
 	if o.Clickable {
-		r.Cursor(ui.CursorPointer)
+		hoverRow(c, r)
 		result.Clicked = r.Clicked()
 	}
 	r.Children(func() {
@@ -228,17 +243,17 @@ func statusRow(c *ui.Context, k *card, o statusRowOptions) (ui.Element, statusRo
 		if o.SymbolColor != nil {
 			tint = *o.SymbolColor
 		}
-		ui.Row(c).Width(18).Justify(ui.Center).TextColor(tint).Children(func() {
+		ui.Row(c).Width(20).Justify(ui.Center).TextColor(tint).Children(func() {
 			if o.PluginID != "" {
-				pluginTile(c, o.PluginID, o.Symbol, 18)
+				pluginTile(c, o.PluginID, o.Symbol, 20)
 			} else if o.Symbol != "" {
 				symbol(c, o.Symbol, 16, 1.7)
 			}
 		})
-		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(1).Children(func() {
-			ui.Text(c, o.Title).FontSize(12.5).FontWeight(500).MaxLines(1)
+		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(2).Children(func() {
+			ui.Text(c, o.Title).FontSize(13).FontWeight(500).MaxLines(1)
 			if o.Subtitle != "" {
-				subtitle := ui.Text(c, o.Subtitle).FontSize(textCaption).TextColor(p.Label2)
+				subtitle := ui.Text(c, o.Subtitle).FontSize(11.5).TextColor(p.Label2)
 				if o.SubtitleLines > 0 {
 					subtitle.MaxLines(o.SubtitleLines)
 				}
@@ -246,11 +261,16 @@ func statusRow(c *ui.Context, k *card, o statusRowOptions) (ui.Element, statusRo
 		})
 		switch {
 		case o.ActionTitle != "":
+			look := actionLookFor(o.ActionTitle)
+			if look.iconOnly && !o.Destructive {
+				result.Action = actionButton(c, o.ActionTitle, false).Clicked()
+				break
+			}
 			kind := buttonDefault
 			if o.Destructive {
 				kind = buttonDestructive
 			}
-			result.Action = pushButton(c, o.ActionTitle, pushOptions{Kind: kind, Small: true}).Clicked()
+			result.Action = pushButton(c, o.ActionTitle, pushOptions{Kind: kind, Small: true, Symbol: look.symbol}).Clicked()
 		case o.State != "":
 			tint := p.Label2
 			if o.StateColor != nil {
@@ -305,13 +325,15 @@ func pluginRow(c *ui.Context, k *card, plugin model.InstalledPlugin, clickable b
 func popUpRow(c *ui.Context, k *card, label string, o popUp, fitsTitles bool) (string, bool) {
 	var picked string
 	var changed bool
-	r := k.row(rowBox(c).MinHeight(34).Padding(4, 8, 4, 12).Label(label))
+	// The pop-up is a value with chevrons that fills under the pointer, not a box inside the card.
+	r := k.row(rowBox(c).MinHeight(rowHeight+2).Padding(5, 8, 5, rowInset).Label(label))
 	r.Children(func() {
 		rowKey(c, label)
 		ui.Spacer(c)
-		o.Style, o.Width = popUpBordered, 150
+		// Fitted to its choice and right-aligned, as the other rows' values are; a long one is cut.
+		o.Style, o.Width, o.MaxWidth = popUpSettings, 0, 170
 		if fitsTitles {
-			o.Width = 0
+			o.MaxWidth = 0
 		}
 		picked, changed, _ = popUpButton(c, o)
 	})
@@ -336,10 +358,10 @@ type actionRowResult struct {
 	Second bool
 }
 
-// actionRow is a key on the left, a status value on the right, and a text action after it. A
-// monospaced value is something to copy (a sign-in code), so it is selectable.
+// actionRow is a key on the left, a status value on the right, and its actions after it, each a
+// symbol or a symbol and its words (actionLookFor). A monospaced value is something to copy (a
+// sign-in code), so it is selectable.
 func actionRow(c *ui.Context, k *card, label string, o actionRowOptions) (ui.Element, actionRowResult) {
-	p := colors(c)
 	var result actionRowResult
 	r := k.row(rowBox(c).Label(label))
 	if o.Tooltip != "" {
@@ -347,7 +369,7 @@ func actionRow(c *ui.Context, k *card, label string, o actionRowOptions) (ui.Ele
 	}
 	r.Children(func() {
 		rowKey(c, label)
-		v := ui.Text(c, o.Value).Grow(1).Shrink(1).MinWidth(0).TextAlign(ui.End).FontSize(12).SingleLine()
+		v := ui.Text(c, o.Value).Grow(1).Shrink(1).MinWidth(0).TextAlign(ui.End).FontSize(12.5).SingleLine()
 		if o.Mono {
 			v.Font(monoFont).FontWeight(600).Selectable()
 		}
@@ -358,16 +380,7 @@ func actionRow(c *ui.Context, k *card, label string, o actionRowOptions) (ui.Ele
 			result.Second = linkButton(c, o.Second, false).Clicked()
 		}
 		if o.Action != "" {
-			b := ui.ButtonBase(c).Gap(4).FontSize(12).FontWeight(500).TextColor(p.Accent).Label(o.Action).Cursor(ui.CursorPointer)
-			if o.Copied {
-				b.TextColor(p.Green)
-			}
-			b.Children(func() {
-				if o.Copied {
-					symbol(c, "checkmark", 11, 2.6)
-				}
-				ui.Text(c, o.Action).SingleLine()
-			})
+			b := actionButton(c, o.Action, o.Copied)
 			result.Action = b.Clicked()
 			if o.Menu != nil {
 				b.Menu(o.Menu)
@@ -386,13 +399,11 @@ func disclosureRow(c *ui.Context, k *card, label, value string, tint *ui.Color) 
 	if tint != nil {
 		valueColor = *tint
 	}
-	r := k.row(rowBox(c).Height(32).Padding(0, 12).Label(label).Cursor(ui.CursorPointer))
-	if r.Hovered() {
-		r.Background(p.RowHover)
-	}
+	r := k.row(rowBox(c).Height(rowHeight).Padding(0, rowInset).Label(label))
+	hoverRow(c, r)
 	r.Children(func() {
 		rowKey(c, label)
-		ui.Text(c, value).Grow(1).Shrink(1).MinWidth(0).TextAlign(ui.End).FontSize(12).TextColor(valueColor).SingleLine()
+		ui.Text(c, value).Grow(1).Shrink(1).MinWidth(0).TextAlign(ui.End).FontSize(12.5).TextColor(valueColor).SingleLine()
 		ui.Row(c).Shrink(0).TextColor(p.Label3).Margin(0, 0, 0, -4).Children(func() { symbol(c, "chevron.right", 12, 2.2) })
 	})
 	return r.Clicked()
@@ -403,9 +414,9 @@ func disclosureRow(c *ui.Context, k *card, label, value string, tint *ui.Color) 
 func summaryActionRow(c *ui.Context, k *card, label, value, action string) bool {
 	p := colors(c)
 	clicked := false
-	r := k.row(ui.Column(c).Gap(2).Padding(6, 12, 8, 12).Label(label))
+	r := k.row(ui.Column(c).Gap(4).Padding(9, rowInset, 10, rowInset).Label(label))
 	if value == "" {
-		r.Height(32).Padding(0, 12).Justify(ui.Center)
+		r.Height(rowHeight).Padding(0, rowInset).Justify(ui.Center)
 	}
 	r.Children(func() {
 		ui.Row(c).Gap(8).Justify(ui.SpaceBetween).Children(func() {
@@ -413,7 +424,7 @@ func summaryActionRow(c *ui.Context, k *card, label, value, action string) bool 
 			clicked = linkButton(c, action, false).Clicked()
 		})
 		if value != "" {
-			ui.Text(c, value).FontSize(textCaption).TextColor(p.Label2).MaxLines(2)
+			ui.Text(c, value).FontSize(12).LineHeight(1.4).TextColor(p.Label).MaxLines(3)
 		}
 	})
 	return clicked
@@ -433,14 +444,16 @@ func editableRow(c *ui.Context, k *card, label, value, placeholder string, mono,
 	r := k.row(rowBox(c).AlignItems(ui.Center).Label(label))
 	r.Children(func() {
 		rowKey(c, label).Width(76)
-		holder := ui.Row(c).Grow(1).Shrink(1).MinWidth(0)
+		// The value says it can be edited by filling under the pointer, and by a field's ring while
+		// it has the keyboard.
+		holder := ui.Row(c).Grow(1).Shrink(1).MinWidth(0).Margin(-4, -6).Padding(4, 6).Radius(radiusSM).Cursor(ui.CursorText)
 		st := ui.Local(holder, "edit", func() *editableRowState { return &editableRowState{} })
 		holder.Children(func() {
 			s := *st
 			if !s.editing {
 				s.draft = value
 			}
-			field := ui.TextInputBase(c, &s.draft).Grow(1).Shrink(1).MinWidth(0).FontSize(12).TextColor(p.Label).FocusRing(false).Label(label)
+			field := ui.TextInputBase(c, &s.draft).Grow(1).Shrink(1).MinWidth(0).FontSize(12.5).TextColor(p.Label).FocusRing(false).Label(label)
 			if placeholder != "" {
 				field.Placeholder(placeholder)
 			}
@@ -462,6 +475,11 @@ func editableRow(c *ui.Context, k *card, label, value, placeholder string, mono,
 			}
 			s.editing = focused
 		})
+		if (*st).editing {
+			holder.Background(p.Field).Border(1, p.Label3)
+		} else if holder.Hovered() {
+			holder.Background(p.Hover)
+		}
 	})
 	return committed, ok
 }
@@ -471,15 +489,16 @@ func editableRow(c *ui.Context, k *card, label, value, placeholder string, mono,
 // view is built with the switch's new value.
 func switchRow(c *ui.Context, k *card, symbolName string, tint ui.Color, title string, detail []ui.Span, on *bool, toggleTooltip, tooltip string, change func(bool)) bool {
 	p := colors(c)
-	r := k.row(rowBox(c).MinHeight(44).Label(title).Cursor(ui.CursorPointer))
+	r := k.row(rowBox(c).MinHeight(48).Label(title))
+	hoverRow(c, r)
 	if tooltip != "" {
 		r.Tooltip(tooltip)
 	}
 	clicked := r.Clicked()
 	r.Children(func() {
-		ui.Row(c).Width(18).Justify(ui.Center).TextColor(tint).Children(func() { symbol(c, symbolName, 15, 1.8) })
-		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(1).Children(func() {
-			ui.Text(c, title).FontSize(12.5).FontWeight(500).SingleLine()
+		ui.Row(c).Width(20).Justify(ui.Center).TextColor(tint).Children(func() { symbol(c, symbolName, 16, 1.8) })
+		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(2).Children(func() {
+			ui.Text(c, title).FontSize(13).FontWeight(500).SingleLine()
 			ui.RichText(c, detail...).FontSize(textCaption).TextColor(p.Label2).SingleLine()
 		})
 		toggle := toggleSwitch(c, on, true).Tooltip(toggleTooltip).Label(toggleTooltip).
@@ -497,16 +516,17 @@ func switchRow(c *ui.Context, k *card, symbolName string, tint ui.Color, title s
 func channelRow(c *ui.Context, k *card, channel *model.Channel, change func(bool)) bool {
 	p := colors(c)
 	paused := channel.IsPaused()
-	r := k.row(rowBox(c).MinHeight(44).Label(channel.Name).Cursor(ui.CursorPointer).Tooltip(channel.Task))
+	r := k.row(rowBox(c).MinHeight(48).Label(channel.Name).Tooltip(channel.Task))
+	hoverRow(c, r)
 	clicked := r.Clicked()
 	r.Children(func() {
-		icon := ui.Row(c).Width(18).Justify(ui.Center).TextColor(p.Label2)
+		icon := ui.Row(c).Width(20).Justify(ui.Center).TextColor(p.Label2)
 		if paused {
 			icon.Opacity(0.5)
 		}
-		icon.Children(func() { pluginTile(c, channel.Service, "paperplane", 18) })
-		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(1).Children(func() {
-			ui.Text(c, channel.Name).FontSize(12.5).FontWeight(500).SingleLine()
+		icon.Children(func() { pluginTile(c, channel.Service, "paperplane", 20) })
+		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(2).Children(func() {
+			ui.Text(c, channel.Name).FontSize(13).FontWeight(500).SingleLine()
 			detail := []ui.Span{{Text: channel.Listen.Summary(), Color: p.Label2}}
 			switch channel.State {
 			case model.ChannelHeld:
@@ -547,9 +567,9 @@ func channelRow(c *ui.Context, k *card, channel *model.Channel, change func(bool
 // noteRow is a sentence inside a card, for an empty state, or in a color for what went wrong.
 func noteRow(c *ui.Context, k *card, text string, tint *ui.Color) ui.Element {
 	p := colors(c)
-	r := k.row(ui.Row(c).Padding(10, 12))
+	r := k.row(ui.Row(c).Padding(12, rowInset))
 	r.Children(func() {
-		t := ui.Text(c, text).FontSize(textCaption).TextColor(p.Label2).LineHeight(1.4)
+		t := ui.Text(c, text).FontSize(12).TextColor(p.Label2).LineHeight(1.45)
 		if tint != nil {
 			t.TextColor(*tint)
 		}
@@ -559,12 +579,12 @@ func noteRow(c *ui.Context, k *card, text string, tint *ui.Color) ui.Element {
 
 // accessoryRow is a label on the left and any control on the right.
 func accessoryRow(c *ui.Context, k *card, label, tooltip string, control func()) ui.Element {
-	r := k.row(rowBox(c).MinHeight(36).Label(label))
+	r := k.row(rowBox(c).MinHeight(rowHeight + 4).Label(label))
 	if tooltip != "" {
 		r.Tooltip(tooltip)
 	}
 	r.Children(func() {
-		ui.Text(c, label).Grow(1).Shrink(1).MinWidth(0).FontSize(12.5)
+		ui.Text(c, label).Grow(1).Shrink(1).MinWidth(0).FontSize(13)
 		ui.Row(c).Children(control)
 	})
 	return r

@@ -1034,4 +1034,11 @@ export const zh: Record<string, string> = {
   "Paste the chat’s id, such as -1001234567890 for a group. Or message the bot there, and the chat asks here.": "粘贴聊天的 ID，群聊的 ID 形如 -1001234567890。也可以在那里给机器人发条消息，这个聊天就会在这里请求对话。",
   "Paste the channel’s id, such as C0123456789. Or message the bot there, and the chat asks here.": "粘贴 Slack 频道的 ID，形如 C0123456789。也可以在那里给机器人发条消息，这个聊天就会在这里请求对话。",
   "Add Chat…": "添加聊天…",
+  "{who} asks you to choose": "{who} 请你做个选择",
+  ", ": "、",
+  "Reply in the chat with your choice.": "在聊天里回复你的选择。",
+  "Answered": "已回答",
+  "Skipped": "已跳过",
+  "Answered in the chat instead": "已在聊天中回答",
+  "You chose {answer}": "你选了：{answer}",
 };

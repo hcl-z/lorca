@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -38,6 +39,8 @@ type sheet struct {
 	view      func(c *ui.Context, s *sheet)
 	onDismiss func()
 	window    *appWindow
+	// alert is a sheet only its buttons close: a press outside it does not.
+	alert bool
 }
 
 // dismiss takes the sheet away; the keyboard goes back to what had it when it came up.
@@ -78,14 +81,29 @@ func (w *appWindow) sheetsView(c *ui.Context) {
 	for i, s := range w.sheets {
 		front := i == len(w.sheets)-1
 		ui.Overlay(c, func() {
-			scrim := ui.Column(c.Key(s.id)).Absolute().Left(0).Top(0).Right(0).Bottom(0).AlignItems(ui.Center).Padding(44, 16, 16, 16)
+			// The panel sits in the middle of the window, clear of the title bar's controls above
+			// it and by the same room below.
+			scrim := ui.Column(c.Key(s.id)).Absolute().Left(0).Top(0).Right(0).Bottom(0).Center().Padding(44, 16)
 			if front {
 				scrim.Background(p.Scrim).Modal()
 			}
-			scrim.Transition(ui.ElementTransition{Enter: &ui.Motion{}, Duration: 120_000_000})
+			scrim.Transition(ui.ElementTransition{Enter: &ui.Motion{}, Duration: 120 * time.Millisecond})
+			frontSheet, backdropPressed = front && !s.alert, false
 			scrim.Children(func() { s.view(c, s) })
+			frontSheet, backdropPressed = false, false
 		})
 	}
+}
+
+// frontSheet is whether the sheet being built is the one in front and closes on a press outside
+// its panel, and backdropPressed whether one fell outside it this frame, which the sheet takes
+// as it takes Escape. They are set around each sheet's view, on the main thread.
+var frontSheet, backdropPressed bool
+
+// pressedBackdrop reports a press outside `panel` that closes the sheet being built, as a press
+// outside a dialog closes it.
+func pressedBackdrop(panel ui.Element) bool {
+	return frontSheet && panel.PressedOutside()
 }
 
 // fieldSubmitted is set when a field in the sheet being built took Return, which confirms the
@@ -129,9 +147,13 @@ func sheetPanel(c *ui.Context, width float32) ui.Element {
 	if width == 0 {
 		width = 420
 	}
-	return ui.Column(c).Width(width).MaxWidthPercent(100).MaxHeightPercent(100).Padding(20).Radius(22).
+	panel := ui.Column(c).Width(width).MaxWidthPercent(100).MaxHeightPercent(100).Padding(space5).Radius(radiusSheet).
 		Background(p.Sheet).Shadow(0, 10, 40, 0, p.Shadow).Border(0.5, p.ShadowEdge).
-		Transition(ui.ElementTransition{Enter: &ui.Motion{Y: -10}, Duration: 160_000_000})
+		Transition(ui.ElementTransition{Enter: &ui.Motion{Y: -10, Scale: 0.97}, Duration: 180 * time.Millisecond})
+	if pressedBackdrop(panel) {
+		backdropPressed = true
+	}
+	return panel
 }
 
 // sheetFrame builds the chrome around `content` and answers whether the sheet was confirmed or
@@ -186,7 +208,8 @@ func sheetFrame(c *ui.Context, o sheetOptions, content func()) sheetResult {
 			})
 		}
 	})
-	if panel.OverlayShortcut(0, ui.KeyEscape) {
+	// A press outside the panel closes it as Escape does.
+	if panel.OverlayShortcut(0, ui.KeyEscape) || backdropPressed {
 		if o.NoCancel {
 			result.Confirmed = true
 		} else {
@@ -335,7 +358,7 @@ func (w *appWindow) showAlert(o alertOptions, done func(index int)) {
 				done(cancel)
 			}
 		}
-	})
+	}).alert = true
 }
 
 // alertBody is an alert's icon, words, and accessory.
@@ -378,7 +401,10 @@ func (w *appWindow) showNote(title, body string) {
 // popoverPanel styles a popover's panel: a rounded card on the popover color, below its anchor.
 func popoverPanel(c *ui.Context, panel ui.Element) ui.Element {
 	p := colors(c)
-	return panel.Margin(8, 0, 0, 0).Radius(10).Background(p.Popover).Shadow(0, 10, 40, 0, p.Shadow).Border(0.5, p.ShadowEdge)
+	// It opens from under its anchor: a little lower and smaller, growing from its top edge.
+	return panel.Margin(8, 0, 0, 0).Radius(radiusXL).Background(p.Popover).Shadow(0, 10, 40, 0, p.Shadow).Border(0.5, p.ShadowEdge).
+		TransformOrigin(0.5, 0).
+		Transition(ui.ElementTransition{Colors: true, Enter: &ui.Motion{Y: -4, Scale: 0.97}, Duration: 140 * time.Millisecond})
 }
 
 // textPopover makes a click on `anchor` show the full text behind a one-line marker, rendered like

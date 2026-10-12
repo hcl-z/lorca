@@ -359,6 +359,10 @@ pub enum Body {
         /// The answer never comes back into the card: it is sealed to the bot's Runner.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         secret: Option<SecretAsk>,
+        /// A question with options (`tool` = `ask`): what the bot asks, its options, and, once
+        /// answered, what the user picked, which every Device shows.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ask: Option<AskQuestion>,
     },
     /// An email or Slack message the bot wrote in the chat, waiting for the user to send it: the
     /// chat's view of its review item (`review-status-<review id>`), rewritten as it changes.
@@ -413,6 +417,41 @@ pub struct DraftAttachment {
     pub name: String,
     #[serde(default)]
     pub size: u64,
+}
+
+/// A question the bot asks with options (`ask_user`): one pick, or several with `multiple`, and a
+/// line of the user's own words with `allow_other`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct AskQuestion {
+    pub question: String,
+    pub options: Vec<AskOption>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub multiple: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub allow_other: bool,
+    /// The option the bot recommends, by its place; the apps mark it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recommended: Option<usize>,
+    /// What the user answered, once they did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answer: Option<AskAnswer>,
+}
+
+/// One option of a question: its words, and a line that says what it means.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct AskOption {
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+/// The user's answer: the options picked, by their place, and their own words for Other.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct AskAnswer {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub choices: Vec<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub other: Option<String>,
 }
 
 /// What a secret request asks for: one or more named values, and where the Runner uses them.
@@ -681,6 +720,10 @@ pub struct Message {
     /// stay encrypted on the Runner that recorded them; that Runner shows them to the bot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recording: Option<RecordingRef>,
+    /// When the user last edited this message of theirs and sent it again (`chats.rerun`), in
+    /// Unix seconds; the apps say Edited.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edited_at: Option<f64>,
 }
 
 /// A recording of what the user did in one of a bot's browser profiles.
@@ -741,6 +784,7 @@ impl Message {
             output: None,
             external_id: None,
             recording: None,
+            edited_at: None,
         }
     }
 
@@ -1468,7 +1512,7 @@ mod app_view_tests {
     fn permission_cards_drop_the_reviewed_payload() {
         let permission = Message::new("c", Author::Bot { bot_id: "b".into() }, Body::Permission {
             plugin_id: "computer".into(), plugin_name: "Mac".into(), tool: "bash".into(), summary: "Run a command".into(),
-            arguments: serde_json::json!({ "command": "secret" }), decision: "pending".into(), reason: None, rule: None, command: None, link: None, code: None, secret: None,
+            arguments: serde_json::json!({ "command": "secret" }), decision: "pending".into(), reason: None, rule: None, command: None, link: None, code: None, secret: None, ask: None,
         });
         let app = permission.for_app();
         let Body::Permission { arguments, summary, command, .. } = &app.body else { panic!() };

@@ -1,11 +1,11 @@
 # Releasing the phone app
 
-The phone app in `mobile/` ships to TestFlight on iOS and to this repository's GitHub releases on
-Android, tagged `mobile-v<version>`. The version is `version` in
-[`mobile/app.config.ts`](../mobile/app.config.ts), on both platforms. A TestFlight build carries
-the time it was made, in UTC, as its build number, so any number of builds of one version can go
-up; Android orders its builds by a versionCode made from the version (1.2.3 is 1002003), so each
-Android release is a new version.
+The phone app in `mobile/` ships as files of this repository's GitHub releases, tagged
+`mobile-v<version>`: an unsigned `.ipa` for iPhone and a signed APK for Android. No Apple account or
+certificate is involved. The version is `version` in
+[`mobile/app.config.ts`](../mobile/app.config.ts), on both platforms. An iOS build carries the time
+it was made, in UTC, as its build number; Android orders its builds by a versionCode made from the
+version (1.2.3 is 1002003), so each Android release is a new version.
 
 A tag builds both on GitHub Actions:
 
@@ -38,60 +38,34 @@ phones, Xiaomi's among them, ask every time. Apart from that, on phones with Goo
 Protect may stop an APK it has not seen before, a first install or an update, with "App scan
 recommended": Scan app, or Install without scanning under More details.
 
-Lorca Dev never updates, nor do iOS builds, which TestFlight updates.
+Lorca Dev never updates, nor do iOS builds.
+
+## The iPhone build
+
+`release-ios` archives the app with code signing off and packs it as
+`dist/ios/lorca-<version>-ios.ipa`. iOS installs only signed apps, so a person installs the file by
+signing it with their own Apple ID through a sideloading tool such as AltStore or Sideloadly; with a
+free Apple ID the signature lasts seven days and the tool renews it. A new release is installed
+over the old one the same way. The unsigned build has none of the entitlements the App Store build
+had, so remote push notifications (APNs) do not reach a sideloaded app.
 
 ## One-time setup
 
-The workflow reads these Actions secrets (Settings ▸ Secrets and variables ▸ Actions). Each job
-stops before building when one it needs is missing.
+The workflow reads these Actions secrets (Settings ▸ Secrets and variables ▸ Actions), for Android;
+the iOS job needs none. The Android job stops before building when one is missing.
 
 | Secret | What |
 | --- | --- |
-| `ASC_KEY` | The App Store Connect API key, the text of `AuthKey_<id>.p8` |
-| `ASC_KEY_ID` | Its key ID |
-| `ASC_ISSUER_ID` | The team's issuer ID |
-| `IOS_SIGNING_IDENTITY` | An Apple Development certificate and its private key, as a base64 `.p12` |
-| `IOS_SIGNING_IDENTITY_PASSWORD` | The `.p12`'s password |
 | `ANDROID_KEYSTORE` | The Android release keystore, base64 |
 | `ANDROID_KEYSTORE_PASSWORD` | Its password |
 
-### 1. App Store Connect API key
-
-On a Mac, `release-ios` signs in with the Apple account in Xcode. The runner has none, so it signs
-in with an API key: App Store Connect ▸ Users and Access ▸ Integrations ▸ App Store Connect API ▸
-Team Keys, a key with the **Admin** role. Admin lets the export sign with Apple's cloud-managed
-distribution certificate, so no distribution certificate is kept anywhere; a key with a lesser
-role fails the export with a cloud signing permission error. Download the `.p8` (App Store
-Connect offers it once), and note the key ID and the issuer ID above the list.
-
-```sh
-gh secret set ASC_KEY < AuthKey_ABC123DEFG.p8
-gh secret set ASC_KEY_ID --body ABC123DEFG
-gh secret set ASC_ISSUER_ID --body 00000000-0000-0000-0000-000000000000
-```
-
-### 2. Apple Development identity
-
-Automatic signing archives with an Apple Development certificate of team GJE9R5VE87 and re-signs
-for the App Store at export. Without one in the keychain, Xcode would make a new certificate on
-every run. Export the one Xcode made on the Mac that releases: Keychain Access ▸ login ▸ My
-Certificates, the "Apple Development: …" item with its private key, File ▸ Export Items… as
-`identity.p12` with a password.
-
-```sh
-base64 -i identity.p12 | gh secret set IOS_SIGNING_IDENTITY
-gh secret set IOS_SIGNING_IDENTITY_PASSWORD
-```
-
-When that certificate expires or is revoked, export its successor the same way.
-
-### 3. Android release key
+### Android release key
 
 The release key is a PKCS12 keystore with one key, alias `lorca`, whose certificate's SHA-256 is
 `CERTIFICATE_SHA256` in [`scripts/release-android.ts`](../scripts/release-android.ts):
 
 ```
-c2e73615dcd09e5580c536b9511b00e89d816b1d18a2aeed71bbef0daa8bd16c
+dcc11cdcb6bbf9602cec70b39455984ed24f1d92fac3bd84b31e5e4dfa9a5751
 ```
 
 `release-android` refuses an APK signed by any other key, since no installed app would take it.
@@ -108,50 +82,37 @@ base64 -i "$keys/release.keystore" | gh secret set ANDROID_KEYSTORE
 gh secret set ANDROID_KEYSTORE_PASSWORD < "$keys/release.keystore.password"
 ```
 
-It was made with:
+It was made with OpenSSL, no JDK needed (`keytool -genkeypair -keystore release.keystore
+-storetype PKCS12 -alias lorca -keyalg RSA -keysize 4096 -validity 36500` makes an equivalent one):
 
 ```sh
-keytool -genkeypair -keystore release.keystore -storetype PKCS12 -alias lorca \
-  -keyalg RSA -keysize 4096 -validity 36500 -dname "CN=Lorca, O=Lorca"
+pw=$(openssl rand -hex 24); printf '%s' "$pw" > release.keystore.password
+openssl req -x509 -newkey rsa:4096 -nodes -keyout key.pem -out cert.pem -days 36500 -subj "/CN=Lorca/O=Lorca"
+openssl pkcs12 -export -inkey key.pem -in cert.pem -name lorca -out release.keystore -passout "pass:$pw" \
+  -certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES -macalg sha1
+openssl x509 -in cert.pem -outform DER | openssl dgst -sha256   # CERTIFICATE_SHA256
+rm key.pem cert.pem
 ```
 
-### 4. Android developer verification
+### Android developer verification
 
 Certified Android devices install apps from outside Google Play only from verified developers:
 enforced in Brazil, Indonesia, Singapore, and Thailand from September 30, 2026, and everywhere in
 2027. Register `app.lorca` in the [Android Developer Console](https://developer.android.com/developer-verification/guides/android-developer-console)
 with the certificate's SHA-256 above, once the developer account is verified.
 
-### 5. Export compliance
-
-The app answers App Store Connect's encryption questions itself, so a build needs no answers
-after its upload: `ITSAppUsesNonExemptEncryption` is false in `ios.infoPlist` of
-[`mobile/app.config.ts`](../mobile/app.config.ts). The core encrypts with standard algorithms
-(X25519, Ed25519, ChaCha20-Poly1305, HKDF, SHA-2, and TLS through rustls) in its own code rather
-than the system's, and for those Apple asks
-[documentation](https://developer.apple.com/help/app-store-connect/reference/app-information/export-compliance-documentation-for-encryption/)
-only of an app on the App Store in France: the French encryption declaration, filed with ANSSI.
-TestFlight is not the App Store. Before France joins the app's App Store availability, upload
-the declaration under App Information ▸ App Encryption Documentation; once Apple approves it, set
-the key to true and add `ITSEncryptionExportComplianceCode` with the code Apple shows beside the
-approved documentation. Apple's [overview](https://developer.apple.com/documentation/security/complying-with-encryption-export-regulations)
-notes that an app with exempt encryption may owe the U.S. government a year-end
-self-classification report.
-
 ## Cutting a release
 
 1. Set `version` in [`mobile/app.config.ts`](../mobile/app.config.ts), and give it a
    `## [<version>]` section in [`mobile/CHANGELOG.md`](../mobile/CHANGELOG.md): the section becomes
-   the release's notes and the update alert's text, and an Android release stops without it.
+   the release's notes and the update alert's text, and the release stops without it.
 2. Tag the commit `mobile-v<version>` and push the tag, or run **Release phone app** by hand from
    the Actions tab, which drafts the release on the commit it runs on; publishing the draft makes
    the tag. A run on a commit other than the one an existing `mobile-v<version>` tag names is
    refused, and so is a version whose release is already published.
-3. The iOS job uploads to App Store Connect, and TestFlight lists the build once Apple has
-   processed it. With the API key the export writes the signed `.ipa` and `altool` uploads it,
-   up to three tries a minute or so apart, so a dropped connection costs only the upload; a failed
-   export keeps Xcode's distribution logs as the run's `ios-distribution-logs` artifact. The Android job drafts `mobile-v<version>` with the APK, or adds it to the draft an
-   earlier run left. Check the draft, then publish it without making it the latest release:
+3. The workflow drafts `mobile-v<version>`, then builds the Android APK on Ubuntu and the iPhone
+   `.ipa` on a macOS runner side by side, each uploading into the draft. Check the draft, then
+   publish it without making it the latest release:
 
    ```sh
    gh release edit mobile-v1.0.1 --draft=false --latest=false
@@ -160,27 +121,24 @@ self-classification report.
    On the release's page, untick **Set as the latest release** before **Publish release**.
    Android apps see it at their next daily check.
 
-A run by hand can release one platform, which is how a TestFlight build goes up without a new
-version:
+A run by hand can release one platform:
 
 ```sh
 gh workflow run release-mobile.yml -f platforms=iOS
 gh workflow run release-mobile.yml -f platforms=Android
 ```
 
-The iOS job runs on the `xcode-27` image, a preview, so Xcode matches the Mac's.
-
 ## From a Mac
 
-`bun run release-ios` uploads to TestFlight with the Apple account in Xcode, as before
-(`--local` archives only), and `bun run release-android` writes
-`dist/android/lorca-<version>-android.apk`, signed with the key in the folder above; upload it to
-the draft with `gh release upload mobile-v<version> dist/android/lorca-<version>-android.apk`.
-`release-android` needs the Android SDK (`ANDROID_HOME`, else `~/Library/Android/sdk`) with an
-NDK, `cargo-ndk`, the Rust targets `aarch64-linux-android` and `x86_64-linux-android`, and a JDK
-17 or later (`JAVA_HOME`, else Android Studio's). Each script generates the production project in
-a copy (`dist/ios/mobile`, `dist/android/mobile`), so `mobile/ios` and `mobile/android` stay the
-dev loop's Lorca Dev projects.
+`bun run release-ios` writes `dist/ios/lorca-<version>-ios.ipa`, and `bun run release-android`
+writes `dist/android/lorca-<version>-android.apk`, signed with the key in the folder above; upload
+either to the draft with `gh release upload mobile-v<version> <file>`. `release-android` needs the
+Android SDK (`ANDROID_HOME`, else `~/Library/Android/sdk`) with an NDK, `cargo-ndk`, the Rust
+targets `aarch64-linux-android` and `x86_64-linux-android`, and a JDK 17 or later (`JAVA_HOME`,
+else Android Studio's). `release-ios` needs Xcode, CocoaPods, and the Rust targets
+`aarch64-apple-ios` and `aarch64-apple-ios-sim`. Each script generates the production project in a
+copy (`dist/ios/mobile`, `dist/android/mobile`), so `mobile/ios` and `mobile/android` stay the dev
+loop's Lorca Dev projects.
 
 To try an update, install an older release's APK, then publish a newer one and choose
 Settings › Updates › Check for Updates.

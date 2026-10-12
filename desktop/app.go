@@ -309,15 +309,13 @@ func (a *appDelegate) showMainWindow() {
 			MinWidth:        860,
 			MinHeight:       520,
 			StateKey:        "main",
-			BackgroundColor: "light-dark(#ffffff, #1c1c1c)",
+			BackgroundColor: "light-dark(#ffffff, #0a0a0a)",
 			// The panes carry the title bar: their headers hold the title, the buttons, and the
 			// drag regions, and the window controls sit over them. On Windows and Linux the
 			// controls go in a top corner and fill the 52-pixel headers or center in them.
+			// Each pane paints its own token color; the window shows no system material.
 			TitleBarStyle:  mygo.TitleBarHidden,
 			TitleBarHeight: 52,
-			// The sidebar shows the window's material, as the Mac's: on macOS, and Mica on
-			// Windows 11; elsewhere it draws its own color (Context.Vibrancy).
-			Vibrancy: mygo.VibrancySidebar,
 		}
 		// The traffic lights sit in the sidebar's header where the Mac app's toolbar puts them:
 		// the close button 19 points in and down, centered in the 52-point header.

@@ -190,7 +190,10 @@ func (m *mainWindow) chatsSidebar(c *ui.Context) {
 	ui.Column(c).Padding(2, 10, 6, 10).Children(func() {
 		// The field is the way into the palette: a click opens it, and the field never takes the
 		// keyboard.
-		field := ui.ButtonBase(c).Height(30).Gap(6).Justify(ui.Start).Padding(0, 8, 0, 10).Radius(15).Background(p.SearchBG).TextColor(p.Label2).Cursor(ui.CursorText).Label(L("Search")).FocusRing(false)
+		field := searchChrome(c, ui.ButtonBase(c)).Justify(ui.Start).Label(L("Search")).FocusRing(false)
+		if field.Hovered() {
+			field.BorderColor(p.FieldBorder)
+		}
 		field.Children(func() {
 			symbol(c, "magnifyingglass", 13, 2)
 			ui.Text(c, L("Search")).FontSize(13).TextColor(p.Placeholder).SingleLine()
@@ -437,7 +440,7 @@ func (m *mainWindow) shortcutHints(c *ui.Context) bool {
 func (m *mainWindow) chatRow(c *ui.Context, chat *model.Chat, selected, listFocused bool, hint string) {
 	p := colors(c)
 	backdrop := p.Sidebar
-	row := ui.Row(c.Key(chat.ID)).Height(54).Padding(0, 8, 0, 4).Radius(8).Gap(10)
+	row := ui.Row(c.Key(chat.ID)).Height(54).Padding(0, 10, 0, 6).Radius(radiusLG).Gap(10)
 	working := false
 	for _, id := range chat.BotIDs {
 		if store.IsWorking(id) {
@@ -458,17 +461,21 @@ func (m *mainWindow) chatRow(c *ui.Context, chat *model.Chat, selected, listFocu
 	}
 	row.Label(strings.Join(label, ", ")).Role(ui.RoleListItem)
 	secondary, tertiary := p.Label2, p.Label3
-	pill := p.Label3
-	if selected {
-		if listFocused {
-			row.Background(p.Selection).TextColor(p.SelectionText)
-			backdrop = p.Selection
-			secondary, tertiary = ui.RGBA(255, 255, 255, 0.8), ui.RGBA(255, 255, 255, 0.8)
-			pill = ui.RGBA(255, 255, 255, 0.25)
-		} else {
-			row.Background(p.SelectionInactive)
-			backdrop = p.SelectionInactive.Over(p.Sidebar)
-		}
+	// A muted chat's count is quiet; the others' are the unread blue.
+	pill := p.Unread
+	if muted {
+		pill = p.Label3
+	}
+	switch {
+	case selected && listFocused:
+		row.Background(p.Selection).TextColor(p.SelectionText)
+		backdrop = p.Selection.Over(p.Sidebar)
+	case selected:
+		row.Background(p.SelectionInactive)
+		backdrop = p.SelectionInactive.Over(p.Sidebar)
+	case row.Hovered():
+		row.Background(p.RowHover)
+		backdrop = p.RowHover.Over(p.Sidebar)
 	}
 	// A row is chosen as the pointer goes down, as the Mac's are; assistive technology presses
 	// it instead.
@@ -627,7 +634,7 @@ func muteChat(chatID string, seconds int) {
 
 // sidebarFooter is Settings, and this computer, whose icon turns red while the CLI is not
 // answering and orange while the CLI cannot reach the relay, with why in its tooltip; the
-// marketplace at the other end.
+// appearance switch and the marketplace at the other end.
 func (m *mainWindow) sidebarFooter(c *ui.Context) {
 	p := colors(c)
 	ui.Row(c).Gap(2).Padding(6, 8, 8, 8).Children(func() {
@@ -670,10 +677,24 @@ func (m *mainWindow) sidebarFooter(c *ui.Context) {
 			m.openDevice(device.ID)
 		}
 		ui.Spacer(c)
+		appearanceButton(c)
 		if hoverButton(c, hoverButtonOptions{Symbol: "circle.grid.2x2", Tooltip: L("Marketplace (%@)", shortcutText("CmdOrCtrl+Shift+M")), Label: L("Marketplace")}).Clicked() {
 			runCommand("marketplace")
 		}
 	})
+}
+
+// appearanceButton switches the windows between light and dark: a moon in the light appearance,
+// a sun in the dark one. General's Appearance turns following the system back on.
+func appearanceButton(c *ui.Context) {
+	dark := c.Theme().Dark
+	name, title := "moon", appearanceCommandTitle(dark)
+	if dark {
+		name = "sun.max"
+	}
+	if hoverButton(c, hoverButtonOptions{Symbol: name, Tooltip: title + " (" + shortcutText(appearanceShortcut) + ")", Label: title}).Clicked() {
+		toggleAppearance(dark)
+	}
 }
 
 // MARK: - Settings
@@ -807,7 +828,7 @@ func (m *mainWindow) settingsSidebar(c *ui.Context) {
 			on := row.key() == selectedKey
 			var e ui.Element
 			if row.entry == nil {
-				e = ui.Row(c.Key(row.key())).Height(32).Padding(0, 8, 0, 4).Radius(7).FontSize(13)
+				e = ui.Row(c.Key(row.key())).Height(32).Padding(0, 8, 0, 4).Radius(radiusMD).FontSize(13)
 				e.Children(func() {
 					icon := ui.Row(c).Width(38).Margin(0, 10, 0, 0).Justify(ui.Center).TextColor(p.Label2)
 					if on && focused {
@@ -817,7 +838,7 @@ func (m *mainWindow) settingsSidebar(c *ui.Context) {
 					ui.Text(c, row.pane.Title()).SingleLine()
 				})
 			} else {
-				e = ui.Row(c.Key(row.key())).Height(26).Padding(0, 8, 0, 52).Radius(6).FontSize(12).Tooltip(row.entry.title)
+				e = ui.Row(c.Key(row.key())).Height(26).Padding(0, 8, 0, 52).Radius(radiusSM).FontSize(12).Tooltip(row.entry.title)
 				e.Children(func() { ui.Text(c, row.entry.title).SingleLine() })
 			}
 			e.Role(ui.RoleListItem).Label(firstNonEmpty(func() string {

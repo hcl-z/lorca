@@ -546,6 +546,15 @@ func launchThread() []*Message {
 func devopsThread() []*Message {
 	return []*Message{
 		mockMessage(You, textBody("Check the relay health and disk usage when you're back online."), minutesAgo(60*4)),
+		mockMessage(BotAuthor("bot-ember"), Body{Kind: BodyPermission, Request: &PermissionRequest{Tool: "ask", Summary: "Which should I check first once Closet PC is back?", Decision: DecisionPending, Ask: &AskQuestion{
+			Question: "Which should I check first once Closet PC is back?",
+			Options: []AskOption{
+				{Label: "Relay health", Description: "Latency, errors, and the queue on the relay"},
+				{Label: "Disk usage", Description: "What fills the disks, and what can go"},
+				{Label: "Both", Description: "Relay first, then the disks"},
+			},
+			AllowOther: true, Recommended: 2,
+		}}}, minutesAgo(60*4-1)),
 		mockMessage(System, Body{Kind: BodyNotice, Text: "Closet PC is offline. DevOps's turn is queued on the relay and will run when that Runner reconnects."}, minutesAgo(60*3+4)),
 	}
 }

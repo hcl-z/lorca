@@ -6,6 +6,12 @@ Sparkle shows it in the update window. The Windows and Linux app's are in
 
 ## [Unreleased]
 
+## [1.0.16]
+
+- A bot can ask you to choose. The question shows in the chat with its options numbered, a mark on the one the bot suggests, and Skip to leave the choice to the bot; reply with a number or your own words, and the card keeps what you picked.
+- The marketplace adds Email (IMAP/SMTP): recent mail and sending from QQ Mail, 163, Outlook, Tencent Exmail, Aliyun, and other mailboxes.
+- The Mac app is no longer notarized or signed with a Developer ID, and its updates now come from this project's GitHub releases. Drag Lorca to Applications and allow it once under System Settings › Privacy & Security › Open Anyway (or run `xattr -dr com.apple.quarantine /Applications/Lorca.app`); updates the app installs for itself do not ask. Install this version by hand: apps from before it look for updates elsewhere.
+
 ## [1.0.15]
 
 - A chat that asks for a channel gets one reply, "Pending approval", and once you allow it, the bot answers what people asked while it waited. A chat that never asks, such as a group where the bot only hears replies to it, can be added by its id with Add… on the channel's Chats row.

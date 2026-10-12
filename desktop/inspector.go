@@ -134,7 +134,7 @@ func (m *mainWindow) inspectorView(c *ui.Context, chatID string) {
 		single = members[0]
 	}
 	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
-		ui.Column(c).Gap(20).Padding(18, 16, 20, 16).Children(func() {
+		ui.Column(c).Gap(22).Padding(6, 14, 24, 14).Children(func() {
 			m.inspectorParticipants(c, chat, members)
 			if !chat.IsDM() {
 				add := pushButton(c, L("Add Bot…"), pushOptions{Disabled: !(chat.CanAddBot() && len(members) < len(store.Bots))}).AlignSelf(ui.Start).Margin(-10, 0, 0, 0)

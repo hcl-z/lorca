@@ -5,6 +5,8 @@
 
 pub mod api;
 pub mod app;
+#[cfg(feature = "runner")]
+pub mod ask;
 pub mod attention;
 pub mod budgets;
 pub mod channels;

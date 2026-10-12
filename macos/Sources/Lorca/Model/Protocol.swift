@@ -686,6 +686,13 @@ enum Wire {
         var note: String?
         var direct: Bool?
         var secret: SecretAsk?
+        var ask: AskQuestion?
+    }
+
+    /// A question card's question; this app lists the options and takes the answer as a reply.
+    struct AskQuestion: Decodable {
+        struct Option: Decodable { var label: String }
+        var options: [Option]
     }
 
     struct Draft: Decodable {
@@ -972,7 +979,8 @@ extension Wire.Message {
                         Lorca.SecretAsk(
                             use: Lorca.SecretAsk.Use(rawValue: ask.use) ?? .command, site: ask.site,
                             fields: ask.fields.map { Lorca.SecretAsk.Field(name: $0.name, label: $0.label) })
-                    }))
+                    },
+                    askOptions: self.body.ask?.options.map(\.label) ?? []))
         case "draft":
             let draft = self.body.draft
             body = .draft(

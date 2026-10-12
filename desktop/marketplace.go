@@ -540,8 +540,9 @@ func (mk *marketplace) view(c *ui.Context, s *sheet) {
 		mk.bar(c, s)
 		mk.noticeView(c)
 	})
-	// Escape closes the sheet from any page, wherever the keyboard is, the search field too.
-	if panel.OverlayShortcut(0, ui.KeyEscape) {
+	// Escape closes the sheet from any page, wherever the keyboard is, the search field too, and
+	// so does a press outside it.
+	if panel.OverlayShortcut(0, ui.KeyEscape) || pressedBackdrop(panel) {
 		s.dismiss()
 	}
 }

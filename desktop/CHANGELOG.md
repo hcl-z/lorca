@@ -6,6 +6,13 @@ and the update window shows it.
 
 ## [Unreleased]
 
+## [0.1.11]
+
+- A bot can ask you to choose. Each option is a row with a radio or a checkbox, its description under it, and Recommended on the bot's pick; press 1 to 9 to pick, and Skip leaves the choice to the bot.
+- Hover a message for its actions: Reply, Copy message, Edit, and Regenerate, which runs a direct chat's latest reply again, or sends your edited message and gets a new one.
+- The marketplace adds Email (IMAP/SMTP): recent mail and sending from QQ Mail, 163, Outlook, Tencent Exmail, Aliyun, and other mailboxes.
+- The macOS app is signed ad hoc, without a Developer ID, and updates come from this project's GitHub releases. Allow it once under System Settings › Privacy & Security › Open Anyway. Install this version by hand: apps from before it look for updates elsewhere.
+
 ## [0.1.10]
 
 - A chat that asks for a channel gets one reply, "Pending approval", and once you allow it, the bot

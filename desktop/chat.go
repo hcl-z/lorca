@@ -51,6 +51,12 @@ type chatState struct {
 	composerHeight float32
 	// transcriptScroll is how far the transcript is scrolled, which the header's scroll edge reads.
 	transcriptScroll *ui.ScrollState
+	// viewport is the transcript's box as the last frame laid it out; a message's toolbar keeps
+	// out from under the header at its top and the composer at its end.
+	viewport ui.Rect
+	// actionsFor is the message whose toolbar the pointer is over, which keeps it up while the
+	// pointer crosses from the bubble to the toolbar, and is on it outside the row.
+	actionsFor string
 }
 
 func (m *mainWindow) chatStateFor(chatID string) *chatState {
@@ -155,6 +161,7 @@ func (m *mainWindow) chatView(c *ui.Context, chatID string) {
 	}
 
 	view := ui.Box(c).Grow(1).MinHeight(0)
+	s.viewport = view.Bounds()
 	view.Children(func() {
 		s.list.Key = func(i int) any { return rows[i].key }
 		bottom := s.composerHeight
@@ -266,6 +273,8 @@ func (m *mainWindow) chatRowView(c *ui.Context, chat *model.Chat, row chatRow, s
 		case model.BodyPermission:
 			if body.Request.IsSecret() {
 				m.secretCard(c, chat, message, cardAvatar, row.groupStart)
+			} else if body.Request.IsAsk() {
+				m.askCard(c, chat, message, cardAvatar, row.groupStart)
 			} else {
 				m.permissionCard(c, chat, message, cardAvatar, row.groupStart)
 			}
@@ -320,6 +329,8 @@ func (m *mainWindow) messageCell(c *ui.Context, chat *model.Chat, message *model
 		left = bubbleIndent
 	}
 	showTimestamps := prefs.get().ShowTimestamps
+	// The bubble as the last frame laid it out, which the floating toolbar is placed beside.
+	var bubbleBox ui.Rect
 	row := ui.Row(c).Padding(top, horizontalInset, 0, left)
 	if isUser {
 		row.Justify(ui.End)
@@ -356,10 +367,11 @@ func (m *mainWindow) messageCell(c *ui.Context, chat *model.Chat, message *model
 				m.outputCard(c, chat, message, s)
 				return
 			}
-			bubble := ui.Column(c).MaxWidthPercent(100).MinWidth(0).Padding(10, 14).Radius(14).FontSize(textMessage)
+			bubble := ui.Column(c).MaxWidthPercent(100).MinWidth(0).Padding(9, 14).Radius(radiusXL + 2).FontSize(textMessage)
+			bubbleBox = bubble.Bounds()
 			if isUser {
-				// A selection darkens the accent fill, where the accent's own highlight would vanish.
-				bubble.Background(p.Accent).TextColor(p.AccentText).SelectionColor(ui.RGBA(0, 0, 0, 0.28))
+				// A selection is the ink's text color, faint, where the accent's own highlight would vanish.
+				bubble.Background(p.Ink).TextColor(p.InkText).SelectionColor(p.InkText.Alpha(0.28))
 			} else {
 				bubble.Background(p.BotBubble)
 			}
@@ -428,6 +440,9 @@ func (m *mainWindow) messageCell(c *ui.Context, chat *model.Chat, message *model
 					}
 				})
 			})
+			if !message.EditedAt.IsZero() {
+				ui.Text(c, L("Edited")).Margin(2, 4, 0, 4).FontSize(textCaption).TextColor(p.Label3).Tooltip(model.Clock(message.EditedAt))
+			}
 			if message.Queued {
 				b := ui.ButtonBase(c).Margin(3, 0, 0, 0).Padding(0, 2).FontSize(11.5).FontWeight(500).FixedLineHeight(18).TextColor(p.Accent).Cursor(ui.CursorPointer).
 					Tooltip(L("Have the bot read this now. A command it is running moves to the background.")).Label(L("Send now"))
@@ -441,6 +456,22 @@ func (m *mainWindow) messageCell(c *ui.Context, chat *model.Chat, message *model
 			ui.Box(c).Absolute().Left(horizontalInset).Bottom(0).Children(func() {
 				avatar(c, authorAvatar(message.Author), chatAvatarSize, false)
 			})
+		}
+		// The toolbar floats beside the bubble while the pointer is over its row or the toolbar,
+		// laid out of the flow so it moves nothing; placeActions keeps it in view.
+		// The row claims the toolbar while the pointer is over it and keeps it while the pointer is
+		// on the toolbar, which may stand outside the row; it lets go when the pointer is on neither.
+		if row.Hovered() {
+			s.actionsFor = message.ID
+		}
+		if s.actionsFor != message.ID || message.Queued || message.Output != nil || message.State.Kind != model.StateComplete || bubbleBox.W == 0 {
+			return
+		}
+		actions := m.messageActions(c, chat.ID, message, s, text)
+		place := placeActions(row.Bounds(), bubbleBox, actionsSize(actions), isUser, s.safeArea())
+		actions.Absolute().Left(place.X).Top(place.Y)
+		if !row.Hovered() && !actions.Hovered() {
+			s.actionsFor = ""
 		}
 	})
 }
@@ -702,7 +733,7 @@ func attachmentTiles(c *ui.Context, chatID string, message *model.Message, onUse
 					var tile ui.Element
 					if attachment.IsImage() {
 						w, h := imageSize(attachment)
-						tile = ui.ButtonBase(c.Key(attachment.ID)).Size(w, h).Radius(8).Clip().Background(p.Code)
+						tile = ui.ButtonBase(c.Key(attachment.ID)).Size(w, h).Radius(radiusLG).Clip().Background(p.Code)
 						tile.Children(func() {
 							if fileError != "" {
 								ui.Row(c).FillWidth().FillHeight().Padding(0, 10).Gap(8).Children(func() { card("photo") })
@@ -711,9 +742,9 @@ func attachmentTiles(c *ui.Context, chatID string, message *model.Message, onUse
 							}
 						})
 					} else {
-						tile = ui.ButtonBase(c.Key(attachment.ID)).Width(230).MaxWidthPercent(100).Height(46).Padding(0, 10).Gap(8).Radius(9).Background(p.Code)
+						tile = ui.ButtonBase(c.Key(attachment.ID)).Width(230).MaxWidthPercent(100).Height(46).Padding(0, 10).Gap(8).Radius(radiusLG).Background(p.Code)
 						if onUser {
-							tile.Background(ui.RGBA(255, 255, 255, 0.18))
+							tile.Background(p.InkText.Alpha(0.18))
 						}
 						tile.Children(func() { card("doc.fill") })
 					}
@@ -1093,9 +1124,9 @@ func chatEmptyState(c *ui.Context, m *mainWindow, chat *model.Chat, bots []*mode
 			ui.Text(c, subtitle).MaxWidth(400).FontSize(12.5).LineHeight(1.4).TextColor(p.Label2).TextAlign(ui.Center).MaxLines(2)
 			ui.Column(c).Gap(8).AlignItems(ui.Center).Margin(6, 0, 0, 0).Children(func() {
 				for _, prompt := range emptyPrompts(bots) {
-					chip := ui.ButtonBase(c.Key(prompt)).Padding(6, 12).Radius(999).Border(1, p.Separator).Background(p.Chip).TextColor(p.Label2).FontSize(12).Cursor(ui.CursorPointer)
+					chip := ui.ButtonBase(c.Key(prompt)).Padding(6, space3).Radius(radiusCapsule).Border(1, p.ButtonBorder).Background(p.ButtonBG).TextColor(p.Label2).FontSize(12).Cursor(ui.CursorPointer)
 					if chip.Hovered() {
-						chip.BorderColor(p.Accent.Alpha(0.4)).Background(p.Accent.Alpha(0.12)).TextColor(p.Accent)
+						chip.BorderColor(p.FieldBorder).Background(p.ButtonHover).TextColor(p.Label)
 					}
 					chip.Children(func() { ui.Text(c, prompt) })
 					if chip.Clicked() {

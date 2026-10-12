@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/egoist/lorca/desktop/model"
@@ -344,11 +343,13 @@ func TestNewGroupChatSheet(t *testing.T) {
 // the same names, so the rows are found by their place under the section's caption.
 func clickPickerRow(t *testing.T, tt *ui.Tester, section string, index int) {
 	t.Helper()
-	r, ok := tt.Find(strings.ToUpper(section))
+	r, ok := tt.Find(section)
 	if !ok {
 		t.Fatalf("no section %q", section)
 	}
-	top := r.Y + r.H/2 + 7 + 6
+	// The section, labeled with its caption, starts with the caption's 16-DIP line and its margin
+	// to the card.
+	top := r.Y + 16 + space2
 	tt.ClickAt(r.X+100, top+46*float32(index)+23)
 }
 
