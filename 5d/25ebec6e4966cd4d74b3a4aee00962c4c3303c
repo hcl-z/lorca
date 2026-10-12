@@ -1,0 +1,314 @@
+desktop/sheet_mcp_test.go
+  s_abac14095ad7d6::t_864db5ed9aa2d3 65-70,266
+crates/cli/src/runtime.rs
+  s_abac14095ad7d6::t_7f4e92c31c8772 898-954,956-961
+  s_abac14095ad7d6::t_ab0f65ac872aab 955
+  s_abac14095ad7d6::t_7f2eb84601ef8b 102-165
+crates/cli/src/requests.rs
+  s_abac14095ad7d6::t_92f8c84bbc5026 155-160
+web/src/components/site/template.tsx
+  s_89e031ae45f246::t_7693be9c68d976 218
+macos/Sources/Lorca/Model/Models.swift
+  s_abac14095ad7d6::t_bbe6570ce3f1a2 935
+  s_abac14095ad7d6::t_f9a17652a154a5 875-884
+  s_abac14095ad7d6::t_5a19af96826e90 901
+  s_abac14095ad7d6::t_01785fcc34a7f1 861-864
+  s_abac14095ad7d6::t_d6a97d03f002fa 917-918
+crates/cli/src/plugins/mcp.rs
+  s_bb39bd918705fe::t_ce9e8cd7f98f3f 1034,2923
+desktop/app.go
+  s_abac14095ad7d6::t_1ce5a3f9d725a7 312,316
+web/content/docs/index.zh.mdx
+  h_57e80a12fc07c7 20,22,24,28,32,70
+crates/cli/src/permissions.rs
+  s_bb39bd918705fe::t_ce9e8cd7f98f3f 288
+desktop/ask_card.go
+  s_abac14095ad7d6::t_d26197e8766f1d 189,200
+  s_abac14095ad7d6::t_3db87c6ac3b6a8 1-93,95-188,190-199,201-271
+  s_abac14095ad7d6::t_7d877472343990 94
+docs/architecture/macos-chat.md
+  s_abac14095ad7d6::t_722fb1f87e26a9 24-25
+desktop/sidebar.go
+  s_abac14095ad7d6::t_15911cba43c1a5 193-196,443,464-478,637,680,831,841
+  s_abac14095ad7d6::t_4384f4efb91f56 687-699
+desktop/message_actions.go
+  s_abac14095ad7d6::t_27914cf64e0a7f 1-7,9-20,22-34,54-57,59,61,63,65-85,87-118
+  s_89e031ae45f246::t_aff0c119eadac9 60,62,86,119-121
+  s_bb39bd918705fe::t_ce9e8cd7f98f3f 8,21,58,64
+  s_abac14095ad7d6::t_6d131847260a4b 35-53
+desktop/marketplace.go
+  s_8c75c545c32389::t_5e9fc6b2f04ffc 543-545
+desktop/l10n/zh.go
+  h_57e80a12fc07c7 311
+  s_abac14095ad7d6::t_89416282f826ff 1066-1077,1170-1171
+  s_abac14095ad7d6::t_7110e793fc86a6 233
+  s_bb39bd918705fe::t_ce9e8cd7f98f3f 1477-1497
+desktop/onboarding_test.go
+  h_57e80a12fc07c7 315
+desktop/model/mock.go
+  s_abac14095ad7d6::t_3851bbcae3bcf4 549-557
+docs/architecture/tools.md
+  s_abac14095ad7d6::t_419b9f0476b71a 26
+bun.lock
+  s_bb39bd918705fe::t_ce9e8cd7f98f3f 2,6,77,79,81,85,91,93,95,97,99,101,103,113,115,117,119,121,123,125,127,129,131,133,135,137,139,141,143,145,147,149,151,153,155,157,159,161,163,175,177,183,185,187,189,191,193,195,197,199,201,203,205,207,209,211,213,215,217,219,221,223,225,227,229,231,233,247,307,317,319,321,323,325,327,329,331,333,335,339,341,343,345,347,349,351,353,355,357,361,363,365,367,369,371,373,375,377,379,381,383,385,387,389,391,393,395,397,399,401,403,405,407,409,411,413,415,419,429,431,435,437,439,441,443,445,447,449,451,453,455,457,459,461,463,467,469,471,473,475,477,479,533,547,549,551,555,557,559,561,563,565,567,571,573,577,581,583,585,587,609,619,621,623,625,627,629,631,633,635,637,639,641,643,645,647,667,671,675,697,721,735,739,747,769,777,781,783,785,801,819,849,879,881,887,889,897,915,919,921,953,971-972,989,991,993,995,997,1001,1005,1025,1029,1033,1039,1079,1089,1091,1093,1095,1097,1099,1103,1143,1167,1181,1191,1193,1215-1217,1219,1221,1223,1247,1255,1257,1259
+docs/architecture/drafts.md
+  s_89e031ae45f246::t_dfcc669e69ef01 7
+web/src/i18n/zh.ts
+  h_57e80a12fc07c7 55,59
+desktop/cards.go
+  s_abac14095ad7d6::t_afffc81334be65 117-125,139-140,172-177,202-209
+desktop/overlay.go
+  s_8c75c545c32389::t_1df1aa7a0d3eec 404-407
+  s_8c75c545c32389::t_f2bc6d55c30c47 211-212
+  s_8c75c545c32389::t_bc3e08236423dd 90
+  s_8c75c545c32389::t_747500e8572a06 42-43
+  s_8c75c545c32389::t_94c837f86facae 150,153-156
+  s_8c75c545c32389::t_6ea7f30e68002e 152
+  s_8c75c545c32389::t_b0aac4553d0c48 84-86,91,93,98-106
+  s_8c75c545c32389::t_adad73d14e5890 361
+  s_8c75c545c32389::t_5de89a8564d122 7
+web/content/docs/chats.zh.mdx
+  h_57e80a12fc07c7 65-66
+desktop/browser_profiles_test.go
+  s_abac14095ad7d6::t_864db5ed9aa2d3 58-61,66,196
+desktop/sections.go
+  s_abac14095ad7d6::t_e75839a561f5b1 478-482
+  s_abac14095ad7d6::t_b89ebcd34f4b60 456
+  s_abac14095ad7d6::t_001237fbc89f74 90-93,95-106,110
+  s_abac14095ad7d6::t_b08e799a4b6db3 383
+  s_abac14095ad7d6::t_00abc451b639db 402-403,406
+  s_abac14095ad7d6::t_b27102bd50f9b5 79,83
+  s_abac14095ad7d6::t_70664c7795a0da 427
+  s_abac14095ad7d6::t_653bbadad7f15e 447-449
+  s_abac14095ad7d6::t_00606270fd35c9 519-520,523,527-529
+  s_abac14095ad7d6::t_ae936917781933 570,572
+  s_abac14095ad7d6::t_de48724bb317b1 58,64-65
+  s_abac14095ad7d6::t_afe6ac39094dd9 264-268,273
+  s_abac14095ad7d6::t_ac3d639df82c18 582,587
+  s_abac14095ad7d6::t_864db5ed9aa2d3 146-148,157
+  s_abac14095ad7d6::t_f65031cc5ac407 77-78,81
+  s_abac14095ad7d6::t_26eff5ab73aa70 159,163
+  s_abac14095ad7d6::t_6e00c7c65ee6d8 492-493,499-501
+  s_abac14095ad7d6::t_3b6f1db15c8825 333-334,336
+  s_abac14095ad7d6::t_522f10adf94677 361-363
+  s_abac14095ad7d6::t_88879ff565d4f9 233,238
+  s_abac14095ad7d6::t_843d28fe2ce8c9 118
+  s_abac14095ad7d6::t_4436aa473e63f2 417,419
+web/content/docs/reviews.zh.mdx
+  h_57e80a12fc07c7 11
+crates/cli/src/ask/tests.rs
+  s_abac14095ad7d6::t_f9ead69a909b0c 1-141
+desktop/message_actions_test.go
+  s_abac14095ad7d6::t_b4bccc6950c31d 9-15,23-32,34-59
+  s_abac14095ad7d6::t_01d4865f818798 16-21,33
+  s_abac14095ad7d6::t_42b99c84ee8570 22
+  s_abac14095ad7d6::t_5d78abb17f2b6f 1-8,60-97
+desktop/model/rerun.go
+  s_abac14095ad7d6::t_f7148675119b98 4,23,77
+  s_abac14095ad7d6::t_b601e5a3d9574c 1-3,5-22,24-76,78-119
+macos/Sources/Lorca/Model/Protocol.swift
+  s_abac14095ad7d6::t_82df6ba6151783 689-695
+  s_abac14095ad7d6::t_e9d6f2dac2e5ec 982-983
+desktop/overlay_test.go
+  s_8c75c545c32389::t_c9c4e5dba9b24b 1-90
+desktop/icons_lucide.go
+  s_abac14095ad7d6::t_9aac14d0153d35 138-139,305
+crates/cli/src/model.rs
+  s_abac14095ad7d6::t_f1b44f0580390d 422-456
+  s_abac14095ad7d6::t_5d03d16605f5f2 723-726
+  s_abac14095ad7d6::t_886cc139da446d 362-365
+  s_abac14095ad7d6::t_0aaf9e3722702a 787
+crates/cli/src/secrets/mod.rs
+  s_bb39bd918705fe::t_ce9e8cd7f98f3f 619
+desktop/model/models.go
+  s_abac14095ad7d6::t_4dfc8e3ec47d10 1983-1984
+  s_abac14095ad7d6::t_59f38f2bc9474d 1071-1118
+desktop/controls.go
+  s_8c75c545c32389::t_337505a9d81601 401
+  s_8c75c545c32389::t_94b222cb53ede4 73,77-78,82-83
+  s_8c75c545c32389::t_9ae622aac97913 144,148,153-154
+  s_8c75c545c32389::t_07381f6400b0f1 640,642
+  s_8c75c545c32389::t_5111ed313a3d62 664-665,667-668,670
+  s_abac14095ad7d6::t_577aa54540332d 63,80,121-122,125,128,130,132-133,135-142,149,151,276,279,285,287,378,384,387,389,393,415,461,469,480,512,519,540,548,578-583,600,612,617,659,663,666
+  s_abac14095ad7d6::t_6b61f68019355f 240,243,254-255,261
+  s_8c75c545c32389::t_4d8eb2c0209e7b 557-560
+  s_abac14095ad7d6::t_45088d1315f891 167-182,186-227,229,236-239,241-242,244-250,256,259-260,262-264,266,268-272
+  s_8c75c545c32389::t_7de9debaea01df 462
+  s_8c75c545c32389::t_4336febbc1c828 15-33
+  s_8c75c545c32389::t_82ef3e46f856f6 251-253,257-258,265,267
+  s_8c75c545c32389::t_47d25181442f17 610,614-616,620,623-625,628,630
+  s_abac14095ad7d6::t_ab36ba337cc93f 183-185
+  s_8c75c545c32389::t_e0ae6ae7aeaa13 470,472,474
+  s_8c75c545c32389::t_0cc5fc5a6c3010 284,288-290,293-299,302,304,306
+  s_abac14095ad7d6::t_f8ad6db0cbbca9 347-348
+  s_8c75c545c32389::t_307c2dc22b5277 567,569,571
+  s_abac14095ad7d6::t_f5188dc5b842f6 409-410
+  s_abac14095ad7d6::t_5306b802115fc3 4
+  s_8c75c545c32389::t_ee024382ae9723 421
+mobile/src/core/model.ts
+  s_abac14095ad7d6::t_9c815f6164688b 324
+  s_abac14095ad7d6::t_db1debb2f000c6 357-367
+ARCHITECTURE.md
+  s_abac14095ad7d6::t_4dac5c7bd7576d 89
+desktop/rerun_test.go
+  s_abac14095ad7d6::t_fe01e4903edd29 1-102
+docs/architecture/questions.md
+  s_abac14095ad7d6::t_9461b1d33706f6 1-24
+desktop/render_test.go
+  s_abac14095ad7d6::t_864db5ed9aa2d3 7,155-159
+web/content/docs/get-started.zh.mdx
+  h_57e80a12fc07c7 40,52,54
+desktop/mainwindow.go
+  s_abac14095ad7d6::t_e903ad438e7dcc 704-707
+  s_abac14095ad7d6::t_e97a7de3b8810f 856-866,868
+  s_abac14095ad7d6::t_8606d6a2ffe449 662,666
+web/content/docs/auto-review.zh.mdx
+  h_57e80a12fc07c7 15,19
+desktop/sheet_plugin_test.go
+  s_abac14095ad7d6::t_883db3d059b739 99,104-105
+  s_abac14095ad7d6::t_864db5ed9aa2d3 15-20
+crates/cli/src/ask.rs
+  s_abac14095ad7d6::t_3fb3cd3c480d32 1-241
+crates/cli/marketplace/index.json
+  s_89e031ae45f246::t_ec71669ac04a3d 3
+  s_89e031ae45f246::t_6f254ec8865ac1 709-743
+crates/cli/src/plugins/mod.rs
+  s_abac14095ad7d6::t_2766d327279d25 1097-1100
+crates/cli/src/turns.rs
+  s_abac14095ad7d6::t_5f593cd2e496a4 219
+desktop/project_test.go
+  s_abac14095ad7d6::t_864db5ed9aa2d3 122-125,153
+desktop/palette.go
+  s_abac14095ad7d6::t_fe461f0cf1d978 562,564,566
+desktop/prefs.go
+  s_abac14095ad7d6::t_4a445d99e2bb65 222-225,230,232,234
+  s_abac14095ad7d6::t_78527c19397947 197-221
+crates/cli/src/api.rs
+  s_abac14095ad7d6::t_5a69b2060ce84f 416-429
+desktop/model/wire.go
+  s_abac14095ad7d6::t_824f83038f3df8 289
+  s_abac14095ad7d6::t_e27443dcab24d3 227
+  s_abac14095ad7d6::t_ee636367537d20 962
+  s_abac14095ad7d6::t_771d8ab396b52e 245-260
+  s_abac14095ad7d6::t_986e7ffa025158 875-877
+  s_abac14095ad7d6::t_88243d94729610 1317-1336
+desktop/theme_test.go
+  s_abac14095ad7d6::t_fbac74a37ca688 10,21-22,26-27
+desktop/composer.go
+  s_abac14095ad7d6::t_4caae1fafc739d 35-42,49-52,194-211,235,277-293,374-376,406-408,579-597
+  s_abac14095ad7d6::t_15db3d49e4ebf8 454
+  s_abac14095ad7d6::t_e5d31041d1c55d 349-350,355-357
+  s_abac14095ad7d6::t_ce883d826bdf78 379
+  s_abac14095ad7d6::t_ac337f468f4e34 351-354
+  s_abac14095ad7d6::t_6d97ccf22abc4a 260-261
+  s_abac14095ad7d6::t_685059226b951c 477-479,481-482,484
+  s_abac14095ad7d6::t_5b6fe69a88e7b9 507,511,517,528
+  s_abac14095ad7d6::t_5ece0770b5c444 240-249,251,253
+  s_abac14095ad7d6::t_ba6fc7338feb2d 143-144
+desktop/sheet_bots_test.go
+  s_abac14095ad7d6::t_883f6b5fd28461 346
+  s_abac14095ad7d6::t_b1185b270cafac 350-352
+desktop/model/store.go
+  s_abac14095ad7d6::t_f7148675119b98 2697-2723,2759
+crates/cli/src/lib.rs
+  s_abac14095ad7d6::t_4f417b1fbb6986 8-9
+desktop/model/ask.go
+  s_abac14095ad7d6::t_026564bd85706a 1-55
+docs/architecture/marketplace.md
+  s_89e031ae45f246::t_a84ae42190594b 3
+mobile/src/i18n/zh.ts
+  s_abac14095ad7d6::t_f8bb0cc8f9ccf7 1037-1043
+desktop/theme.go
+  s_abac14095ad7d6::t_440e345056b849 211
+  s_abac14095ad7d6::t_1aacd59cb4e3c4 321
+  s_abac14095ad7d6::t_89416282f826ff 207-210,212-213
+  s_abac14095ad7d6::t_5ce5a1b9e8e4d6 346-349
+  s_abac14095ad7d6::t_a17ea651076eb9 10-13,20-31,52-57,63-72,82-84,86-94,97-100,102-109,111,113,115-118,123-128,134-143,153-189,205-206,214-233,250,253,329-334,341,350-352
+web/content/docs/bots.zh.mdx
+  h_57e80a12fc07c7 14,21,43
+desktop/markdown_view.go
+  s_abac14095ad7d6::t_78edcb5fee075b 158-159,161-164,169-171
+desktop/chat.go
+  s_abac14095ad7d6::t_d0ef1fd0c5336e 276-277
+  s_abac14095ad7d6::t_4d4a918f4a73e4 443-445
+  s_89e031ae45f246::t_aff0c119eadac9 333
+  s_abac14095ad7d6::t_77c13296fbd6a5 460-461,468-469,471-472,474-475
+  s_abac14095ad7d6::t_ea2fd3677d7ee4 462-467,473
+  s_abac14095ad7d6::t_1cfa25a99fc173 54-59
+  s_abac14095ad7d6::t_87d1be588746ed 332
+  s_abac14095ad7d6::t_ce172b0ad8cfed 164
+  s_abac14095ad7d6::t_5c390c6e51e203 370,373-374,1127,1129
+  s_abac14095ad7d6::t_2be30227afed24 736,745,747
+desktop/sidebar_test.go
+  s_abac14095ad7d6::t_733259a3868580 92-94
+  s_abac14095ad7d6::t_14aa0bfa4623ac 5,9
+  s_abac14095ad7d6::t_3339f36cbf18e0 75
+  s_abac14095ad7d6::t_d4c0ec5af6ccf2 69-71
+  s_abac14095ad7d6::t_2d1f6dab58d30a 64-68,72-74,76-91,95-96
+docs/architecture/runtime.md
+  s_abac14095ad7d6::t_76c6428b2bff5b 73-76
+mobile/src/ui/transcript.tsx
+  s_abac14095ad7d6::t_644028b3376e2a 483-485,488-490
+  s_abac14095ad7d6::t_7072f182a69ce7 566
+  s_abac14095ad7d6::t_13ec9268bf9e69 506-509
+  s_abac14095ad7d6::t_41668939be67ec 518-520,523-525
+  s_abac14095ad7d6::t_301b829cdf225a 503-505,510
+macos/Resources/zh-Hans.lproj/Localizable.strings
+  h_57e80a12fc07c7 179
+  s_abac14095ad7d6::t_f8bb0cc8f9ccf7 1492-1495
+desktop/commands.go
+  s_abac14095ad7d6::t_0ec12310bd7ca6 34,37,200,202,362
+  s_abac14095ad7d6::t_16337181479822 95,201
+desktop/inspector.go
+  s_abac14095ad7d6::t_7727ec9b6bc530 137
+crates/cli/src/push.rs
+  s_abac14095ad7d6::t_858ff89efb1983 97-106
+desktop/ask_card_test.go
+  s_abac14095ad7d6::t_8f0aebb4c86fcc 24-29
+  s_abac14095ad7d6::t_47da208471288a 1-23,30-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "5d25ebec6e4966cd4d74b3a4aee00962c4c3303c",
+  "prompts": {},
+  "humans": {
+    "h_57e80a12fc07c7": {
+      "author": "hcl-z <1401859664@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_89e031ae45f246": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_46x5ehwzr0zz",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    },
+    "s_8c75c545c32389": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_ynlsdsz1cl3h",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    },
+    "s_abac14095ad7d6": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_5k7w1sgndqv4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    },
+    "s_bb39bd918705fe": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_jargs7j6444v",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
