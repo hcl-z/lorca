@@ -1,0 +1,105 @@
+docs/architecture/phone-updates.md
+  s_bb39bd918705fe::t_4fd4dadb4758c9 3
+docs/releasing-cli.md
+  s_bb39bd918705fe::t_73fb68e28d7f23 102
+web/src/lib/releases.ts
+  s_bb39bd918705fe::t_73fb68e28d7f23 7
+scripts/release-mac.ts
+  s_bb39bd918705fe::t_903c744dd73c6e 159-161
+  s_bb39bd918705fe::t_3c305170215a60 2,6,10-13,16,25,28,54,61-66,84-87,95,97,103,113,125,131,136,138,150,154-158,162-165
+desktop/mygo.config.ts
+  s_bb39bd918705fe::t_27a81a753bcdc8 25-28
+  s_bb39bd918705fe::t_ce9e8cd7f98f3f 9
+  s_bb39bd918705fe::t_2e39792ec507a7 21-22
+desktop/CHANGELOG.md
+  s_bb39bd918705fe::t_8da1430d862587 9-15
+scripts/release-android.ts
+  s_bb39bd918705fe::t_23e7104c57604e 30
+scripts/release-ios.ts
+  s_bb39bd918705fe::t_475cb203732d26 1-2,4-5,7-11,23,25,41-42,105-106,115,118-119,124-138
+mobile/src/core/updates.test.ts
+  s_bb39bd918705fe::t_73fb68e28d7f23 25
+.github/workflows/release-mac.yml
+  s_bb39bd918705fe::t_7e4f71c1ed6102 1,3-8,17,22,39-40,63,67-68,73-74,81-82,86-88,90-114,117,127,129
+docs/releasing-desktop.md
+  s_bb39bd918705fe::t_d0afb205e8bb2b 80-81
+  s_bb39bd918705fe::t_73fb68e28d7f23 104
+  s_bb39bd918705fe::t_d6e9771406ca14 45-52
+docs/architecture/desktop-app.md
+  s_8c75c545c32389::t_62bd55ce3e7d2b 8
+  s_bb39bd918705fe::t_f7934dd6716d35 22
+  s_bb39bd918705fe::t_7aac71694a0895 21
+  s_abac14095ad7d6::t_15fa3b75327c6f 18
+mobile/src/core/updates.ts
+  s_bb39bd918705fe::t_73fb68e28d7f23 19
+docs/architecture/phone-app.md
+  s_bb39bd918705fe::t_e0a248cd316323 26
+  s_abac14095ad7d6::t_722fb1f87e26a9 34-35
+crates/cli/src/update.rs
+  s_bb39bd918705fe::t_cd4ac35679d125 35,37
+web/public/install-cli.ps1
+  s_bb39bd918705fe::t_73fb68e28d7f23 5,23
+web/public/install-cli.sh
+  s_bb39bd918705fe::t_73fb68e28d7f23 6,19
+scripts/app.ts
+  s_bb39bd918705fe::t_9c29dbee3d4b68 40
+  s_bb39bd918705fe::t_a5841393313cdc 291-293
+  s_bb39bd918705fe::t_e458b17cee5983 30-34,36-38
+.github/workflows/release-desktop.yml
+  s_bb39bd918705fe::t_c091f49baabc0e 10-11
+  s_bb39bd918705fe::t_be0cd0e4a19ea4 117
+mobile/CHANGELOG.md
+  s_bb39bd918705fe::t_97dd435c000cd0 7-11
+docs/releasing-mobile.md
+  s_bb39bd918705fe::t_2aa80bc899c5ac 3-8,41-50,54-55,62,68,85-86,89-94,97,108,113-115,124,133-141
+docs/architecture/macos-app.md
+  h_57e80a12fc07c7 11
+  s_bb39bd918705fe::t_89181270096167 17
+docs/releasing-mac.md
+  s_bb39bd918705fe::t_b2b17267f00271 3-10,29-30,33,39,41-43,45-46,49-52,55-56,76-79,81-84,89-90,108-109,111-112,118-119,121,128-132,150
+CHANGELOG.md
+  s_bb39bd918705fe::t_ffbe9bf1adf441 9-14
+.github/workflows/release-mobile.yml
+  s_bb39bd918705fe::t_3a9cd0a07e7565 2-9,64-72,74-80,88-89,91-127,129-132,144,146-151,155,194,199
+scripts/desktop.ts
+  s_bb39bd918705fe::t_4c87c88e5e1ad7 18-19
+  s_bb39bd918705fe::t_73fa8c62f36256 126-127,131-132
+  s_bb39bd918705fe::t_73fb68e28d7f23 16,33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "4b841839f9d4c629225b01d7c25572de71f648d5",
+  "prompts": {},
+  "humans": {
+    "h_57e80a12fc07c7": {
+      "author": "hcl-z <1401859664@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_8c75c545c32389": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_ynlsdsz1cl3h",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    },
+    "s_abac14095ad7d6": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_5k7w1sgndqv4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    },
+    "s_bb39bd918705fe": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_jargs7j6444v",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
