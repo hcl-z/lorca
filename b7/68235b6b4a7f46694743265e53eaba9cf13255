@@ -1,0 +1,21 @@
+crates/mobile/Cargo.toml
+  s_bb39bd918705fe::t_b92aec6b620dc7 29
+scripts/release.ts
+  s_bb39bd918705fe::t_b92aec6b620dc7 85-97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "b768235b6b4a7f46694743265e53eaba9cf13255",
+  "prompts": {},
+  "sessions": {
+    "s_bb39bd918705fe": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_jargs7j6444v",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
