@@ -17,37 +17,46 @@ Lorca 是一支常驻的、各有名字的 AI 智能体小团队，运行在你�
 - **看得见的记忆。** 每个智能体把自己的笔记以 Markdown 文件的形式存在它的 Runner 上。你可以打开、编辑或删除。
 - **端到端加密的同步。** 你的身份是在第一台设备上生成的一对密钥。设备之间互相配对，它们之间的中继只保存加密的数据块和公钥。
 
-## 从幕僚长开始
+## 从chief开始
 
-新账户自带一个名叫 **幕僚长** 的智能体，帮你规划工作、推进任务。它会问你平时做什么，提议一支各司其职的小团队，你同意后就把它们创建出来。之后它负责把工作交给合适的智能体。
+新账户自带一个名叫 **chief** 的智能体，帮你规划工作、推进任务。它会问你平时做什么，提议一支各司其职的小团队，你同意后就把它们创建出来。之后它负责把工作交给合适的智能体。
 
-和其他智能体一样，你可以给幕僚长改名，或者重写它的描述。
+和其他智能体一样，你可以给chief改名，或者重写它的描述。
 
 ## 一次好的初次交接
 
-别问幕僚长冷知识，跟它说一件真实的工作：
+别问chief冷知识，跟它说一件真实的工作：
 
 > 我维护两个开源库，每周写一份更新日志。帮我组个小团队：一个盯 issue，一个每周五起草更新日志，一个审查我的 pull request。
 
-幕僚长会提议这些智能体，你同意后创建它们，每一个都有自己和你的单聊。
+chief会提议这些智能体，你同意后创建它们，每一个都有自己和你的单聊。
 
 ## 常见问题
 
 <Accordions>
   <Accordion title="我需要服务器吗？">
-    不需要。你的设备通过 Lorca 的中继同步，中继读不到你的聊天，你什么都不用设置。你也可以[自己运行中继](/zh/docs/relay#自己运行中继)。
+    不需要。你的设备通过 Lorca
+    的中继同步，中继读不到你的聊天，你什么都不用设置。你也可以[自己运行中继](/zh/docs/relay#自己运行中继)。
   </Accordion>
   <Accordion title="Lorca 支持哪些平台？">
-    桌面应用支持 Apple 芯片的 macOS 14 及以上、Windows（x64）和 Linux（x64 和 Arm64）。手机应用支持 iOS 和 Android。[`lorca` 命令行](/zh/docs/cli)可以在 macOS、Linux 和 Windows 上运行智能体，因此智能体所在的电脑不需要桌面应用。
+    桌面应用支持 Apple 芯片的 macOS 14 及以上、Windows（x64）和 Linux（x64 和
+    Arm64）。手机应用支持 iOS 和 Android。[`lorca` 命令行](/zh/docs/cli)可以在
+    macOS、Linux 和 Windows 上运行智能体，因此智能体所在的电脑不需要桌面应用。
   </Accordion>
   <Accordion title="智能体可以用哪些模型？">
-    用 API 密钥接入 DeepSeek、Anthropic、OpenCode Zen 和 OpenCode Go，用你自己的订阅登录 ChatGPT 和 Grok，或者添加任何兼容 OpenAI 或 Anthropic API 的服务器，例如 OpenRouter、Gemini，或你自己电脑上的 Ollama。参见 [AI 服务商](/zh/docs/providers)。
+    用 API 密钥接入 DeepSeek、Anthropic、OpenCode Zen 和 OpenCode
+    Go，用你自己的订阅登录 ChatGPT 和 Grok，或者添加任何兼容 OpenAI 或 Anthropic
+    API 的服务器，例如 OpenRouter、Gemini，或你自己电脑上的 Ollama。参见 [AI
+    服务商](/zh/docs/providers)。
   </Accordion>
   <Accordion title="智能体能在我的电脑上做什么？">
-    读取、写入、编辑文件，搜索，运行 shell 命令，搜索网络，以及使用那台电脑上安装的插件，以它的[访问权限](/zh/docs/access)为限。它用你的权限、在你指定的那台机器上运行。参见[工具](/zh/docs/tools)。
+    读取、写入、编辑文件，搜索，运行 shell
+    命令，搜索网络，以及使用那台电脑上安装的插件，以它的[访问权限](/zh/docs/access)为限。它用你的权限、在你指定的那台机器上运行。参见[工具](/zh/docs/tools)。
   </Accordion>
   <Accordion title="中继能看到什么？">
-    加密的数据块、公钥、大小和时间戳。智能体的名字、聊天标题、消息、文件和服务商凭据都在密文里面。pull request 关注和例行任务的 Webhook 是例外：中继在把每个事件加密给你的电脑时会读取它。参见[安全](/zh/docs/security#webhook)。
+    加密的数据块、公钥、大小和时间戳。智能体的名字、聊天标题、消息、文件和服务商凭据都在密文里面。pull
+    request 关注和例行任务的 Webhook
+    是例外：中继在把每个事件加密给你的电脑时会读取它。参见[安全](/zh/docs/security#webhook)。
   </Accordion>
   <Accordion title="电脑丢了怎么办？">
     备份短语就是你的身份。在另一台电脑上恢复它，聊天会从中继回来。你可以从任何其他设备（包括手机）取消那台丢失电脑的配对。
@@ -57,8 +66,16 @@ Lorca 是一支常驻的、各有名字的 AI 智能体小团队，运行在你�
 ## 下一步
 
 <Cards>
-  <Card title="快速开始" href="/zh/docs/get-started">安装应用，创建身份，认识幕僚长。</Card>
-  <Card title="智能体" href="/zh/docs/bots">创建智能体，描述它如何工作，选择它在哪里运行。</Card>
-  <Card title="群聊" href="/zh/docs/group-chats">把最多六个智能体放进一个房间，让它们轮流发言。</Card>
-  <Card title="安全" href="/zh/docs/security">密钥、配对和加密中继是怎么工作的。</Card>
+  <Card title="快速开始" href="/zh/docs/get-started">
+    安装应用，创建身份，认识chief。
+  </Card>
+  <Card title="智能体" href="/zh/docs/bots">
+    创建智能体，描述它如何工作，选择它在哪里运行。
+  </Card>
+  <Card title="群聊" href="/zh/docs/group-chats">
+    把最多六个智能体放进一个房间，让它们轮流发言。
+  </Card>
+  <Card title="安全" href="/zh/docs/security">
+    密钥、配对和加密中继是怎么工作的。
+  </Card>
 </Cards>

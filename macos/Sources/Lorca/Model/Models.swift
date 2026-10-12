@@ -858,6 +858,10 @@ struct PermissionRequest: Hashable {
     /// The line under the title: an access request names a plugin's tool as it is, or what the
     /// bot wanted to do on its Runner in the CLI's English, which reads here in the app's language.
     var shownSummary: String {
+        // A question lists its options under it, to answer by replying.
+        if isAsk, !askOptions.isEmpty {
+            return summary + "\n" + askOptions.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "  ")
+        }
         guard isAccess else { return summary }
         switch summary {
         case "Shell commands": return L("Shell commands")
@@ -868,7 +872,16 @@ struct PermissionRequest: Hashable {
     }
 
     /// Why the card asks: what Auto-review said, or for an access request, where it is turned on.
-    var shownReason: String? { isAccess ? L("Not allowed in this bot's Access settings.") : reason }
+    var shownReason: String? {
+        if isAsk { return L("Reply in the chat with your choice.") }
+        return isAccess ? L("Not allowed in this bot's Access settings.") : reason
+    }
+
+    /// A question with options (`ask_user`): this app lists them and takes the answer as a reply;
+    /// the Windows and Linux app offers them on the card.
+    var isAsk: Bool { tool == "ask" }
+    /// A question's options, by label.
+    var askOptions: [String] = []
 
     var isPending: Bool { decision == .pending }
     var isInstall: Bool { tool == "install" }
@@ -885,6 +898,7 @@ struct PermissionRequest: Hashable {
     /// "wants to run a command on Workbench"
     var verbPhrase: String {
         if isAccess { return L("needs more access") }
+        if isAsk { return L("asks you to choose") }
         if let secret, isSecret {
             switch secret.use {
             case .browser: return L("needs a secret for %@", secret.site ?? pluginName)
@@ -900,6 +914,8 @@ struct PermissionRequest: Hashable {
     var decisionText: String {
         switch decision {
         case .pending: L("Waiting for you")
+        case .allowed where isAsk: L("Answered")
+        case .denied where isAsk: L("Skipped")
         case .allowed where isSecret: L("Saved")
         case .denied where isSecret: L("Not now")
         case .allowed: isConnect ? L("Signing in") : L("Allowed once")
@@ -916,6 +932,7 @@ struct PermissionRequest: Hashable {
     /// allow only with a rule to add.
     var choices: [(String, String)] {
         if isAccess { return [(L("Edit Access…"), "access"), (L("Dismiss"), "deny")] }
+        if isAsk { return [(L("Skip"), "deny")] }
         if isConnect { return [(L("Sign in"), "allow"), (L("Not now"), "deny")] }
         if isInstall { return [(L("Allow"), "allow"), (L("Deny"), "deny")] }
         if isShell && rule == nil { return [(L("Allow once"), "allow"), (L("Deny"), "deny")] }

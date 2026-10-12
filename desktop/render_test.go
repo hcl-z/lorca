@@ -4,6 +4,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -150,4 +151,10 @@ func renderBoth(t *testing.T, tt *ui.Tester, name string) {
 	renderTo(t, tt, name+"-dark")
 	tt.SetDark(false)
 	settleTransitions(tt)
+}
+
+// showsLine is whether the frame shows `text` as a whole line of its own, as a section's caption
+// is, where HasText would also find it inside a longer one ("Project" in "Project Manager").
+func showsLine(tt *ui.Tester, text string) bool {
+	return slices.Contains(tt.Texts(), text)
 }

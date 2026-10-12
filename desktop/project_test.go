@@ -119,7 +119,10 @@ func TestTheProjectSectionListsEntriesAndSaysWhatNeedsTheUser(t *testing.T) {
 	m.selectChat("chat-relay")
 	tt := ui.NewTester(m.frame(m.view), 1180, 900)
 	settle(tt)
-	for _, text := range []string{"PROJECT", "Relay launch", "Brief", "Fact · Suggested by Scout", "Show 2 More"} {
+	if !showsLine(tt, "Project") {
+		t.Fatalf("no Project caption in %q", tt.Texts())
+	}
+	for _, text := range []string{"Relay launch", "Brief", "Fact · Suggested by Scout", "Show 2 More"} {
 		if !tt.HasText(text) {
 			t.Fatalf("no %q in %q", text, tt.Texts())
 		}
@@ -147,7 +150,7 @@ func TestTheProjectSectionListsEntriesAndSaysWhatNeedsTheUser(t *testing.T) {
 	// A group with nothing in it shows the title and its + alone.
 	m.selectChat("chat-launch")
 	settle(tt)
-	if !tt.HasText("PROJECT") || tt.HasText("Relay launch") {
+	if !showsLine(tt, "Project") || tt.HasText("Relay launch") {
 		t.Fatalf("an empty group's section: %q", tt.Texts())
 	}
 }

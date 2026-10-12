@@ -152,6 +152,12 @@ async fn answer(app: &Arc<App>, from: &str, request: &Request) -> Result<Value, 
             let scope = serde_json::from_value(body["scope"].clone()).map_err(|_| "Explicit playbook scope is required")?;
             crate::playbook_tools::capture(app, &scope, body).await
         }
+        // Regenerate, or edit and send again, asked from another Device of the account.
+        "chats.rerun" => {
+            let chat_id = body["chat_id"].as_str().ok_or("missing chat_id")?;
+            let message_id = body["message_id"].as_str().ok_or("missing message_id")?;
+            crate::runtime::rerun_user_message(app, chat_id, message_id, body["text"].as_str()).map(|message| json!({ "message": message.for_app() }))
+        }
         #[cfg(feature = "runner")]
         "chats.send_now" => {
             let chat_id = body["chat_id"].as_str().ok_or("missing chat_id")?;

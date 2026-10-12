@@ -31,10 +31,10 @@ type command struct {
 
 // whileSheet is what a sheet leaves working: the app's own commands, not the window's, as a sheet
 // takes the window's keys on the Mac.
-var whileSheet = []string{"quit", "about", "help", "architecture", "checkForUpdates", "fullScreen", "simulateOffline", "replayMock", "showOnboarding"}
+var whileSheet = []string{"quit", "about", "help", "architecture", "checkForUpdates", "fullScreen", "toggleAppearance", "simulateOffline", "replayMock", "showOnboarding"}
 
 // appCommands are what any window answers, the small Settings window and onboarding's too.
-var appCommands = []string{"settings", "help", "architecture", "about", "checkForUpdates", "showOnboarding", "simulateOffline", "replayMock"}
+var appCommands = []string{"settings", "help", "architecture", "about", "checkForUpdates", "toggleAppearance", "showOnboarding", "simulateOffline", "replayMock"}
 
 func chatSelected() bool {
 	m := app.main
@@ -92,6 +92,7 @@ var commandTable = []command{
 		}
 		return L("Enter Full Screen")
 	}, accelerator: "F11", role: mygo.RoleToggleFullScreen},
+	{id: "toggleAppearance", title: func() string { return appearanceCommandTitle(shownDark) }, accelerator: appearanceShortcut},
 	{id: "addBot", title: func() string { return L("Add Bot…") }, accelerator: "CmdOrCtrl+Alt+B", enabled: func() bool {
 		return chatSelected() && len(botsAvailableToAdd(app.main.selection.ChatID)) > 0
 	}},
@@ -195,6 +196,9 @@ func runCommand(id string) {
 		return
 	case "checkForUpdates":
 		checkForUpdates()
+		return
+	case "toggleAppearance":
+		toggleAppearance(shownDark)
 		return
 	case "simulateOffline":
 		if store.IsMock {
@@ -355,7 +359,7 @@ func windowMenuBar(kind windowKind) *mygo.Menu {
 			sep(),
 			at("find"),
 		),
-		submenu(L("View"), at("palette"), at("attention"), sep(), at("toggleSidebar"), at("toggleInspector"), sep(), at("scrollToLatest"), sep(), at("fullScreen")),
+		submenu(L("View"), at("palette"), at("attention"), sep(), at("toggleSidebar"), at("toggleInspector"), sep(), at("scrollToLatest"), sep(), at("toggleAppearance"), at("fullScreen")),
 		submenu(L("Chat"), at("addBot"), at("renameChat"), at("pinChat"), muteMenu(at), at("unmuteChat"), sectionMenu(kind), at("hideChat"), at("newSkill"), sep(), at("stopResponding"), at("runInBackground"), sep(), at("deleteChat")),
 		submenu(L("Window"), &mygo.MenuItem{Role: mygo.RoleMinimize, Label: L("Minimize")}, &mygo.MenuItem{Role: mygo.RoleZoom, Label: L("Zoom")}),
 		submenu("Debug", at("simulateOffline"), at("replayMock"), sep(), at("showOnboarding")),

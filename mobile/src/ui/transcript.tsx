@@ -480,10 +480,14 @@ const AskRow = memo(function AskRow({ row, isGroup, onDecide }: { row: Extract<R
   const pending = row.body.decision === "pending";
   const connect = row.body.tool === "connect";
   const access = row.body.tool === "access";
-  const shell = row.body.plugin_id === "computer" && !access;
+  // A question with options: listed under it, answered by a reply in the chat, or skipped.
+  const question = row.body.tool === "ask" ? row.body.ask : undefined;
+  const shell = row.body.plugin_id === "computer" && !access && !question;
   const who = row.bot?.name ?? t("The bot");
   const plugin = row.body.plugin_name;
-  const title = access
+  const title = question
+    ? t("{who} asks you to choose", { who })
+    : access
     ? t("{who} needs more access", { who })
     : connect
     ? t("{who} needs a sign-in to {plugin}", { who, plugin })
@@ -496,8 +500,14 @@ const AskRow = memo(function AskRow({ row, isGroup, onDecide }: { row: Extract<R
   // What an access request names: a plugin's tool as it is, or what the bot wanted to do on its
   // Runner in the CLI's English.
   const local: Record<string, string> = { "Shell commands": t("Shell commands"), "Changing files": t("Changing files"), "Reading files": t("Reading files") };
-  const summary = access ? (local[row.body.summary] ?? row.body.summary) : row.body.summary;
-  const reason = access ? t("Not allowed in this bot's Access settings.") : row.body.reason;
+  const summary = question
+    ? [question.question, question.options.map((option, i) => `${i + 1}. ${option.label}`).join("  ")].join("\n")
+    : access ? (local[row.body.summary] ?? row.body.summary) : row.body.summary;
+  // What was picked on a computer: the options' labels, then the user's own words.
+  const answered = question?.answer
+    ? [...(question.answer.choices ?? []).map((i) => question.options[i]?.label).filter(Boolean), ...(question.answer.other ? [`“${question.answer.other}”`] : [])].join(t(", "))
+    : "";
+  const reason = question ? t("Reply in the chat with your choice.") : access ? t("Not allowed in this bot's Access settings.") : row.body.reason;
   const ruleNote = !row.body.rule
     ? undefined
     : pending
@@ -505,10 +515,14 @@ const AskRow = memo(function AskRow({ row, isGroup, onDecide }: { row: Extract<R
       : row.body.decision === "always"
         ? t("Added the rule “{rule}” to Auto-review.", { rule: row.body.rule })
         : undefined;
-  const decided: Record<string, string> = connect
+  const decided: Record<string, string> = question
+    ? { allowed: t("Answered"), denied: t("Skipped"), expired: t("No answer in time"), dismissed: t("Answered in the chat instead") }
+    : connect
     ? { allowed: t("Signing in"), denied: t("Not now"), dismissed: t("Dismissed"), connected: t("Signed in"), failed: t("Sign-in failed") }
     : { allowed: t("Allowed once"), always: t("Always allowed"), denied: t("Denied"), expired: t("No answer in time"), dismissed: t("Dismissed") };
-  const choices: [string, "allow" | "always" | "deny" | "access"][] = access
+  const choices: [string, "allow" | "always" | "deny" | "access"][] = question
+    ? [[t("Skip"), "deny"]]
+    : access
     ? [[t("Edit Access…"), "access"], [t("Dismiss"), "deny"]]
     : connect
     ? [[t("Sign in"), "allow"], [t("Not now"), "deny"]]
@@ -549,7 +563,7 @@ const AskRow = memo(function AskRow({ row, isGroup, onDecide }: { row: Extract<R
           </Pressable>
         ) : (
           <Text style={[styles.caption, { color: p.secondaryLabel }]} numberOfLines={3}>
-            {pending ? summary : `${decided[row.body.decision] ?? row.body.decision} · ${summary}`}
+            {pending ? summary : answered ? `${question?.question} · ${t("You chose {answer}", { answer: answered })}` : `${decided[row.body.decision] ?? row.body.decision} · ${summary}`}
           </Text>
         )}
         {pending && reason ? (

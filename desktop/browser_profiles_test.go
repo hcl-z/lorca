@@ -55,12 +55,15 @@ func TestBrowserProfilesInThePluginSheet(t *testing.T) {
 		browserAction("browser.open", "bot-quill", profiles[0].ID)
 		m.presentPlugin(model.BrowserPluginID, sheetAWorkbench(), "bot-quill", "chat-launch")
 	})
-	for _, text := range []string{"PROFILES", "Work", L("You have control"), "Personal", Lc("Closed", "browser")} {
+	if !showsLine(tt, "Profiles") {
+		t.Errorf("no Profiles caption in %q", tt.Texts())
+	}
+	for _, text := range []string{"Work", L("You have control"), "Personal", Lc("Closed", "browser")} {
 		if !tt.HasText(text) {
 			t.Errorf("no %q in %q", text, tt.Texts())
 		}
 	}
-	if slices.Contains(tt.Texts(), "SIGN-IN") || slices.Contains(tt.Texts(), "GITHUB_TOKEN") {
+	if slices.Contains(tt.Texts(), "Sign-in") || slices.Contains(tt.Texts(), "GITHUB_TOKEN") {
 		t.Errorf("Browser shows another plugin's setup: %q", tt.Texts())
 	}
 	renderBrowser(t, tt, "browser-profiles")
@@ -190,7 +193,7 @@ func TestBrowserProfilesEmptyAndOtherSheets(t *testing.T) {
 	renderBrowser(t, tt, "browser-profiles-empty")
 	// Opened from Settings, the sheet is the Runner's, for no bot.
 	_, tt = sheetATester(t, func(m *mainWindow) { m.presentPlugin(model.BrowserPluginID, sheetAWorkbench(), "", "") })
-	if tt.HasText("PROFILES") {
+	if showsLine(tt, "Profiles") {
 		t.Errorf("profiles without a bot: %q", tt.Texts())
 	}
 }

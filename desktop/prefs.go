@@ -194,14 +194,43 @@ func setPrefs(patch PreferencesPatch) Preferences {
 	return after
 }
 
+// appearanceShortcut switches between light and dark.
+const appearanceShortcut = "CmdOrCtrl+Shift+L"
+
+// oppositeAppearance is the appearance a switch from the one showing picks.
+func oppositeAppearance(dark bool) string {
+	if dark {
+		return "light"
+	}
+	return "dark"
+}
+
+// appearanceCommandTitle is the switch's words: where it goes from the appearance showing.
+func appearanceCommandTitle(dark bool) string {
+	if dark {
+		return L("Use Light Appearance")
+	}
+	return L("Use Dark Appearance")
+}
+
+// toggleAppearance keeps the appearance opposite to the one showing, whatever the system's.
+func toggleAppearance(dark bool) {
+	next := oppositeAppearance(dark)
+	setPrefs(PreferencesPatch{Appearance: &next})
+}
+
+// setThemeSource hands the app's appearance to MyGo, which applies it on the app's main loop; the
+// views' tests, which have no app, put their own in its place.
+var setThemeSource = mygo.Theme.SetSource
+
 // applyAppearance forces light or dark for the windows, or follows the system.
 func applyAppearance(appearance string) {
 	switch appearance {
 	case "light":
-		mygo.Theme.SetSource(mygo.ThemeLight)
+		setThemeSource(mygo.ThemeLight)
 	case "dark":
-		mygo.Theme.SetSource(mygo.ThemeDark)
+		setThemeSource(mygo.ThemeDark)
 	default:
-		mygo.Theme.SetSource(mygo.ThemeSystem)
+		setThemeSource(mygo.ThemeSystem)
 	}
 }

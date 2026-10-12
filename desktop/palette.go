@@ -559,12 +559,11 @@ func (s *paletteState) view(c *ui.Context, m *mainWindow) {
 						}
 						item := row.item
 						on := i == selected
-						r := ui.Row(c.Key(i)).Height(paletteRowHeight).Gap(8).Padding(0, 8).Radius(8).Role(ui.RoleListItem).Label(item.title)
+						r := ui.Row(c.Key(i)).Height(paletteRowHeight).Gap(8).Padding(0, 8).Radius(radiusMD).Role(ui.RoleListItem).Label(item.title)
 						secondary := p.Label2
-						mark := p.Accent.Alpha(0.2)
+						mark := p.Label4
 						if on {
-							r.Background(p.Accent).TextColor(p.White)
-							secondary, mark = ui.RGBA(255, 255, 255, 0.8), ui.RGBA(255, 255, 255, 0.25)
+							r.Background(p.Selection).TextColor(p.SelectionText)
 							if s.reveal {
 								r.ScrollIntoView()
 								s.reveal = false

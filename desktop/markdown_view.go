@@ -155,13 +155,20 @@ func markdownBlock(c *ui.Context, block model.Block, o markdownOptions, nested b
 		}
 		return h
 	case model.BlockCode:
-		code := ui.Box(c).Padding(8, 10).Radius(7).Background(p.Code).MinWidth(0)
+		// A header of its language and a Copy that takes the whole block, apart from the selection.
+		code := ui.Column(c).Radius(radiusMD).Background(p.Code).MinWidth(0).Clip()
 		code.Children(func() {
+			ui.Row(c).Height(26).Padding(0, 4, 0, 10).Gap(6).MinWidth(0).Unselectable().Children(func() {
+				ui.Text(c, block.Language).Grow(1).Shrink(1).MinWidth(0).Font(monoFont).FontSize(11).TextColor(p.Label2).SingleLine()
+				copyButton(c, block.Text, copyOptions{Symbol: "doc.on.doc", Tooltip: L("Copy code")})
+			})
 			text := block.Text
 			if text == "" {
 				text = " "
 			}
-			ui.Text(c, text).Font(monoFont).FontSize(12).LineHeight(1.42)
+			ui.Box(c).Padding(0, 10, 9, 10).MinWidth(0).Children(func() {
+				ui.Text(c, text).Font(monoFont).FontSize(12).LineHeight(1.42)
+			})
 		})
 		return code
 	case model.BlockList:

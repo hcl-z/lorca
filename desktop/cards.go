@@ -114,6 +114,15 @@ func ruleNote(request *model.PermissionRequest) string {
 	return ""
 }
 
+// warningBadge is a capsule that says something waits for the user, as Approval needed does.
+func warningBadge(c *ui.Context, text string) ui.Element {
+	p := colors(c)
+	return ui.Row(c).Height(20).Gap(4).Padding(0, space2).Radius(radiusCapsule).Background(p.WarningBG).TextColor(p.WarningText).Shrink(0).Children(func() {
+		symbol(c, "sparkles", 11, 2)
+		ui.Text(c, text).FontSize(11).FontWeight(600).SingleLine()
+	})
+}
+
 // cardFrame is a card's row: indented as a bubble is, the bot's avatar at its bottom edge in a
 // group.
 func cardFrame(c *ui.Context, cardAvatar *avatarContent, groupStart bool, label string, content func()) {
@@ -127,8 +136,8 @@ func cardFrame(c *ui.Context, cardAvatar *avatarContent, groupStart bool, label 
 		left = bubbleIndent
 	}
 	ui.Row(c).Padding(top, horizontalInset, 0, left).Children(func() {
-		ui.Row(c).AlignItems(ui.Start).Gap(8).Width(440).MaxWidthPercent(100).MinWidth(0).Padding(11, 12, 12, 12).Radius(12).
-			Background(p.BotBubble).Border(1, p.BotBubbleBorder).Label(label).Children(content)
+		ui.Row(c).AlignItems(ui.Start).Gap(10).Width(440).MaxWidthPercent(100).MinWidth(0).Padding(space3, 14, 14, 14).Radius(radiusXL).
+			Background(p.Card).Border(1, p.CardBorder).Label(label).Children(content)
 		if cardAvatar != nil {
 			ui.Box(c).Absolute().Left(horizontalInset).Bottom(0).Children(func() {
 				avatar(c, *cardAvatar, chatAvatarSize, false)
@@ -160,7 +169,12 @@ func (m *mainWindow) permissionCard(c *ui.Context, chat *model.Chat, message *mo
 	cardFrame(c, cardAvatar, groupStart, title+": "+permissionSummary(request), func() {
 		ui.Row(c).Size(18, 18).Center().TextColor(tint).Children(func() { symbol(c, icon, 17, 1.9) })
 		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Children(func() {
-			ui.Text(c, title).FontSize(12.5).FontWeight(600).FixedLineHeight(17).SingleLine().Tooltip(title)
+			ui.Row(c).Gap(space2).MinWidth(0).Children(func() {
+				ui.Text(c, title).Grow(1).Shrink(1).MinWidth(0).FontSize(12.5).FontWeight(600).FixedLineHeight(17).SingleLine().Tooltip(title)
+				if request.IsPending() {
+					warningBadge(c, L("Approval needed"))
+				}
+			})
 			if request.IsPending() && request.IsShell() {
 				if commandBlock(c, request.FullCommand(), 2) {
 					m.presentCommandSheet(title, request.FullCommand())
@@ -185,9 +199,14 @@ func (m *mainWindow) permissionCard(c *ui.Context, chat *model.Chat, message *mo
 				ui.Text(c, reason).Margin(7, 0, 0, 0).FontSize(11.5).LineHeight(1.35).TextColor(p.Label2)
 			}
 			if request.IsPending() {
-				ui.Row(c).Wrap().Gap(6).Margin(10, 0, 0, 0).Children(func() {
-					for _, choice := range request.Choices() {
-						if pushButton(c.Key(choice.Decision), choice.Title, pushOptions{Small: true}).Clicked() {
+				ui.Row(c).Wrap().Gap(6).Margin(space3, 0, 0, 0).Children(func() {
+					for i, choice := range request.Choices() {
+						// The first choice is the one the card asks for, in ink, as a sheet's default button.
+						kind := buttonDefault
+						if i == 0 {
+							kind = buttonPrimary
+						}
+						if pushButton(c.Key(choice.Decision), choice.Title, pushOptions{Kind: kind}).Clicked() {
 							if choice.Decision == "access" && message.Author.Kind == model.AuthorBot {
 								m.presentBotAccess(message.Author.BotID)
 							} else {

@@ -2694,6 +2694,33 @@ func (s *Store) RefreshChatList() { s.emit(Event{Kind: EventChatsChanged}) }
 // Send sends the message and returns the chat it landed in. `mentions` are the bots picked from the
 // `@` menu, which the CLI hands the bot by id; `replyTo` is the message the user answers, which the
 // bot reads quoted.
+// expectTurn shows the chat's bots at work until the CLI's job events confirm or clear it, as a
+// sent message or a rerun starts a turn. A DM names its bot right away, so the working row appears
+// at once.
+func (s *Store) expectTurn(chat *Chat) {
+	if len(chat.BotIDs) == 0 {
+		return
+	}
+	chatID := chat.ID
+	pendingID := "pending:" + chatID
+	botID := ""
+	if chat.IsDM() {
+		botID = chat.BotIDs[0]
+	}
+	s.runningJobs = append(s.runningJobs, runningJob{id: pendingID, chatID: chatID, botID: botID})
+	s.emit(Event{Kind: EventRespondingChanged, ChatID: chatID})
+	s.emit(Event{Kind: EventChatsChanged})
+	s.later(4*time.Second, func() {
+		if !slices.ContainsFunc(s.runningJobs, func(job runningJob) bool { return job.id == pendingID }) {
+			return
+		}
+		// Nothing started (no Runner answered); stop showing the bot at work.
+		s.runningJobs = slices.DeleteFunc(s.runningJobs, func(job runningJob) bool { return job.id == pendingID })
+		s.emit(Event{Kind: EventRespondingChanged, ChatID: chatID})
+		s.emit(Event{Kind: EventChatsChanged})
+	})
+}
+
 func (s *Store) Send(text string, attachments []OutgoingAttachment, mentions []string, chatID, replyTo string) string {
 	trimmed := strings.TrimSpace(text)
 	chat := s.Chat(chatID)
@@ -2729,27 +2756,7 @@ func (s *Store) Send(text string, attachments []OutgoingAttachment, mentions []s
 		return chatID
 	}
 
-	// Expect a turn to start; the CLI's job events confirm or clear this. A DM names its bot right
-	// away so the working row appears with the send.
-	if len(chat.BotIDs) > 0 {
-		pendingID := "pending:" + chatID
-		botID := ""
-		if chat.IsDM() {
-			botID = chat.BotIDs[0]
-		}
-		s.runningJobs = append(s.runningJobs, runningJob{id: pendingID, chatID: chatID, botID: botID})
-		s.emit(Event{Kind: EventRespondingChanged, ChatID: chatID})
-		s.emit(Event{Kind: EventChatsChanged})
-		s.later(4*time.Second, func() {
-			if !slices.ContainsFunc(s.runningJobs, func(job runningJob) bool { return job.id == pendingID }) {
-				return
-			}
-			// Nothing started (no Runner answered); stop showing the bot at work.
-			s.runningJobs = slices.DeleteFunc(s.runningJobs, func(job runningJob) bool { return job.id == pendingID })
-			s.emit(Event{Kind: EventRespondingChanged, ChatID: chatID})
-			s.emit(Event{Kind: EventChatsChanged})
-		})
-	}
+	s.expectTurn(chat)
 	wireAttachments := make([]map[string]any, 0, len(attachments))
 	for _, outgoing := range attachments {
 		entry := map[string]any{"id": outgoing.Attachment.ID, "path": outgoing.Path, "name": outgoing.Attachment.Name, "mime": outgoing.Attachment.Mime, "width": nil, "height": nil}

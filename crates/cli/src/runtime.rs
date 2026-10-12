@@ -99,6 +99,70 @@ fn admit_user_message(app: Arc<App>, chat: &Chat, message: Message, mentions: &[
     Ok(message)
 }
 
+/// Runs the latest exchange of a direct chat again (`chats.rerun`), on the bot's Runner: what
+/// came after the user's latest message (the bot's reply, its tool rows and cards, notices) leaves
+/// the chat on every Device, the message takes `text` when the user edited it, and a new turn
+/// answers it, from a context that no longer holds the old reply. What the old reply did stays
+/// done: a command it ran is not undone. So a reply that left something the user still has to
+/// act on or that lives on elsewhere (a draft, a published output, work handed to another bot) is
+/// not run again, and neither is one under a compaction summary.
+pub fn rerun_user_message(app: &Arc<App>, chat_id: &str, message_id: &str, text: Option<&str>) -> Result<Message, String> {
+    let chat = app.chat(chat_id).ok_or("Unknown chat")?;
+    if chat.meta.is_group() || chat.meta.channel.is_some() {
+        return Err("Only a direct chat's reply can run again.".into());
+    }
+    let bot = chat.meta.bot_ids.first().and_then(|id| app.bot(id)).ok_or("The chat has no bot")?;
+    if app.this_device_id().as_deref() != Some(bot.runner_id.as_str()) {
+        return Err("This runs on the bot's Runner.".into());
+    }
+    if app.running_chat_ids().iter().any(|id| id == chat_id) {
+        return Err("Stop the reply first.".into());
+    }
+    let mut message = app.message(chat_id, message_id).ok_or("Unknown message")?;
+    if message.author != Author::You || message.queued || !message.is_complete() {
+        return Err("Only a message of yours runs again.".into());
+    }
+    let after = app.store.messages_after(chat_id, message_id).map_err(|error| error.to_string())?;
+    if after.iter().any(|later| later.author == Author::You) {
+        return Err("Only your latest message runs again.".into());
+    }
+    let compacted = chat.compactions.iter().any(|c| c.after_message_id == message_id || after.iter().any(|later| later.id == c.after_message_id));
+    if compacted {
+        return Err("The chat was compacted after this message, so it cannot run again.".into());
+    }
+    for later in &after {
+        let keeps = match &later.body {
+            Body::Draft { .. } => Some("a draft"),
+            Body::Tool { target_bot_id: Some(_), .. } => Some("work handed to another bot"),
+            _ if later.output.is_some() => Some("a published output"),
+            _ => None,
+        };
+        if let Some(what) = keeps {
+            return Err(format!("The reply left {what}, which running it again would lose."));
+        }
+    }
+    if let Some(text) = text {
+        let text = text.trim();
+        let Body::Text { text: current, attachments, mentions, .. } = &mut message.body else {
+            return Err("Only a message of yours runs again.".into());
+        };
+        if text.is_empty() && attachments.is_empty() {
+            return Err("Empty message".into());
+        }
+        if text != current {
+            *mentions = resolve_mentions(app, text, std::mem::take(mentions));
+            *current = text.to_string();
+            message.edited_at = Some(crate::config::now_secs());
+        }
+    }
+    for later in &after {
+        app.remove_message(chat_id, &later.id, true);
+    }
+    app.upsert_message(message.clone(), true);
+    start_turn(app, user_turn_job(app, chat_id, &bot.id, &message.id));
+    Ok(message)
+}
+
 /// The user's first message to a bot just added from a marketplace template, and the turn that
 /// answers it: the bot sets itself up from `setup` first (`turns::setup_cue`), then says hello.
 pub fn greet_new_bot(app: &Arc<App>, chat_id: &str, bot_id: &str, text: &str, setup: TemplateSetup) {
@@ -829,6 +893,70 @@ mod tests {
             permissions: None,
             created_at: 0.0,
         }
+    }
+
+    /// A Runner with an identity, its first bot, and that bot's DM with an exchange in it: the
+    /// user's message, then the bot's reply and a notice.
+    fn exchange() -> (ScratchApp, Bot, String, Message) {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        crate::identity::create(app, Some("Workbench".into())).unwrap();
+        let bot = app.state.lock().unwrap().bots[0].clone();
+        let chat_id = app.dm_with(&bot.id, None).unwrap().meta.id;
+        let asked = Message::new(&chat_id, Author::You, Body::text("Plan the launch"));
+        app.upsert_message(asked.clone(), false);
+        app.upsert_message(Message::new(&chat_id, Author::Bot { bot_id: bot.id.clone() }, Body::text("Here is a plan.")), false);
+        app.upsert_message(Message::new(&chat_id, Author::System, Body::Notice { text: "Used 2k tokens".into(), routine_id: None }), false);
+        (scratch, bot, chat_id, asked)
+    }
+
+    /// Regenerate takes the reply and everything after the user's message out, and starts a turn
+    /// on that message; a second one waits for that turn.
+    #[tokio::test]
+    async fn a_reply_runs_again_without_the_old_one() {
+        let (scratch, _bot, chat_id, asked) = exchange();
+        let app = &scratch.0;
+        let message = rerun_user_message(app, &chat_id, &asked.id, None).unwrap();
+        assert_eq!((message.id.as_str(), message.edited_at), (asked.id.as_str(), None));
+        let ids: Vec<String> = app.messages(&chat_id).into_iter().map(|message| message.id).collect();
+        assert_eq!(ids.first(), Some(&asked.id));
+        assert!(app.messages(&chat_id).iter().all(|message| !matches!(&message.body, Body::Text { text, .. } if text == "Here is a plan.")), "the old reply is gone");
+        assert!(app.running_chat_ids().contains(&chat_id), "a new turn answers it");
+        assert_eq!(rerun_user_message(app, &chat_id, &asked.id, None).unwrap_err(), "Stop the reply first.");
+    }
+
+    /// Edit and send again: the message takes the new words and says when; the reply goes.
+    #[tokio::test]
+    async fn an_edited_message_is_sent_again() {
+        let (scratch, _bot, chat_id, asked) = exchange();
+        let app = &scratch.0;
+        let message = rerun_user_message(app, &chat_id, &asked.id, Some("  Plan the launch for Friday ")).unwrap();
+        assert!(matches!(&message.body, Body::Text { text, .. } if text == "Plan the launch for Friday"));
+        assert!(message.edited_at.is_some());
+        let kept = app.message(&chat_id, &asked.id).unwrap();
+        assert_eq!(kept.edited_at, message.edited_at);
+        assert!(app.messages(&chat_id).iter().all(|message| !matches!(message.body, Body::Notice { .. })));
+    }
+
+    /// Only the latest message of the user's runs again, and not when the reply left something
+    /// the user still has to act on, or in a group.
+    #[tokio::test]
+    async fn what_cannot_run_again() {
+        let (scratch, bot, chat_id, asked) = exchange();
+        let app = &scratch.0;
+        let later = Message::new(&chat_id, Author::You, Body::text("And the release notes"));
+        app.upsert_message(later.clone(), false);
+        assert_eq!(rerun_user_message(app, &chat_id, &asked.id, None).unwrap_err(), "Only your latest message runs again.");
+        let reply = Message::new(&chat_id, Author::Bot { bot_id: bot.id.clone() }, Body::text("Noted."));
+        assert_eq!(rerun_user_message(app, &chat_id, &reply.id, None).unwrap_err(), "Unknown message");
+        app.upsert_message(reply.clone(), false);
+        assert_eq!(rerun_user_message(app, &chat_id, &reply.id, None).unwrap_err(), "Only a message of yours runs again.");
+        let mut tool = Message::new(&chat_id, Author::Bot { bot_id: bot.id.clone() }, Body::text("Asked Scout."));
+        tool.body = serde_json::from_value(serde_json::json!({ "kind": "tool", "name": "message_bot", "summary": "Messaged Scout", "detail": "", "is_running": false, "call_id": "call-1", "arguments": null, "is_error": false, "target_bot_id": "bot-scout" })).unwrap();
+        app.upsert_message(tool, false);
+        assert_eq!(rerun_user_message(app, &chat_id, &later.id, None).unwrap_err(), "The reply left work handed to another bot, which running it again would lose.");
+        assert_eq!(rerun_user_message(app, &chat_id, &later.id, Some(" ")).unwrap_err(), "The reply left work handed to another bot, which running it again would lose.");
+        assert!(app.message(&chat_id, &reply.id).is_some(), "nothing was taken out");
     }
 
     #[test]

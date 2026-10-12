@@ -216,6 +216,7 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         Arc::new(InstallPlugin { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone(), unattended }),
         Arc::new(ConnectPlugin { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone() }),
         Arc::new(crate::secrets::RequestSecret { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone(), unattended }),
+        Arc::new(crate::ask::AskUser { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone(), unattended }),
     ];
     if job.kind == crate::workflows::SAMPLE_JOB {
         // A setup's sample cannot create teammates, hand off, install integrations, or arm schedules.

@@ -224,6 +224,7 @@ type WireBody struct {
 	Note          *string          `json:"note"`
 	Direct        *bool            `json:"direct"`
 	Secret        *WireSecretAsk   `json:"secret"`
+	Ask           *WireAskQuestion `json:"ask"`
 	ReplyTo       *struct {
 		MessageID string     `json:"message_id"`
 		Author    WireAuthor `json:"author"`
@@ -239,6 +240,22 @@ type WireSecretAsk struct {
 		Name  string `json:"name"`
 		Label string `json:"label"`
 	} `json:"fields"`
+}
+
+// WireAskQuestion is a question card's question, in the CLI's shape.
+type WireAskQuestion struct {
+	Question string `json:"question"`
+	Options  []struct {
+		Label       string `json:"label"`
+		Description string `json:"description"`
+	} `json:"options"`
+	Multiple    bool `json:"multiple"`
+	AllowOther  bool `json:"allow_other"`
+	Recommended *int `json:"recommended"`
+	Answer      *struct {
+		Choices []int   `json:"choices"`
+		Other   *string `json:"other"`
+	} `json:"answer"`
 }
 
 // WireSecret is one of a Runner's secrets, as `secrets.list` answers it.
@@ -269,6 +286,7 @@ type WireMessage struct {
 	Queued       *bool           `json:"queued"`
 	Output       *Output         `json:"output"`
 	Notification NotificationTag `json:"notification"`
+	EditedAt     *float64        `json:"edited_at"`
 }
 
 type WireChatUsage struct {
@@ -854,6 +872,9 @@ func ToMessage(wire WireMessage) *Message {
 		Output:       wire.Output,
 		Notification: wire.Notification,
 	}
+	if wire.EditedAt != nil {
+		message.EditedAt = seconds(*wire.EditedAt)
+	}
 	body := wire.Body
 	switch body.Kind {
 	case "tool":
@@ -938,6 +959,7 @@ func ToMessage(wire WireMessage) *Message {
 			HasRule:    body.Rule != nil,
 			Command:    str(body.Command),
 			Secret:     secretAsk(body.Secret),
+			Ask:        askQuestion(body.Ask),
 		}}
 	case "draft":
 		card := &DraftCard{ReviewID: str(body.ReviewID), State: str(body.State), PluginID: str(body.PluginID),
@@ -1290,6 +1312,26 @@ func ToBotMemory(wire WireBotMemory) BotMemory {
 		memory.MaxLines, memory.MaxBytes = index.MaxLines, index.MaxBytes
 	}
 	return memory
+}
+
+func askQuestion(wire *WireAskQuestion) *AskQuestion {
+	if wire == nil {
+		return nil
+	}
+	ask := &AskQuestion{Question: wire.Question, Multiple: wire.Multiple, AllowOther: wire.AllowOther, Recommended: -1}
+	for _, option := range wire.Options {
+		ask.Options = append(ask.Options, AskOption{Label: option.Label, Description: option.Description})
+	}
+	if wire.Recommended != nil && *wire.Recommended >= 0 && *wire.Recommended < len(ask.Options) {
+		ask.Recommended = *wire.Recommended
+	}
+	if answer := wire.Answer; answer != nil {
+		ask.Answer = &AskAnswer{Choices: answer.Choices}
+		if answer.Other != nil {
+			ask.Answer.Other = *answer.Other
+		}
+	}
+	return ask
 }
 
 func secretAsk(wire *WireSecretAsk) *SecretAsk {

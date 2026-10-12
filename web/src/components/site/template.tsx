@@ -215,6 +215,7 @@ const PLUGIN_NAMES: Record<string, string> = {
   metaso: '秘塔 AI 搜索',
   zhihu: '知乎',
   amap: '高德地图',
+  email: 'Email (IMAP/SMTP)',
 }
 
 function pluginName(id: string): string {

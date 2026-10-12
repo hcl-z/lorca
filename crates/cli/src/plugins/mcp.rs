@@ -1031,6 +1031,7 @@ pub fn post_sign_in_card(app: &Arc<App>, chat_id: &str, bot_id: &str, plugin_id:
             link: None,
             code: None,
             secret: None,
+            ask: None,
         },
     );
     app.upsert_message(message.clone(), true);
@@ -2919,6 +2920,7 @@ pub async fn ask_with_rule(
             link: None,
             code: None,
             secret: None,
+            ask: None,
         },
     );
     let decision = await_answer(app, chat_id, &message.id, always_rule, cancel, || {

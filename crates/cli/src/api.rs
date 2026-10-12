@@ -413,6 +413,20 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
             runtime::cancel_chat(app, &string(&params, "chat_id")?);
             Ok(Value::Null)
         }
+        // Regenerate, or edit and send again: the user's latest message in a direct chat, its
+        // reply run again. On the bot's Runner, here or sealed to it, so the old reply is gone
+        // from the Runner's transcript before the new turn reads it.
+        "chats.rerun" => {
+            let chat_id = string(&params, "chat_id")?;
+            let message_id = string(&params, "message_id")?;
+            let text = opt_string(&params, "text");
+            let chat = app.chat(&chat_id).ok_or("Unknown chat")?;
+            let bot = chat.meta.bot_ids.first().and_then(|id| app.bot(id)).ok_or("The chat has no bot")?;
+            if app.this_device_id().as_deref() == Some(bot.runner_id.as_str()) {
+                return runtime::rerun_user_message(app, &chat_id, &message_id, text.as_deref()).map(|message| json!({ "message": message.for_app() }));
+            }
+            requests::ask(app, &bot.runner_id, "chats.rerun", json!({ "chat_id": chat_id, "message_id": message_id, "text": text })).await
+        }
         // A message the direct chat's turn holds for its next step: read now. Here when the bot
         // runs here, else sealed to its Runner.
         "chats.send_now" => {
@@ -910,6 +924,10 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
             let mut body = json!({ "chat_id": chat_id, "message_id": message_id, "decision": decision });
             if let Some(values) = params.get("values").filter(|values| values.is_object()) {
                 body["values"] = values.clone();
+            }
+            // A question's answer: the options picked and the user's own words.
+            if let Some(answer) = params.get("answer").filter(|answer| answer.is_object()) {
+                body["answer"] = answer.clone();
             }
             // Sign in on a card for a bot on another Runner: the sign-in page opens here.
             if let Body::Permission { tool, plugin_id, plugin_name, decision: current, .. } = &message.body {

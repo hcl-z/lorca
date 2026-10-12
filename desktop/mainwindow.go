@@ -659,22 +659,11 @@ func (m *mainWindow) view(c *ui.Context) {
 	sidebar, inspector := m.panes(width)
 
 	m.shortcuts(c)
-	// Where the window shows its material, the sidebar is transparent over it, as the Mac's.
-	vibrant := c.Vibrancy()
-	if vibrant {
-		c.Root().Background(ui.Transparent)
-	}
-	root := ui.Box(c).Fill()
-	if !vibrant {
-		root.Background(p.Content)
-	}
+	root := ui.Box(c).Fill().Background(p.Content)
 	root.Children(func() {
 		ui.Row(c).Fill().AlignItems(ui.Stretch).Children(func() {
 			if !m.sidebarCollapsed {
-				pane := ui.Column(c).Width(sidebar)
-				if !vibrant {
-					pane.Background(p.Sidebar)
-				}
+				pane := ui.Column(c).Width(sidebar).Background(p.Sidebar)
 				pane.Children(func() {
 					m.paneHeader(c).Padding(0, 8).Gap(4).Children(func() { m.leadingButtons(c, false) })
 					ui.Column(c).Grow(1).MinHeight(0).Children(func() {
@@ -712,7 +701,10 @@ func (m *mainWindow) view(c *ui.Context) {
 				ui.Box(c).Width(1).Background(p.ToolbarLine)
 				ui.Column(c).Width(inspector).Background(p.Inspector).Children(func() {
 					bar := c.TitleBar()
-					m.paneHeader(c).Padding(0, max(10, bar.Right+8), 0, 12).Children(func() {
+					m.paneHeader(c).Padding(0, max(10, bar.Right+8), 0, 16).Children(func() {
+						if chatID != "" {
+							ui.Text(c, L("Details")).FontSize(13.5).FontWeight(600).SingleLine()
+						}
 						ui.Spacer(c)
 						m.inspectorToggle(c)
 					})
@@ -861,8 +853,19 @@ func (m *mainWindow) contentHeader(c *ui.Context, chatID, title, subtitle string
 				}
 			})
 		}
+		// A chat's header leads with its bots' avatars, as its sidebar row does.
+		if chat := store.Chat(chatID); chat != nil && !m.isSettings() {
+			members := store.BotsIn(chat)
+			avatars := make([]avatarContent, 0, 4)
+			for _, bot := range members[:min(4, len(members))] {
+				avatars = append(avatars, botAvatar(bot))
+			}
+			if len(avatars) > 0 {
+				avatarCluster(c, avatars, 24, false, "", p.Content).Margin(0, space2, 0, 0)
+			}
+		}
 		ui.Column(c).Shrink(1).MinWidth(0).Justify(ui.Center).Children(func() {
-			ui.Text(c, title).FontSize(13).FontWeight(700).FixedLineHeight(16).SingleLine()
+			ui.Text(c, title).FontSize(13.5).FontWeight(600).FixedLineHeight(17).SingleLine()
 			if subtitle != "" {
 				ui.Text(c, subtitle).FontSize(11).FixedLineHeight(14).TextColor(p.Label2).SingleLine()
 			}
