@@ -82,16 +82,22 @@ if (flags.has("--dry-run")) {
 if ((await $`git status --porcelain`.text()).trim()) die("the working tree has changes: commit or stash them first")
 
 // ---- 1. the version, everywhere
-for (const holder of HOLDERS) {
-  const path = join(ROOT, holder.file)
-  // Rewriting the one value keeps each file's formatting, so the commit is a few one-line diffs.
-  await Bun.write(path, (await Bun.file(path).text()).replace(holder.pattern, `$1"${version}"`))
+// A failure puts the files back, so a refused release leaves the tree as it found it.
+const files = [...HOLDERS.map(({ file }) => file), "Cargo.lock"]
+try {
+  for (const holder of HOLDERS) {
+    const path = join(ROOT, holder.file)
+    // Rewriting the one value keeps each file's formatting, so the commit is a few one-line diffs.
+    await Bun.write(path, (await Bun.file(path).text()).replace(holder.pattern, `$1"${version}"`))
+  }
+  // Cargo.lock follows the crates' version; the dependencies stay where they are.
+  await $`cargo update --workspace --offline`.quiet()
+} catch (error) {
+  await $`git checkout -- ${files}`.quiet()
+  die(`could not set ${version}: ${error instanceof Error ? error.message : error}`)
 }
-// Cargo.lock follows the crates' version; the dependencies stay where they are.
-await $`cargo update --workspace --offline`.quiet()
 
 // ---- 2. the commit and the tags
-const files = [...HOLDERS.map(({ file }) => file), "Cargo.lock"]
 await $`git add ${files}`
 await $`git commit -q -m ${`Release ${version}`}`
 for (const tag of tags) await $`git tag ${tag}`
