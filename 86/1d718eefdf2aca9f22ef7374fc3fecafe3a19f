@@ -1,0 +1,19 @@
+desktop/l10n/zh.go
+  s_bb39bd918705fe::t_e6bb647ff82f0b 1066-1077
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "861d718eefdf2aca9f22ef7374fc3fecafe3a19f",
+  "prompts": {},
+  "sessions": {
+    "s_bb39bd918705fe": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_jargs7j6444v",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
