@@ -22,7 +22,7 @@ mock.module("../../modules/lorca-core", () => ({
 /// What GitHub answers, by path under the repository.
 let routes: Record<string, unknown> = {};
 globalThis.fetch = (async (input: string | URL) => {
-  const path = String(input).replace("https://api.github.com/repos/egoist/lorca", "");
+  const path = String(input).replace("https://api.github.com/repos/hcl-z/lorca", "");
   const body = routes[path];
   if (body === undefined) return new Response("{}", { status: 404 });
   return Response.json(body);

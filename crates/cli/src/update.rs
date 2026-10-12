@@ -32,9 +32,9 @@ pub const SELF_UPDATING: bool = option_env!("LORCA_SELF_UPDATE").is_some();
 
 /// The public halves of the keys that sign `lorca-cli.json`, base64. A new key is added here a
 /// release before it signs, so the CLIs in the field already trust it.
-const KEYS: &[&str] = &["mQrlaAaYt9APwAWYN5smWgxI5QJ/W/9He3gsplur1gM="];
+const KEYS: &[&str] = &["AM4DVSSLsWneDtFj0noutZHcFW9xXHbLtYfrMkRGITw="];
 
-const RELEASES: &str = "https://github.com/egoist/lorca/releases";
+const RELEASES: &str = "https://github.com/hcl-z/lorca/releases";
 const MANIFEST: &str = "lorca-cli.json";
 /// What `kind` says in a manifest, so a signature over some other file never passes for one.
 const KIND: &str = "lorca-cli";

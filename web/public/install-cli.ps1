@@ -2,7 +2,7 @@
 #
 #   irm https://lorca.app/install-cli.ps1 | iex
 #
-# It downloads the Windows build from the latest release of github.com/egoist/lorca, checks it
+# It downloads the Windows build from the latest release of github.com/hcl-z/lorca, checks it
 # against the checksum published beside it, puts lorca.exe in ~\.local\bin, and adds that folder
 # to your user PATH. Run it again to update. Settings, as environment variables set before it
 # runs:
@@ -20,7 +20,7 @@
     $ProgressPreference = 'SilentlyContinue'
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-    $releases = 'https://github.com/egoist/lorca/releases'
+    $releases = 'https://github.com/hcl-z/lorca/releases'
     if ($env:LORCA_DOWNLOAD_URL) { $releases = $env:LORCA_DOWNLOAD_URL.TrimEnd('/') }
 
     $cpu = $null

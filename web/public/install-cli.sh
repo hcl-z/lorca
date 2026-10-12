@@ -3,7 +3,7 @@
 #
 #   curl -fsSL https://lorca.app/install-cli.sh | sh
 #
-# It downloads the build for this computer from the latest release of github.com/egoist/lorca,
+# It downloads the build for this computer from the latest release of github.com/hcl-z/lorca,
 # checks it against the checksum published beside it, puts `lorca` in ~/.local/bin, and adds
 # that folder to PATH in your shell's profile. Run it again to update. Settings, as environment
 # variables for `sh`:
@@ -16,7 +16,7 @@
 
 set -eu
 
-RELEASES=${LORCA_DOWNLOAD_URL:-https://github.com/egoist/lorca/releases}
+RELEASES=${LORCA_DOWNLOAD_URL:-https://github.com/hcl-z/lorca/releases}
 
 say() {
 	printf '%s\n' "$*"

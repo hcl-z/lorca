@@ -99,7 +99,7 @@ A release needs no deploy of the site. A change to the scripts ships with `bun r
 
 - They read `LORCA_VERSION` (a release to install instead of the latest), `LORCA_INSTALL_DIR`
   (default `~/.local/bin`), `LORCA_NO_MODIFY_PATH=1` (leave PATH alone), and
-  `LORCA_DOWNLOAD_URL` (the releases URL, `https://github.com/egoist/lorca/releases` by default;
+  `LORCA_DOWNLOAD_URL` (the releases URL, `https://github.com/hcl-z/lorca/releases` by default;
   the workflow points it at its local server).
 - They pick the archive for the OS and CPU, the arm64 build in a shell under Rosetta, and refuse
   an Intel Mac and Windows on Arm. They check the archive against its `.sha256` and move `lorca`

@@ -6,7 +6,7 @@ export default ({ command }: { command: string }) => ({
   identifier: "app.lorca",
   // The app's own version, apart from the Mac app's (the root package.json's). `bun run
   // release-desktop` and the Release desktop workflow read it here.
-  version: "0.1.10",
+  version: "0.1.11",
   icon: command === "dev" ? "assets/icon-dev.png" : "assets/icon.png",
   out: "build",
   // Open in Lorca on a shared bot's page (lorca.app/t/…). The installer registers the scheme on
@@ -18,13 +18,14 @@ export default ({ command }: { command: string }) => ({
   // uploads a release as a draft: docs/releasing-desktop.md. The version's section of CHANGELOG.md
   // here is the update's release notes.
   updates: {
-    publicKey: "WzJsOGNIuf6mcEqo5ff8jub+NoQQOEk4JXreLPYjgyQ=",
-    github: "egoist/lorca",
+    publicKey: "yWfwDxb318+6V2nPfn6Gm44YWhOxz9eOp3ZxShADzts=",
+    github: "hcl-z/lorca",
     tagPrefix: "desktop-v",
   },
-  // Signed ad hoc unless SIGN_IDENTITY names a Developer ID, and notarized with the notarytool
-  // profile NOTARY_PROFILE (in the keychain NOTARY_KEYCHAIN, else the login keychain). `bun run
-  // release-desktop` sets both for a macOS release, as `bun run release-mac` signs the Mac app.
+  // Signed ad hoc, which needs no certificate, unless SIGN_IDENTITY names an identity, and notarized
+  // with the notarytool profile NOTARY_PROFILE (in the keychain NOTARY_KEYCHAIN, else the login
+  // keychain) only when one is set. Releases set neither, as `bun run release-mac` signs the Mac
+  // app ad hoc.
   macos: {
     signingIdentity: process.env.SIGN_IDENTITY,
     notarize: process.env.NOTARY_PROFILE

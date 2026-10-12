@@ -16,7 +16,7 @@ import { t } from "../i18n";
 import { loadPrefs, savePrefs } from "./prefs";
 import { alert } from "../ui/alert";
 
-const API = "https://api.github.com/repos/egoist/lorca";
+const API = "https://api.github.com/repos/hcl-z/lorca";
 const TAG_PREFIX = "mobile-v";
 const DAY = 24 * 60 * 60 * 1000;
 

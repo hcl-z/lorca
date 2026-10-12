@@ -4,7 +4,7 @@
 /// once and the download page links. Their releases are this repository's, tagged desktop-vX.Y.Z
 /// and mobile-vX.Y.Z; the latest release is the CLI's, so the build reads the list, as the apps'
 /// updaters and install.sh do.
-const RELEASES = 'https://api.github.com/repos/egoist/lorca/releases?per_page=100'
+const RELEASES = 'https://api.github.com/repos/hcl-z/lorca/releases?per_page=100'
 const TAG = 'desktop-v'
 const ANDROID_TAG = 'mobile-v'
 

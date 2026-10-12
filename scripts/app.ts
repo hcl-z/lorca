@@ -27,11 +27,17 @@ export function readVersion(): string {
   return version
 }
 
+/** The repository whose GitHub releases carry the Mac app's updates, and the release in it that
+ * holds every disk image, archive, delta, and the appcast (docs/releasing-mac.md). */
+export const RELEASES_REPO = process.env.RELEASES_REPO ?? "hcl-z/lorca"
+export const MAC_RELEASE_TAG = "mac-releases"
+
 /** Where the app looks for updates, and the EdDSA public key Sparkle checks them against: the
- * public half of the login keychain's Sparkle key (docs/releasing-mac.md). */
-export const RELEASES_URL = process.env.DOWNLOAD_URL_PREFIX ?? "https://mac-releases.lorca.app/"
+ * public half of the Sparkle key in the SPARKLE_PRIVATE_KEY secret (docs/releasing-mac.md). */
+export const RELEASES_URL =
+  process.env.DOWNLOAD_URL_PREFIX ?? `https://github.com/${RELEASES_REPO}/releases/download/${MAC_RELEASE_TAG}/`
 export const FEED_URL = process.env.FEED_URL ?? `${RELEASES_URL}appcast.xml`
-export const SPARKLE_PUBLIC_KEY = "gv9GLMPjH5yMQkZMFXnoNfHOyL8/7KGzl/jzAqlzZZY="
+export const SPARKLE_PUBLIC_KEY = "OtKAYwL1iea5mpAA/3d2SizjSPY/Q9COBxZm8KPck3o="
 
 export type Config = "debug" | "release"
 
@@ -282,8 +288,9 @@ const ENTITLEMENTS = `<?xml version="1.0" encoding="UTF-8"?>
 `
 
 /** Sign nested code before the bundle around it, innermost first: Sparkle's XPC services,
- * Updater.app and Autoupdate, the framework, the CLI, then the app. A Developer ID identity signs
- * under the hardened runtime with a secure timestamp, which notarization requires. */
+ * Updater.app and Autoupdate, the framework, the CLI, then the app. The ad-hoc identity `-` signs
+ * without a certificate; a named identity signs under the hardened runtime with a secure
+ * timestamp. */
 async function signBundle(bundle: string, sparkle: string, identity: string, config: Config): Promise<boolean> {
   const hardened = identity !== "-"
   const identifier = bundleId(config)
