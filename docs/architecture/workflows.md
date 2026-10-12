@@ -1,6 +1,6 @@
 # Workflow onboarding
 
-A workflow is an outcome set up in one go: meeting preparation, inbox triage, or repository monitoring. The marketplace offers each as a pack, and setting one up on a Runner answers its few questions, picks or adds its bot, connects the accounts it needs, runs a sample for the user to read, and only then offers to turn its schedule on. The CLI (`crates/cli/src/workflows.rs`) owns the setup; the Mac app and the Windows and Linux app show it through the local websocket.
+A workflow is an outcome set up in one go: meeting preparation, inbox triage, or repository monitoring. The marketplace offers each as a pack, and setting one up on a Runner answers its few questions, picks or adds its bot, connects the accounts it needs, runs a sample for the user to read, and only then offers to turn its schedule on. The CLI (`crates/cli/src/workflows.rs`) owns the setup; the desktop app shows it through the local websocket.
 
 ## Packs
 
@@ -49,4 +49,4 @@ Fields and menus lock while a sample runs and once the workflow is on. Leaving t
 
 On the phone, the chat list's New menu has New Workflow, a sheet of the workflows whose rows slide in the same page as an inset grouped form (`mobile/app/workflows/`, rules in `src/ui/workflows.ts`): Setup with Runs on, the questions, and the menus; Accounts, whose rows slide in the account's screen to sign in; Run Sample as an action row with what it waits for in its footer; the sample; the Schedule with Turn On Schedule and Not Now; and Cancel Setup. Adding an account is left to a computer there, as everywhere on the phone. The phone's core answers `workflows.*` itself.
 
-On the Mac it is `MarketplaceWorkflowPage` and `MarketplaceWorkflowListPage` (`macos/Sources/Lorca/Marketplace/MarketplaceWorkflowPage.swift`), over `Model/Workflows.swift`. On Windows and Linux it is the marketplace's workflow pages in `desktop/workflows.go`, over `desktop/model/workflows.go`, with replies through the store's ordered main-thread posts. With `LORCA_MOCK=1` both desktop apps serve the three packs from a stand-in for the CLI, with named accounts and a sample that finishes a moment after it starts.
+In the desktop app it is the marketplace's workflow pages in `desktop/workflows.go`, over `desktop/model/workflows.go`, with replies through the store's ordered main-thread posts. With `LORCA_MOCK=1` the desktop app serves the three packs from a stand-in for the CLI, with named accounts and a sample that finishes a moment after it starts.

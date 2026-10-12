@@ -1,8 +1,8 @@
 /// <reference types="node" />
 
-/// The newest releases of the Windows and Linux app and of the Android app, which the build reads
-/// once and the download page links. Their releases are this repository's, tagged desktop-vX.Y.Z
-/// and mobile-vX.Y.Z; the latest release is the CLI's, so the build reads the list, as the apps'
+/// The newest releases of the desktop app and of the phone app, which the build reads once and the
+/// download page links. Their releases are this repository's, tagged desktop-vX.Y.Z and
+/// mobile-vX.Y.Z; the latest release is the CLI's, so the build reads the list, as the apps'
 /// updaters and install.sh do.
 const RELEASES = 'https://api.github.com/repos/hcl-z/lorca/releases?per_page=100'
 const TAG = 'desktop-v'
@@ -10,6 +10,8 @@ const ANDROID_TAG = 'mobile-v'
 
 export type DesktopRelease = {
   version: string
+  /// The disk image for Apple silicon. A release made before the macOS build has none.
+  mac: string | null
   /// The installer, for x64.
   windows: string
   /// Installs the newest release for the user in ~/.local, where the app updates itself.
@@ -22,6 +24,8 @@ export type AndroidRelease = {
   version: string
   /// The APK, which installs the app and then updates it from the next release.
   apk: string
+  /// The unsigned iPhone build, which a sideloading tool signs with the user's Apple ID.
+  ipa: string | null
 }
 
 export type Releases = { desktop: DesktopRelease | null; android: AndroidRelease | null }
@@ -46,12 +50,13 @@ export function parseDesktopReleases(releases: GitHubRelease[]): DesktopRelease 
       .flatMap((release) => {
         const file = (test: (name: string) => boolean) =>
           release.assets.find(({ name }) => test(name))?.browser_download_url
+        const mac = file((name) => name.endsWith('.arm64.dmg')) ?? null
         const windows = file((name) => name.endsWith('.exe'))
         const installScript = file((name) => name === 'install.sh')
         const amd64 = file((name) => name.endsWith('_amd64.deb'))
         const arm64 = file((name) => name.endsWith('_arm64.deb'))
         if (!windows || !installScript || !amd64 || !arm64) return []
-        return [{ version: release.tag_name.slice(TAG.length), windows, installScript, deb: { amd64, arm64 } }]
+        return [{ version: release.tag_name.slice(TAG.length), mac, windows, installScript, deb: { amd64, arm64 } }]
       })[0] ?? null
   )
 }
@@ -64,8 +69,9 @@ export function parseAndroidReleases(releases: GitHubRelease[]): AndroidRelease 
       .sort((a, b) => numeric.compare(b.tag_name, a.tag_name))
       .flatMap((release) => {
         const version = release.tag_name.slice(ANDROID_TAG.length)
-        const apk = release.assets.find(({ name }) => name === `lorca-${version}-android.apk`)?.browser_download_url
-        return apk ? [{ version, apk }] : []
+        const asset = (name: string) => release.assets.find((candidate) => candidate.name === name)?.browser_download_url
+        const apk = asset(`lorca-${version}-android.apk`)
+        return apk ? [{ version, apk, ipa: asset(`lorca-${version}-ios.ipa`) ?? null }] : []
       })[0] ?? null
   )
 }

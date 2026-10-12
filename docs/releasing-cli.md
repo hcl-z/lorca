@@ -50,22 +50,18 @@ in the field trust the new one before it signs; then set the secret to the new k
 
 ## Cutting a release
 
-The release is named after the crate's version, which `lorca --version` prints:
+The CLI is released with the desktop and phone apps, under one version: `bun run release <version>`
+sets it in the root [`Cargo.toml`](../Cargo.toml) (`lorca --version` prints it), commits it with
+`Cargo.lock`, and tags the commit `cli-v<version>` ([Releasing](releasing.md)). The tag starts the
+workflow; it can also run by hand on a commit:
 
-1. Set `version` in `[workspace.package]` of the root [`Cargo.toml`](../Cargo.toml), run
-   `cargo check -p lorca` so `Cargo.lock` follows, and commit both.
-2. Run the workflow on that commit, by hand or with a tag:
+```sh
+gh workflow run release-cli.yml
+```
 
-   ```sh
-   gh workflow run release-cli.yml
-   ```
-
-   ```sh
-   git tag cli-v1.0.0 && git push origin cli-v1.0.0
-   ```
-
-3. Publish the draft on GitHub, with **Set as the latest release** checked. The scripts download
-   from `releases/latest/download/`, so a published CLI release has to be the repo's latest.
+When the workflow is done, publish the draft on GitHub, with **Set as the latest release**
+checked. The scripts download from `releases/latest/download/`, so a published CLI release has to be
+the repo's latest.
 
 The workflow:
 
@@ -110,8 +106,8 @@ A release needs no deploy of the site. A change to the scripts ships with `bun r
 
 ## Notes
 
-- **Two versions.** The CLI's is the crate's, `[workspace.package]` in `Cargo.toml`; the Mac
-  app's is `"version"` in `package.json`, which `bun run release-mac` bumps.
+- **One version.** The CLI's is the crate's, `[workspace.package]` in `Cargo.toml`, which
+  `bun run release` sets together with the desktop and phone apps' ([Releasing](releasing.md)).
 - **Mac builds carry only the linker's ad-hoc signature.** `curl` sets no quarantine flag, so
   Gatekeeper never assesses what the script installs. A tarball opened from a browser download
   would need a Developer ID signature and notarization.

@@ -1,6 +1,6 @@
 # Playbooks
 
-A playbook is a skill the user writes for a bot or a group: instructions, an example, reference text, and optional script text. The apps call them skills. `crates/cli/src/playbooks.rs` owns the records; the macOS app and the Windows and Linux app read and edit them through their local CLI. Plugin-provided skills remain part of their installed plugin ([Plugins](plugins.md#plugins)); a user playbook has its own identity and revision history.
+A playbook is a skill the user writes for a bot or a group: instructions, an example, reference text, and optional script text. The apps call them skills. `crates/cli/src/playbooks.rs` owns the records; the desktop app reads and edits them through its local CLI. Plugin-provided skills remain part of their installed plugin ([Plugins](plugins.md#plugins)); a user playbook has its own identity and revision history.
 
 ## Scope and contents
 

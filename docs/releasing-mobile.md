@@ -103,13 +103,15 @@ with the certificate's SHA-256 above, once the developer account is verified.
 
 ## Cutting a release
 
-1. Set `version` in [`mobile/app.config.ts`](../mobile/app.config.ts), and give it a
-   `## [<version>]` section in [`mobile/CHANGELOG.md`](../mobile/CHANGELOG.md): the section becomes
-   the release's notes and the update alert's text, and the release stops without it.
-2. Tag the commit `mobile-v<version>` and push the tag, or run **Release phone app** by hand from
-   the Actions tab, which drafts the release on the commit it runs on; publishing the draft makes
-   the tag. A run on a commit other than the one an existing `mobile-v<version>` tag names is
-   refused, and so is a version whose release is already published.
+1. Run `bun run release <version>` ([Releasing](releasing.md)): it sets `version` in
+   [`mobile/app.config.ts`](../mobile/app.config.ts) with the CLI's and the desktop app's, and tags
+   the commit `mobile-v<version>`. The version's section of the root
+   [`CHANGELOG.md`](../CHANGELOG.md) becomes the release's notes and the update alert's text, and
+   the release stops without it.
+2. The tag starts the workflow, or run **Release phone app** by hand from the Actions tab, which
+   drafts the release on the commit it runs on; publishing the draft makes the tag. A run on a
+   commit other than the one an existing `mobile-v<version>` tag names is refused, and so is a
+   version whose release is already published.
 3. The workflow drafts `mobile-v<version>`, then builds the Android APK on Ubuntu and the iPhone
    `.ipa` on a macOS runner side by side, each uploading into the draft. Check the draft, then
    publish it without making it the latest release:

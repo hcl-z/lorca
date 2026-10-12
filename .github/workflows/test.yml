@@ -1,7 +1,6 @@
 # Runs the test suites on every pull request and every push to main: the Rust workspace on Linux,
 # where the relay's store suite runs on SQLite and on a Postgres service, and on macOS; the crates
-# a Windows Runner runs, on Windows; the macOS app's XCTest suite over the markdown crate it links;
-# the Windows and Linux app's page and Go side; and the phone app's TypeScript. The end-to-end
+# a Windows Runner runs, on Windows; the desktop app's page and Go side; and the phone app's TypeScript. The end-to-end
 # scripts, which need a live relay, a model, or a simulator, run locally.
 name: Tests
 
@@ -78,26 +77,8 @@ jobs:
       # Every suite runs, so one failing on Windows does not hide the others.
       - run: cargo test --locked --no-fail-fast -p lorca -p lorca-agent -p lorca-models -p lorca-provider-auth -p lorca-tls
 
-  macos-app:
-    name: macOS app
-    # The app builds against the macOS 26 SDK.
-    runs-on: macos-26
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - uses: oven-sh/setup-bun@v2
-      # The markdown crate's static library, xcframework, and Swift bindings, as `bun run dev`
-      # builds them into macos/Libraries and macos/Sources/LorcaMarkdown.
-      - name: Build the markdown crate for Swift
-        run: bun -e 'import { buildMarkdown } from "./scripts/app.ts"; if (!(await buildMarkdown("debug")).ok) process.exit(1)'
-      - run: swift test
-        working-directory: macos
-      - run: bun run test:mac-startup
-
   desktop:
-    name: Windows and Linux app
+    name: Desktop app
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:

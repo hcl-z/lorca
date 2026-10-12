@@ -15,17 +15,18 @@ export default ({ command }: { command: string }) => ({
   // Release builds update themselves from this repository's newest release tagged
   // desktop-v<version>, which MyGo finds through the GitHub API since the latest release is the
   // CLI's, and install only what the key of `mygo keygen` signed. `bun run release-desktop`
-  // uploads a release as a draft: docs/releasing-desktop.md. The version's section of CHANGELOG.md
-  // here is the update's release notes.
+  // uploads a release as a draft: docs/releasing-desktop.md. The version's section of the root
+  // CHANGELOG.md is the update's release notes.
   updates: {
     publicKey: "yWfwDxb318+6V2nPfn6Gm44YWhOxz9eOp3ZxShADzts=",
     github: "hcl-z/lorca",
     tagPrefix: "desktop-v",
+    // The notes of every release, the CLI's and the phone app's too.
+    changelog: "../CHANGELOG.md",
   },
   // Signed ad hoc, which needs no certificate, unless SIGN_IDENTITY names an identity, and notarized
   // with the notarytool profile NOTARY_PROFILE (in the keychain NOTARY_KEYCHAIN, else the login
-  // keychain) only when one is set. Releases set neither, as `bun run release-mac` signs the Mac
-  // app ad hoc.
+  // keychain) only when one is set. Releases set neither.
   macos: {
     signingIdentity: process.env.SIGN_IDENTITY,
     notarize: process.env.NOTARY_PROFILE

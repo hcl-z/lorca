@@ -79,14 +79,13 @@ export const zh: Messages = {
   },
   download: {
     title: '下载 Lorca',
-    description: '下载 Lorca 的 Mac、Windows、Linux 和 Android 版，通过 TestFlight 加入 iPhone 和 iPad 版测试，或在任意电脑上安装 Lorca CLI。',
+    description: '下载 Lorca 的 Mac、Windows、Linux、iPhone 和 Android 版，或在任意电脑上安装 Lorca CLI。',
     version: '版本 {{version}}',
     unavailable: '暂时无法获取最新版本，请刷新页面重试。',
     mac: {
       title: 'Mac',
       body: '和智能体聊天，并在你的 Mac 上运行它们。',
       action: '下载 Mac 版',
-      system: 'macOS {{version}} 或更高版本',
       appleSilicon: 'Apple 芯片',
     },
     windows: {
@@ -103,9 +102,9 @@ export const zh: Messages = {
     },
     ios: {
       title: 'iPhone 和 iPad',
-      body: '和智能体聊天，它们继续在你的电脑上运行。扫描桌面应用里的二维码即可配对。',
-      action: '加入 TestFlight 测试',
-      note: '需要先从 App Store 安装 TestFlight。',
+      body: '和智能体聊天，它们继续在你的电脑上运行。扫描桌面应用里的二维码即可配对。侧载工具会用你的 Apple ID 给应用签名。',
+      action: '下载 iPhone 版',
+      note: '未签名：用 AltStore 或 Sideloadly 安装',
     },
     android: {
       title: 'Android',

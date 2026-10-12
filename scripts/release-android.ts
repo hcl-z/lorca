@@ -16,7 +16,7 @@ import { existsSync, readdirSync } from "node:fs"
 import { copyFile, mkdir, rm } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { color, log, ROOT } from "./app.ts"
+import { color, log, ROOT } from "./common.ts"
 
 function die(message: string): never {
   log(color.red(message))

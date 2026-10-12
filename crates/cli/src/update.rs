@@ -1,5 +1,5 @@
-//! Keeps a CLI installed with the site's script current, as Sparkle and MyGo's updater keep the
-//! apps and the CLI they carry. Only the builds `release-cli.yml` makes replace themselves
+//! Keeps a CLI installed with the site's script current, as MyGo's updater keeps the desktop
+//! app and the CLI it carries. Only the builds `release-cli.yml` makes replace themselves
 //! ([`SELF_UPDATING`]); the apps' bundles, the dev loop's builds, and `cargo build`'s never do.
 //!
 //! Each `cli-v` release carries `lorca-cli.json`, the version and each build's archive with its

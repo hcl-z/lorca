@@ -13,7 +13,7 @@ import { $ } from "bun"
 import { existsSync } from "node:fs"
 import { mkdir, readdir, rename, rm } from "node:fs/promises"
 import { join } from "node:path"
-import { color, log, ROOT } from "./app.ts"
+import { color, log, ROOT } from "./common.ts"
 
 function die(message: string): never {
   log(color.red(message))

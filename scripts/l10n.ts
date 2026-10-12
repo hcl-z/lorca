@@ -1,5 +1,5 @@
-// Checks the apps' string tables against the sources: every `L("…")` in the Mac app, every
-// `t("…")` in the phone app, and every `L("…")` and `Lc("…", "…")` in the desktop app's Go should
+// Checks the apps' string tables against the sources: every `t("…")` in the phone app, and every
+// `L("…")` and `Lc("…", "…")` in the desktop app's Go should
 // have a Chinese entry, and a format key and its translation should take the same values. `bun run
 // l10n` lists what is missing, unused, or mismatched; `--merge <fragment.json>…` adds
 // `{ "English": "中文" }` files to the tables first.
@@ -8,7 +8,6 @@ import { Glob } from "bun"
 import { join } from "node:path"
 
 const ROOT = join(import.meta.dir, "..")
-const MAC_TABLE = join(ROOT, "macos/Resources/zh-Hans.lproj/Localizable.strings")
 const PHONE_TABLE = join(ROOT, "mobile/src/i18n/zh.ts")
 const DESKTOP_TABLE = join(ROOT, "desktop/l10n/zh.go")
 
@@ -46,16 +45,6 @@ async function keysIn(dir: string, pattern: string, call: RegExp, skip: (path: s
   return keys
 }
 
-async function readMacTable(): Promise<Table> {
-  const table: Table = new Map()
-  const file = Bun.file(MAC_TABLE)
-  if (!(await file.exists())) return table
-  for (const match of (await file.text()).matchAll(/^"((?:[^"\\]|\\.)*)"\s*=\s*"((?:[^"\\]|\\.)*)";/gm)) {
-    table.set(unescape(match[1]), unescape(match[2]))
-  }
-  return table
-}
-
 /// The desktop app's keys: `L("…")`, and `Lc("…", "…")` as the key `…|…`.
 async function desktopKeysIn(dir: string) {
   const keys = new Map<string, string>()
@@ -82,11 +71,6 @@ async function readPhoneTable(path = PHONE_TABLE): Promise<Table> {
 
 function sorted(table: Table) {
   return [...table].sort(([a], [b]) => a.localeCompare(b, "en"))
-}
-
-async function writeMacTable(table: Table) {
-  const lines = sorted(table).map(([key, value]) => `"${escapeFor(key)}" = "${escapeFor(value)}";`)
-  await Bun.write(MAC_TABLE, `/* Simplified Chinese. The key is the English text passed to L(); \`bun run l10n\` checks this table. */\n\n${lines.join("\n")}\n`)
 }
 
 async function writePhoneTable(table: Table) {
@@ -131,13 +115,11 @@ function report(name: string, used: Map<string, string>, table: Table) {
   return problems
 }
 
-const macKeys = await keysIn(join(ROOT, "macos/Sources/Lorca"), "**/*.swift", /\bL\(\s*"((?:[^"\\]|\\.)*)"(?:,\s*context:\s*"((?:[^"\\]|\\.)*)")?/g, () => false)
 const phoneKeys = await keysIn(join(ROOT, "mobile"), "{app,src}/**/*.{ts,tsx}", /\bt\(\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)')/g, (path) => path.includes("i18n/") || path.endsWith(".test.ts"))
 // The phone's `tc("…", "…")` is the key `…|…`, as the desktop app's `Lc` is.
 for (const [key, path] of await keysIn(join(ROOT, "mobile"), "{app,src}/**/*.{ts,tsx}", /\btc\(\s*"((?:[^"\\]|\\.)*)",\s*"((?:[^"\\]|\\.)*)"/g, (path) => path.includes("i18n/") || path.endsWith(".test.ts"))) phoneKeys.set(key, path)
 const desktopKeys = await desktopKeysIn(join(ROOT, "desktop"))
 
-const mac = await readMacTable()
 const phone = await readPhoneTable()
 const desktop = await readPhoneTable(DESKTOP_TABLE)
 
@@ -146,7 +128,7 @@ if (mergeAt !== -1) {
   for (const path of process.argv.slice(mergeAt + 1)) {
     const fragment = (await Bun.file(path).json()) as Record<string, string>
     for (const [key, value] of Object.entries(fragment)) {
-      for (const [used, table, name] of [[macKeys, mac, "mac"], [phoneKeys, phone, "phone"], [desktopKeys, desktop, "desktop"]] as const) {
+      for (const [used, table, name] of [[phoneKeys, phone, "phone"], [desktopKeys, desktop, "desktop"]] as const) {
         if (!used.has(key)) continue
         const existing = table.get(key)
         if (existing !== undefined && existing !== value) console.log(`${name}: kept ${JSON.stringify(existing)} over ${JSON.stringify(value)} for ${JSON.stringify(key)}`)
@@ -154,10 +136,9 @@ if (mergeAt !== -1) {
       }
     }
   }
-  await writeMacTable(mac)
   await writePhoneTable(phone)
   await writeDesktopTable(desktop)
 }
 
-const problems = report("mac", macKeys, mac) + report("phone", phoneKeys, phone) + report("desktop", desktopKeys, desktop)
+const problems = report("phone", phoneKeys, phone) + report("desktop", desktopKeys, desktop)
 process.exit(problems === 0 ? 0 : 1)

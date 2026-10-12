@@ -2,14 +2,14 @@
 
 Source of truth for how Lorca is built. Read this before writing code, then the docs in [Subjects](#subjects) for the parts you change.
 
-Lorca is a Grok Bot alternative: persistent named bots, 1:1 chats, group chats, handoff, and orchestration. Work runs on **Devices you own**. The Rust CLI runs on macOS, Linux, and Windows. The macOS app, and the app for Windows and Linux, are UIs for the local CLI, which each bundles and launches.
+Lorca is a Grok Bot alternative: persistent named bots, 1:1 chats, group chats, handoff, and orchestration. Work runs on **Devices you own**. The Rust CLI runs on macOS, Linux, and Windows. The desktop app (macOS, Windows, and Linux) is the UI for the local CLI, which it bundles and launches.
 
 Identity is a **key pair**. Devices pair. The relay stores public keys and ciphertext, after [Happy’s security model](https://happy.engineering/docs/security/).
 
 ## Constraints
 
 1. **The app speaks only to the local CLI** over localhost websocket. The app ships the CLI binary inside its bundle and starts `lorca serve` itself, unless one already answers on the port. The CLI holds keys, talks to the relay, and talks to models.
-2. **The UI is AppKit** (SPM) on macOS: system materials, SF Symbols, Auto Layout, keyboard, accessibility. On Windows and Linux it is a MyGo app in Go, drawn with MyGo's native UI toolkit, that follows the macOS app screen for screen; it builds for macOS too.
+2. **The desktop UI is a MyGo app in Go**, drawn with MyGo's native UI toolkit, one codebase for macOS, Windows, and Linux.
 3. **The CLI owns the agent loop:** inference, tools, streaming, cancellation, orchestration.
 4. **The relay is zero-knowledge:** opaque blobs and public keys. Auth is a signature challenge. Devices check what it delivers: the account DEK encrypts what they share, and what one Device sends another is signed ([Relay trust](docs/architecture/relay-trust.md)). Its [hosted receivers](docs/architecture/receivers.md) read a service's webhook while they seal it to a Runner, and keep only the sealed copy.
 5. **Every Device records its `os`.** A Device with a desktop `os` (`macos`, `linux`, `windows`) is a **Runner**. Phones and tablets (`ios`, `ipados`, `android`) are Devices, never Runners.
@@ -20,8 +20,8 @@ Identity is a **key pair**. Devices pair. The relay stores public keys and ciphe
 
 ```
 ┌─────────────────────┐     local websocket      ┌──────────────────────────┐
-│  Lorca.app        │ ◄──────────────────────► │  lorca CLI (Rust)      │
-│  AppKit             │     127.0.0.1           │  keys + agent loop       │
+│  Lorca (desktop)  │ ◄──────────────────────► │  lorca CLI (Rust)      │
+│  MyGo (Go)          │     127.0.0.1           │  keys + agent loop       │
 └─────────────────────┘                          └────────────┬─────────────┘
                                                               │ HTTPS
                                                               │ ciphertext + signed requests
@@ -76,7 +76,7 @@ One doc per subject under `docs/architecture/`, each short enough to read in one
 | [Relay trust](docs/architecture/relay-trust.md) | What a Device takes from the relay and how it checks it: Device records and unpaired keys, signed envelopes, the challenge nonce, the pairing reply key, the account key's generations and their rotation on unpair |
 | [Protocols](docs/architecture/protocols.md) | The app ↔ CLI websocket and the CLI ↔ relay requests and blobs |
 | [CLI (runtime)](docs/architecture/runtime.md) | The `lorca` binary and its data directory, installing it, its signed self-updates and `lorca service`, the agent loop and a turn on a Runner |
-| [Notifications](docs/architecture/notifications.md) | Phone pushes for replies, failures, and questions, the macOS app's own notifications, reads on another Device, the chat on screen |
+| [Notifications](docs/architecture/notifications.md) | Phone pushes for replies, failures, and questions, the desktop app's own notifications, reads on another Device, the chat on screen |
 | [Bot permissions](docs/architecture/bot-permissions.md) | A bot's Access to plugins, tools, files, and shell; where the CLI checks it; access requests |
 | [Tools](docs/architecture/tools.md) | Team, memory, and coding tools, Auto-review |
 | [Handoffs](docs/architecture/handoffs.md) | Durable delegated contracts, expected outputs, result evidence and return routing, offline delivery and restart recovery |
@@ -109,9 +109,7 @@ One doc per subject under `docs/architecture/`, each short enough to read in one
 | [Providers](docs/architecture/providers.md) | Each model provider and its sign-in, custom providers, thinking levels, the model catalog and cost, compaction, retries |
 | [Budgets and connector limits](docs/architecture/budgets.md) | Limits on turns, tasks, and routines, stopping and resuming, price labels, shared plugin call limits |
 | [Sidebar sections and alerts](docs/architecture/sidebar.md) | Sections, hidden and muted chats in every app, and the chat a computer shows in front, which no phone is alerted about |
-| [macOS app](docs/architecture/macos-app.md) | The AppKit app: launching the CLI, windows and onboarding, settings, updates, the command palette, sidebar and inspector |
-| [macOS chat](docs/architecture/macos-chat.md) | Transcript, composer, output previews, working and read state in AppKit |
-| [Windows and Linux app](docs/architecture/desktop-app.md) | The MyGo app: its model, host, and native views, title bar, commands, updates, development and builds |
+| [Desktop app](docs/architecture/desktop-app.md) | The MyGo app for macOS, Windows, and Linux: its model, host, and native views, launching the CLI, windows and onboarding, settings, title bar, commands, updates, development and builds |
 | [Phone app](docs/architecture/phone-app.md) | The Expo app over the Rust core: the native module, pairing, relay status, attachments, dictation, notifications, turns |
 | [Phone releases and updates](docs/architecture/phone-updates.md) | TestFlight builds, Android APK releases, and the Android app's self-update: the daily check and offer, the progress dialog, the package installer |
 | [Website](docs/architecture/website.md) | `web/`: the site, its docs, and the install scripts it serves |
