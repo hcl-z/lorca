@@ -9,7 +9,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, watch, writeFileSync } from "node:fs"
 import { networkInterfaces } from "node:os"
 import { join, relative } from "node:path"
-import { CRATES_DIR, ROOT, color, log } from "./app.ts"
+import { CRATES_DIR, ROOT, color, log } from "./common.ts"
 
 const MOBILE = join(ROOT, "mobile")
 const MODULE = join(MOBILE, "modules", "lorca-core")

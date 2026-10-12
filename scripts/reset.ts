@@ -5,7 +5,7 @@ import { rm } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { APP_NAME, BUNDLE_ID, DEBUG_APP_NAME, DEBUG_BUNDLE_ID, PACKAGE_DIR, ROOT, color, log } from "./app.ts"
+import { APP_NAME, BUNDLE_ID, DEBUG_APP_NAME, DEBUG_BUNDLE_ID, ROOT, color, log } from "./common.ts"
 
 const args = process.argv.slice(2)
 const wipeBuild = args.includes("--build")
@@ -27,7 +27,6 @@ const targets: { path: string; what: string; on: boolean }[] = [
   { path: join(ROOT, "temp", "lorca-relay.db-shm"), what: "local relay database", on: wipeRelay },
   { path: join(ROOT, "temp", "lorca-relay.files"), what: "local relay attachments", on: wipeRelay },
   { path: join(ROOT, "target"), what: "Rust build output", on: wipeBuild },
-  { path: join(PACKAGE_DIR, ".build"), what: "Swift build output", on: wipeBuild },
 ]
 
 async function pids(pattern: string): Promise<number[]> {
@@ -41,7 +40,7 @@ async function pids(pattern: string): Promise<number[]> {
 }
 
 async function stopProcesses() {
-  const patterns = [`${appName}.app/Contents/MacOS/${APP_NAME}`, `lorca serve --port ${port}`, "lorca-relay"]
+  const patterns = [`${appName}.app/Contents/MacOS/`, `lorca serve --port ${port}`, "lorca-relay"]
   let found: number[] = []
   for (const pattern of patterns) found = found.concat(await pids(pattern))
   found = [...new Set(found)]

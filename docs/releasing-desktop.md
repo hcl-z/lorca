@@ -44,8 +44,7 @@ MyGo's folder (or `MYGO_UPDATER_PRIVATE_KEY`). It stops before building when eit
 
 ### 3. macOS signing
 
-The macOS app is signed ad hoc, as the Mac app is ([Releasing the Mac app](releasing-mac.md)): no
-certificate, no notarization, and nothing to set up. `mygo.config.ts` signs with a named identity
+The macOS app is signed ad hoc: no certificate, no notarization, and nothing to set up. `mygo.config.ts` signs with a named identity
 and notarizes only when `SIGN_IDENTITY` and `NOTARY_PROFILE` are set, which a release leaves unset.
 The first launch of a downloaded app needs Privacy & Security ▸ Open Anyway, or
 `xattr -dr com.apple.quarantine "/Applications/Lorca.app"`; updates the app installs for itself do
@@ -53,17 +52,18 @@ not ask. The macOS build needs a Mac, which the workflow's `macos-26` runner is.
 
 ## Cutting a release
 
-The version is `version` in [`desktop/mygo.config.ts`](../desktop/mygo.config.ts), apart from the
-Mac app's in the root `package.json`.
+The version is `version` in [`desktop/mygo.config.ts`](../desktop/mygo.config.ts), shared with the
+CLI and the phone app, and its notes are the version's section of the root
+[`CHANGELOG.md`](../CHANGELOG.md) (`updates.changelog`): the section becomes the notes of the
+release and of the update window, and the release stops without it.
 
-1. Set the version, and give it a `## [<version>]` section in
-   [`desktop/CHANGELOG.md`](../desktop/CHANGELOG.md): the section becomes the notes of the release
-   and of the update window, and the release stops without it.
-2. Tag the commit `desktop-v<version>` and push the tag, or run **Release desktop** by hand from
-   the Actions tab on the branch to release (`gh workflow run release-desktop.yml --ref main`),
-   which drafts the release on its commit; publishing the draft makes the tag. A run on a commit
-   other than the one an existing `desktop-v<version>` tag names is refused.
-3. When the workflow is done, check the draft `desktop-v<version>` and publish it without making
+1. Run `bun run release <version>` ([Releasing](releasing.md)). It sets the version, commits, and
+   tags the commit `desktop-v<version>`; with `--push` it pushes the tag. You can also run
+   **Release desktop** by hand from the Actions tab on the branch to release
+   (`gh workflow run release-desktop.yml --ref main`), which drafts the release on its commit;
+   publishing the draft makes the tag. A run on a commit other than the one an existing
+   `desktop-v<version>` tag names is refused.
+2. When the workflow is done, check the draft `desktop-v<version>` and publish it without making
    it the latest release:
 
    ```sh

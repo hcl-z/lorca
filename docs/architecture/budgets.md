@@ -50,7 +50,7 @@ Another Device's call goes to the bot's Runner through the existing sealed reque
 
 ## In the apps
 
-The macOS app and the Windows and Linux app show the same things, and the phone the same in its own idiom ([Phone app](phone-app.md)):
+The desktop app shows these, and the phone the same in its own idiom ([Phone app](phone-app.md)):
 
 - **The DM inspector**: a Limits row in Runs with, after Spent. Its value is the chat's limits ("$2.00 · 200k tokens", or None), or Limit reached / Interrupted in orange when the chat's newest turn stopped. The whole row opens the Limits sheet.
 - **The Limits sheet**: Spending (USD), Tokens, Run time (minutes), Retries, and Plugin calls, each empty for no limit, with what the work used beside each and the reached one in orange. When work stopped, a card above the form names the limit and what it used of it, with Resume. Resume saves the form as the turn's and the chat's limits and goes on, provided the limit it reached went up; otherwise it asks before granting the limits again in full. Save is the sheet's default button.
@@ -58,7 +58,7 @@ The macOS app and the Windows and Linux app show the same things, and the phone 
 - **Routines**: the routine sheet shows Limit reached as its state, ahead of any [health](routines.md#missed-occurrences-and-recovery) state, with what it used under it, has a Limits row in Schedule that opens the routine's Limits sheet, and keeps Run Now off until it is resumed. Its inspector row says Limit reached too.
 - **Plugins**: the plugin sheet's Status has a Call limit row ("60 a minute", or "Waiting until 5:40 AM" while the service asked to slow down) that opens the Call Limit sheet: calls every n seconds and at once, with Applies to (this account, or all of the service's accounts) only for an account whose service has others.
 
-On the Mac these are `BudgetViewController`, `ConnectorLimitsViewController`, and `DisclosureRow`; in `desktop/` they are `sheet_budget.go`, `sheet_connector_limits.go`, `disclosureRow`, and `model/budgets.go`. Both apps' demo data has limits, a turn stopped at its token limit, and a routine stopped at its spending limit. On the phone, a plugin's screen sets its account's call limit from menus; the service-wide limit is set on a computer.
+In `desktop/` they are `sheet_budget.go`, `sheet_connector_limits.go`, `disclosureRow`, and `model/budgets.go`. Both apps' demo data has limits, a turn stopped at its token limit, and a routine stopped at its spending limit. On the phone, a plugin's screen sets its account's call limit from menus; the service-wide limit is set on a computer.
 
 On the phone (`app/chat-info/limits.tsx`, `src/ui/limits.ts`): Details' Runs with ends with a Limits row: the DM's limits, or Limit reached in orange when its newest turn stopped. A task's screen and a routine's screen have the same row; a routine that stopped leads its row and its screen with Limit reached and drops Run Now. A routine's screen and its row in Details are in [Routines](routines.md#the-apps). The row slides in the Limits screen: a stopped card with Resume, the five limits as fields (empty for none, dollars and minutes), and what the work used, with the limit it reached in orange. Save in the toolbar sets the limits; Resume saves them, then goes on, asking first when it would grant the limits again in full. `budgets` comes from the snapshot and `budgets.changed`.
 

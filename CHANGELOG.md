@@ -1,10 +1,17 @@
 # Changelog
 
-The Mac app's release notes. `bun run release-mac` attaches a version's section to its update, and
-Sparkle shows it in the update window. The Windows and Linux app's are in
-[desktop/CHANGELOG.md](desktop/CHANGELOG.md).
+The release notes of the command line, the desktop app, and the phone app, which share one version.
+A release attaches its version's section to its GitHub release, and the apps show it in their
+update windows. `bun run release <version>` needs the section. Versions before 1.0.17 were numbered
+apart: 1.0.16 and below are the Mac app's, 0.1.11 and below the desktop app's, 1.0.5 and below the
+phone app's.
 
 ## [Unreleased]
+
+## [1.0.17]
+
+- Lorca on the Mac is now the desktop app that also runs on Windows and Linux, and the separate Mac-only app is gone. Download `Lorca <version>.arm64.dmg` from the latest `desktop-v` release; it replaces the old app (both are `app.lorca`) and keeps your account, which lives in `~/.lorca`. Allow it once under System Settings › Privacy & Security › Open Anyway. The old app's update feed ends with 1.0.16, so install this one by hand.
+- The command line, the desktop app, and the phone app share one version number from here on, and one set of notes.
 
 ## [1.0.16]
 

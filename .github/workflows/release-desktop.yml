@@ -2,7 +2,7 @@
 # desktop-vX.Y.Z. The repository's latest release stays the CLI's, which install-cli.sh and
 # install-cli.ps1 download, and the apps find the newest desktop-v release through the GitHub API.
 # A tag desktop-vX.Y.Z, naming the version in desktop/mygo.config.ts, drafts the release with the
-# version's section of desktop/CHANGELOG.md as its notes, then builds Windows x64, Linux x64,
+# version's section of CHANGELOG.md as its notes, then builds Windows x64, Linux x64,
 # Linux arm64 and macOS on Apple silicon side by side. A run by hand does the same for the commit it
 # runs on, naming the release after desktop/mygo.config.ts; the tag appears when the draft is
 # published. Each build runs `bun run release-desktop <platform>`: the CLI (with cargo-zigbuild off
@@ -88,9 +88,9 @@ jobs:
             none)
               bun -e '
                 import { extractReleaseNotes } from "./scripts/changelog.ts"
-                const notes = extractReleaseNotes(await Bun.file("desktop/CHANGELOG.md").text(), process.env.VERSION)
+                const notes = extractReleaseNotes(await Bun.file("CHANGELOG.md").text(), process.env.VERSION)
                 if (!notes) {
-                  console.error(`::error::desktop/CHANGELOG.md has no "## [${process.env.VERSION}]" section`)
+                  console.error(`::error::CHANGELOG.md has no "## [${process.env.VERSION}]" section`)
                   process.exit(1)
                 }
                 await Bun.write("notes.md", notes + "\n")
@@ -115,7 +115,7 @@ jobs:
           # MyGo builds Windows and Linux from Linux without cgo, and zig, through cargo-zigbuild,
           # builds the CLI inside each app as the CLI releases do: static (musl) for Linux. The
           # macOS app needs a Mac, which signs it ad hoc and makes its disk image; it is
-          # for Apple silicon, as the Mac app and the CLI's macOS release are.
+          # for Apple silicon, as the CLI's macOS release is.
           - { platform: windows/amd64, target: x86_64-pc-windows-gnu, os: ubuntu-latest }
           - { platform: linux/amd64, target: x86_64-unknown-linux-musl, os: ubuntu-latest }
           - { platform: linux/arm64, target: aarch64-unknown-linux-musl, os: ubuntu-latest }

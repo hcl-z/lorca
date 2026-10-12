@@ -1,6 +1,6 @@
 # Releases the phone app (mobile/). A tag mobile-vX.Y.Z, naming the version in mobile/app.config.ts,
 # drafts the release mobile-vX.Y.Z of this repository with the version's section of
-# mobile/CHANGELOG.md as its notes, then builds the Android APK, signed with the release keystore,
+# CHANGELOG.md as its notes, then builds the Android APK, signed with the release keystore,
 # and an unsigned iPhone .ipa, which a sideloading tool signs with the user's own Apple ID, and
 # uploads both to the draft. A run by hand does the same on the commit it runs on, for both
 # platforms or one; the tag appears when the draft is published. The iPhone build runs
@@ -73,8 +73,8 @@ jobs:
           fi
           bun -e '
             import { extractReleaseNotes } from "./scripts/changelog.ts"
-            if (!extractReleaseNotes(await Bun.file("mobile/CHANGELOG.md").text(), process.argv[1])) {
-              console.error(`::error::mobile/CHANGELOG.md has no "## [${process.argv[1]}]" section`)
+            if (!extractReleaseNotes(await Bun.file("CHANGELOG.md").text(), process.argv[1])) {
+              console.error(`::error::CHANGELOG.md has no "## [${process.argv[1]}]" section`)
               process.exit(1)
             }
           ' "$version"
@@ -115,7 +115,7 @@ jobs:
             none)
               bun -e '
                 import { extractReleaseNotes } from "./scripts/changelog.ts"
-                await Bun.write("notes.md", extractReleaseNotes(await Bun.file("mobile/CHANGELOG.md").text(), process.env.VERSION) + "\n")
+                await Bun.write("notes.md", extractReleaseNotes(await Bun.file("CHANGELOG.md").text(), process.env.VERSION) + "\n")
               '
               # Not the latest release, which stays the CLI's that install-cli.sh downloads.
               gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --latest=false --target "$GITHUB_SHA" --title "Lorca for iPhone and Android $VERSION" --notes-file notes.md

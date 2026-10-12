@@ -77,14 +77,13 @@ export const en = {
   },
   download: {
     title: 'Download Lorca',
-    description: 'Download Lorca for Mac, Windows, Linux, and Android, join the iPhone and iPad beta on TestFlight, or install the Lorca CLI on any computer.',
+    description: 'Download Lorca for Mac, Windows, Linux, iPhone, and Android, or install the Lorca CLI on any computer.',
     version: 'Version {{version}}',
     unavailable: "Couldn't load the latest version. Reload the page to try again.",
     mac: {
       title: 'Mac',
       body: 'Chat with your bots and run them on your Mac.',
       action: 'Download for Mac',
-      system: 'macOS {{version}} or later',
       appleSilicon: 'Apple silicon',
     },
     windows: {
@@ -101,9 +100,9 @@ export const en = {
     },
     ios: {
       title: 'iPhone and iPad',
-      body: 'Chat with your bots while they keep running on your computer. Scan the QR code in the desktop app to pair.',
-      action: 'Join the TestFlight beta',
-      note: 'Install TestFlight from the App Store first.',
+      body: 'Chat with your bots while they keep running on your computer. Scan the QR code in the desktop app to pair. A sideloading tool signs the app with your Apple ID.',
+      action: 'Download for iPhone',
+      note: 'Unsigned: install it with AltStore or Sideloadly',
     },
     android: {
       title: 'Android',
