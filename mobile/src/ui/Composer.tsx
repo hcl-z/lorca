@@ -11,8 +11,6 @@
 import { Button as MenuButton, Host as SwiftHost, Image as MenuImage, Menu, type ButtonProps } from "@expo/ui/swift-ui";
 import { background, frame, shapes } from "@expo/ui/swift-ui/modifiers";
 import { MenuView, type MenuAction, type MenuComponentRef } from "@expo/ui/community/menu";
-import { Column as ComposeColumn, Host as ComposeHost, Icon as ComposeIcon, ListItem, ModalBottomSheet, Text as ComposeText } from "@expo/ui/jetpack-compose";
-import { clickable, fillMaxWidth, padding } from "@expo/ui/jetpack-compose/modifiers";
 import * as DocumentPicker from "expo-document-picker";
 import { haptic } from "./haptics";
 import { Image } from "expo-image";
@@ -33,6 +31,7 @@ import { floatShadow, Font, usePalette } from "./theme";
 import { Float, ROUND, RoundButton } from "./chrome";
 import { AndroidIcons } from "./navigation";
 import { alert } from "./alert";
+import { PopupMenu } from "./PopupMenu";
 
 const MAX_LINES = 5;
 const CHIP = 56;
@@ -113,7 +112,7 @@ export const Composer = memo(function Composer({
   const p = usePalette();
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<PickedFile[]>([]);
-  const [attachOpen, setAttachOpen] = useState(false);
+  const attachMenuRef = useRef<MenuComponentRef>(null);
   const [listening, setListening] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [levels, setLevels] = useState<number[]>([0, 0, 0, 0, 0]);
@@ -355,21 +354,28 @@ export const Composer = memo(function Composer({
 
   const primary = listening || canSend ? "send" : responding ? "stop" : "dictate";
   // An edit takes no new files.
+  const attachActions: MenuAction[] = sources.map((source, index) => ({ id: String(index), title: source.title, image: source.androidIcon }));
   const plus =
     Platform.OS === "ios" ? (
-      <View style={[floatShadow(p), editing && styles.disabled]} pointerEvents={editing ? "none" : "auto"}>
-        <AttachMenu sources={sources} tint={p.chrome} label={p.label} style={{ borderRadius: ROUND / 2, borderWidth: StyleSheet.hairlineWidth, borderColor: p.chromeBorder }} />
+      // The wrapper carries the disc's shape and shadow; the menu inside is clipped to the disc.
+      <View
+        style={[styles.plusShadow, { backgroundColor: p.chrome }, floatShadow(p), editing && styles.disabled]}
+        pointerEvents={editing ? "none" : "auto"}
+      >
+        <AttachMenu sources={sources} tint={p.chrome} label={p.label} style={{ borderWidth: StyleSheet.hairlineWidth, borderColor: p.chromeBorder }} />
       </View>
     ) : (
-      <RoundButton
-        icon="plus"
-        label={t("Attach")}
-        disabled={!!editing}
-        onPress={() => {
-          haptic.open();
-          setAttachOpen(true);
-        }}
-      />
+      <PopupMenu ref={attachMenuRef} actions={attachActions} onPressAction={({ nativeEvent }) => sources[Number(nativeEvent.event)]?.run()}>
+        <RoundButton
+          icon="plus"
+          label={t("Attach")}
+          disabled={!!editing}
+          onPress={() => {
+            haptic.open();
+            attachMenuRef.current?.show();
+          }}
+        />
+      </PopupMenu>
     );
 
   const recording = (
@@ -560,37 +566,6 @@ export const Composer = memo(function Composer({
           </Float>
         </Pressable>
       </View>
-      {Platform.OS === "android" && attachOpen ? (
-        <ComposeHost style={StyleSheet.absoluteFill} pointerEvents="box-none">
-          <ModalBottomSheet onDismissRequest={() => setAttachOpen(false)} containerColor={p.cell} contentColor={p.label}>
-            <ComposeColumn modifiers={[fillMaxWidth(), padding(8, 0, 8, 24)]}>
-              <ComposeText style={{ typography: "titleLarge" }} modifiers={[padding(16, 4, 16, 12)]}>
-                {t("Attach")}
-              </ComposeText>
-              {sources.map((source) => (
-                <ListItem
-                  key={source.title}
-                  colors={{ containerColor: p.cell, contentColor: p.label, leadingContentColor: p.secondaryLabel }}
-                  modifiers={[
-                    fillMaxWidth(),
-                    clickable(() => {
-                      setAttachOpen(false);
-                      setTimeout(source.run, 0);
-                    }),
-                  ]}
-                >
-                  <ListItem.HeadlineContent>
-                    <ComposeText>{source.title}</ComposeText>
-                  </ListItem.HeadlineContent>
-                  <ListItem.LeadingContent>
-                    <ComposeIcon source={source.androidIcon} size={24} />
-                  </ListItem.LeadingContent>
-                </ListItem>
-              ))}
-            </ComposeColumn>
-          </ModalBottomSheet>
-        </ComposeHost>
-      ) : null}
     </View>
   );
 });
@@ -623,10 +598,11 @@ const styles = StyleSheet.create({
   wrap: { paddingBottom: 8 },
   bar: { flexDirection: "row", alignItems: "flex-end", gap: 8, marginHorizontal: 12 },
   round: { width: ROUND, height: ROUND, borderRadius: ROUND / 2, overflow: "hidden" },
+  plusShadow: { width: ROUND, height: ROUND, borderRadius: ROUND / 2 },
   disabled: { opacity: 0.4 },
   pillPress: { flex: 1 },
   // One line of text makes the pill as tall as the round button: 5 + 34 + 5.
-  pill: { minHeight: ROUND, padding: 5, overflow: "hidden" },
+  pill: { minHeight: ROUND, padding: 5 },
   row: { flexDirection: "row", alignItems: "flex-end", gap: 6 },
   // Chips wrap; the padding leaves room for the remove button hanging off a chip's corner.
   files: { flexDirection: "row", flexWrap: "wrap", gap: 12, paddingTop: 8, paddingHorizontal: 6, paddingBottom: 4 },
