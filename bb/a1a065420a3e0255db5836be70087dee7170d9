@@ -1,0 +1,19 @@
+desktop/l10n/zh.go
+  s_cae344fce4ee15::t_3d6ec9a5f4f4f5 1073-1084
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "bba1a065420a3e0255db5836be70087dee7170d9",
+  "prompts": {},
+  "sessions": {
+    "s_cae344fce4ee15": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_ws40h9smutrr",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
