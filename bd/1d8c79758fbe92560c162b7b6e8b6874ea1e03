@@ -1,0 +1,27 @@
+Cargo.lock
+  s_15e659d60bd893::t_a46e3573f759e2 1915,1972,2003,2012,2026,2034,2047,2080
+Cargo.toml
+  s_15e659d60bd893::t_a46e3573f759e2 15
+mobile/app.config.ts
+  s_15e659d60bd893::t_a46e3573f759e2 5
+package.json
+  s_15e659d60bd893::t_a46e3573f759e2 4
+desktop/mygo.config.ts
+  s_15e659d60bd893::t_a46e3573f759e2 9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "bd1d8c79758fbe92560c162b7b6e8b6874ea1e03",
+  "prompts": {},
+  "sessions": {
+    "s_15e659d60bd893": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_kahd6ck6t8pl",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
