@@ -102,8 +102,8 @@ object SourceIcons {
 
 /// A chip's text: a no-break space and room for the icon (two figure spaces) ahead of the label,
 /// and the same behind it. The label's own spaces do not break, so the icon never parts from it.
-/// The desktop app's `chipWords`.
-private fun chipWords(label: String) = "\u00a0\u00a0\u2007\u2007\u00a0" + label.replace(' ', '\u00a0') + "\u00a0\u00a0"
+/// The desktop app's `chipWords`, word joiner and all, so every app's chip reads the same.
+private fun chipWords(label: String) = "\u00a0\u00a0\u2007\u2007\u00a0" + label.replace(' ', '\u00a0') + "\u00a0\u00a0\u2060"
 
 /// A source chip drawn in place of its words: a rounded fill with a hairline, the site's icon (a
 /// globe until it has one) in the room at its start, and the words. As wide as the words are at

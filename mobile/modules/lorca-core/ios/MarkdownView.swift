@@ -76,9 +76,11 @@ enum SourceIcons {
 
 /// A chip's text: a no-break space and room for the icon (two figure spaces) ahead of the label,
 /// and the same behind it, so the fill has air around both. The label's own spaces do not break,
-/// so the icon never parts from it. The desktop app's `chipWords`.
+/// so the icon never parts from it. A word joiner ends it, so a chip that ends a line keeps its room
+/// behind the label: a line's rects leave out the whitespace it ends with. The desktop app's
+/// `chipWords`.
 func chipWords(_ label: String) -> String {
-  "\u{00a0}\u{00a0}\u{2007}\u{2007}\u{00a0}" + label.replacingOccurrences(of: " ", with: "\u{00a0}") + "\u{00a0}\u{00a0}"
+  "\u{00a0}\u{00a0}\u{2007}\u{2007}\u{00a0}" + label.replacingOccurrences(of: " ", with: "\u{00a0}") + "\u{00a0}\u{00a0}\u{2060}"
 }
 
 extension NSAttributedString.Key {
