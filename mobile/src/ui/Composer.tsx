@@ -1,11 +1,12 @@
-// The message field, laid out like the desktop composer: one glass pill floating over the
-// transcript. Inside its left edge a "+" disc drops down a native menu of attachment sources;
-// inside its right edge a disc is Dictate while the field is empty and Send once there is
-// something to send; between them a multiline input grows to five lines. Focus, text, or
-// attached files expand the pill: the text takes its own row above the discs, and chips wrap
-// above the text. @-mention chips in a group. There is no hard Stop on the phone; sending a
-// message while a turn runs steers it. Where liquid glass is not available (older iOS, Android)
-// the pill is a plain filled field. An image pasted into the field attaches like a picked photo.
+// The message field, after the reference's phone app: a round "+" button floating over the
+// transcript, which drops down a native menu of attachment sources, and beside it a pill holding
+// a multiline input that grows to five lines and, inside the pill's right edge, a disc: Dictate
+// (gray) while the field is empty, Send (ink) once there is something to send, and Stop (ink)
+// while a turn runs and the field is empty; with something typed during a turn, Stop sits beside
+// Send, which steers the turn, as on the desktop. A reply or an edit shows a line above the text,
+// and attached files wrap as chips above it. @-mention chips in a group. Where liquid glass is not
+// available (older iOS, Android) the pieces are filled. An image pasted into the field attaches
+// like a picked photo.
 
 import { Button as MenuButton, Host as SwiftHost, Image as MenuImage, Menu, type ButtonProps } from "@expo/ui/swift-ui";
 import { background, frame, shapes } from "@expo/ui/swift-ui/modifiers";
@@ -13,7 +14,6 @@ import { MenuView, type MenuAction, type MenuComponentRef } from "@expo/ui/commu
 import { Column as ComposeColumn, Host as ComposeHost, Icon as ComposeIcon, ListItem, ModalBottomSheet, Text as ComposeText } from "@expo/ui/jetpack-compose";
 import { clickable, fillMaxWidth, padding } from "@expo/ui/jetpack-compose/modifiers";
 import * as DocumentPicker from "expo-document-picker";
-import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
 import { haptic } from "./haptics";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
@@ -29,7 +29,8 @@ import { automaticLanguage, languageName, pickDictationLanguage, setDictationLan
 import { t, useLanguage } from "../i18n";
 import { joinDictation } from "./format";
 import { Symbol } from "./Symbol";
-import { Font, usePalette } from "./theme";
+import { floatShadow, Font, usePalette } from "./theme";
+import { Float, ROUND, RoundButton } from "./chrome";
 import { AndroidIcons } from "./navigation";
 import { alert } from "./alert";
 
@@ -37,27 +38,6 @@ const MAX_LINES = 5;
 const CHIP = 56;
 const FILE_CHIP = 176;
 const DISC = 34;
-const GLASS = isLiquidGlassAvailable();
-
-/// A glass surface, or a filled one where glass is not available.
-export function Surface({ style, children, tint, edge, onPress }: { style: StyleProp<ViewStyle>; children: React.ReactNode; tint: ColorValue; edge: ColorValue; onPress?: () => void }) {
-  // A hairline edge keeps the pill visible over a plain background, as Grok Bot's is.
-  const outline = { borderWidth: StyleSheet.hairlineWidth, borderColor: edge };
-  if (GLASS) {
-    // The glass is a layer under the content; the edge is drawn by the wrapping view.
-    return (
-      <Pressable onPress={onPress} disabled={!onPress} accessible={false} ripple="none" style={[style, outline]}>
-        <GlassView glassEffectStyle="regular" isInteractive style={[StyleSheet.absoluteFill, { borderRadius: StyleSheet.flatten(style)?.borderRadius }]} />
-        {children}
-      </Pressable>
-    );
-  }
-  return (
-    <Pressable onPress={onPress} disabled={!onPress} accessible={false} ripple="none" style={[style, outline, { backgroundColor: tint }]}>
-      {children}
-    </Pressable>
-  );
-}
 
 interface AttachSource {
   title: string;
@@ -71,11 +51,11 @@ interface AttachSource {
 /// beside it; the pill under both supplies the glass. The fill is part of the SwiftUI label,
 /// not the wrapping view: the menu morphs out of its label and hides it while open, so a
 /// label that is only the glyph would leave an empty disc behind.
-function AttachMenu({ sources, tint, label }: { sources: AttachSource[]; tint: ColorValue; label: ColorValue }) {
+function AttachMenu({ sources, tint, label, style }: { sources: AttachSource[]; tint: ColorValue; label: ColorValue; style?: StyleProp<ViewStyle> }) {
   return (
-    // The tap is SwiftUI's; claiming it here keeps it from the pill around the composer, whose
-    // press focuses the field: that expands the pill and moves this disc, which closes the menu.
-    <View style={styles.disc} onStartShouldSetResponder={() => true}>
+    // The tap is SwiftUI's; claiming it here keeps it from the pill beside it, whose press
+    // focuses the field.
+    <View style={[styles.round, style]} onStartShouldSetResponder={() => true}>
       {/* The hosted view would otherwise avoid the keyboard by itself: SwiftUI treats the keys as
           a safe-area inset and pushes the disc up out of its frame while the sticky composer
           already rides above them. */}
@@ -84,12 +64,12 @@ function AttachMenu({ sources, tint, label }: { sources: AttachSource[]; tint: C
           label={
             <MenuImage
               systemName="plus"
-              size={18}
+              size={19}
               color={label}
-              modifiers={[frame({ width: DISC, height: DISC }), background(tint, shapes.circle())]}
+              modifiers={[frame({ width: ROUND, height: ROUND }), background(tint, shapes.circle())]}
             />
           }
-          modifiers={[frame({ width: DISC, height: DISC })]}
+          modifiers={[frame({ width: ROUND, height: ROUND })]}
         >
           {sources.map((source) => (
             <MenuButton key={source.title} systemImage={source.icon} label={source.title} onPress={source.run} />
@@ -108,6 +88,10 @@ export const Composer = memo(function Composer({
   placeholder,
   reply,
   onCancelReply,
+  editing,
+  onCancelEdit,
+  responding = false,
+  onStop,
   onSend,
 }: {
   members: Bot[];
@@ -116,6 +100,12 @@ export const Composer = memo(function Composer({
   /** The message the draft answers, shown above the text until it is sent or dropped. */
   reply?: { name: string; text: string } | null;
   onCancelReply?: () => void;
+  /** The user's message being edited: its words fill the field, and sending runs it again. */
+  editing?: { id: string; text: string } | null;
+  onCancelEdit?: () => void;
+  /** A turn is in flight in the chat: the disc offers Stop. */
+  responding?: boolean;
+  onStop?: () => Promise<void>;
   /** The text, its files, and the bots its `@Name`s picked from the chips, by id. */
   onSend: (text: string, attachments: PickedFile[], mentions: string[]) => void;
 }) {
@@ -123,7 +113,6 @@ export const Composer = memo(function Composer({
   const p = usePalette();
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<PickedFile[]>([]);
-  const [focused, setFocused] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
   const [listening, setListening] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -139,11 +128,43 @@ export const Composer = memo(function Composer({
   const dictationMenuRef = useRef<MenuComponentRef>(null);
   const { language, setting: dictationSetting } = useDictationLanguage();
   const dictationLanguages = useSupportedLanguages();
-  const canSend = text.trim().length > 0 || attachments.length > 0;
+  const canSend = text.trim().length > 0 || (!editing && attachments.length > 0);
   // A swipe on a bubble starts a reply; the keyboard comes up for it.
   useEffect(() => {
     if (reply) inputRef.current?.focus();
   }, [reply]);
+  // Editing takes the message's words into the field and keeps the draft that was there, which
+  // comes back when the edit is sent or cancelled.
+  const editingId = editing?.id;
+  const kept = useRef<{ text: string; attachments: PickedFile[] } | null>(null);
+  useEffect(() => {
+    if (editing) {
+      kept.current ??= { text, attachments };
+      setText(editing.text);
+      setAttachments([]);
+      inputRef.current?.focus();
+    } else if (kept.current) {
+      setText(kept.current.text);
+      setAttachments(kept.current.attachments);
+      kept.current = null;
+    }
+    // Only a new edit or its end; the field's own changes are not a reason to start over.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingId]);
+  // Stop is pressed once; the disc waits for the turn to end.
+  const [stopping, setStopping] = useState(false);
+  useEffect(() => {
+    if (!responding) setStopping(false);
+  }, [responding]);
+  function stop() {
+    if (stopping || !onStop) return;
+    haptic.send();
+    setStopping(true);
+    onStop().catch((error) => {
+      setStopping(false);
+      alert(t("Couldn't stop"), error instanceof Error ? error.message : String(error));
+    });
+  }
   const lineHeight = Font.body * 1.3;
 
   const mention = useMemo(() => {
@@ -332,38 +353,30 @@ export const Composer = memo(function Composer({
     });
   }
 
-  const primary = listening || canSend ? "send" : "dictate";
-  const edge = p.dark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.1)";
-  const expanded = focused || text.length > 0 || attachments.length > 0 || !!reply;
-
-  // The pieces below carry keys and always share one parent view, so switching between the
-  // compact row and the expanded stack reorders them instead of remounting them: a remounted
-  // input drops focus and takes the keyboard down with it.
+  const primary = listening || canSend ? "send" : responding ? "stop" : "dictate";
+  // An edit takes no new files.
   const plus =
     Platform.OS === "ios" ? (
-      <AttachMenu key="plus" sources={sources} tint={p.fill} label={p.label} />
+      <View style={[floatShadow(p), editing && styles.disabled]} pointerEvents={editing ? "none" : "auto"}>
+        <AttachMenu sources={sources} tint={p.chrome} label={p.label} style={{ borderRadius: ROUND / 2, borderWidth: StyleSheet.hairlineWidth, borderColor: p.chromeBorder }} />
+      </View>
     ) : (
-      <Pressable
-        key="plus"
+      <RoundButton
+        icon="plus"
+        label={t("Attach")}
+        disabled={!!editing}
         onPress={() => {
           haptic.open();
           setAttachOpen(true);
         }}
-        // A 33 dp disc, touchable across Material's 48 dp.
-        hitSlop={8}
-        style={({ pressed }) => [styles.disc, styles.androidDisc, { backgroundColor: p.fill, opacity: pressed ? 0.7 : 1 }]}
-        accessibilityRole="button"
-        accessibilityLabel={t("Attach")}
-      >
-        <Symbol name="plus" size={18} color={p.label} weight="medium" />
-      </Pressable>
+      />
     );
 
   const recording = (
     <Pressable
       key="recording"
       onPress={() => ExpoSpeechRecognitionModule.stop()}
-      style={({ pressed }) => [styles.pill, { backgroundColor: p.fill, opacity: pressed ? 0.7 : 1 }]}
+      style={({ pressed }) => [styles.recordingPill, { backgroundColor: p.fill, opacity: pressed ? 0.7 : 1 }]}
       accessibilityRole="button"
       accessibilityLabel={t("Stop recording, {seconds} seconds", { seconds: elapsed })}
     >
@@ -392,17 +405,15 @@ export const Composer = memo(function Composer({
     <ImagePasteView
       key="input"
       onPasteImages={({ nativeEvent }) => pasteImages(nativeEvent.files)}
-      style={[styles.inputBox, expanded && styles.inputBoxExpanded]}
+      style={styles.inputBox}
     >
       <TextInput
         ref={inputRef}
         value={text}
         onChangeText={setText}
-        placeholder={reply ? t("Reply…") : placeholder}
+        placeholder={editing ? t("Edit your message") : reply ? t("Reply…") : placeholder}
         placeholderTextColor={p.tertiaryLabel}
         multiline
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
         keyboardAppearance={p.dark ? "dark" : "light"}
         style={[styles.input, { color: p.label, lineHeight, minHeight, maxHeight }]}
         accessibilityLabel={t("Message")}
@@ -410,6 +421,19 @@ export const Composer = memo(function Composer({
     </ImagePasteView>
   );
 
+  const stopButton = (
+    <Pressable
+      key="stop"
+      onPress={stop}
+      disabled={stopping}
+      hitSlop={8}
+      style={({ pressed }) => [styles.disc, { backgroundColor: primary === "stop" ? p.ink : p.fill, opacity: stopping ? 0.5 : pressed ? 0.7 : 1 }]}
+      accessibilityRole="button"
+      accessibilityLabel={t("Stop responding")}
+    >
+      <Symbol name="stop.fill" size={12} color={primary === "stop" ? p.inkText : p.label} weight="bold" />
+    </Pressable>
+  );
   const primaryButton = (
     <Pressable
       key="primary"
@@ -422,11 +446,12 @@ export const Composer = memo(function Composer({
             : () => dictationMenuRef.current?.show()
       }
       hitSlop={8}
-      style={({ pressed }) => [styles.disc, Platform.OS === "android" && styles.androidDisc, { backgroundColor: primary === "send" ? p.tint : p.fill, opacity: pressed ? 0.7 : 1 }]}
+      style={({ pressed }) => [styles.disc, { backgroundColor: primary === "send" ? p.ink : p.fill, opacity: pressed ? 0.7 : 1 }]}
+      accessibilityRole="button"
       accessibilityLabel={primary === "send" ? t("Send") : t("Dictate")}
       accessibilityHint={primary === "dictate" ? t("Long press to choose the language") : undefined}
     >
-      <Symbol name={primary === "send" ? "arrow.up" : "mic.fill"} size={16} color={primary === "send" ? p.userBubbleText : p.label} weight="bold" />
+      <Symbol name={primary === "send" ? "arrow.up" : "mic.fill"} size={16} color={primary === "send" ? p.inkText : p.secondaryLabel} weight="bold" />
     </Pressable>
   );
   const dictationActions = useMemo<MenuAction[]>(
@@ -469,68 +494,72 @@ export const Composer = memo(function Composer({
           ))}
         </ScrollView>
       )}
-      {/* Focused, holding text, or carrying attachments, the pill expands: chips wrap above the
-          text and the discs drop to a row underneath, as on the desktop. Empty and idle, the
-          discs sit beside the placeholder. The input is one line tall inside a taller pill, so
-          a tap anywhere on the pill outside the discs focuses it. */}
-      <Surface style={[styles.field, expanded ? styles.fieldExpanded : styles.fieldCompact]} tint={p.cell} edge={edge} onPress={() => inputRef.current?.focus()}>
-        {reply && (
-          <View style={styles.reply}>
-            <Symbol name="arrowshape.turn.up.left.fill" size={12} color={p.secondaryLabel} />
-            <Text style={[styles.replyText, { color: p.secondaryLabel }]} numberOfLines={1}>
-              <Text style={{ color: p.label, fontWeight: "600" }}>{t("Replying to {name}", { name: reply.name })}</Text>
-              {"  "}
-              {reply.text}
-            </Text>
-            <Pressable onPress={onCancelReply} hitSlop={14} ripple="borderless" rippleRadius={18} accessibilityRole="button" accessibilityLabel={t("Cancel reply")}>
-              <Symbol name="xmark.circle.fill" size={17} color={p.tertiaryLabel} />
-            </Pressable>
-          </View>
-        )}
-        {attachments.length > 0 && (
-          <View style={styles.files}>
-            {attachments.map((file, index) => (
-              <View key={`${file.uri}-${index}`} style={styles.fileChip}>
-                {file.mime.startsWith("image/") ? (
-                  <Image source={{ uri: file.uri }} style={[styles.thumb, { backgroundColor: p.fill }]} contentFit="cover" />
-                ) : (
-                  <View style={[styles.fileCard, { backgroundColor: p.fill }]}>
-                    <Symbol name="doc.fill" size={18} color={p.secondaryLabel} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.fileName, { color: p.label }]} numberOfLines={1}>
-                        {file.name}
-                      </Text>
-                      {file.size !== undefined && <Text style={[styles.fileSize, { color: p.secondaryLabel }]}>{fileSize(file.size)}</Text>}
-                    </View>
-                  </View>
-                )}
-                <Pressable
-                  onPress={() => setAttachments((current) => current.filter((_, i) => i !== index))}
-                  hitSlop={15}
-                  ripple="borderless"
-                  rippleRadius={16}
-                  style={styles.remove}
-                  accessibilityLabel={t("Remove {name}", { name: file.name })}
-                >
-                  <Symbol name="xmark" size={9} color="#FFFFFF" weight="bold" />
+      <View style={styles.bar} pointerEvents="box-none">
+        {plus}
+        <Pressable onPress={() => inputRef.current?.focus()} accessible={false} ripple="none" style={styles.pillPress}>
+          <Float style={styles.pill} radius={ROUND / 2}>
+            {editing ? (
+              <View style={styles.reply}>
+                <Symbol name="pencil" size={12} color={p.secondaryLabel} />
+                <Text style={[styles.replyText, { color: p.label, fontWeight: "600" }]} numberOfLines={1}>
+                  {t("Editing your message")}
+                </Text>
+                <Pressable onPress={onCancelEdit} hitSlop={14} ripple="borderless" rippleRadius={18} accessibilityRole="button" accessibilityLabel={t("Cancel editing")}>
+                  <Symbol name="xmark.circle.fill" size={17} color={p.tertiaryLabel} />
                 </Pressable>
               </View>
-            ))}
-          </View>
-        )}
-        <View style={expanded ? styles.stack : styles.row}>
-          {expanded
-            ? [
-                !listening && input,
-                <View key="controls" style={styles.controls}>
-                  {plus}
-                  {listening && recording}
-                  {primaryDisc}
-                </View>,
-              ]
-            : [plus, listening ? recording : input, primaryDisc]}
-        </View>
-      </Surface>
+            ) : reply ? (
+              <View style={styles.reply}>
+                <Symbol name="arrowshape.turn.up.left.fill" size={12} color={p.secondaryLabel} />
+                <Text style={[styles.replyText, { color: p.secondaryLabel }]} numberOfLines={1}>
+                  <Text style={{ color: p.label, fontWeight: "600" }}>{t("Replying to {name}", { name: reply.name })}</Text>
+                  {"  "}
+                  {reply.text}
+                </Text>
+                <Pressable onPress={onCancelReply} hitSlop={14} ripple="borderless" rippleRadius={18} accessibilityRole="button" accessibilityLabel={t("Cancel reply")}>
+                  <Symbol name="xmark.circle.fill" size={17} color={p.tertiaryLabel} />
+                </Pressable>
+              </View>
+            ) : null}
+            {attachments.length > 0 && (
+              <View style={styles.files}>
+                {attachments.map((file, index) => (
+                  <View key={`${file.uri}-${index}`} style={styles.fileChip}>
+                    {file.mime.startsWith("image/") ? (
+                      <Image source={{ uri: file.uri }} style={[styles.thumb, { backgroundColor: p.fill }]} contentFit="cover" />
+                    ) : (
+                      <View style={[styles.fileCard, { backgroundColor: p.fill }]}>
+                        <Symbol name="doc.fill" size={18} color={p.secondaryLabel} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.fileName, { color: p.label }]} numberOfLines={1}>
+                            {file.name}
+                          </Text>
+                          {file.size !== undefined && <Text style={[styles.fileSize, { color: p.secondaryLabel }]}>{fileSize(file.size)}</Text>}
+                        </View>
+                      </View>
+                    )}
+                    <Pressable
+                      onPress={() => setAttachments((current) => current.filter((_, i) => i !== index))}
+                      hitSlop={15}
+                      ripple="borderless"
+                      rippleRadius={16}
+                      style={styles.remove}
+                      accessibilityLabel={t("Remove {name}", { name: file.name })}
+                    >
+                      <Symbol name="xmark" size={9} color="#FFFFFF" weight="bold" />
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            )}
+            <View style={styles.row}>
+              {listening ? recording : input}
+              {responding && primary !== "stop" && !listening ? stopButton : null}
+              {primary === "stop" ? stopButton : primaryDisc}
+            </View>
+          </Float>
+        </Pressable>
+      </View>
       {Platform.OS === "android" && attachOpen ? (
         <ComposeHost style={StyleSheet.absoluteFill} pointerEvents="box-none">
           <ModalBottomSheet onDismissRequest={() => setAttachOpen(false)} containerColor={p.cell} contentColor={p.label}>
@@ -592,29 +621,26 @@ function deviceLanguage(): string {
 
 const styles = StyleSheet.create({
   wrap: { paddingBottom: 8 },
-  field: { marginHorizontal: 12, borderRadius: 23, overflow: "hidden" },
-  // One line of text makes the pill exactly as tall as a disc plus its padding: 6 + 34 + 6.
-  fieldCompact: { paddingHorizontal: 6, paddingVertical: 6 },
-  fieldExpanded: { paddingHorizontal: 6, paddingTop: 0, paddingBottom: 6 },
+  bar: { flexDirection: "row", alignItems: "flex-end", gap: 8, marginHorizontal: 12 },
+  round: { width: ROUND, height: ROUND, borderRadius: ROUND / 2, overflow: "hidden" },
+  disabled: { opacity: 0.4 },
+  pillPress: { flex: 1 },
+  // One line of text makes the pill as tall as the round button: 5 + 34 + 5.
+  pill: { minHeight: ROUND, padding: 5, overflow: "hidden" },
   row: { flexDirection: "row", alignItems: "flex-end", gap: 6 },
-  stack: { flexDirection: "column", alignItems: "stretch" },
   // Chips wrap; the padding leaves room for the remove button hanging off a chip's corner.
-  files: { flexDirection: "row", flexWrap: "wrap", gap: 12, paddingTop: 12, paddingHorizontal: 6, paddingBottom: 2 },
-  reply: { flexDirection: "row", alignItems: "center", gap: 6, paddingTop: 10, paddingHorizontal: 10 },
+  files: { flexDirection: "row", flexWrap: "wrap", gap: 12, paddingTop: 8, paddingHorizontal: 6, paddingBottom: 4 },
+  reply: { flexDirection: "row", alignItems: "center", gap: 6, paddingTop: 6, paddingBottom: 2, paddingHorizontal: 9 },
   replyText: { flex: 1, fontSize: 13 },
-  controls: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 6, paddingTop: 4 },
-  inputBox: { flex: 1, marginVertical: 6, marginHorizontal: 6 },
-  // In the stack the input is a row of its own: no growing into the column, wider margins.
-  inputBoxExpanded: { flex: 0, marginHorizontal: 12, marginTop: 10, marginBottom: 6 },
+  inputBox: { flex: 1, marginVertical: 7, marginLeft: 10, marginRight: 4 },
   input: { fontSize: Font.body, paddingTop: 0, paddingBottom: 0, margin: 0 },
   // At the right of the field, beside Send, where Grok Bot puts it.
-  pill: { flexDirection: "row", alignItems: "center", gap: 6, height: 28, borderRadius: 14, paddingLeft: 4, paddingRight: 10, marginLeft: "auto", marginBottom: 3 },
+  recordingPill: { flexDirection: "row", alignItems: "center", gap: 6, height: 28, borderRadius: 14, paddingLeft: 4, paddingRight: 10, marginLeft: "auto", marginBottom: 3, marginRight: 4 },
   stop: { width: 22, height: 22, alignItems: "center", justifyContent: "center" },
   elapsed: { fontSize: 14, fontVariant: ["tabular-nums"] },
   bars: { flexDirection: "row", alignItems: "center", gap: 2.5, height: 14 },
   levelBar: { width: 3, borderRadius: 1.5, opacity: 0.85 },
   disc: { width: DISC, height: DISC, borderRadius: DISC / 2, alignItems: "center", justifyContent: "center", overflow: "hidden" },
-  androidDisc: { width: DISC - 1, height: DISC - 1, borderRadius: (DISC - 1) / 2 },
   androidDiscHost: { width: DISC + 1, height: DISC + 1, alignItems: "center", justifyContent: "center" },
   chips: { paddingHorizontal: 12, paddingBottom: 8, gap: 8 },
   chip: { flexDirection: "row", alignItems: "center", gap: 6, paddingLeft: 4, paddingRight: 10, paddingVertical: 4, borderRadius: 14 },

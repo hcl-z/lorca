@@ -165,7 +165,7 @@ export default function PairScreen() {
                   displayMode="iconAndLabel"
                   cornerStyle="large"
                   backgroundColor={p.dark ? "#2C2C2E" : "#E5E5EA"}
-                  foregroundColor={p.dark ? "#0A84FF" : "#007AFF"}
+                  foregroundColor={p.ink}
                   style={styles.pasteControl}
                 />
               ) : (

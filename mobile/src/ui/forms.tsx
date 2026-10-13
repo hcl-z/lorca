@@ -1,5 +1,6 @@
-// Inset grouped lists, the way Settings and Contacts lay out forms: a section title, rounded
-// cells on the grouped background, hairline separators.
+// Inset grouped lists, the way Settings and Contacts lay out forms, in the app's monochrome look:
+// a section title, white cards with a hairline edge on the grouped background, hairline
+// separators, and ink for checkmarks, switches, and actions.
 
 import { Button as MenuButton, Divider, HStack, Host, Image as MenuImage, Menu, Text as MenuText } from "@expo/ui/swift-ui";
 import { contentShape, font, foregroundStyle, frame, lineLimit, menuOrder, padding, shapes, tint, truncationMode } from "@expo/ui/swift-ui/modifiers";
@@ -21,7 +22,7 @@ export function Section({ title, footer, children, style }: { title?: string; fo
     <View style={[styles.section, style]}>
       {/* Material's list subheaders take the primary color; iOS's are secondary and uppercase. */}
       {title ? <Text style={[styles.sectionTitle, { color: Platform.OS === "ios" ? p.secondaryLabel : p.tint }]}>{Platform.OS === "ios" ? title.toUpperCase() : title}</Text> : null}
-      <View style={[styles.group, { backgroundColor: p.cell }]}>
+      <View style={[styles.group, { backgroundColor: p.cell, borderColor: p.cardBorder }]}>
         {rows.map((row, index) => (
           <View key={row.key}>
             {index > 0 && <View style={[styles.separator, { backgroundColor: p.separator }]} />}
@@ -227,7 +228,7 @@ export function ToggleRow({ title, value, onValueChange, icon }: { title: string
     <View style={styles.row}>
       {icon ? <Symbol name={icon} size={20} color={p.label} /> : null}
       <Text style={[styles.rowTitle, { color: p.label, flex: 1 }]}>{title}</Text>
-      <Switch value={value} onValueChange={onValueChange} />
+      <Switch value={value} onValueChange={onValueChange} trackColor={{ false: p.fill as string, true: p.dark ? "#636366" : p.ink }} />
     </View>
   );
 }
@@ -286,7 +287,7 @@ const styles = StyleSheet.create({
   section: { paddingHorizontal: 16, paddingTop: Platform.OS === "android" ? 24 : 20 },
   sectionTitle: { fontSize: Platform.OS === "android" ? 14 : 13, marginLeft: 16, marginBottom: 7, letterSpacing: Platform.OS === "android" ? 0.1 : 0.2, fontWeight: Platform.OS === "android" ? "500" : "400" },
   footer: { fontSize: 13, marginHorizontal: 16, marginTop: 7, lineHeight: 18 },
-  group: { borderRadius: Platform.OS === "android" ? 16 : 12, overflow: "hidden" },
+  group: { borderRadius: 14, overflow: "hidden", borderWidth: StyleSheet.hairlineWidth },
   separator: { height: StyleSheet.hairlineWidth, marginLeft: 16 },
   row: { flexDirection: "row", alignItems: "center", minHeight: Platform.OS === "android" ? 56 : 44, paddingHorizontal: 16, paddingVertical: 10, gap: 12 },
   rowMultiline: { alignItems: "flex-start" },

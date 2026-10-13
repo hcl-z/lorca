@@ -1,5 +1,7 @@
 // The chat list as the sidebar of a wide window. It is a native stack of its own, one screen
-// deep, so the list keeps the native bar, search field and toolbar buttons it has on a phone.
+// deep, so the list keeps the bar and round buttons it has on a phone: iOS's native bar, and on
+// Android the list's own (`AndroidListBar`), since the activity's one action bar goes to whichever
+// stack updated its header last.
 
 import { DarkTheme, DefaultTheme } from "expo-router";
 import { createNativeStackNavigator } from "expo-router/build/fork/native-stack/createNativeStackNavigator";
@@ -26,7 +28,7 @@ export function Sidebar() {
           <SidebarStack.Screen
             name="chats"
             component={SidebarChats}
-            options={{ title: t("Chats"), headerTitle: "", headerLargeTitle: false, headerShadowVisible: false, headerTransparent: Platform.OS === "ios" }}
+            options={{ title: t("Chats"), headerTitle: "", headerLargeTitle: false, headerShadowVisible: false, headerTransparent: true, headerShown: Platform.OS === "ios" }}
           />
         </SidebarStack.Navigator>
       </NavigationContainer>

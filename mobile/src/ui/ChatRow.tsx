@@ -1,6 +1,7 @@
-// A chat in the list: avatar (a breathing dot while a bot works), title, stamp, a two-line
-// preview without a "You:" prefix (three pulsing dots and "Working…" while the chat has a turn
-// in flight), and the unread count pill beside it.
+// A chat in the list, after the reference's: a large avatar (a breathing dot while a bot works), the
+// title with its stamp at the end of the line, a one-line preview without a "You:" prefix (three
+// pulsing dots and "Working…" while the chat has a turn in flight), and an ink count pill while it
+// has unread messages. No chevron and no separators; the rows breathe instead.
 
 import { memo, useEffect, useMemo } from "react";
 import { StyleSheet, Text, View, type ColorValue } from "react-native";
@@ -22,8 +23,8 @@ export const ChatRow = memo(function ChatRow({ chat, bots, title, working, respo
   const members = useMemo(() => chat.bot_ids.map((id) => bots.get(id)).filter((b): b is Bot => !!b), [chat.bot_ids, bots]);
   const unread = chat.unread_count;
   return (
-    <Pressable onPress={onPress} onLongPress={onLongPress} style={({ pressed }) => [styles.row, { backgroundColor: pressed || selected ? p.fill : "transparent" }]}>
-      <AvatarCluster bots={members} size={50} working={working} service={chat.channel?.service} />
+    <Pressable onPress={onPress} onLongPress={onLongPress} style={({ pressed }) => [styles.row, { backgroundColor: pressed || selected ? p.fill : p.background }, selected !== undefined && styles.sidebarRow]}>
+      <AvatarCluster bots={members} size={52} working={working} service={chat.channel?.service} />
       <View style={styles.text}>
         <View style={styles.titleLine}>
           <View style={styles.titleGroup}>
@@ -33,10 +34,7 @@ export const ChatRow = memo(function ChatRow({ chat, bots, title, working, respo
             {isMuted(chat) && <Symbol name="bell.slash.fill" size={12} color={p.tertiaryLabel} />}
             {chat.is_pinned && <Symbol name="pin.fill" size={12} color={p.tertiaryLabel} />}
           </View>
-          <View style={styles.stampLine}>
-            <Text style={[styles.stamp, { color: p.secondaryLabel }]}>{stamp(new Date(lastActivity(chat) * 1000))}</Text>
-            {selected === undefined && <Symbol name="chevron.right" size={11} color={p.tertiaryLabel} weight="semibold" />}
-          </View>
+          <Text style={[styles.stamp, { color: unread > 0 ? p.label : p.secondaryLabel }]}>{stamp(new Date(lastActivity(chat) * 1000))}</Text>
         </View>
         <View style={styles.previewLine}>
           {responding ? (
@@ -47,13 +45,13 @@ export const ChatRow = memo(function ChatRow({ chat, bots, title, working, respo
               </Text>
             </View>
           ) : (
-            <Text style={[styles.preview, { color: p.secondaryLabel }]} numberOfLines={2}>
+            <Text style={[styles.preview, { color: p.secondaryLabel }]} numberOfLines={1}>
               {preview(chat, bots)}
             </Text>
           )}
           {unread > 0 && (
-            <View style={[styles.badge, { backgroundColor: p.tertiaryLabel }]} accessibilityLabel={t("{count} unread", { count: unread })}>
-              <Text style={styles.badgeText}>{unread > 999 ? "999+" : unread}</Text>
+            <View style={[styles.badge, { backgroundColor: isMuted(chat) ? p.tertiaryLabel : p.ink }]} accessibilityLabel={t("{count} unread", { count: unread })}>
+              <Text style={[styles.badgeText, { color: p.inkText }]}>{unread > 999 ? "999+" : unread}</Text>
             </View>
           )}
         </View>
@@ -90,21 +88,21 @@ function PulsingDot({ beat, index, color }: { beat: SharedValue<number>; index: 
 }
 
 const styles = StyleSheet.create({
-  // The avatar's left edge lines up with the toolbar buttons (16pt).
-  row: { flexDirection: "row", alignItems: "center", paddingLeft: 16, paddingRight: 16, paddingVertical: 9, gap: 12 },
-  text: { flex: 1, gap: 2 },
+  // The avatar's left edge lines up with the bar's round buttons (16pt).
+  row: { flexDirection: "row", alignItems: "center", paddingLeft: 16, paddingRight: 16, paddingVertical: 11, gap: 14 },
+  // In a sidebar the open chat's row is a rounded fill inside the column.
+  sidebarRow: { marginHorizontal: 8, paddingLeft: 8, paddingRight: 8, borderRadius: 14 },
+  text: { flex: 1, gap: 3 },
   titleLine: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
   titleGroup: { flexDirection: "row", alignItems: "center", gap: 5, flexShrink: 1 },
-  title: { fontSize: Font.body, fontWeight: "600", flexShrink: 1 },
-  stampLine: { flexDirection: "row", alignItems: "center", gap: 4 },
+  title: { fontSize: Font.body, fontWeight: "600", flexShrink: 1, letterSpacing: -0.2 },
   stamp: { fontSize: 15 },
   previewLine: { flexDirection: "row", alignItems: "center", gap: 8 },
-  preview: { flex: 1, fontSize: 15, lineHeight: 20, minHeight: 40 },
-  // One line where the two-line preview was, so the row keeps its height.
-  working: { flex: 1, minHeight: 40, flexDirection: "row", alignItems: "flex-start", gap: 7 },
+  preview: { flex: 1, fontSize: 15, lineHeight: 20 },
+  working: { flex: 1, minHeight: 20, flexDirection: "row", alignItems: "center", gap: 7 },
   workingText: { flexShrink: 1, fontSize: 15, lineHeight: 20 },
   dots: { height: 20, flexDirection: "row", alignItems: "center", gap: 3 },
   dot: { width: 5, height: 5, borderRadius: 2.5 },
-  badge: { minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 7, alignItems: "center", justifyContent: "center" },
-  badgeText: { color: "#fff", fontSize: 14, fontWeight: "600", fontVariant: ["tabular-nums"] },
+  badge: { minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 6, alignItems: "center", justifyContent: "center" },
+  badgeText: { fontSize: 12, fontWeight: "700", fontVariant: ["tabular-nums"] },
 });

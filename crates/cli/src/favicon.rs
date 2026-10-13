@@ -248,7 +248,7 @@ mod tests {
         for link in ["/favicon.ico", "icons/a.png", "https://example.com/a.png", "https://example.com:443/a.png"] {
             assert!(on_site(&base.join(link).unwrap(), "example.com"), "{link}");
         }
-        for link in ["https://localhost/a.png", "//intranet.example/a.png", "https://10.0.0.1/a.png", "http://example.com/a.png", "https://example.com:8443/a.png", "https://cdn.example.com/a.png"] {
+        for link in ["https://localhost/a.png", "//intranet.example/a.png", "https://10.0.0.1/a.png", "http://127.0.0.1/x", "//127.0.0.1/x", "http://example.com/a.png", "https://example.com:8443/a.png", "https://cdn.example.com/a.png", "file:///etc/passwd"] {
             assert!(!on_site(&base.join(link).unwrap(), "example.com"), "{link}");
         }
     }

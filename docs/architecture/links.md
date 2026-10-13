@@ -1,6 +1,6 @@
 # Web links in messages
 
-A web link in a bot's message reads as a **source chip**: the site's icon and the link's words on a rounded fill, inside the paragraph. The desktop app draws them; the link itself is the Markdown link or bare address the bot wrote, and clicking a chip opens it as the link did (`openExternal` refuses anything but http(s) and mailto, [Desktop app](desktop-app.md)).
+A web link in a bot's message reads as a **source chip**: the site's icon and the link's words on a rounded fill, inside the paragraph. The desktop app and the phone draw them; the link itself is the Markdown link or bare address the bot wrote, and clicking a chip opens it as the link did (`openExternal` refuses anything but http(s) and mailto, [Desktop app](desktop-app.md)).
 
 ## The chip
 
@@ -8,6 +8,13 @@ A web link in a bot's message reads as a **source chip**: the site's icon and th
 - **Its words** (`model.SourceLabel`): the link's own words when they say more than its address does, cut at 28 characters; the site's host, without `www.`, when the text is the address itself, a number such as `[1]`, or empty. Styled words inside one link (`[**bold** text](url)`) make one chip (`joinLinkSpans`).
 - **Drawing** (`desktop/sources.go`): MyGo's paragraphs hold only text, so a chip is text with a no-break space and two figure spaces ahead of its label, where the icon goes. The paragraph's `Draw` paints, under its words, the fill with a hairline (the card colors, so it stands out of a bubble's gray) and the icon, at the rectangle MyGo reports for the chip's words (`Bounds`, the last frame's; a chip new to the screen asks for the next frame). The label's spaces do not break, so a chip never splits across lines. The fill and the icon sit a point under the middle of the line's box, where the words' weight is.
 - **The icon**: the site's favicon once the CLI has found it, else a globe. Each site is asked about once per run. An ICO file is turned into the PNG of its best image (`model.FaviconImage`: the smallest at least 32 px, PNG or 24/32-bit bitmap entries), since not every platform's decoder reads ICO.
+
+## On the phone
+
+The rules live in `crates/markdown` (`src/source.rs`), which the phone's native views link through UniFFI: `source_chip(text, href)` gives a link's host and label by the rules above, `join_link_spans` makes one span of a link's styled runs, and `source_hosts(markdown)` lists a message's sites once each.
+
+- **Drawing** (`MarkdownView` in `modules/lorca-core`, for a bot's message, `sourceChips`): the chip's words are the label in no-break spaces with room for the icon ahead of it, as on the desktop, a size and a half smaller. On iOS the words carry a `lorca.sourceChip` mark that the view's TextKit 1 layout manager paints the fill, hairline, and icon under; they hold no `.link`, so a tap on them opens the link through a tap recognizer of their own, and selection and copy read the label. On Android a `ReplacementSpan` as wide as the words draws the fill, the icon, and the words, and the `URLSpan` over it opens the link. Measuring and drawing build the same text, so a chip changes no bubble's size.
+- **The icon**: `src/ui/Markdown.tsx` asks `sourceHosts` for a message's sites as it mounts, and `engine.favicon(host)` asks the CLI once per site per run; an icon that comes back goes to the native views with `setFavicon(host, data)`, a shared cache that redraws every chip of that site. ImageIO and BitmapFactory read ICO themselves; until an icon comes, or for a site without one, the chip shows a globe.
 
 ## `links.favicon`
 

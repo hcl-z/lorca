@@ -4,6 +4,9 @@
 //! message the same way.
 
 mod autolink;
+mod source;
+
+pub use source::{join_link_spans, source_chip, source_host, source_hosts, source_label, SourceChip};
 
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 use serde::{Deserialize, Serialize};

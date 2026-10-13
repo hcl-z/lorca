@@ -1,12 +1,18 @@
 // Message Markdown, rendered by the native text view: selectable in place, links tappable,
-// sized to its text within the width the bubble allows.
+// sized to its text within the width the bubble allows. In a bot's message a web link is a
+// source chip, its site's icon and its words on a rounded fill (`docs/architecture/links.md`):
+// the view draws it, and this asks the CLI for each site's icon once per run.
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Platform, processColor, useWindowDimensions, type ColorValue } from "react-native";
-import { MarkdownView, measureMarkdown } from "../../modules/lorca-core/MarkdownView";
+import { MarkdownView, measureMarkdown, setFavicon, sourceHosts } from "../../modules/lorca-core/MarkdownView";
+import { engine } from "../core/engine";
 import { Font, usePalette } from "./theme";
 
-export function Markdown({ text, color, maxWidth, size = Font.message }: { text: string; color: ColorValue; maxWidth: number; size?: number }) {
+/// The sites whose icons the views have been given, or are being given.
+const handed = new Set<string>();
+
+export function Markdown({ text, color, maxWidth, size = Font.message, sources = false }: { text: string; color: ColorValue; maxWidth: number; size?: number; sources?: boolean }) {
   const p = usePalette();
   // The text size the user picked: Android's view sizes its text in sp, which follows it already;
   // UIKit's takes points, so iOS scales them here, measuring and drawing alike.
@@ -15,7 +21,15 @@ export function Markdown({ text, color, maxWidth, size = Font.message }: { text:
   const fontSize = size * scale;
   const codeFontSize = Font.code * scale;
   const link = color === p.userBubbleText ? color : p.link;
-  const measured = useMemo(() => measureMarkdown(text, maxWidth, fontSize, codeFontSize), [text, maxWidth, fontSize, codeFontSize]);
+  const measured = useMemo(() => measureMarkdown(text, maxWidth, fontSize, codeFontSize, sources), [text, maxWidth, fontSize, codeFontSize, sources]);
+  useEffect(() => {
+    if (!sources || !/https?:\/\/|www\./i.test(text)) return;
+    for (const host of sourceHosts(text)) {
+      if (handed.has(host)) continue;
+      handed.add(host);
+      void engine.favicon(host).then((data) => data && setFavicon(host, data));
+    }
+  }, [sources, text]);
   return (
     <MarkdownView
       style={measured}
@@ -29,6 +43,9 @@ export function Markdown({ text, color, maxWidth, size = Font.message }: { text:
       quoteColor={processColor(p.tertiaryLabel)!}
       border={processColor(p.separator)!}
       tint={processColor(link)!}
+      sourceChips={sources}
+      chipColor={processColor(p.chip)!}
+      chipBorder={processColor(p.chipBorder)!}
     />
   );
 }

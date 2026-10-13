@@ -4,7 +4,9 @@ import { haptic } from "./haptics";
 import { Link, Stack, useRouter } from "expo-router";
 import Swipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Platform, StyleSheet, Text, useWindowDimensions, type StyleProp, type TextStyle, View } from "react-native";
+import { ActivityIndicator, Platform, StyleSheet, Text, useWindowDimensions, type ImageSourcePropType, type StyleProp, type TextStyle, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Pressable } from "./Pressable";
 import { chatTitle, engine } from "../core/engine";
 import { isMuted, type Bot, type Chat, type ChatSearchResults, type Section } from "../core/model";
@@ -16,9 +18,10 @@ import { ChatRow } from "./ChatRow";
 import { PaneWidth, useSidebarWidth } from "./layout";
 import { problemTitle, showRelayProblem } from "./relay";
 import { lastActivity, muteSpans, preview, stamp } from "./format";
-import { SidebarSearch, useSidebarSearchInset } from "./SidebarSearch";
+import { SearchField } from "./SidebarSearch";
+import { RoundButton } from "./chrome";
 import { Symbol } from "./Symbol";
-import { Font, usePalette } from "./theme";
+import { Font, usePalette, withAlpha } from "./theme";
 import { AndroidIcons } from "./navigation";
 import { alert, prompt } from "./alert";
 import { chatListRows, groupOf, type ChatGroup, type ChatListRow } from "./chatList";
@@ -27,6 +30,8 @@ import { chatListRows, groupOf, type ChatGroup, type ChatListRow } from "./chatL
 // its top means a chat moving to the top pushes the list down by one row: the new first row lands
 // under the bar. The list holds its offset instead, so at the top the new first row shows.
 const KEEP_OFFSET = { disabled: true };
+/// Android's bar: its round buttons and the room around them.
+const BAR = 56;
 
 /// The chat list: the first screen of a narrow window, the sidebar of a wide one. In the sidebar
 /// a chat opens in the pane beside the list, in place of the one open there, and its row stays lit.
@@ -37,10 +42,6 @@ export function ChatsScreen({ sidebar = false }: { sidebar?: boolean }) {
   // Only the sidebar lights the open chat; a phone's list would re-render under the chat it pushes.
   const openChatId = useStore((s) => (sidebar ? s.openChatId : null));
   const sidebarWidth = useSidebarWidth();
-  // The search field sits at the foot of the list. An iPhone's native bar puts it there; the
-  // sidebar and Android have their own (see SidebarSearch).
-  const floatingSearch = sidebar || Platform.OS === "android";
-  const searchInset = useSidebarSearchInset();
   const chats = useStore((s) => s.chats);
   const sections = useStore((s) => s.sections);
   const showsHidden = useStore((s) => s.showsHidden);
@@ -57,6 +58,9 @@ export function ChatsScreen({ sidebar = false }: { sidebar?: boolean }) {
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<ChatSearchResults>({ chats: [], messages: [] });
   const [searching, setSearching] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const insets = useSafeAreaInsets();
+  const androidBar = insets.top + BAR + 8;
 
   function updateQuery(value: string) {
     setQuery(value);
@@ -193,105 +197,73 @@ export function ChatsScreen({ sidebar = false }: { sidebar?: boolean }) {
     [bots, confirmDelete, openChat, openChatId, responding, searchingText, sections, sidebar, sidebarWidth, workingBots],
   );
 
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    updateQuery("");
+  }, []);
+  const newItems: { icon: string; android: ImageSourcePropType; title: string; run: () => void }[] = [
+    { icon: "person.2.fill", android: AndroidIcons.group, title: t("New Group Chat"), run: () => router.push("/new-group") },
+    { icon: "person.badge.plus", android: AndroidIcons.personAdd, title: t("New Bot"), run: () => router.push("/new-bot") },
+    { icon: "square.and.arrow.down", android: AndroidIcons.download, title: t("New Bot from Template…"), run: () => router.push("/template") },
+    { icon: "point.3.connected.trianglepath.dotted", android: AndroidIcons.workflow, title: t("New Workflow"), run: () => router.push("/workflows") },
+    { icon: "folder.badge.plus", android: AndroidIcons.newFolder, title: t("New Section"), run: () => newSection() },
+  ];
+
+  // The relay status sits in the bar's title slot, so the list never moves. Once a try to
+  // connect has failed it says so, and a tap shows the error.
+  const status = updateRequired ? (
+    <View style={styles.status} accessibilityRole="header" accessibilityLabel={t("Update Lorca to sync")}>
+      <Text style={[styles.statusText, { color: p.secondaryLabel }]} numberOfLines={1}>
+        {t("Update Lorca to sync")}
+      </Text>
+    </View>
+  ) : connecting && relayError ? (
+    <Pressable
+      style={({ pressed }) => [styles.status, pressed && styles.statusPressed]}
+      accessibilityRole="button"
+      accessibilityLabel={problemTitle(relayError)}
+      onPress={() => showRelayProblem(relayError, relayUrl)}
+    >
+      <Symbol name="exclamationmark.triangle.fill" size={13} color={p.red} />
+      <Text style={[styles.statusText, { color: p.secondaryLabel }]} numberOfLines={1}>
+        {problemTitle(relayError)}
+      </Text>
+    </Pressable>
+  ) : connecting ? (
+    <View style={styles.status} accessibilityRole="header" accessibilityLabel={t("Connecting…")}>
+      <ActivityIndicator size="small" color={p.secondaryLabel as any} />
+      <Text style={[styles.statusText, { color: p.secondaryLabel }]} numberOfLines={1}>
+        {t("Connecting…")}
+      </Text>
+    </View>
+  ) : null;
+
   return (
     <>
-            {floatingSearch ? null : (
-        <Stack.SearchBar
-          placeholder={t("Search")}
-          onChangeText={(e) => updateQuery(e.nativeEvent.text)}
-          onCancelButtonPress={() => updateQuery("")}
-          hideWhenScrolling
-          autoCapitalize="none"
-        />
-      )}
       {Platform.OS === "ios" ? (
         <>
+          {/* Round glass buttons, as the reference's: Settings (and Attention while something
+              waits) at the leading edge, Search and New at the trailing one, each its own disc. */}
           <Stack.Toolbar placement="left">
-            <Stack.Toolbar.Button icon="gearshape" accessibilityLabel={t("Settings")} onPress={() => router.push("/settings")} />
+            <Stack.Toolbar.Button icon="person.crop.circle" accessibilityLabel={t("Settings")} onPress={() => router.push("/settings")} />
+            <Stack.Toolbar.Spacer width={8} hidden={!needsAttention} />
             <Stack.Toolbar.Button hidden={!needsAttention} icon="tray.full" accessibilityLabel={t("Attention")} onPress={() => router.push("/attention")} />
           </Stack.Toolbar>
           <Stack.Toolbar placement="right">
-            <Stack.Toolbar.Menu icon="square.and.pencil" accessibilityLabel={t("New")}>
-              <Stack.Toolbar.MenuAction icon="person.2.fill" onPress={() => router.push("/new-group")}>
-                {t("New Group Chat")}
-              </Stack.Toolbar.MenuAction>
-              <Stack.Toolbar.MenuAction icon="person.badge.plus" onPress={() => router.push("/new-bot")}>
-                {t("New Bot")}
-              </Stack.Toolbar.MenuAction>
-              <Stack.Toolbar.MenuAction icon="square.and.arrow.down" onPress={() => router.push("/template")}>
-                {t("New Bot from Template…")}
-              </Stack.Toolbar.MenuAction>
-              <Stack.Toolbar.MenuAction icon="point.3.connected.trianglepath.dotted" onPress={() => router.push("/workflows")}>
-                {t("New Workflow")}
-              </Stack.Toolbar.MenuAction>
-              <Stack.Toolbar.MenuAction icon="folder.badge.plus" onPress={() => newSection()}>
-                {t("New Section")}
-              </Stack.Toolbar.MenuAction>
+            <Stack.Toolbar.Button icon="magnifyingglass" accessibilityLabel={t("Search")} onPress={() => (searchOpen ? closeSearch() : setSearchOpen(true))} />
+            <Stack.Toolbar.Spacer width={8} />
+            <Stack.Toolbar.Menu icon="plus" accessibilityLabel={t("New")}>
+              {newItems.map((item) => (
+                <Stack.Toolbar.MenuAction key={item.title} icon={item.icon as any} onPress={item.run}>
+                  {item.title}
+                </Stack.Toolbar.MenuAction>
+              ))}
             </Stack.Toolbar.Menu>
           </Stack.Toolbar>
+          {status ? <Stack.Title asChild>{status}</Stack.Title> : null}
         </>
-      ) : (
-        <>
-          <Stack.Toolbar placement="left" tintColor={p.secondaryLabel}>
-            <Stack.Toolbar.Button icon={AndroidIcons.settings} accessibilityLabel={t("Settings")} onPress={() => router.push("/settings")} />
-            <Stack.Toolbar.Button hidden={!needsAttention} icon={AndroidIcons.inbox} accessibilityLabel={t("Attention")} onPress={() => router.push("/attention")} />
-          </Stack.Toolbar>
-          <Stack.Toolbar placement="right" tintColor={p.secondaryLabel}>
-            <Stack.Toolbar.Menu icon={AndroidIcons.add} accessibilityLabel={t("New")}>
-              <Stack.Toolbar.MenuAction icon={AndroidIcons.group} onPress={() => router.push("/new-group")}>
-                {t("New Group Chat")}
-              </Stack.Toolbar.MenuAction>
-              <Stack.Toolbar.MenuAction icon={AndroidIcons.personAdd} onPress={() => router.push("/new-bot")}>
-                {t("New Bot")}
-              </Stack.Toolbar.MenuAction>
-              <Stack.Toolbar.MenuAction icon={AndroidIcons.download} onPress={() => router.push("/template")}>
-                {t("New Bot from Template…")}
-              </Stack.Toolbar.MenuAction>
-              <Stack.Toolbar.MenuAction icon={AndroidIcons.workflow} onPress={() => router.push("/workflows")}>
-                {t("New Workflow")}
-              </Stack.Toolbar.MenuAction>
-              <Stack.Toolbar.MenuAction icon={AndroidIcons.newFolder} onPress={() => newSection()}>
-                {t("New Section")}
-              </Stack.Toolbar.MenuAction>
-            </Stack.Toolbar.Menu>
-          </Stack.Toolbar>
-        </>
-      )}
-      {/* The relay status sits in the bar's title slot, so the list never moves. Once a try to
-          connect has failed it says so, and a tap shows the error. */}
-      {updateRequired ? (
-        <Stack.Title asChild>
-          <View style={styles.status} accessibilityRole="header" accessibilityLabel={t("Update Lorca to sync")}>
-            <Text style={[styles.statusText, { color: p.secondaryLabel }]} numberOfLines={1}>
-              {t("Update Lorca to sync")}
-            </Text>
-          </View>
-        </Stack.Title>
-      ) : connecting && relayError ? (
-        <Stack.Title asChild>
-          <Pressable
-            style={({ pressed }) => [styles.status, pressed && styles.statusPressed]}
-            accessibilityRole="button"
-            accessibilityLabel={problemTitle(relayError)}
-            onPress={() => showRelayProblem(relayError, relayUrl)}
-          >
-            <Symbol name="exclamationmark.triangle.fill" size={13} color={p.red} />
-            <Text style={[styles.statusText, { color: p.secondaryLabel }]} numberOfLines={1}>
-              {problemTitle(relayError)}
-            </Text>
-          </Pressable>
-        </Stack.Title>
-      ) : connecting ? (
-        <Stack.Title asChild>
-          <View style={styles.status} accessibilityRole="header" accessibilityLabel={t("Connecting…")}>
-            <ActivityIndicator size="small" color={p.secondaryLabel as any} />
-            <Text style={[styles.statusText, { color: p.secondaryLabel }]} numberOfLines={1}>
-              {t("Connecting…")}
-            </Text>
-          </View>
-        </Stack.Title>
       ) : null}
-      <View style={styles.screen}>
+      <View style={[styles.screen, { backgroundColor: p.background }]}>
         <FlashList
           style={styles.list}
           data={data}
@@ -300,8 +272,10 @@ export function ChatsScreen({ sidebar = false }: { sidebar?: boolean }) {
           contentInsetAdjustmentBehavior="automatic"
           maintainVisibleContentPosition={KEEP_OFFSET}
           keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
           onScrollBeginDrag={closeOpenRow}
-          contentContainerStyle={{ paddingBottom: floatingSearch ? searchInset + 8 : 24 }}
+          contentContainerStyle={{ paddingTop: Platform.OS === "android" ? androidBar : 0, paddingBottom: Math.max(insets.bottom, 8) + 16 }}
+          ListHeaderComponent={searchOpen ? <SearchField value={query} onChangeText={updateQuery} onCancel={closeSearch} /> : null}
           ListEmptyComponent={
             <View style={styles.empty}>
               <Symbol name="sparkles" size={36} color={p.tertiaryLabel} />
@@ -310,16 +284,52 @@ export function ChatsScreen({ sidebar = false }: { sidebar?: boolean }) {
             </View>
           }
           renderItem={renderItem}
-          ItemSeparatorComponent={Separator}
           onRefresh={() => {
             haptic.refresh();
             engine.notify();
           }}
           refreshing={false}
+          progressViewOffset={Platform.OS === "android" ? androidBar : undefined}
         />
-        {floatingSearch ? <SidebarSearch value={query} placeholder={t("Search")} onChangeText={updateQuery} /> : null}
+        {Platform.OS === "android" ? (
+          <AndroidListBar
+            top={insets.top}
+            status={status}
+            needsAttention={needsAttention}
+            newItems={newItems}
+            onSettings={() => router.push("/settings")}
+            onAttention={() => router.push("/attention")}
+            onSearch={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+          />
+        ) : null}
       </View>
     </>
+  );
+}
+
+/// Android's bar over the list, drawn by the app as the chat's is: the surface color fading into
+/// the list under round buttons, Settings and Attention at the start, Search and New at the end.
+function AndroidListBar({ top, status, needsAttention, newItems, onSettings, onAttention, onSearch }: { top: number; status: React.ReactNode; needsAttention: boolean; newItems: { android: ImageSourcePropType; title: string; run: () => void }[]; onSettings: () => void; onAttention: () => void; onSearch: () => void }) {
+  useLanguage();
+  const p = usePalette();
+  const menuRef = useRef<MenuComponentRef>(null);
+  const surface = p.background as string;
+  const actions: MenuAction[] = newItems.map((item, index) => ({ id: String(index), title: item.title, image: item.android }));
+  return (
+    <View pointerEvents="box-none" style={[styles.androidBar, { height: top + BAR + 20 }]}>
+      <LinearGradient pointerEvents="none" colors={[withAlpha(surface, 0.97), withAlpha(surface, 0.9), withAlpha(surface, 0)]} locations={[0, 0.7, 1]} style={StyleSheet.absoluteFill} />
+      <View pointerEvents="box-none" style={[styles.androidBarRow, { marginTop: top }]}>
+        <RoundButton icon="person.crop.circle" label={t("Settings")} onPress={onSettings} />
+        {needsAttention ? <RoundButton icon="tray.full" label={t("Attention")} onPress={onAttention} /> : null}
+        <View style={styles.androidStatus} pointerEvents="box-none">
+          {status}
+        </View>
+        <RoundButton icon="magnifyingglass" label={t("Search")} onPress={onSearch} />
+        <MenuView ref={menuRef} actions={actions} onPressAction={({ nativeEvent }) => newItems[Number(nativeEvent.event)]?.run()}>
+          <RoundButton icon="plus" label={t("New")} onPress={() => menuRef.current?.show()} />
+        </MenuView>
+      </View>
+    </View>
   );
 }
 
@@ -336,15 +346,6 @@ function useConnecting(): boolean {
     return () => clearTimeout(timer);
   }, [relayConnected, activeSince]);
   return connecting;
-}
-
-/// The separator between rows: one component, so the list keeps its separators across renders.
-/// A group's header has none above or below it.
-function Separator({ leadingItem, trailingItem }: { leadingItem?: ChatListRow | SearchRow; trailingItem?: ChatListRow | SearchRow }) {
-  const p = usePalette();
-  const header = (item?: ChatListRow | SearchRow) => !!item && !("snippet" in item) && item.kind === "header";
-  if (header(leadingItem) || header(trailingItem)) return null;
-  return <View style={[styles.separator, { backgroundColor: p.separator }]} />;
 }
 
 // MARK: - Groups
@@ -701,7 +702,9 @@ const styles = StyleSheet.create({
   swipeLabel: { color: "#FFFFFF", fontSize: 13, fontWeight: "500" },
   screen: { flex: 1 },
   list: { flex: 1 },
-  separator: { height: StyleSheet.hairlineWidth, marginLeft: 78 },
+  androidBar: { position: "absolute", top: 0, left: 0, right: 0 },
+  androidBarRow: { height: BAR, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16 },
+  androidStatus: { flex: 1, alignItems: "center" },
   // iOS's collapsible list sections head with a bold title and a tinted chevron; Material's with
   // a subheader in the primary color.
   header: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingTop: Platform.OS === "ios" ? 18 : 16, paddingBottom: Platform.OS === "ios" ? 6 : 8 },

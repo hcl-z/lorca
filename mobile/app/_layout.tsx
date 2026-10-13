@@ -71,8 +71,7 @@ export default function RootLayout() {
           sheetAllowedDetents: [1],
           headerShown: true,
           headerShadowVisible: false,
-          // UIKit's native bar takes a plain color, not a dynamic system color.
-          headerStyle: { backgroundColor: p.dark ? "#1C1C1E" : "#F2F2F7" },
+          headerStyle: { backgroundColor: p.groupedBackground as string },
           contentStyle: { backgroundColor: p.groupedBackground },
         });
   // react-native-screens cannot render a nested stack inside an Android form sheet. Settings

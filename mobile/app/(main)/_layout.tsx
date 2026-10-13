@@ -32,7 +32,7 @@ export default function MainLayout() {
       <View style={styles.pane}>
         <PaneWidth value={wide ? width - sidebarWidth : width}>
           <Stack screenOptions={screenOptions}>
-            <Stack.Screen name="index" options={{ title: t("Chats"), headerTitle: "", headerLargeTitle: false, headerShadowVisible: false, headerTransparent: Platform.OS === "ios" }} />
+            <Stack.Screen name="index" options={{ title: t("Chats"), headerTitle: "", headerLargeTitle: false, headerShadowVisible: false, headerTransparent: true, headerShown: Platform.OS === "ios" }} />
             <Stack.Screen
               name="chat/[id]"
               options={{

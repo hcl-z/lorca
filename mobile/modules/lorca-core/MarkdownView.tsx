@@ -18,10 +18,24 @@ export interface MarkdownViewProps {
   border: ProcessedColorValue;
   /// Selection handles and highlight.
   tint: ProcessedColorValue;
+  /// Web links as source chips (a bot's message), on this fill and hairline.
+  sourceChips: boolean;
+  chipColor: ProcessedColorValue;
+  chipBorder: ProcessedColorValue;
   style?: StyleProp<ViewStyle>;
 }
 
-const native = requireNativeModule<{ measure(markdown: string, maxWidth: number, fontSize: number, codeFontSize: number): { width: number; height: number } }>("MarkdownView");
+const native = requireNativeModule<{
+  measure(markdown: string, maxWidth: number, fontSize: number, codeFontSize: number, sourceChips: boolean): { width: number; height: number };
+  sourceHosts(markdown: string): string[];
+  setFavicon(host: string, data: string | null): void;
+}>("MarkdownView");
+
+/// The sites a message's source chips name, each once.
+export const sourceHosts = (markdown: string): string[] => native.sourceHosts(markdown);
+
+/// Hands a site's icon (base64 image bytes) to every chip of it.
+export const setFavicon = (host: string, data: string | null) => native.setFavicon(host, data);
 
 /// Sizes already measured, by text and width, most recent last. A chat opened again, or a row
 /// FlashList recycles while scrolling, asks for the same sizes; measuring parses the Markdown and
@@ -31,16 +45,16 @@ const MEASURED_LIMIT = 600;
 
 /// The size the text takes within `maxWidth`, measured natively before the view renders. The
 /// view is sized from this, so a transcript's rows have their heights in their first layout.
-export function measureMarkdown(markdown: string, maxWidth: number, fontSize: number, codeFontSize: number) {
+export function measureMarkdown(markdown: string, maxWidth: number, fontSize: number, codeFontSize: number, sourceChips: boolean) {
   // Android sizes the text in sp, so the system's font scale is part of the answer.
-  const key = `${maxWidth}|${fontSize}|${codeFontSize}|${PixelRatio.getFontScale()}|${markdown}`;
+  const key = `${maxWidth}|${fontSize}|${codeFontSize}|${PixelRatio.getFontScale()}|${sourceChips ? 1 : 0}|${markdown}`;
   const hit = measured.get(key);
   if (hit) {
     measured.delete(key);
     measured.set(key, hit);
     return hit;
   }
-  const size = native.measure(markdown, maxWidth, fontSize, codeFontSize);
+  const size = native.measure(markdown, maxWidth, fontSize, codeFontSize, sourceChips);
   measured.set(key, size);
   if (measured.size > MEASURED_LIMIT) measured.delete(measured.keys().next().value!);
   return size;

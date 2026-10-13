@@ -37,7 +37,7 @@ Identity is a **key pair**. Devices pair. The relay stores public keys and ciphe
 - **CLI:** identity and machine keys, local websocket, encrypt/decrypt, agent loop, the account’s provider credentials, sync with the relay.
 - **Relay:** store-and-forward API. Rust, axum, SQLite or Postgres (`crates/relay`). Self-host it anywhere; clients point `LORCA_RELAY_URL` at it.
 
-Production installs are named **Lorca** and use `app.lorca`; development installs are named **Lorca Dev** and use `app.lorca.dev`. They are separate applications on macOS, Windows, Linux, iOS, and Android. The production CLI stores its account under `~/.lorca` and listens on `4862`, while the desktop-app development build sets `LORCA_HOME=~/.lorca-dev` and listens on `4863`. On phones the distinct application ids give each build its own OS sandbox, and the core uses `lorca/core` or `lorca-dev/core` inside that sandbox. Their iOS keychain groups are `group.app.lorca` and `group.app.lorca.dev`.
+Production installs are **Lorca** (`app.lorca`) and development installs **Lorca Dev** (`app.lorca.dev`): separate applications on every platform, each with its own data, port, and keychain group ([Production and development installs](docs/architecture/development.md#production-and-development-installs)).
 
 If the CLI is down, the app shows a native empty state with the launcher’s status and the manual `lorca serve` command.
 
@@ -113,6 +113,7 @@ One doc per subject under `docs/architecture/`, each short enough to read in one
 | [Desktop app](docs/architecture/desktop-app.md) | The MyGo app for macOS, Windows, and Linux: its model, host, and native views, launching the CLI, windows and onboarding, settings, title bar, commands, motion |
 | [Desktop updates and builds](docs/architecture/desktop-builds.md) | The desktop app's updater and its releases, the development loop and its tests, builds for each platform and their signing |
 | [Phone app](docs/architecture/phone-app.md) | The Expo app over the Rust core: the native module, pairing, relay status, attachments, dictation, notifications, turns |
+| [Phone app look and layout](docs/architecture/phone-ui.md) | The phone's monochrome palette and round-button bars, the chat list and its search, the composer and Stop, forms and sheets, the transcript, its cards and message actions, a tablet's two panes |
 | [Phone releases and updates](docs/architecture/phone-updates.md) | TestFlight builds, Android APK releases, and the Android app's self-update: the daily check and offer, the progress dialog, the package installer |
 | [Website](docs/architecture/website.md) | `web/`: the site, its docs, and the install scripts it serves |
 | [Languages](docs/architecture/languages.md) | English and Simplified Chinese in each app, and what the CLI words |

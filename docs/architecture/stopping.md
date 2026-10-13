@@ -4,7 +4,7 @@ What Stop in a chat ends, on every Runner it reaches, and what it leaves running
 
 ## Stopping a turn
 
-`chats.stop { chat_id }`, the Stop button and Stop Responding in the desktop app, goes through `runtime::cancel_chat`: it cancels every job the chat has on this Device, including one still waiting for the chat lock, and seals a `job_cancel` to each Device that runs one of the chat's turns or lists one in its `machine` blob (`App::cancel_chat`). A Runner that gets a `job_cancel` cancels that job (`App::cancel_job`). The phone has no Stop for a turn; its Running tasks stop one command.
+`chats.stop { chat_id }`, the Stop button and Stop Responding in the desktop app, goes through `runtime::cancel_chat`: it cancels every job the chat has on this Device, including one still waiting for the chat lock, and seals a `job_cancel` to each Device that runs one of the chat's turns or lists one in its `machine` blob (`App::cancel_chat`). A Runner that gets a `job_cancel` cancels that job (`App::cancel_job`). The phone's composer has the same Stop: while a turn runs, its disc is Stop, or Stop beside Send once something is typed, which steers the turn instead (`engine.stopChat`); its Running tasks stop one command.
 
 On the Runner, a cancelled turn ends this way:
 

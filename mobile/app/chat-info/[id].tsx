@@ -391,7 +391,7 @@ export default function ChatInfoScreen() {
                 <Switch
                   value={routine.is_enabled}
                   onValueChange={(v) => engine.setRoutineEnabled(routine.id, v)}
-                  trackColor={Platform.OS === "android" ? { false: p.fill, true: p.secondaryFill } : undefined}
+                  trackColor={Platform.OS === "android" ? { false: p.fill, true: p.secondaryFill } : { false: p.fill, true: p.dark ? "#636366" : p.ink }}
                   thumbColor={Platform.OS === "android" ? p.tint : undefined}
                 />
               }
@@ -418,7 +418,7 @@ export default function ChatInfoScreen() {
                   <Switch
                     value={channel.state !== "paused"}
                     onValueChange={(on) => engine.setChannelPaused(channel.id, !on)}
-                    trackColor={Platform.OS === "android" ? { false: p.fill, true: p.secondaryFill } : undefined}
+                    trackColor={Platform.OS === "android" ? { false: p.fill, true: p.secondaryFill } : { false: p.fill, true: p.dark ? "#636366" : p.ink }}
                     thumbColor={Platform.OS === "android" ? p.tint : undefined}
                   />
                 }

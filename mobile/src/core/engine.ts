@@ -9,6 +9,8 @@ import * as core from "../../modules/lorca-core";
 import { t } from "../i18n";
 import { exactAnswer, ExactNumber, ExactObject, stringifyExact } from "./exactJson";
 import { reviewEditParams } from "./reviewEdit";
+import { editedText, rerunnable } from "./rerun";
+import type { AskAnswer } from "./ask";
 import { hostFacts } from "./host";
 import { orderProjectEntries, providerConnectMethod, sectionName, withReviewModel, sameDraft, type Section, type PlaybookContent, type PlaybookRecord, type PlaybookScope, type ProjectContext, type ProjectEntry, type ProjectKind, type ProjectSource, type Attachment, type AutoReview, type Bot, type BrowserProfile, type BudgetLimits, type BudgetState, type CallLimits, type Chat, type ChatMeta, type ChatSearchResults, type ChatUsage, type CustomAPI, type CustomModel, type DurableTask, type Message, type MessageDraft, type ReviewItem, type PluginDetail, type PluginStatus, type ProviderKind, type ProviderStatus, type SavedSecret, routinesAwaitingSetup } from "./model";
 import { coreHome, loadPrefs, pathOf, wipePrefs } from "./prefs";
@@ -62,6 +64,7 @@ class Engine {
   private started = false;
   private fetchingFiles = new Set<string>();
   private loadingOlder = new Set<string>();
+  private favicons = new Map<string, Promise<string | null>>();
   /// The sign-in page up in the in-app browser: whose it is (a plugin sign-in's id, or
   /// "provider"), and whether this side is closing it.
   private authPage: { attempt: string; closing: boolean } | null = null;
@@ -265,6 +268,67 @@ class Engine {
   /// to the background, and a reply in progress stops where it got to. The bot's Runner does it.
   async sendNow(chatId: string, messageId: string): Promise<void> {
     await core.request("chats.send_now", { chat_id: chatId, message_id: messageId });
+  }
+
+  /// Stops the chat's work: every turn it has, on this phone's account's Runners wherever they
+  /// run, the model call and tool calls, and what those turns handed off. The core seals a
+  /// cancellation to each Runner doing it; `job.finished` follows from them.
+  async stopChat(chatId: string): Promise<void> {
+    await core.request("chats.stop", { chat_id: chatId });
+  }
+
+  /// Runs the latest exchange of a direct chat again: Regenerate, or with `text`, the user's
+  /// message edited. The rows after the message go at once and the Runner answers anew; a refusal
+  /// puts the chat back and rejects with why.
+  async rerun(chatId: string, messageId: string, text?: string): Promise<void> {
+    const chat = chatById(chatId);
+    const working = Object.values(useStore.getState().running).some((r) => r.chatId === chatId);
+    const run = rerunnable(chat, working);
+    if (!chat || !run || run.asked.id !== messageId) throw new Error(t("This reply can no longer run again."));
+    const before = chat.messages;
+    const edited = editedText(run.asked, text);
+    const removed = new Set(run.after.map((m) => m.id));
+    useStore.setState((s) => ({
+      chats: s.chats.map((c) =>
+        c.id !== chatId
+          ? c
+          : {
+              ...c,
+              messages: c.messages
+                .filter((m) => !removed.has(m.id))
+                .map((m) => (m.id === messageId && edited !== undefined && m.body.kind === "text" ? { ...m, body: { ...m.body, text: edited }, edited_at: Date.now() / 1000 } : m)),
+            },
+      ),
+    }));
+    try {
+      await core.request("chats.rerun", { chat_id: chatId, message_id: messageId, ...(edited !== undefined ? { text: edited } : {}) });
+    } catch (error) {
+      useStore.setState((s) => ({ chats: s.chats.map((c) => (c.id === chatId ? { ...c, messages: before } : c)) }));
+      throw error;
+    }
+  }
+
+  /// Regenerate: the bot's reply to the user's latest message, answered anew.
+  regenerate(chatId: string): Promise<void> {
+    const working = Object.values(useStore.getState().running).some((r) => r.chatId === chatId);
+    const run = rerunnable(chatById(chatId), working);
+    if (!run) return Promise.reject(new Error(t("This reply can no longer run again.")));
+    return this.rerun(chatId, run.asked.id);
+  }
+
+  /// A site's icon for a link's source chip, from the core (`links.favicon`), which fetches it
+  /// over HTTPS from the site and keeps it a while. Asked once per site per run: the answer, or
+  /// that there is none, is kept here.
+  favicon(host: string): Promise<string | null> {
+    let asked = this.favicons.get(host);
+    if (!asked) {
+      asked = core
+        .request<{ icon: { mime: string; data: string } | null }>("links.favicon", { host })
+        .then((reply) => reply.icon?.data ?? null)
+        .catch(() => null);
+      this.favicons.set(host, asked);
+    }
+    return asked;
   }
 
   /// The page of messages before the chat's first one, as the transcript nears its top. One
@@ -885,11 +949,12 @@ class Engine {
   /// Answers a permission card; the core's message event confirms the decision. Sign in on a
   /// sign-in card for a bot on another Runner opens the sign-in page here. Rejects with why the
   /// answer did not reach the Runner, such as it being offline, and the card asks again.
-  async answerPermission(chatId: string, messageId: string, decision: "allow" | "always" | "deny") {
+  async answerPermission(chatId: string, messageId: string, decision: "allow" | "always" | "deny", answer?: AskAnswer) {
     const decided: "always" | "denied" | "allowed" = decision === "always" ? "always" : decision === "deny" ? "denied" : "allowed";
-    // A permission card shows the answer; a command's card moves on to running, or ends.
+    // A permission card shows the answer; a question's card what was picked; a command's card
+    // moves on to running, or ends.
     const answered = (m: Message): Message => {
-      if (m.body.kind === "permission") return { ...m, body: { ...m.body, decision: decided } };
+      if (m.body.kind === "permission") return { ...m, body: { ...m.body, decision: decided, ...(answer && m.body.ask ? { ask: { ...m.body.ask, answer } } : {}) } };
       if (m.body.kind === "tool" && m.body.run?.state === "asking") {
         const run = { ...m.body.run, decision: decided, state: decided === "denied" ? ("denied" as const) : ("running" as const), rule: decided === "always" ? m.body.run.rule : undefined };
         return { ...m, body: { ...m.body, run } };
@@ -907,7 +972,7 @@ class Engine {
     };
     replace(asked, shown);
     try {
-      await core.request("chats.permission", { chat_id: chatId, message_id: messageId, decision });
+      await core.request("chats.permission", { chat_id: chatId, message_id: messageId, decision, ...(answer ? { answer } : {}) });
     } catch (error) {
       replace(shown, asked);
       throw error;

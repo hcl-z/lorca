@@ -6,7 +6,7 @@
 import { Host as ComposeHost, Icon as ComposeIcon, IconButton, ModalBottomSheet, OutlinedTextField, Text as ComposeText } from "@expo/ui/jetpack-compose";
 import { fillMaxWidth, padding as composePadding } from "@expo/ui/jetpack-compose/modifiers";
 import { BottomSheet, Button as SwiftButton, Group, HStack, Host as SwiftHost, Image as SwiftImage, SecureField, Text as SwiftText, VStack } from "@expo/ui/swift-ui";
-import { accessibilityLabel, autocorrectionDisabled, background, buttonBorderShape, buttonStyle, disabled, font, foregroundStyle, frame, onSubmit, padding, presentationDragIndicator, shapes, submitLabel, textInputAutocapitalization } from "@expo/ui/swift-ui/modifiers";
+import { tint, accessibilityLabel, autocorrectionDisabled, background, buttonBorderShape, buttonStyle, disabled, font, foregroundStyle, frame, onSubmit, padding, presentationDragIndicator, shapes, submitLabel, textInputAutocapitalization } from "@expo/ui/swift-ui/modifiers";
 import { useState } from "react";
 import { Platform, StyleSheet } from "react-native";
 import { t, useLanguage } from "../i18n";
@@ -91,7 +91,7 @@ export function SecretSheet({ fields, onSave, onDismiss }: { fields: { name: str
               <HStack key={secret.name} spacing={8} modifiers={[padding({ leading: 16, trailing: 5, top: 5, bottom: 5 }), frame({ minHeight: 44 }), background(p.fill, shapes.capsule())]}>
                 <SecureField autoFocus={index === 0} placeholder={secret.label} onTextChange={set(secret.name)} modifiers={[...field, accessibilityLabel(secret.label)]} />
                 {index === fields.length - 1 ? (
-                  <SwiftButton onPress={() => void save()} modifiers={[buttonStyle("glassProminent"), buttonBorderShape("circle"), disabled(saving || !filled), accessibilityLabel(t("Save"))]}>
+                  <SwiftButton onPress={() => void save()} modifiers={[buttonStyle("glassProminent"), buttonBorderShape("circle"), tint(p.ink), disabled(saving || !filled), accessibilityLabel(t("Save"))]}>
                     <SwiftImage systemName="arrow.up" />
                   </SwiftButton>
                 ) : null}
