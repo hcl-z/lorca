@@ -1,6 +1,6 @@
 # Repo layout and development
 
-Where each crate and app lives in the repository, and the development loops and builds that run them. The desktop app's own loop and builds are in [Desktop app](desktop-app.md). Releases: [docs/releasing.md](../releasing.md).
+Where each crate and app lives in the repository, the development loops and builds that run them, and how a change goes from a branch to a release. The desktop app's own loop and builds are in [Desktop app](desktop-app.md). Releases: [docs/releasing.md](../releasing.md).
 
 ## Layout
 
@@ -35,6 +35,27 @@ Production installs are named **Lorca** and use `app.lorca`; development install
 `bun run android` rebuilds the Rust core for Android, then builds and runs the Expo dev client on the Android emulator. `cd mobile && bun run core` rebuilds the Rust core for both phone platforms; `bun run mobile:dev` is the iOS development loop described below.
 
 `bun run desktop` is the desktop app's loop and `bun run desktop:build` builds its release bundles ([Desktop app](desktop-app.md)). `bun run relay` runs a local relay. `bun run mobile:dev` (`scripts/mobile.ts`) is the Lorca Dev phone loop on the iOS Simulator, or on `--device <name or udid>`: it fingerprints the crates the phone links, the prebuild inputs (Expo config, assets, `package.json`, plugins, targets), the pod inputs with the checkout's path, and the native module sources (stamps in `mobile/.expo/dev-stamps.json`), rebuilds what is stale (`bun run core ios`, a clean `expo prebuild`, `pod install`, `expo run:ios`), starts Metro, and opens the dev client on it. A Rust save while it runs rebuilds the core and installs the app again. The desktop and phone loops leave production Lorca processes alone, so all builds run side by side.
+
+## Making a change
+
+Every change is a short-lived branch merged into `main` through a pull request; `main` takes no direct commits. Releases are cut from a clean `main`, a batch of merged changes at a time.
+
+1. **Branch.** `git switch -c <topic>`, or, for work beside another branch, a worktree next to the checkout: `git worktree add ../lorca-<topic> -b <topic>`. A worktree under `/tmp` goes when macOS clears it.
+2. **Run and test what the change touches**, with the quick tests while changing it and the area's whole suite before it is done:
+
+   | Area | Loop | While changing | Before it is done |
+   | --- | --- | --- | --- |
+   | CLI and Rust crates | `bun run cli` | `cargo test -p lorca --lib <module>` | `cargo test --workspace --exclude lorca-mobile` |
+   | Desktop app | `bun run desktop` | `go test . -run 'TestXxx' -timeout 120s`, `go test ./model`, `go tool mygo vet .` | `gofmt -l .`, `go vet ./...`, `go test ./...` (about four minutes), in `desktop/` |
+   | Phone app | `bun run mobile:dev`, `bun run android` | `bun run typecheck && bun run test`, in `mobile/` | the same, and `cargo test -p lorca-mobile` when `crates/mobile` or `crates/markdown` changed |
+   | Relay | `bun run relay` | `cargo test -p lorca-relay` | the same |
+   | Docs and the model catalog | | `bun run check:docs`, `bun run check:catalog` | the same |
+
+   The checks follow what the change touched: a formatting fix needs `gofmt -l .`, not the four-minute desktop suite. CI's gofmt is the one of the Go in `desktop/go.mod`, whose alignment can differ from an older `gofmt` on `PATH`; `go fmt ./...` in `desktop/` runs that toolchain's. The `lorca` crate's first test build compiles the whole CLI and takes several GB under `target/debug`; `cargo check -p lorca --tests` type-checks it in a fraction of that, and CI runs the suite on all three platforms. A native build of the phone app goes through `bun run mobile:dev` (or `bun run android`), which sets the environment CocoaPods and Xcode need (`NATIVE_ENV` in `scripts/mobile.ts`); a bare `xcodebuild` against `mobile/ios` skips it. The Android core needs `cargo-ndk` and an NDK. `mobile/bun.lock` is a lockfile v2, which Bun reads from 1.4.
+
+3. **Docs.** A change to a mechanism changes the doc that describes it in the same branch ([AGENTS.md](../../AGENTS.md)).
+4. **Pull request.** `gh pr create` runs Tests (`test.yml`: the Rust workspace on Linux with Postgres, macOS, and Windows; the desktop app's gofmt, vet, and tests; the phone app's typecheck and tests) and Docs (`docs.yml`). The branch merges when they pass. The Windows suite runs only there and takes longest. Codex reviews each pull request as it opens and leaves its findings as review comments (`gh api repos/hcl-z/lorca/pulls/<n>/comments`). A failed check is read from its log (`gh run view <run> --job <job> --log-failed`) before anything changes, and a fix goes up as a new commit on the same branch. Nothing runs on commit: the repository has no Git hooks, so step 2's checks are what catch formatting and docs before CI.
+5. **Release.** When a batch of changes is merged, a `## [<version>]` section in `CHANGELOG.md` and `bun run release <version> --push` release the CLI, the desktop app, and the phone app together ([Releasing](../releasing.md#cutting-a-release)).
 
 ## Testing the desktop app
 
