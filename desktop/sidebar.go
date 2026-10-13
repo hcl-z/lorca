@@ -188,23 +188,10 @@ func groupCollapsed(group sidebarGroup) bool {
 const sidebarInset = 12
 
 func (m *mainWindow) chatsSidebar(c *ui.Context) {
-	p := colors(c)
 	s := &m.chatsList
-	ui.Column(c).Padding(2, sidebarInset, 6, sidebarInset).Children(func() {
-		// The field is the way into the palette: a click opens it, and the field never takes the
-		// keyboard.
-		field := searchChrome(c, ui.ButtonBase(c)).Justify(ui.Start).Label(L("Search")).FocusRing(false)
-		if field.Hovered() {
-			field.BorderColor(p.FieldBorder)
-		}
-		field.Children(func() {
-			symbol(c, "magnifyingglass", 13, 2)
-			ui.Text(c, L("Search")).FontSize(13).TextColor(p.Placeholder).SingleLine()
-		})
-		if field.Clicked() {
-			runCommand("palette")
-		}
-	})
+	hints := m.shortcutHints(c)
+	// The list starts under the header, where the search field once was.
+	ui.Box(c).Height(4)
 
 	// A chat opened some other way (the palette, a notification, a hidden chat found by search)
 	// shows its row: its group unfolds.
@@ -292,7 +279,6 @@ func (m *mainWindow) chatsSidebar(c *ui.Context) {
 		}
 		return true
 	})
-	hints := m.shortcutHints(c)
 	holder.Children(func() {
 		s.list.Key = func(i int) any { return rows[i].key() }
 		s.list.Label = func(i int) string {
@@ -368,7 +354,7 @@ func dropSidebarRows(rows []sidebarRow, dragged []int, to int) {
 func (m *mainWindow) groupHeader(c *ui.Context, group sidebarGroup, collapsed bool) {
 	p := colors(c)
 	title := groupTitle(group)
-	row := ui.Row(c).Height(28).Padding(0, 6, 5, 6).AlignItems(ui.End).Gap(4).Label(title).Role(ui.RoleDisclosure).Expanded(!collapsed)
+	row := ui.Row(c).Height(36).Padding(0, 6, 6, 8).AlignItems(ui.End).Gap(4).Label(title).Role(ui.RoleDisclosure).Expanded(!collapsed)
 	hovered := row.Hovered()
 	switch group.kind {
 	case groupSection:
@@ -397,7 +383,7 @@ func (m *mainWindow) groupHeader(c *ui.Context, group sidebarGroup, collapsed bo
 		})
 	}
 	row.Children(func() {
-		ui.Text(c, title).Grow(1).Shrink(1).MinWidth(0).FontSize(11).FontWeight(700).TextColor(p.Label2).SingleLine()
+		ui.Text(c, title).Grow(1).Shrink(1).MinWidth(0).FontSize(13).FontWeight(500).TextColor(p.Label2).SingleLine()
 		name := "chevron.down"
 		if collapsed {
 			name = "chevron.right"
@@ -443,13 +429,8 @@ func (m *mainWindow) shortcutHints(c *ui.Context) bool {
 func (m *mainWindow) chatRow(c *ui.Context, chat *model.Chat, selected, listFocused bool, hint string) {
 	p := colors(c)
 	backdrop := p.Sidebar
-	row := ui.Row(c.Key(chat.ID)).Height(54).Padding(0, 10, 0, 6).Radius(radiusLG).Gap(10)
-	working := false
-	for _, id := range chat.BotIDs {
-		if store.IsWorking(id) {
-			working = true
-		}
-	}
+	row := ui.Row(c.Key(chat.ID)).Height(64).Padding(0, 10, 0, 6).Radius(radiusXL).Gap(12)
+	working := chatWorking(chat)
 	title := store.Title(chat)
 	muted := chat.IsMuted(c.Now())
 	label := []string{title}
@@ -464,10 +445,10 @@ func (m *mainWindow) chatRow(c *ui.Context, chat *model.Chat, selected, listFocu
 	}
 	row.Label(strings.Join(label, ", ")).Role(ui.RoleListItem)
 	secondary, tertiary := p.Label2, p.Label3
-	// A muted chat's count is quiet; the others' are the unread blue.
-	pill := p.Unread
+	// A muted chat's dot is quiet; the others' are the unread blue.
+	dot := p.Unread
 	if muted {
-		pill = p.Label3
+		dot = p.Label3
 	}
 	switch {
 	case selected && listFocused:
@@ -488,78 +469,90 @@ func (m *mainWindow) chatRow(c *ui.Context, chat *model.Chat, selected, listFocu
 	if row.DoubleClicked() && chat.IsGroup() {
 		m.renameChat()
 	}
-	chatID := chat.ID
-	row.ContextMenu(func(menu *ui.Menu) {
-		// Acting on the clicked row means selecting it first; the commands read the selection.
-		m.selectChat(chatID)
-		pin := L("Pin")
-		if chat.IsPinned {
-			pin = L("Unpin")
-		}
-		if menu.Item(pin).Chosen() {
-			store.TogglePin(chatID)
-		}
-		m.chatSidebarItems(menu, chat)
-		menu.Separator()
-		if chat.IsGroup() {
-			if menu.Item(L("Rename…")).Chosen() {
-				m.renameChat()
-			}
-			if menu.Item(L("Add Bot…")).Disabled(len(botsAvailableToAdd(chatID)) == 0).Chosen() {
-				m.addBotToChat(chatID)
-			}
-		} else if menu.Item(L("Share as Template…")).Chosen() {
-			runCommand("shareBotTemplate")
-		}
-		menu.Separator()
-		remove := L("Delete Chat")
-		if chat.IsBotDM() {
-			remove = L("Delete Bot")
-		}
-		if menu.Item(remove).Chosen() {
-			m.deleteChat()
-		}
-	})
+	row.Transition(controlFade)
+	row.ContextMenu(func(menu *ui.Menu) { m.chatMenu(menu, chat) })
 	row.Children(func() {
-		members := store.BotsIn(chat)
-		avatars := make([]avatarContent, 0, 4)
-		for _, bot := range members[:min(4, len(members))] {
-			avatars = append(avatars, botAvatar(bot))
-		}
 		service := ""
 		if chat.Channel != nil {
 			service = chat.Channel.Service
 		}
-		avatarCluster(c, avatars, 38, working, service, backdrop)
-		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(2).Children(func() {
+		avatarCluster(c, chatAvatars(chat), 42, working, service, backdrop)
+		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(3).Children(func() {
 			ui.Row(c).Gap(6).MinWidth(0).Children(func() {
-				ui.Text(c, title).Grow(1).Shrink(1).MinWidth(0).FontSize(13).FontWeight(500).SingleLine()
+				ui.Text(c, title).Shrink(1).MinWidth(0).FontSize(15).FontWeight(500).SingleLine()
 				if muted {
-					symbol(c, "bell.slash.fill", 10, 2).TextColor(tertiary).Label(L("Muted"))
+					symbol(c, "bell.slash.fill", 11, 2).TextColor(tertiary).Label(L("Muted"))
 				}
 				if chat.IsPinned {
-					symbol(c, "pin.fill", 10, 2).TextColor(tertiary).Label(L("Pinned"))
+					symbol(c, "pin.fill", 11, 2).TextColor(tertiary).Label(L("Pinned"))
 				}
-				stamp := model.Stamp(chat.LastActivity())
+				ui.Spacer(c)
 				if hint != "" {
-					stamp = hint
-				}
-				ui.Text(c, stamp).FontSize(textCaption).TextColor(tertiary).FontFeatures("tnum").SingleLine()
-			})
-			ui.Row(c).Gap(6).MinWidth(0).Children(func() {
-				ui.Text(c, store.Preview(chat)).Grow(1).Shrink(1).MinWidth(0).FontSize(11.5).TextColor(secondary).SingleLine()
-				if chat.UnreadCount > 0 {
-					count := fmt.Sprint(chat.UnreadCount)
-					if chat.UnreadCount > 999 {
-						count = "999+"
-					}
-					ui.Row(c).MinWidth(16).Height(16).Padding(0, 2.5).Radius(8).Justify(ui.Center).Background(pill).Children(func() {
-						ui.Text(c, count).FontSize(textCaption).FontWeight(600).TextColor(p.White).FontFeatures("tnum")
-					}).Label(L("%d unread", chat.UnreadCount))
+					ui.Text(c, hint).FontSize(textCaption).TextColor(tertiary).FontFeatures("tnum").SingleLine()
 				}
 			})
+			ui.Text(c, store.Preview(chat)).Shrink(1).MinWidth(0).FontSize(13.5).TextColor(secondary).SingleLine()
 		})
+		if chat.UnreadCount > 0 {
+			unreadDot(c, chat, dot)
+		}
 	})
+}
+
+// chatWorking is whether any of the chat's bots has a turn running.
+func chatWorking(chat *model.Chat) bool {
+	return slices.ContainsFunc(chat.BotIDs, store.IsWorking)
+}
+
+// chatAvatars are the avatars of a chat's first four bots.
+func chatAvatars(chat *model.Chat) []avatarContent {
+	members := store.BotsIn(chat)
+	avatars := make([]avatarContent, 0, 4)
+	for _, bot := range members[:min(4, len(members))] {
+		avatars = append(avatars, botAvatar(bot))
+	}
+	return avatars
+}
+
+// unreadDot is the dot of a chat with unread messages, in `color`; it says how many to assistive
+// technology and in its tooltip.
+func unreadDot(c *ui.Context, chat *model.Chat, color ui.Color) ui.Element {
+	text := L("%d unread", chat.UnreadCount)
+	return ui.Box(c.Key("unread-dot")).Size(9, 9).Radius(4.5).Shrink(0).Background(color).Label(text).Tooltip(text).Transition(dotPop)
+}
+
+// chatMenu is a chat's menu in the sidebar, on its row.
+func (m *mainWindow) chatMenu(menu *ui.Menu, chat *model.Chat) {
+	chatID := chat.ID
+	// Acting on the clicked row means selecting it first; the commands read the selection.
+	m.selectChat(chatID)
+	pin := L("Pin")
+	if chat.IsPinned {
+		pin = L("Unpin")
+	}
+	if menu.Item(pin).Chosen() {
+		store.TogglePin(chatID)
+	}
+	m.chatSidebarItems(menu, chat)
+	menu.Separator()
+	if chat.IsGroup() {
+		if menu.Item(L("Rename…")).Chosen() {
+			m.renameChat()
+		}
+		if menu.Item(L("Add Bot…")).Disabled(len(botsAvailableToAdd(chatID)) == 0).Chosen() {
+			m.addBotToChat(chatID)
+		}
+	} else if menu.Item(L("Share as Template…")).Chosen() {
+		runCommand("shareBotTemplate")
+	}
+	menu.Separator()
+	remove := L("Delete Chat")
+	if chat.IsBotDM() {
+		remove = L("Delete Bot")
+	}
+	if menu.Item(remove).Chosen() {
+		m.deleteChat()
+	}
 }
 
 // chatSidebarItems are a chat's items that quiet and file it, after the Mac's: Mute and its spans
@@ -679,12 +672,41 @@ func (m *mainWindow) sidebarFooter(c *ui.Context) {
 		if this.Clicked() && device != nil {
 			m.openDevice(device.ID)
 		}
-		ui.Spacer(c)
 		appearanceButton(c)
-		if hoverButton(c, hoverButtonOptions{Symbol: "circle.grid.2x2", Tooltip: L("Marketplace (%@)", shortcutText("CmdOrCtrl+Shift+M")), Label: L("Marketplace")}).Clicked() {
+		ui.Spacer(c)
+		if marketplaceCapsule(c).Clicked() {
 			runCommand("marketplace")
 		}
 	})
+}
+
+// marketplaceCapsule is the way to the marketplace, a raised capsule at the sidebar's foot with
+// the word and a few plugins' marks.
+func marketplaceCapsule(c *ui.Context) ui.Element {
+	p := colors(c)
+	b := ui.ButtonBase(c).Height(34).Padding(0, 14, 0, 16).Gap(8).Radius(radiusCapsule).Background(p.ButtonBG).Border(1, p.ButtonBorder).
+		Shadow(0, 1, 3, 0, p.Shadow.Alpha(0.08)).FontSize(13).FontWeight(500).TextColor(p.Label).
+		Label(L("Marketplace")).Tooltip(L("Marketplace (%@)", shortcutText("CmdOrCtrl+Shift+M")))
+	pressed := b.Pressed()
+	switch {
+	case pressed:
+		b.Background(p.ButtonPressed)
+	case b.Hovered():
+		b.Background(p.ButtonHover)
+	}
+	b.Transition(controlFade)
+	sinkWhenPressed(b, pressed, 0.96)
+	b.Children(func() {
+		ui.Text(c, L("Marketplace")).SingleLine()
+		ui.Row(c).Gap(3).Children(func() {
+			for _, service := range []string{"gmail", "google-calendar", "slack"} {
+				if mark := pluginMark(service); mark != nil {
+					ui.Image(c, mark).Size(13, 13)
+				}
+			}
+		})
+	})
+	return b
 }
 
 // appearanceButton switches the windows between light and dark: a moon in the light appearance,

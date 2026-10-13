@@ -35,19 +35,13 @@ func (s settingsPane) general(c *ui.Context) {
 	saved := prefs.get()
 	s.frame(c, string(model.PaneGeneral), func() {
 		s.section(c, L("Chats"), nil, func(k *card) {
-			sendOnReturn, timestamps := sendOnReturnEntry().row, timestampsEntry().row
+			sendOnReturn := sendOnReturnEntry().row
 			s.mark(c, accessoryRow(c, k, sendOnReturn, "", func() {
 				on := saved.SendOnReturn
 				if settingsSwitch(c, &on, sendOnReturn, false) {
 					setPrefs(PreferencesPatch{SendOnReturn: &on})
 				}
 			}), sendOnReturn)
-			s.mark(c, accessoryRow(c, k, timestamps, "", func() {
-				on := saved.ShowTimestamps
-				if settingsSwitch(c, &on, timestamps, false) {
-					setPrefs(PreferencesPatch{ShowTimestamps: &on})
-				}
-			}), timestamps)
 		})
 		s.section(c, L("App Icon"), nil, func(k *card) {
 			trayIcon, badge := trayIconEntry().row, unreadBadgeEntry().row

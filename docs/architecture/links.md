@@ -21,7 +21,7 @@ The rules live in `crates/markdown` (`src/source.rs`), which the phone's native 
 The app speaks only to its CLI, so the CLI fetches the icon (`crates/cli/src/favicon.rs`). `links.favicon { host }` answers `{ icon: { mime, data } | null }`, `data` being base64.
 
 - The host is a public site name: dotted labels of letters, digits, and hyphens; never an address or a single word like `localhost`.
-- The CLI resolves the host and refuses any address that is loopback, private, link-local, shared, or multicast; the connection then goes to the addresses it checked, over HTTPS, so a name that changes its answer in between reaches nothing else. Redirects stay on the same host.
+- The CLI resolves the host and refuses any address that is loopback, private, link-local, shared, or multicast; the connection then goes to the addresses it checked, over HTTPS, so a name that changes its answer in between reaches nothing else. Every URL it requests, an icon link or a redirect, is checked first: HTTPS to the same host on port 443 (`on_site`), and anything else is never asked for.
 - It asks for `/favicon.ico`, then reads the site's page for `rel="icon"` and `apple-touch-icon` links on the same host (the first three). An icon is at most 64 KiB and passes only as PNG, ICO, JPEG, GIF, or WebP by its first bytes, never by its header and never SVG.
 - It keeps the answer in `favicons/` under the data directory, an icon for 7 days and a miss for one.
 

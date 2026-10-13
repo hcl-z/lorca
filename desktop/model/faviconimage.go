@@ -72,6 +72,10 @@ func dibToPNG(body []byte) ([]byte, error) {
 	if width <= 0 || height <= 0 || width > 256 || height > 256 || (bits != 32 && bits != 24) || (compression != 0 && compression != 3) {
 		return nil, errIcon
 	}
+	// The site writes the header's size: one past the entry is a broken icon, not a slice to take.
+	if header > len(body) {
+		return nil, errIcon
+	}
 	pixels := body[header:]
 	stride := (width*bits/8 + 3) &^ 3
 	if len(pixels) < stride*height {

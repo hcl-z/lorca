@@ -153,19 +153,18 @@ async fn fetch_icon(client: &reqwest::Client, host: &str, url: reqwest::Url) -> 
     Ok((mime.into(), bytes))
 }
 
-/// Whether `url` is on the site whose addresses were checked: HTTPS to `host` on port 443. The
-/// client pins only `host` to those addresses, so any other host, scheme, or port would reach
-/// whatever it names, a page's `<link>` to a local address among them.
+/// Whether `url` is on the site whose addresses were checked: HTTPS to `host` on 443, where the
+/// client's resolver pins it. An icon link or a redirect elsewhere is never requested.
 fn on_site(url: &reqwest::Url, host: &str) -> bool {
     url.scheme() == "https" && url.host_str() == Some(host) && url.port_or_known_default() == Some(443)
 }
 
-/// A GET that follows redirects within the same HTTPS host, up to `limit` bytes of body. Every
-/// request, the first one too, goes only to the checked site.
+/// A GET that follows redirects within the same HTTPS host, up to `limit` bytes of body. Every URL
+/// is checked before it is requested, the first one too, since a page names its icons.
 async fn get(client: &reqwest::Client, host: &str, mut url: reqwest::Url, limit: usize) -> Result<(u16, Vec<u8>), String> {
     for _ in 0..=MAX_REDIRECTS {
         if !on_site(&url, host) {
-            return Err("Leads to another site".into());
+            return Err("Another site".into());
         }
         let response = client.get(url.clone()).send().await.map_err(|e| lorca_tls::describe(&e))?;
         if response.status().is_redirection() {
@@ -244,23 +243,23 @@ mod tests {
     }
 
     #[test]
+    fn icon_links_and_redirects_stay_on_the_checked_site() {
+        let base = reqwest::Url::parse("https://example.com/").unwrap();
+        for link in ["/favicon.ico", "icons/a.png", "https://example.com/a.png", "https://example.com:443/a.png"] {
+            assert!(on_site(&base.join(link).unwrap(), "example.com"), "{link}");
+        }
+        for link in ["https://localhost/a.png", "//intranet.example/a.png", "https://10.0.0.1/a.png", "http://127.0.0.1/x", "//127.0.0.1/x", "http://example.com/a.png", "https://example.com:8443/a.png", "https://cdn.example.com/a.png", "file:///etc/passwd"] {
+            assert!(!on_site(&base.join(link).unwrap(), "example.com"), "{link}");
+        }
+    }
+
+    #[test]
     fn only_raster_images_pass_for_icons() {
         assert_eq!(sniff(b"\x89PNG\r\n\x1a\n...."), Some("image/png"));
         assert_eq!(sniff(&[0, 0, 1, 0, 1, 0]), Some("image/x-icon"));
         assert_eq!(sniff(b"RIFF\x00\x00\x00\x00WEBPVP8 "), Some("image/webp"));
         assert_eq!(sniff(b"<svg xmlns=\"http://www.w3.org/2000/svg\"><script/></svg>"), None);
         assert_eq!(sniff(b"<!doctype html>"), None);
-    }
-
-    #[test]
-    fn requests_stay_on_the_checked_site() {
-        let base = reqwest::Url::parse("https://example.com/").unwrap();
-        for link in ["/i.ico", "touch.png", "https://example.com/a.png", "https://example.com:443/a.png"] {
-            assert!(on_site(&base.join(link).unwrap(), "example.com"), "{link}");
-        }
-        for link in ["http://127.0.0.1/x", "//127.0.0.1/x", "http://example.com/a.png", "https://example.com:8443/a.png", "https://cdn.example.com/a.png", "file:///etc/passwd"] {
-            assert!(!on_site(&base.join(link).unwrap(), "example.com"), "{link}");
-        }
     }
 
     #[test]

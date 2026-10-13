@@ -26,6 +26,10 @@ lorca/
   .github/workflows/   # release-cli.yml, release-desktop.yml, and release-mobile.yml: release builds; test.yml: every app's and crate's tests on each pull request; docs.yml: the doc check
 ```
 
+## Production and development installs
+
+Production installs are named **Lorca** and use `app.lorca`; development installs are named **Lorca Dev** and use `app.lorca.dev`. They are separate applications on macOS, Windows, Linux, iOS, and Android. The production CLI stores its account under `~/.lorca` and listens on `4862`, while the desktop-app development build sets `LORCA_HOME=~/.lorca-dev` and listens on `4863`. On phones the distinct application ids give each build its own OS sandbox, and the core uses `lorca/core` or `lorca-dev/core` inside that sandbox. Their iOS keychain groups are `group.app.lorca` and `group.app.lorca.dev`.
+
 ## Development loops and builds
 
 `bun run android` rebuilds the Rust core for Android, then builds and runs the Expo dev client on the Android emulator. `cd mobile && bun run core` rebuilds the Rust core for both phone platforms; `bun run mobile:dev` is the iOS development loop described below.

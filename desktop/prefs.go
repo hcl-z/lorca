@@ -23,7 +23,6 @@ type Preferences struct {
 	Selection      string `json:"selection"`
 	ShowsInspector bool   `json:"showsInspector"`
 	SendOnReturn   bool   `json:"sendOnReturn"`
-	ShowTimestamps bool   `json:"showTimestamps"`
 	// ShowsTrayIcon puts the app's icon in the menu bar (the notification area on Windows and
 	// Linux); UnreadBadge shows the unread total on the Dock or launcher icon and beside the tray
 	// icon. Both start on.
@@ -55,7 +54,6 @@ type PreferencesPatch struct {
 	Selection           *string `json:"selection,omitempty"`
 	ShowsInspector      *bool   `json:"showsInspector,omitempty"`
 	SendOnReturn        *bool   `json:"sendOnReturn,omitempty"`
-	ShowTimestamps      *bool   `json:"showTimestamps,omitempty"`
 	ShowsTrayIcon       *bool   `json:"showsTrayIcon,omitempty"`
 	UnreadBadge         *bool   `json:"unreadBadge,omitempty"`
 	RelayURL            *string `json:"relayURL,omitempty"`
@@ -90,7 +88,7 @@ func (s *prefsStore) load() {
 func (s *prefsStore) loadFrom(path string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.value = Preferences{ShowsInspector: true, SendOnReturn: true, ShowTimestamps: true, ShowsTrayIcon: true, UnreadBadge: true}
+	s.value = Preferences{ShowsInspector: true, SendOnReturn: true, ShowsTrayIcon: true, UnreadBadge: true}
 	s.path = path
 	if data, err := os.ReadFile(path); path != "" && err == nil {
 		_ = json.Unmarshal(data, &s.value)
@@ -136,9 +134,6 @@ func (s *prefsStore) update(patch PreferencesPatch) Preferences {
 	}
 	if patch.SendOnReturn != nil {
 		v.SendOnReturn = *patch.SendOnReturn
-	}
-	if patch.ShowTimestamps != nil {
-		v.ShowTimestamps = *patch.ShowTimestamps
 	}
 	if patch.ShowsTrayIcon != nil {
 		v.ShowsTrayIcon = *patch.ShowsTrayIcon

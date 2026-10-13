@@ -55,7 +55,7 @@ func markdownView(c *ui.Context, text string, o markdownOptions) ui.Element {
 		o.Size = textMessage
 	}
 	blocks := model.MarkdownBlocks(text)
-	body := ui.Column(c).Selectable().MinWidth(0).FontSize(o.Size).LineHeight(1.38)
+	body := ui.Column(c).Selectable().MinWidth(0).FontSize(o.Size).LineHeight(1.55)
 	if o.Menu != nil {
 		body.ContextMenu(func(m *ui.Menu) {
 			o.Menu(m)

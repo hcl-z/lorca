@@ -10,6 +10,7 @@ import (
 func TestRenderChannelsInInspector(t *testing.T) {
 	m := demoWindow(t)
 	m.selectChat("chat-tally")
+	m.inspector.tab = tabRoutines
 	tt := ui.NewTester(m.frame(m.view), 1180, 1500)
 	settle(tt)
 	if !tt.HasText(L("Channels")) && !tt.HasText("CHANNELS") {
