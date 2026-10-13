@@ -1,0 +1,115 @@
+docs/architecture/phone-app.md
+  s_cae344fce4ee15::t_baae0df4b670ac 27
+  s_cae344fce4ee15::t_3304eb9d506182 31
+mobile/src/ui/SidebarSearch.tsx
+  s_cae344fce4ee15::t_9ea4bbf17e6fff 1-3,5-6,9,13,17-20,22-23,30,32,38-39,47-52,56-60,65-66,68
+mobile/modules/lorca-core/ios/MarkdownViewModule.swift
+  s_cae344fce4ee15::t_64b9da4221b86d 11,13,22-31,63-70
+ARCHITECTURE.md
+  s_cae344fce4ee15::t_3304eb9d506182 115
+mobile/src/ui/Sidebar.tsx
+  s_cae344fce4ee15::t_466b6269ac05e1 2-4,31
+mobile/app/tasks/_layout.tsx
+  s_cae344fce4ee15::t_d78316b6a31978 14
+mobile/src/ui/Symbol.tsx
+  s_cae344fce4ee15::t_e8bfb5c8506a92 69-75
+mobile/src/ui/chrome.tsx
+  s_cae344fce4ee15::t_af7f5476426486 1-45,48-62,64-72
+  s_cae344fce4ee15::t_afcb94328a4140 46-47,63
+mobile/src/core/model.ts
+  s_cae344fce4ee15::t_95c7e4c5c95aa4 357-358,533-534
+mobile/src/core/rerun.test.ts
+  s_cae344fce4ee15::t_7eee021fbdb26d 1-52
+mobile/src/ui/SecretSheet.tsx
+  s_cae344fce4ee15::t_e732bae2a38400 9,94
+mobile/plugins/with-material-theme.js
+  s_cae344fce4ee15::t_5a290f6b5eaa18 1-7,9,12-35,37-44,49-50
+mobile/app/_layout.tsx
+  s_cae344fce4ee15::t_d78316b6a31978 74
+crates/markdown/src/source.rs
+  s_cae344fce4ee15::t_07417a966fd3a3 1-167
+docs/architecture/links.md
+  s_cae344fce4ee15::t_038202f1bd2256 3,12-17
+mobile/modules/lorca-core/ios/MarkdownView.swift
+  s_cae344fce4ee15::t_64b9da4221b86d 1,17-20,36-81,89-90,97-99,123-149,232,239-241,341,345-347,439-445,447-455,603-605,614-642,651-653
+  s_cae344fce4ee15::t_5b0ca77c0bcc7d 238,344,446
+mobile/app/(main)/_layout.tsx
+  s_cae344fce4ee15::t_466b6269ac05e1 35
+mobile/src/core/ask.ts
+  s_cae344fce4ee15::t_5461c9cfc1ca43 1-41
+mobile/modules/lorca-core/android/src/main/java/app/lorca/core/MarkdownViewModule.kt
+  s_cae344fce4ee15::t_b84372863a01ee 14,21,27-34,46-48
+mobile/src/ui/Markdown.tsx
+  s_cae344fce4ee15::t_1f8893a2200aac 2-4,6,8-9,12-15,24-32,46-48
+mobile/modules/lorca-core/MarkdownView.tsx
+  s_cae344fce4ee15::t_1f8893a2200aac 21-24,28-38,48,50,57
+mobile/src/core/rerun.ts
+  s_cae344fce4ee15::t_d831b70c4f9f1b 1-53
+mobile/app/settings/_layout.tsx
+  s_cae344fce4ee15::t_d78316b6a31978 14
+mobile/src/ui/ChatsScreen.tsx
+  s_cae344fce4ee15::t_d28de13bcfcc81 7-9,21-22,24,33-34,61-63,200-240,245-246,248-249,253-260,263,266,275,277-278,292,294-304,310-335,705-707
+mobile/src/ui/Composer.tsx
+  s_cae344fce4ee15::t_faf02543472350 1-9,32-33,54,56-58,67,69,72,91-94,103-108,131,136-167,356-357,360-362,364-367,372,408,414,424-436,449-450,454,497-520,523-562,624-629,632-633,635
+  s_cae344fce4ee15::t_5ef93cb4458520 379,638
+mobile/app/(main)/chat/[id].tsx
+  s_cae344fce4ee15::t_ce04470d00dce1 726-727
+  s_cae344fce4ee15::t_563d83336e80b2 688,716-725,728-729,736-741,766,817-818,864,1002-1005
+  s_cae344fce4ee15::t_929cfd375273a4 43-44,969,971,1035-1040,1045,1047,1053-1063,1069-1075,1078-1079,1092-1099,1112,1126-1129,1131
+mobile/modules/lorca-core/android/src/main/java/app/lorca/core/MarkdownView.kt
+  s_cae344fce4ee15::t_461ff0314c057a 156-157,161-173,354
+  s_cae344fce4ee15::t_b84372863a01ee 59-62,78-155,158-160,232-233,272-273,343-353,355-359,382-383,557
+mobile/app/workflows/_layout.tsx
+  s_cae344fce4ee15::t_d78316b6a31978 14
+docs/architecture/sidebar.md
+  s_cae344fce4ee15::t_038202f1bd2256 43
+mobile/app/pair.tsx
+  s_cae344fce4ee15::t_d78316b6a31978 168
+mobile/src/ui/transcript.tsx
+  s_cae344fce4ee15::t_d5bde71a24027c 853,878-881,883-885,887-904,1364-1365
+  s_cae344fce4ee15::t_e7c1b1fd964710 8,17,20,497,672-673,675-676,682,692-723,728,730-745,747-791,793-810,1350-1356
+  s_cae344fce4ee15::t_a8d4b48363545b 347
+  s_cae344fce4ee15::t_7e85ea67082108 19,47,63-67,90-92,259-260,268-269,341,356-358,380-384,392-414,416-423,1332-1338
+  s_cae344fce4ee15::t_c90abc8d9ae91f 473-494,522,537-538,620,630,657,662-663,868,908-909,981,992,1001,1014-1015,1022,1160,1171,1188,1202-1203,1214,1217,1226,1344-1349,1357-1359,1367
+  s_cae344fce4ee15::t_1f27000082f6c3 724-727,729,746,792
+docs/architecture/questions.md
+  s_cae344fce4ee15::t_5e582bda9c5352 24
+docs/architecture/phone-ui.md
+  s_cae344fce4ee15::t_3304eb9d506182 1-11
+mobile/src/ui/theme.ts
+  s_cae344fce4ee15::t_ab9eb1f059dbcf 1-3,5-6,14,16,19,22,24-26,31-38,48-50,54-55,65,70,74,76-105,110-139,144-183,189-194
+mobile/src/core/ask.test.ts
+  s_cae344fce4ee15::t_4925dc005b8913 1-34
+mobile/src/core/engine.ts
+  s_cae344fce4ee15::t_d778f22653cd8e 67
+  s_cae344fce4ee15::t_ce04470d00dce1 311-318
+  s_cae344fce4ee15::t_95c7e4c5c95aa4 12-13,273-310,319-333,952,954-955,957,975
+mobile/app/chat-info/_layout.tsx
+  s_cae344fce4ee15::t_d78316b6a31978 19
+mobile/src/ui/AnswerSheet.tsx
+  s_cae344fce4ee15::t_e732bae2a38400 10,92
+mobile/src/ui/ChatRow.tsx
+  s_cae344fce4ee15::t_57dae2a995746e 1-4,26-27,37,48,53-54,91-95,98,101-102,106-107
+docs/architecture/stopping.md
+  s_cae344fce4ee15::t_5e582bda9c5352 7
+mobile/src/i18n/zh.ts
+  s_cae344fce4ee15::t_cd8e9901498fec 1044-1060
+docs/architecture/runtime.md
+  s_cae344fce4ee15::t_5e582bda9c5352 77-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "bd00acd60dd5a003f82ff06201c8b729c090cdb4",
+  "prompts": {},
+  "sessions": {
+    "s_cae344fce4ee15": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_ws40h9smutrr",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
