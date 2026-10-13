@@ -503,6 +503,8 @@ func researcherThread() []*Message {
 	return []*Message{
 		mockMessage(You, textBody("Read the setup guide as a new user. What would you want explained sooner?"), minutesAgo(80)),
 		mockMessage(BotAuthor("bot-scout"), textBody("I'd explain the Device roles right after pairing: your computer runs the bots, and your phone lets you chat with them. I added that note to `research/onboarding.md`."), minutesAgo(45)),
+		// Sources: sites with a mock icon, sites without one, and one address cited twice.
+		mockMessage(BotAuthor("bot-scout"), textBody("Two guides lead with what you can do, and the rest start with accounts:\n\n- [Getting started](https://docs.github.com/en/get-started) opens on a first repository\n- [Quickstart](https://docs.rs/serde/latest/serde/) starts from an install command\n- [Linear's docs](https://linear.app/docs) open on a sample project\n\nThe comparison table is in https://www.example.com/guides/compare, and the notes behind it are on https://notes.demo-sources.dev/setup. Both lean on the same [Getting started](https://docs.github.com/en/get-started) page."), minutesAgo(44)),
 		mockMessage(You, textBody("Read the setup guides of five similar apps and compare what each explains first."), minutesAgo(34)),
 		mockMessage(System, Body{Kind: BodyNotice, Text: "Stopped at the token limit. Raise it in Limits to resume."}, minutesAgo(28)),
 	}

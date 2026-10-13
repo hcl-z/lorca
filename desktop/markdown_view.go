@@ -55,7 +55,7 @@ func markdownView(c *ui.Context, text string, o markdownOptions) ui.Element {
 		o.Size = textMessage
 	}
 	blocks := model.MarkdownBlocks(text)
-	body := ui.Column(c).Selectable().MinWidth(0).FontSize(o.Size).LineHeight(1.38)
+	body := ui.Column(c).Selectable().MinWidth(0).FontSize(o.Size).LineHeight(1.55)
 	if o.Menu != nil {
 		body.ContextMenu(func(m *ui.Menu) {
 			o.Menu(m)
@@ -88,8 +88,18 @@ func markdownBlocks(c *ui.Context, blocks []model.Block, o markdownOptions, nest
 func spansView(c *ui.Context, spans []model.Span, o markdownOptions, bold bool) ui.Element {
 	p := colors(c)
 	para := ui.RichText(c).MinWidth(0)
+	var chips []*sourceChip
+	if !o.OnUserBubble {
+		spans = joinLinkSpans(spans)
+	}
 	para.Children(func() {
 		for _, span := range spans {
+			// A web link is a source chip; in the user's own bubble, which the chip's fill does not
+			// suit, and for any other link, it stays link text.
+			if model.SourceHost(span.Link) != "" && !o.OnUserBubble {
+				chips = append(chips, sourceChipText(c, span, o, bold || span.Bold))
+				continue
+			}
 			t := ui.Text(c, span.Text)
 			if span.Bold || bold {
 				t.FontWeight(600)
@@ -115,6 +125,9 @@ func spansView(c *ui.Context, spans []model.Span, o markdownOptions, bold bool) 
 			}
 		}
 	})
+	if len(chips) > 0 {
+		para.Draw(paintSourceChips(c, chips))
+	}
 	return para
 }
 

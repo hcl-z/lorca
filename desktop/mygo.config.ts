@@ -28,6 +28,8 @@ export default ({ command }: { command: string }) => ({
   // with the notarytool profile NOTARY_PROFILE (in the keychain NOTARY_KEYCHAIN, else the login
   // keychain) only when one is set. Releases set neither.
   macos: {
+    // The terminal plugin's libghostty-vt runs on macOS 13 or later.
+    minimumSystemVersion: "13.0",
     signingIdentity: process.env.SIGN_IDENTITY,
     notarize: process.env.NOTARY_PROFILE
       ? { keychainProfile: process.env.NOTARY_PROFILE, keychain: process.env.NOTARY_KEYCHAIN }

@@ -34,6 +34,41 @@ func TestMessageSelectsAcrossBlocks(t *testing.T) {
 	}
 }
 
+// A web link in a bot's message reads as a source chip inside its paragraph, in the site's words
+// or the link's own, with room for the icon; the user's own bubble keeps the link as text.
+func TestMessageLinksAreSourceChips(t *testing.T) {
+	text := "Read [the guide](https://www.example.com/guide), https://docs.rs/serde and mail a@b.co."
+	build := func(o markdownOptions) *ui.Tester {
+		tt := ui.NewTester(func(c *ui.Context) {
+			applyTheme(c)
+			ui.Column(c).Padding(20).Width(420).Children(func() { markdownView(c, text, o) })
+		}, 460, 120)
+		// The chips are painted from the last frame's layout.
+		tt.Frame()
+		tt.Frame()
+		return tt
+	}
+	chip := chipWords
+	bot := build(markdownOptions{})
+	for _, want := range []string{chip("the guide"), chip("docs.rs")} {
+		if _, ok := bot.Find(want); !ok {
+			t.Errorf("no chip %q in %q", want, bot.Texts())
+		}
+	}
+	if slices.Contains(bot.Texts(), "https://docs.rs/serde") {
+		t.Errorf("the address is still shown: %q", bot.Texts())
+	}
+	// Mail stays a link in the text.
+	if !slices.Contains(bot.Texts(), "a@b.co") {
+		t.Errorf("the mail link changed: %q", bot.Texts())
+	}
+	renderTo(t, bot, "source-chips")
+	user := build(markdownOptions{OnUserBubble: true})
+	if !slices.Contains(user.Texts(), "https://docs.rs/serde") || slices.Contains(user.Texts(), chip("docs.rs")) {
+		t.Errorf("the user's bubble changed its links: %q", user.Texts())
+	}
+}
+
 // A right-click on a message's text offers Reply above Copy and Select All, as the Mac's does:
 // Reply starts a reply to it, and the others act on its text.
 func TestMessageTextMenu(t *testing.T) {

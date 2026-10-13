@@ -49,6 +49,9 @@ type mainWindow struct {
 	lastWidth       float32
 	sidebarWidth    float32
 	inspectorWidth  float32
+	// shownSidebar and shownInspector are the panes' widths the last time they were open, which
+	// a closing pane keeps until it is gone.
+	shownSidebar, shownInspector float32
 	// shownChat is a chat having been on screen since the window opened.
 	shownChat bool
 
@@ -77,7 +80,7 @@ func newMainWindow() *mainWindow {
 	m := &mainWindow{
 		userWantsInspector: p.ShowsInspector,
 		sidebarCollapsed:   p.SidebarCollapsed,
-		sidebarWidth:       260,
+		sidebarWidth:       300,
 		inspectorWidth:     280,
 		palette:            &paletteState{picked: -1},
 	}
@@ -91,6 +94,14 @@ func newMainWindow() *mainWindow {
 }
 
 func clamp(value, low, high float32) float32 { return min(high, max(low, value)) }
+
+// openness is how much of a side pane `width` wide shows at rest: all of it, or none.
+func openness(width float32) float32 {
+	if width > 0 {
+		return 1
+	}
+	return 0
+}
 
 // MARK: - Selection
 
@@ -659,22 +670,41 @@ func (m *mainWindow) view(c *ui.Context) {
 	sidebar, inspector := m.panes(width)
 
 	m.shortcuts(c)
+	// A side pane opens and closes on a spring: the share of it showing goes from 0 to 1, while
+	// dragging a divider or resizing the window changes its width at once. A closing pane is drawn
+	// at the width it last had until it is gone.
+	if sidebar > 0 {
+		m.shownSidebar = sidebar
+	}
+	if inspector > 0 {
+		m.shownInspector = inspector
+	}
 	root := ui.Box(c).Fill().Background(p.Content)
+	sidebarOpen := root.AnimateTo("sidebar-open", openness(sidebar), paneSpring)
+	inspectorOpen := root.AnimateTo("inspector-open", openness(inspector), paneSpring)
+	sidebarShown := (m.shownSidebar + 1) * sidebarOpen
+	inspectorShown := (m.shownInspector + 1) * inspectorOpen
 	root.Children(func() {
 		ui.Row(c).Fill().AlignItems(ui.Stretch).Children(func() {
-			if !m.sidebarCollapsed {
-				pane := ui.Column(c).Width(sidebar).Background(p.Sidebar)
-				pane.Children(func() {
-					m.paneHeader(c).Padding(0, 8).Gap(4).Children(func() { m.leadingButtons(c, false) })
-					ui.Column(c).Grow(1).MinHeight(0).Children(func() {
-						if m.isSettings() {
-							m.settingsSidebar(c)
-						} else {
-							m.chatsSidebar(c)
-						}
+			if sidebarShown >= 1 {
+				full := m.shownSidebar + 1
+				// The pane slides in from the left: its trailing part shows first.
+				ui.Row(c.Key("sidebar-pane")).Width(sidebarShown).Shrink(0).MinHeight(0).AlignItems(ui.Stretch).ClipX().Children(func() {
+					ui.Row(c).Width(full).Shrink(0).AlignItems(ui.Stretch).Translate(sidebarShown-full, 0).Children(func() {
+						pane := ui.Column(c).Width(m.shownSidebar).Background(p.Sidebar)
+						pane.Children(func() {
+							m.paneHeader(c).Padding(0, 8).Gap(4).Children(func() { m.leadingButtons(c, false) })
+							ui.Column(c).Grow(1).MinHeight(0).Children(func() {
+								if m.isSettings() {
+									m.settingsSidebar(c)
+								} else {
+									m.chatsSidebar(c)
+								}
+							})
+						})
+						ui.Box(c).Width(1).Background(p.ToolbarLine)
 					})
 				})
-				ui.Box(c).Width(1).Background(p.ToolbarLine)
 			}
 			ui.Column(c).Grow(1).MinWidth(0).Background(p.Content).Children(func() {
 				// A chat runs under the header, as the Mac's transcript runs under the titlebar; the
@@ -688,38 +718,37 @@ func (m *mainWindow) view(c *ui.Context) {
 					})
 				}
 				body.Children(func() { m.content(c, chatID) })
-				var edge ui.Element
 				if underHeader {
-					edge = ui.Box(c).Absolute().Top(0).Left(0).Right(0).Height(headerHeight).PassThrough()
+					ui.Box(c).Absolute().Top(0).Left(0).Right(0).Height(headerHeight + headerFadeExtra).PassThrough().Material(headerFade{background: p.Content})
 				}
-				header := m.contentHeader(c, chatID, title, subtitle, inspector == 0)
-				if underHeader && m.chat != nil {
-					edge.Material(headerEdge{scroll: m.chat.transcriptScroll, hovered: header.Hovered(), background: p.Content})
-				}
+				m.contentHeader(c, chatID, title, subtitle, inspector == 0)
 			})
-			if inspector > 0 {
-				ui.Box(c).Width(1).Background(p.ToolbarLine)
-				ui.Column(c).Width(inspector).Background(p.Inspector).Children(func() {
-					bar := c.TitleBar()
-					m.paneHeader(c).Padding(0, max(10, bar.Right+8), 0, 16).Children(func() {
-						if chatID != "" {
-							ui.Text(c, L("Details")).FontSize(13.5).FontWeight(600).SingleLine()
-						}
-						ui.Spacer(c)
-						m.inspectorToggle(c)
-					})
-					ui.Column(c).Grow(1).MinHeight(0).Children(func() {
-						if chatID != "" {
-							m.inspectorView(c, chatID)
-						}
+			if inspectorShown >= 1 {
+				// The pane slides in from the right: its leading part shows first.
+				ui.Row(c.Key("inspector-pane")).Width(inspectorShown).Shrink(0).MinHeight(0).AlignItems(ui.Stretch).ClipX().Children(func() {
+					ui.Row(c).Width(m.shownInspector + 1).Shrink(0).AlignItems(ui.Stretch).Children(func() {
+						ui.Box(c).Width(1).Background(p.ToolbarLine)
+						ui.Column(c).Width(m.shownInspector).Background(p.Inspector).Children(func() {
+							bar := c.TitleBar()
+							m.paneHeader(c).Padding(0, max(10, bar.Right+8), 0, 16).Children(func() {
+								ui.Spacer(c)
+								m.inspectorClose(c)
+							})
+							ui.Column(c).Grow(1).MinHeight(0).Children(func() {
+								if chatID != "" {
+									m.inspectorView(c, chatID)
+								}
+							})
+						})
 					})
 				})
 			}
 		})
-		if !m.sidebarCollapsed {
+		// The dividers take the pointer once their pane is open.
+		if sidebar > 0 && sidebarOpen > 0.999 {
 			m.divider(c, sidebar, true)
 		}
-		if inspector > 0 {
+		if inspector > 0 && inspectorOpen > 0.999 {
 			m.divider(c, width-inspector-1, false)
 		}
 	})
@@ -799,6 +828,10 @@ func (m *mainWindow) leadingButtons(c *ui.Context, inContent bool) {
 		}
 		row.Margin(0, 0, 0, inset)
 	}
+	// In the sidebar, Search and Create are round buttons at its far end.
+	if !inContent && !m.isSettings() {
+		row.Grow(1)
+	}
 	row.Children(func() {
 		if hoverButton(c, hoverButtonOptions{Symbol: "sidebar.leading", Tooltip: L("Toggle Sidebar (%@)", shortcutText("CmdOrCtrl+B")), Label: L("Toggle Sidebar")}).Clicked() {
 			m.toggleSidebar()
@@ -806,7 +839,16 @@ func (m *mainWindow) leadingButtons(c *ui.Context, inContent bool) {
 		// Creating bots and chats belongs to the chats; Settings hides it. A press opens its
 		// menu, as the Mac button's own does.
 		if !m.isSettings() {
-			create := hoverButton(c, hoverButtonOptions{Symbol: "plus", Tooltip: L("Create")})
+			var create ui.Element
+			if inContent {
+				create = hoverButton(c, hoverButtonOptions{Symbol: "plus", Tooltip: L("Create")})
+			} else {
+				ui.Spacer(c)
+				if roundButton(c, "magnifyingglass", L("Search (%@)", shortcutText("CmdOrCtrl+K")), L("Search")).Clicked() {
+					runCommand("palette")
+				}
+				create = roundButton(c, "plus", L("Create"), L("Create"))
+			}
 			create.Menu(func(menu *ui.Menu) {
 				if menu.Item(L("Create New Bot…")).Chosen() {
 					runCommand("newBot")
@@ -823,18 +865,24 @@ func (m *mainWindow) leadingButtons(c *ui.Context, inContent bool) {
 	})
 }
 
-func (m *mainWindow) inspectorToggle(c *ui.Context) {
-	if hoverButton(c, hoverButtonOptions{Symbol: "sidebar.trailing", Tooltip: L("Toggle Inspector (%@)", shortcutText("CmdOrCtrl+Shift+B")), Label: L("Toggle Inspector")}).Clicked() {
+// inspectorClose closes the inspector from its own header; the chat's pill opens it again.
+func (m *mainWindow) inspectorClose(c *ui.Context) {
+	if hoverButton(c, hoverButtonOptions{Symbol: "xmark", Tooltip: L("Close Details (%@)", shortcutText("CmdOrCtrl+Shift+B")), Label: L("Close Details")}).Clicked() {
 		m.toggleInspector()
 	}
 }
 
-// contentHeader is the content's header: back and forward in Settings, the title, the Device
-// picker on the Device panes, and the chat's running tasks. The inspector's toggle sits here while
-// the inspector is closed, and in the inspector's header while it is open; the rightmost header
-// keeps clear of the window controls on Windows and Linux.
+// contentHeader is the content's header: back and forward in Settings, the title, and the Device
+// picker on the Device panes. A chat's header is the pill of who is in it, in the middle of the
+// content over the faded transcript, with the chat's running tasks and Attention at the end; the
+// pill opens and closes the inspector. The rightmost header keeps clear of the window controls on
+// Windows and Linux.
 func (m *mainWindow) contentHeader(c *ui.Context, chatID, title, subtitle string, rightmost bool) ui.Element {
 	p := colors(c)
+	chat := store.Chat(chatID)
+	if m.isSettings() {
+		chat = nil
+	}
 	header := m.paneHeader(c.Key("content-header")).Absolute().Top(0).Left(0).Right(0)
 	if rightmost {
 		header.Padding(0, max(12, c.TitleBar().Right+8), 0, 12)
@@ -853,23 +901,14 @@ func (m *mainWindow) contentHeader(c *ui.Context, chatID, title, subtitle string
 				}
 			})
 		}
-		// A chat's header leads with its bots' avatars, as its sidebar row does.
-		if chat := store.Chat(chatID); chat != nil && !m.isSettings() {
-			members := store.BotsIn(chat)
-			avatars := make([]avatarContent, 0, 4)
-			for _, bot := range members[:min(4, len(members))] {
-				avatars = append(avatars, botAvatar(bot))
-			}
-			if len(avatars) > 0 {
-				avatarCluster(c, avatars, 24, false, "", p.Content).Margin(0, space2, 0, 0)
-			}
+		if chat == nil {
+			ui.Column(c).Shrink(1).MinWidth(0).Justify(ui.Center).Children(func() {
+				ui.Text(c, title).FontSize(13.5).FontWeight(600).FixedLineHeight(17).SingleLine()
+				if subtitle != "" {
+					ui.Text(c, subtitle).FontSize(11).FixedLineHeight(14).TextColor(p.Label2).SingleLine()
+				}
+			})
 		}
-		ui.Column(c).Shrink(1).MinWidth(0).Justify(ui.Center).Children(func() {
-			ui.Text(c, title).FontSize(13.5).FontWeight(600).FixedLineHeight(17).SingleLine()
-			if subtitle != "" {
-				ui.Text(c, subtitle).FontSize(11).FixedLineHeight(14).TextColor(p.Label2).SingleLine()
-			}
-		})
 		ui.Spacer(c)
 		if m.isSettings() {
 			if m.selection.Pane.IsDeviceScoped() {
@@ -879,27 +918,71 @@ func (m *mainWindow) contentHeader(c *ui.Context, chatID, title, subtitle string
 		}
 		m.runningTasksButton(c, chatID)
 		m.attentionButton(c)
-		if rightmost {
-			m.inspectorToggle(c)
-		}
 	})
+	if chat != nil {
+		// The pill is centered on the content, whatever the header holds at its ends; the strip
+		// around it lets the pointer through to the header, which drags the window.
+		ui.Row(c.Key("chat-pill-strip")).Absolute().Top(0).Left(0).Right(0).Height(headerHeight).Justify(ui.Center).PassThrough().Children(func() {
+			m.chatPill(c, chat, title, subtitle)
+		})
+	}
 	return header
 }
 
-// headerEdge is the hard scroll edge under a chat's header, as AppKit's titlebar pocket draws it:
-// none while the transcript rests at its top and the pointer is elsewhere, frosting what scrolled
-// under the header, with a hairline below it, once the transcript scrolls or the pointer is over
-// the header. It reads the offset as it paints, after the frame laid the transcript out.
-type headerEdge struct {
-	scroll     *ui.ScrollState
-	hovered    bool
-	background ui.Color
+// chatPill is who the chat is with, on a capsule floating over the top of the transcript: the bot
+// of a DM with its avatar, or a group's avatars and name. A click opens the inspector beside the
+// chat, or closes it.
+func (m *mainWindow) chatPill(c *ui.Context, chat *model.Chat, title, subtitle string) {
+	p := colors(c)
+	members := store.BotsIn(chat)
+	avatars := make([]avatarContent, 0, 4)
+	for _, bot := range members[:min(4, len(members))] {
+		avatars = append(avatars, botAvatar(bot))
+	}
+	_, inspector := m.panes(m.lastWidth)
+	open := inspector > 0
+	label := L("Show Details")
+	if open {
+		label = L("Hide Details")
+	}
+	pill := ui.ButtonBase(c).Height(36).MaxWidth(300).Padding(0, 16, 0, 6).Gap(8).Radius(radiusCapsule).
+		Background(p.Popover).Border(1, p.ButtonBorder).Shadow(0, 2, 10, 0, p.Shadow.Alpha(0.1)).
+		Label(label).Tooltip(label + " (" + shortcutText("CmdOrCtrl+Shift+B") + ")")
+	pressed := pill.Pressed()
+	if pressed {
+		pill.Background(p.ButtonPressed.Over(p.Popover))
+	} else if pill.Hovered() || open {
+		pill.Background(p.ButtonHover.Over(p.Popover))
+	}
+	// Another chat's name widens or narrows the pill on a spring, its words fading across.
+	pill.Transition(ui.ElementTransition{Animation: &selectionSpring, Colors: true, Size: true, Position: true})
+	sinkWhenPressed(pill, pressed, 0.97)
+	pill.Children(func() {
+		if len(avatars) > 0 {
+			ui.Box(c.Key("pill-avatar:" + chat.ID)).Transition(ui.ElementTransition{Enter: &ui.Motion{Scale: 0.6}, Duration: 180 * time.Millisecond}).
+				Children(func() { avatarCluster(c, avatars, 26, false, "", p.Popover) })
+		}
+		ui.Text(c, title).Shrink(1).MinWidth(0).FontSize(14).FontWeight(500).SingleLine().ContentTransition(ui.ContentTransition{})
+		if chat.IsGroup() && subtitle != "" {
+			ui.Text(c, subtitle).Shrink(2).MinWidth(0).FontSize(12).TextColor(p.Label2).SingleLine().ContentTransition(ui.ContentTransition{})
+		}
+	})
+	if pill.Clicked() {
+		m.toggleInspector()
+	}
 }
 
-func (e headerEdge) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
-	if e.hovered || e.scroll != nil && e.scroll.Y > 0 {
-		glass.ScrollEdge{Hard: true, Background: e.background}.PaintMaterial(p, box, radii)
-	}
+// headerFadeExtra is how far below the header the transcript's fade reaches.
+const headerFadeExtra = 18
+
+// headerFade is the top of a chat: what scrolls under the header blurs and fades into the
+// content's color, most at the window's edge and not at all past the header, so the chat's pill
+// floats over the transcript.
+type headerFade struct{ background ui.Color }
+
+func (f headerFade) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
+	glass.Blur{Radius: 8, Mask: &ui.LinearGradient{From: ui.RGB(0, 0, 0), To: ui.Transparent, Angle: 180}}.PaintMaterial(p, box, radii)
+	p.FillGradient(box, ui.LinearGradient{From: f.background.Alpha(0.94), To: f.background.Alpha(0), Angle: 180}, 0)
 }
 
 // devicePicker is the Device the Plugins, Bots, and Devices panes show; the pick holds across
@@ -943,7 +1026,10 @@ func (m *mainWindow) content(c *ui.Context, chatID string) {
 			offlineState(c, m)
 		}
 	case chatID != "":
-		m.chatView(c, chatID)
+		// Another chat fades in, as a new page does.
+		ui.Column(c.Key("chat:" + chatID)).Grow(1).MinHeight(0).
+			Transition(ui.ElementTransition{Enter: &ui.Motion{}, Duration: 160 * time.Millisecond}).
+			Children(func() { m.chatView(c, chatID) })
 	default:
 		placeholderState(c, m)
 	}

@@ -369,6 +369,7 @@ async fn main() -> anyhow::Result<()> {
             // The coding agents the last run left: their cards and handles stay, and one in a
             // terminal host is followed again.
             lorca::coding::load(&app);
+            lorca::coding::wake_unheard(&app);
             #[cfg(unix)]
             tokio::spawn(stop_on_signal(app.clone()));
             // Installed marketplace plugins follow the index in use: this build's, or a later

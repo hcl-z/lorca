@@ -13,6 +13,7 @@ import (
 func TestInspectorSkills(t *testing.T) {
 	m := demoWindow(t)
 	m.selectChat("chat-patch")
+	m.inspector.tab = tabSkills
 	tt := ui.NewTester(m.frame(m.view), 1180, 900)
 	settle(tt)
 	wantText(t, tt, L("Skills"), "flaky-tests", "release-notes", "ship-checklist", L("Draft"))
@@ -20,7 +21,8 @@ func TestInspectorSkills(t *testing.T) {
 
 	m.selectChat("chat-scout")
 	settle(tt)
-	if tt.HasText(L("Skills")) {
+	// The Skills tab's own label is the one "Skills" left once the section is out.
+	if n := countLines(tt, L("Skills")); n != 1 {
 		t.Errorf("a bot without skills shows the section: %q", tt.Texts())
 	}
 	m.selectChat("chat-relay")

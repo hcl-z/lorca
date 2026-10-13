@@ -23,8 +23,12 @@ type Preferences struct {
 	Selection      string `json:"selection"`
 	ShowsInspector bool   `json:"showsInspector"`
 	SendOnReturn   bool   `json:"sendOnReturn"`
-	ShowTimestamps bool   `json:"showTimestamps"`
-	RelayURL       string `json:"relayURL"`
+	// ShowsTrayIcon puts the app's icon in the menu bar (the notification area on Windows and
+	// Linux); UnreadBadge shows the unread total on the Dock or launcher icon and beside the tray
+	// icon. Both start on.
+	ShowsTrayIcon bool   `json:"showsTrayIcon"`
+	UnreadBadge   bool   `json:"unreadBadge"`
+	RelayURL      string `json:"relayURL"`
 	// CLIPort is the port the app looks for the CLI on. `LORCA_PORT` wins, so a second app
 	// instance can run against its own CLI.
 	CLIPort int `json:"cliPort"`
@@ -50,7 +54,8 @@ type PreferencesPatch struct {
 	Selection           *string `json:"selection,omitempty"`
 	ShowsInspector      *bool   `json:"showsInspector,omitempty"`
 	SendOnReturn        *bool   `json:"sendOnReturn,omitempty"`
-	ShowTimestamps      *bool   `json:"showTimestamps,omitempty"`
+	ShowsTrayIcon       *bool   `json:"showsTrayIcon,omitempty"`
+	UnreadBadge         *bool   `json:"unreadBadge,omitempty"`
 	RelayURL            *string `json:"relayURL,omitempty"`
 	CLIPort             *int    `json:"cliPort,omitempty"`
 	AppLanguage         *string `json:"appLanguage,omitempty"`
@@ -83,7 +88,7 @@ func (s *prefsStore) load() {
 func (s *prefsStore) loadFrom(path string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.value = Preferences{ShowsInspector: true, SendOnReturn: true, ShowTimestamps: true}
+	s.value = Preferences{ShowsInspector: true, SendOnReturn: true, ShowsTrayIcon: true, UnreadBadge: true}
 	s.path = path
 	if data, err := os.ReadFile(path); path != "" && err == nil {
 		_ = json.Unmarshal(data, &s.value)
@@ -130,8 +135,11 @@ func (s *prefsStore) update(patch PreferencesPatch) Preferences {
 	if patch.SendOnReturn != nil {
 		v.SendOnReturn = *patch.SendOnReturn
 	}
-	if patch.ShowTimestamps != nil {
-		v.ShowTimestamps = *patch.ShowTimestamps
+	if patch.ShowsTrayIcon != nil {
+		v.ShowsTrayIcon = *patch.ShowsTrayIcon
+	}
+	if patch.UnreadBadge != nil {
+		v.UnreadBadge = *patch.UnreadBadge
 	}
 	if patch.RelayURL != nil {
 		v.RelayURL = *patch.RelayURL
@@ -186,6 +194,14 @@ func setPrefs(patch PreferencesPatch) Preferences {
 		if l10n.Set(after.AppLanguage, mygo.App.Locale()) {
 			app.languageChanged()
 		}
+	}
+	// The tray icon comes and goes at once, and turning the badge on or off shows the count or
+	// clears it.
+	if after.ShowsTrayIcon != before.ShowsTrayIcon {
+		app.trayPreferenceChanged()
+	}
+	if after.UnreadBadge != before.UnreadBadge && store != nil {
+		setBadge(unreadTotal())
 	}
 	if after.CLIPort != before.CLIPort && app.cli != nil {
 		go app.cli.reconnect()

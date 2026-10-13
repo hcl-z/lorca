@@ -26,6 +26,7 @@ pub mod envelope;
 pub mod events;
 pub mod event_triggers;
 pub mod routine_events;
+pub mod favicon;
 pub mod files;
 pub mod feedback;
 pub mod handoffs;

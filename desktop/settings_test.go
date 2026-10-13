@@ -8,6 +8,7 @@ import (
 
 	"github.com/egoist/lorca/desktop/l10n"
 	"github.com/egoist/lorca/desktop/model"
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -24,6 +25,8 @@ func settingsWindowTester(t *testing.T, height int) (*mainWindow, *ui.Tester) {
 	t.Cleanup(func() { settingsUpdatesEnabled, settingsUpdaterState = enabled, state })
 	m.showSettingsDevice("")
 	tt := ui.NewTester(m.frame(m.view), 1180, height)
+	// The inspector closes as Settings opens; these tests click rows at once, so nothing slides.
+	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
 	return m, tt
 }
 
@@ -439,5 +442,46 @@ func TestRenameDeviceInSettings(t *testing.T) {
 	rename("", "")
 	if device := store.Device("dev-studio"); device.Name != machine {
 		t.Fatalf("name not taken back: %+v", device)
+	}
+}
+
+// General has a switch for the menu bar icon and one for the unread count on the app icon, both on
+// to start with. The count shows as the badge and the tray's number only while its switch is on.
+func TestSettingsTrayAndBadgeSwitches(t *testing.T) {
+	shown := -1
+	setNativeBadge = func(n int) { shown = n }
+	t.Cleanup(func() { setNativeBadge = mygo.App.SetBadgeCount })
+	m, tt := settingsWindowTester(t, 900)
+	m.showSettings(model.PaneGeneral)
+	settle(tt)
+	if p := prefs.get(); !p.ShowsTrayIcon || !p.UnreadBadge {
+		t.Fatalf("defaults: %+v", p)
+	}
+	flip := func(label string) {
+		t.Helper()
+		r, ok := tt.Find(label)
+		if !ok {
+			t.Fatalf("no %q in %q", label, tt.Texts())
+		}
+		tt.ClickAt(r.X+r.W-25, r.Y+r.H/2)
+		settle(tt)
+	}
+	flip(trayIconEntry().row)
+	if prefs.get().ShowsTrayIcon {
+		t.Error("the tray icon stayed on")
+	}
+	if shownCount(3) != 3 {
+		t.Error("the count follows the badge switch, not the tray one")
+	}
+	flip(unreadBadgeEntry().row)
+	if prefs.get().UnreadBadge || shownCount(3) != 0 || shown != 0 {
+		t.Errorf("badge stayed on: %+v, shows %d, system %d", prefs.get(), shownCount(3), shown)
+	}
+	flip(unreadBadgeEntry().row)
+	if shown != unreadTotal() {
+		t.Errorf("the system badge shows %d, want %d", shown, unreadTotal())
+	}
+	if shownCount(3) != 3 {
+		t.Errorf("badge back on shows %d", shownCount(3))
 	}
 }

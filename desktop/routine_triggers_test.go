@@ -150,7 +150,7 @@ func TestRenderRoutineTriggersInInspector(t *testing.T) {
 	m := demoWindow(t)
 	m.selectChat("chat-nova")
 	routineTriggers(t)
-	// Tall enough that the inspector shows its Routines section.
+	m.inspector.tab = tabRoutines
 	tt := ui.NewTester(m.frame(m.view), 1180, 1700)
 	settle(tt)
 	if !tt.HasText("Call the dentist") || !tt.HasText("Login PR") || !tt.HasText("Failed deploys") || !tt.HasText("Call prep") {

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/egoist/lorca/desktop/model"
 	"github.com/egoist/mygo/ui"
@@ -33,6 +35,37 @@ type inspectorState struct {
 	project         projectInspectorState
 	// skillsShowingAll is the bot or group whose Skills section shows every skill.
 	skillsShowingAll model.PlaybookScope
+	// tab is the tab the pane shows, kept from chat to chat; a group, which has no Routines tab,
+	// shows Activity in its place.
+	// The segmented control writes it after the view is built, so it is the field itself.
+	tab int
+}
+
+// The inspector's tabs under the chat's profile, in their order.
+const (
+	// tabActivity is what waits for the user and what the chat's bots did: reviews, tasks,
+	// outputs, and feedback.
+	tabActivity = iota
+	// tabProfile is who the chat is with: a DM's bot and what it runs with, a group's members,
+	// name, and project, and where turns run.
+	tabProfile
+	// tabSkills is what the bots know and can use: memory, skills, and plugins.
+	tabSkills
+	// tabRoutines is when and where a DM's bot works on its own: routines and channels.
+	tabRoutines
+)
+
+// inspectorTabs are the tabs a chat's inspector has: a group has no Routines.
+func inspectorTabs(chat *model.Chat) []iconTab {
+	people := iconTab{Symbol: "slider.horizontal.3", Title: L("Profile")}
+	if !chat.IsDM() {
+		people = iconTab{Symbol: "person.2", Title: L("Members")}
+	}
+	tabs := []iconTab{{Symbol: "checklist", Title: L("Activity")}, people, {Symbol: "sparkles", Title: L("Skills")}}
+	if chat.IsDM() {
+		tabs = append(tabs, iconTab{Symbol: "clock", Title: L("Routines")})
+	}
+	return tabs
 }
 
 // refreshMemory asks the CLI for the bot's memory; the section redraws when it answers.
@@ -133,37 +166,143 @@ func (m *mainWindow) inspectorView(c *ui.Context, chatID string) {
 	if chat.IsDM() && len(members) == 1 {
 		single = members[0]
 	}
+	tabs := inspectorTabs(chat)
+	if s.tab >= len(tabs) {
+		s.tab = tabActivity
+	}
 	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
-		ui.Column(c).Gap(22).Padding(6, 14, 24, 14).Children(func() {
-			m.inspectorParticipants(c, chat, members)
-			if !chat.IsDM() {
-				add := pushButton(c, L("Add Bot…"), pushOptions{Disabled: !(chat.CanAddBot() && len(members) < len(store.Bots))}).AlignSelf(ui.Start).Margin(-10, 0, 0, 0)
-				if add.Clicked() {
-					m.addBotToChat(chat.ID)
-				}
-				m.inspectorGroup(c, chat, members)
-				m.inspectorProject(c, chat)
-			}
-			m.inspectorReviews(c, chat)
-			m.inspectorOutputs(c, chat)
-			if single != nil {
-				m.inspectorProfile(c, single)
-				m.inspectorRuntime(c, single, chat)
-				m.inspectorMemory(c, single)
-			}
-			m.inspectorSkills(c, chat, members)
-			if single != nil {
-				m.inspectorRoutines(c, single)
-				m.inspectorChannels(c, single)
-				m.inspectorFeedback(c, single)
-			}
-			m.inspectorDurableTasks(c, chat)
-			if single != nil {
-				m.inspectorPlugins(c, single)
-			}
-			m.inspectorRouting(c, members)
+		ui.Column(c).Gap(22).Padding(0, 14, 24, 14).Children(func() {
+			ui.Column(c).Gap(16).Children(func() {
+				// Another chat's profile settles in from a little smaller.
+				ui.Column(c.Key("hero:" + chat.ID)).Transition(ui.ElementTransition{Enter: &ui.Motion{Scale: 0.96}, Duration: 200 * time.Millisecond}).
+					Children(func() { m.inspectorHero(c, chat, members, single) })
+				iconTabs(c.Key("inspector-tabs"), &s.tab, L("Details"), tabs)
+			})
+			// Another tab, or another chat's, fades in.
+			ui.Column(c.Key(fmt.Sprint("tab:", chat.ID, ":", s.tab))).Gap(22).Transition(contentEnter).Children(func() { m.inspectorTab(c, chat, members, single) })
 		})
 	})
+}
+
+// inspectorTab is the sections of the tab the pane shows.
+func (m *mainWindow) inspectorTab(c *ui.Context, chat *model.Chat, members []*model.Bot, single *model.Bot) {
+	switch m.inspector.tab {
+	case tabActivity:
+		m.inspectorActivity(c, chat, single)
+	case tabProfile:
+		if single != nil {
+			m.inspectorProfile(c, single)
+			m.inspectorRuntime(c, single, chat)
+		} else {
+			m.inspectorParticipants(c, chat, members)
+			add := pushButton(c, L("Add Bot…"), pushOptions{Disabled: !(chat.CanAddBot() && len(members) < len(store.Bots))}).AlignSelf(ui.Start).Margin(-10, 0, 0, 0)
+			if add.Clicked() {
+				m.addBotToChat(chat.ID)
+			}
+			m.inspectorGroup(c, chat, members)
+			m.inspectorProject(c, chat)
+		}
+		m.inspectorRouting(c, members)
+	case tabSkills:
+		if single != nil {
+			m.inspectorMemory(c, single)
+		}
+		m.inspectorSkills(c, chat, members)
+		if single != nil {
+			m.inspectorPlugins(c, single)
+		} else if scope, ok := model.SkillScope(chat, members); !ok || len(store.Skills(scope)) == 0 {
+			inspectorEmpty(c, L("No skills yet. Save a chat as a skill, or ask a bot to write one."))
+		}
+	case tabRoutines:
+		if single != nil {
+			m.inspectorRoutines(c, single)
+			m.inspectorChannels(c, single)
+		}
+	}
+}
+
+// inspectorHero is the top of the pane: who the chat is with, large and centered. A DM shows its
+// bot's avatar, which opens its look, its name, and whether its Runner is online; a group its
+// members' avatars, its name, and how many bots it has.
+func (m *mainWindow) inspectorHero(c *ui.Context, chat *model.Chat, members []*model.Bot, single *model.Bot) {
+	p := colors(c)
+	ui.Column(c).AlignItems(ui.Center).Gap(4).Padding(4, 0, 0, 0).Children(func() {
+		if single != nil {
+			botID := single.ID
+			look := ui.ButtonBase(c.Key("hero-avatar")).Size(76, 76).Radius(38).Label(L("Edit Look…")).Tooltip(L("Edit Look…"))
+			hovered := look.Hovered()
+			look.Children(func() {
+				avatarOn(c, botAvatar(single), 76, store.IsWorking(single.ID), p.Inspector)
+				badge := ui.Box(c).Absolute().Right(-2).Bottom(-2).Size(24, 24).Radius(12).Center().
+					Background(p.Popover).Border(1, p.ButtonBorder).Shadow(0, 1, 3, 0, p.Shadow.Alpha(0.12)).TextColor(p.Label2)
+				if hovered {
+					badge.TextColor(p.Label)
+				}
+				badge.Children(func() { symbol(c, "pencil", 12, 2) })
+			})
+			sinkWhenPressed(look, look.Pressed(), 0.96)
+			if look.Clicked() {
+				m.presentBotLook(botID)
+			}
+		} else {
+			avatars := make([]avatarContent, 0, 4)
+			for _, bot := range members[:min(4, len(members))] {
+				avatars = append(avatars, botAvatar(bot))
+			}
+			avatarCluster(c, avatars, 76, false, "", p.Inspector)
+		}
+		ui.Text(c, store.Title(chat)).Margin(8, 0, 0, 0).FontSize(17).FontWeight(600).TextAlign(ui.Center).SingleLine()
+		state, color := L("%d bots", len(members)), p.Label2
+		dot := false
+		if single != nil {
+			state, color = L("unassigned"), p.Label3
+			if runner := store.Device(single.RunnerID); runner != nil {
+				dot = true
+				if runner.Status == model.StatusOnline {
+					state, color = L("Online · %@", runner.Name), p.Green
+				} else {
+					state = L("Offline · %@", runner.Name)
+				}
+			}
+		}
+		ui.Row(c).Gap(5).Children(func() {
+			if dot {
+				ui.Box(c).Size(7, 7).Radius(3.5).Background(color)
+			}
+			ui.Text(c, state).FontSize(12).TextColor(p.Label2).SingleLine()
+		})
+	})
+}
+
+// inspectorActivity is what waits for the user and what the chat's bots made: reviews, tasks,
+// outputs, and a DM bot's feedback, or a sentence and New Task while there is none of it.
+func (m *mainWindow) inspectorActivity(c *ui.Context, chat *model.Chat, single *model.Bot) {
+	empty := len(store.OpenReviewsFor(chat.ID)) == 0 && len(store.TasksIn(chat.ID)) == 0 && len(store.Outputs(chat.ID)) == 0
+	if single != nil {
+		if f, known := m.inspector.feedback[single.ID]; known && !f.IsEmpty() {
+			empty = false
+		}
+	}
+	m.inspectorReviews(c, chat)
+	m.inspectorDurableTasks(c, chat)
+	m.inspectorOutputs(c, chat)
+	if single != nil {
+		m.inspectorFeedback(c, single)
+	}
+	if empty {
+		chatID := chat.ID
+		ui.Column(c).Gap(12).AlignItems(ui.Center).Children(func() {
+			inspectorEmpty(c, L("Nothing here yet. Reviews, tasks, and files the bots make show up here."))
+			if pushButton(c, L("New Task"), pushOptions{Small: true, Symbol: "plus"}).Clicked() {
+				m.presentDurableTask(chatID, nil)
+			}
+		})
+	}
+}
+
+// inspectorEmpty is a tab's sentence while it has nothing to show.
+func inspectorEmpty(c *ui.Context, text string) {
+	ui.Text(c, text).Padding(18, 12, 0, 12).FontSize(12).TextColor(colors(c).Label2).TextAlign(ui.Center)
 }
 
 func (m *mainWindow) inspectorParticipants(c *ui.Context, chat *model.Chat, members []*model.Bot) {

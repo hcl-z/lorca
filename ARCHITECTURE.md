@@ -84,6 +84,7 @@ One doc per subject under `docs/architecture/`, each short enough to read in one
 | [Message drafts](docs/architecture/drafts.md) | Emails and Slack messages a bot writes in a chat as drafts the user edits, sends, or discards; sending directly; edits as feedback |
 | [Outputs and evidence](docs/architecture/outputs.md) | Bot-generated files and document links, immutable versions, task evidence references, encrypted transport and native previews |
 | [Stop](docs/architecture/stopping.md) | What Stop ends: the turn's model call and tool calls, a call that never returns, commands and browser calls, the work it handed off on any Runner; what keeps running |
+| [Web links in messages](docs/architecture/links.md) | Source chips for http(s) links in the desktop app, and the CLI's `links.favicon` that fetches a site's icon |
 | [Terminal sessions](docs/architecture/terminal-sessions.md) | A bot's commands in terminals of their own: when a call returns, background commands, the command's card, answering and stopping, Running tasks |
 | [Coding agents](docs/architecture/coding-agents.md) | Claude Code or Codex a bot runs on its Runner and supervises: worktrees, Herdr and Luvus panes or Lorca running it, its saved secrets, review of its commands and its pane's questions, transcripts and follow-ups, outputs and wake-ups, the card |
 | [Questions](docs/architecture/questions.md) | A bot asking the user to choose: `ask_user`, the card and its answer, each app |
@@ -109,7 +110,8 @@ One doc per subject under `docs/architecture/`, each short enough to read in one
 | [Providers](docs/architecture/providers.md) | Each model provider and its sign-in, custom providers, thinking levels, the model catalog and cost, compaction, retries |
 | [Budgets and connector limits](docs/architecture/budgets.md) | Limits on turns, tasks, and routines, stopping and resuming, price labels, shared plugin call limits |
 | [Sidebar sections and alerts](docs/architecture/sidebar.md) | Sections, hidden and muted chats in every app, and the chat a computer shows in front, which no phone is alerted about |
-| [Desktop app](docs/architecture/desktop-app.md) | The MyGo app for macOS, Windows, and Linux: its model, host, and native views, launching the CLI, windows and onboarding, settings, title bar, commands, updates, development and builds |
+| [Desktop app](docs/architecture/desktop-app.md) | The MyGo app for macOS, Windows, and Linux: its model, host, and native views, launching the CLI, windows and onboarding, settings, title bar, commands, motion |
+| [Desktop updates and builds](docs/architecture/desktop-builds.md) | The desktop app's updater and its releases, the development loop and its tests, builds for each platform and their signing |
 | [Phone app](docs/architecture/phone-app.md) | The Expo app over the Rust core: the native module, pairing, relay status, attachments, dictation, notifications, turns |
 | [Phone releases and updates](docs/architecture/phone-updates.md) | TestFlight builds, Android APK releases, and the Android app's self-update: the daily check and offer, the progress dialog, the package installer |
 | [Website](docs/architecture/website.md) | `web/`: the site, its docs, and the install scripts it serves |

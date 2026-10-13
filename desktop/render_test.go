@@ -1,6 +1,7 @@
 package main
 
 import (
+	"image"
 	"image/png"
 	"os"
 	"path/filepath"
@@ -78,6 +79,75 @@ func TestRenderMainWindow(t *testing.T) {
 	renderTo(t, tt, "main-dark")
 }
 
+// The inspector slides closed: drawn narrower for a moment, then gone. With Reduce Motion it goes at
+// once.
+func TestInspectorSlidesClosed(t *testing.T) {
+	for _, reduce := range []bool{false, true} {
+		m := demoWindow(t)
+		m.selectChat("chat-patch")
+		tt := ui.NewTester(m.frame(m.view), 1180, 760)
+		tt.SetPreferences(ui.Preferences{ReduceMotion: reduce})
+		settle(tt)
+		closeButton, ok := tt.Find(L("Close Details"))
+		if !ok {
+			t.Fatal("no inspector")
+		}
+		m.toggleInspector()
+		tt.Frame()
+		if _, ok := tt.Find(L("Close Details")); ok == reduce {
+			t.Fatalf("reduce motion %v: the inspector is drawn %v the frame after closing", reduce, ok)
+		}
+		if !reduce {
+			if r, _ := tt.Find(L("Close Details")); r.X == closeButton.X {
+				t.Error("the closing inspector did not move")
+			}
+			renderTo(t, tt, "inspector-closing")
+		}
+		time.Sleep(700 * time.Millisecond)
+		settle(tt)
+		if tt.HasText(L("Close Details")) {
+			t.Errorf("reduce motion %v: the inspector stayed", reduce)
+		}
+	}
+}
+
+// TestRenderInspectorTabs opens a DM's inspector from the header's pill and walks its tabs.
+func TestRenderInspectorTabs(t *testing.T) {
+	m := demoWindow(t)
+	m.userWantsInspector = false
+	m.selectChat("chat-patch")
+	tt := ui.NewTester(m.frame(m.view), 1180, 760)
+	settle(tt)
+	if err := tt.Click(L("Show Details")); err != nil {
+		t.Fatal(err)
+	}
+	settle(tt)
+	if !m.userWantsInspector || !tt.HasText(L("Close Details")) {
+		t.Fatalf("the pill left the inspector closed: %q", tt.Texts())
+	}
+	for _, tab := range inspectorTabs(store.Chat("chat-patch")) {
+		if err := tt.Click(tab.Title); err != nil {
+			t.Fatalf("no %s tab: %v", tab.Title, err)
+		}
+		settle(tt)
+		renderTo(t, tt, "inspector-"+tab.Symbol)
+	}
+	// The selected tab's symbol draws over its thumb: dark strokes in the middle of a white segment.
+	if r, ok := tt.Find(L("Routines")); !ok || !hasInk(tt.Image(), r) {
+		t.Errorf("the selected tab's symbol is hidden under its thumb (%+v)", r)
+	}
+	if m.inspector.tab != tabRoutines || !tt.HasText(L("Routines")) {
+		t.Errorf("tab %d shows %q", m.inspector.tab, tt.Texts())
+	}
+	if err := tt.Click(L("Close Details")); err != nil {
+		t.Fatal(err)
+	}
+	settle(tt)
+	if m.userWantsInspector {
+		t.Error("Close Details left the inspector open")
+	}
+}
+
 func TestRenderPalette(t *testing.T) {
 	m := demoWindow(t)
 	tt := ui.NewTester(m.frame(m.view), 1180, 760)
@@ -151,6 +221,31 @@ func renderBoth(t *testing.T, tt *ui.Tester, name string) {
 	renderTo(t, tt, name+"-dark")
 	tt.SetDark(false)
 	settleTransitions(tt)
+}
+
+// hasInk is whether the middle of `r` in the frame holds a dark pixel, as a symbol's stroke.
+func hasInk(img *image.RGBA, r ui.Rect) bool {
+	scale := float32(img.Bounds().Dx()) / 1180
+	cx, cy := (r.X+r.W/2)*scale, (r.Y+r.H/2)*scale
+	for y := int(cy - 8*scale); y <= int(cy+8*scale); y++ {
+		for x := int(cx - 8*scale); x <= int(cx+8*scale); x++ {
+			if c := img.RGBAAt(x, y); int(c.R)+int(c.G)+int(c.B) < 3*140 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// countLines is how many times the frame shows `text` as a whole line of its own, labels included.
+func countLines(tt *ui.Tester, text string) int {
+	n := 0
+	for _, line := range tt.Texts() {
+		if line == text {
+			n++
+		}
+	}
+	return n
 }
 
 // showsLine is whether the frame shows `text` as a whole line of its own, as a section's caption
