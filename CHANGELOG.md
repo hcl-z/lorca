@@ -8,6 +8,14 @@ phone app's.
 
 ## [Unreleased]
 
+## [1.0.18]
+
+- Bots delegate. Each bot knows its teammates and their jobs, and sends the part of a request that falls in a teammate's job to that teammate; in a group, the owner splits the work and assigns each part with `@Name`.
+- A new bot sets itself up. New Bot creates a bot at once, with no form; in its own chat it works out its job with you, proposes a name and description for you to confirm, then suggests plugins as Install and Sign in cards you can answer whenever you like.
+- A bot that passes part of its work on reports back only once that work is done, and says why when it couldn't finish.
+- On Android, rows no longer go blank while you scroll a chat, and menus are drawn by the app: the composer's +, the chat list's New, and a long press on a chat or section. Button shadows are tidier on iPhone and Android.
+- A source chip at the end of a line keeps its padding, and the menu bar icon on the Mac is in color.
+
 ## [1.0.17]
 
 - Lorca on the Mac is now the desktop app that also runs on Windows and Linux, and the separate Mac-only app is gone. Download `Lorca <version>.arm64.dmg` from the latest `desktop-v` release; it replaces the old app (both are `app.lorca`) and keeps your account, which lives in `~/.lorca`. Allow it once under System Settings › Privacy & Security › Open Anyway. The old app's update feed ends with 1.0.16, so install this one by hand.
