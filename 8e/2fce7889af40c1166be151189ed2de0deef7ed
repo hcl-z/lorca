@@ -1,0 +1,192 @@
+desktop/channels_test.go
+  s_d88c553d4a4f46::t_123015be46f66c 13
+desktop/render_test.go
+  s_d88c553d4a4f46::t_e5c65fd51792dc 4
+  s_d88c553d4a4f46::t_4a0b41e2e1304b 226-239
+  s_d88c553d4a4f46::t_4a4e519f3ce4bd 139
+  s_d88c553d4a4f46::t_80ccccb368e6fb 114-120,123-124,126-134,141-150
+  s_d88c553d4a4f46::t_d799fd12a88a72 240-250
+  s_d88c553d4a4f46::t_e5dd19771de155 82-113
+  s_d88c553d4a4f46::t_4f692407990636 140
+  s_d88c553d4a4f46::t_54cdf6f711c9fb 135-138
+  s_d88c553d4a4f46::t_326cfb11397472 121-122,125
+ARCHITECTURE.md
+  s_d88c553d4a4f46::t_74b84a47b82969 114
+  s_46b4cb35af69da::t_a1a11fa3c3c2a8 40
+  s_d88c553d4a4f46::t_f2838aff5a00fa 113
+desktop/chat.go
+  s_d88c553d4a4f46::t_0ae7e95ae03a55 27
+  s_d88c553d4a4f46::t_4006e2edae2941 342
+  s_d88c553d4a4f46::t_14cc80b63b47ba 421,426-427
+  s_d88c553d4a4f46::t_3e04c02b6d168f 166
+  s_d88c553d4a4f46::t_2232373fdb3fd7 199-209
+  s_d88c553d4a4f46::t_eadfa48ebfe626 375
+desktop/prefs.go
+  s_2409f786350358::t_b0aedabe4e3db7 91
+docs/architecture/desktop-builds.md
+  s_d88c553d4a4f46::t_2d3b9fb9904135 1-11
+desktop/composer.go
+  s_d88c553d4a4f46::t_65fdfc33c3922a 379
+desktop/settings_test.go
+  s_d88c553d4a4f46::t_85075df24f73d0 28-29
+desktop/controls.go
+  s_d88c553d4a4f46::t_fb95eb00b1b93f 765
+  s_d88c553d4a4f46::t_93d5bec25949b9 713
+  s_d88c553d4a4f46::t_0b48cbdac91e9a 50-56
+  s_d88c553d4a4f46::t_42bd8a71aeea27 738-752,754,757-760
+  s_d88c553d4a4f46::t_a60987cf6e29ed 4,700
+  s_d88c553d4a4f46::t_4245c1846e28b5 753,755-756,761-764,766
+  s_d88c553d4a4f46::t_d8a3aa89083551 697-699
+  s_d88c553d4a4f46::t_5f3f14d2646d84 720-737
+  s_d88c553d4a4f46::t_d9e297359c5339 701,703-704,709-712,714
+  s_d88c553d4a4f46::t_fc2d2016660c03 26-49,57-59
+desktop/settings_general.go
+  s_d88c553d4a4f46::t_765756bccd9940 38
+docs/architecture/development.md
+  s_46b4cb35af69da::t_b4796c356f2c27 29-32
+crates/cli/src/favicon.rs
+  s_2409f786350358::t_b19fa168e0a4fd 245
+  s_cae344fce4ee15::t_544bc6737bafe6 156-157,162-163,167
+  s_d88c553d4a4f46::t_5cba1a0bd3d0b2 246-255
+docs/architecture/sidebar.md
+  s_d88c553d4a4f46::t_c545a9fbbe3ba2 39
+desktop/markdown_view.go
+  s_d88c553d4a4f46::t_491712e960dd1a 58
+docs/architecture/desktop-app.md
+  s_d88c553d4a4f46::t_7ad5efc64dcc51 8
+  s_d88c553d4a4f46::t_e5c65fd51792dc 15
+  s_2409f786350358::t_58d415503dc6ee 21
+desktop/settings_search.go
+  s_2409f786350358::t_b0aedabe4e3db7 172
+desktop/model/faviconimage.go
+  s_2409f786350358::t_319557c06eef98 74
+  s_d88c553d4a4f46::t_adc4703087273a 75-77
+desktop/theme.go
+  s_d88c553d4a4f46::t_f2aa28d3305e24 199
+  s_d88c553d4a4f46::t_899ac4f124c89f 32-33
+  s_d88c553d4a4f46::t_0aa3f3f2cc2bb9 146
+  s_d88c553d4a4f46::t_bf5c35d395fb73 344-348
+  s_d88c553d4a4f46::t_b57122c65577c6 74
+crates/cli/src/coding/tests.rs
+  s_516c5bac5552e7::t_dbcf265bd37963 387
+  s_d88c553d4a4f46::t_2069976cb43fbe 388-416
+desktop/sidebar.go
+  s_d88c553d4a4f46::t_9f12bdfe1830f2 433
+  s_d88c553d4a4f46::t_2b90e87054623f 448-449,451
+  s_d88c553d4a4f46::t_72235e8102630b 357
+  s_d88c553d4a4f46::t_a91dc19393bee9 489,491,496-498
+  s_d88c553d4a4f46::t_d67eaca996692f 502-520,522-523,525-557
+  s_d88c553d4a4f46::t_7a27dc92111a48 676-677,683-709
+  s_d88c553d4a4f46::t_1e13dccfeb0de2 479-480,482,484,487,494
+  s_d88c553d4a4f46::t_f4745d96e988d2 432
+  s_d88c553d4a4f46::t_72d6fc34f8d86a 521
+  s_d88c553d4a4f46::t_e7589de14eb0e2 386
+  s_d88c553d4a4f46::t_b5b4fffde76032 193-194
+  s_152172a3193c95::t_c331316f77aede 192
+  s_d88c553d4a4f46::t_b5e6dd163c80dc 472
+  s_d88c553d4a4f46::t_0ddd018ca4a0a4 524
+  s_d88c553d4a4f46::t_fc2df59c47b1c1 473
+desktop/routine_triggers_test.go
+  s_d88c553d4a4f46::t_63f5e932bc2d1b 153
+desktop/sheet_playbooks_test.go
+  s_d88c553d4a4f46::t_7b7b8785b04043 24-25
+  s_d88c553d4a4f46::t_a023740cec1f83 16
+desktop/model/faviconimage_test.go
+  s_d88c553d4a4f46::t_d20ba6a91daef7 53-67
+desktop/project_test.go
+  s_d88c553d4a4f46::t_fcfc543a2f4d15 121
+  s_d88c553d4a4f46::t_97385dfd3fdae2 90
+  s_d88c553d4a4f46::t_57d37e756b1ff7 222
+  s_d88c553d4a4f46::t_09555fdc6defde 122-123
+desktop/routine_health_test.go
+  s_d88c553d4a4f46::t_fecb03d8d4a9c0 151
+desktop/mainwindow.go
+  s_d88c553d4a4f46::t_1c85ba13eb0945 868-870,875-879,882-885,904-910,922-928,932-943,945,947,949,951-956,959-961,964,966,968-972,975-976
+  s_d88c553d4a4f46::t_8c06a75905ec57 52-54
+  s_d88c553d4a4f46::t_d3dc4172ff3dc3 1029,1031-1032
+  s_d88c553d4a4f46::t_6500d1d7847ac1 831-834,842-851
+  s_d88c553d4a4f46::t_ed1c83dc6f60af 978-985
+  s_d88c553d4a4f46::t_dd74f8a3549d79 722
+  s_d88c553d4a4f46::t_cd4b4c2e5f9cfe 692,728
+  s_d88c553d4a4f46::t_e8e993f299199f 726-727,729-742,747-748,751
+  s_d88c553d4a4f46::t_642fc1370b35ce 944,946,950
+  s_d88c553d4a4f46::t_2e7f417b80f75e 948
+  s_d88c553d4a4f46::t_2a9f71a088b2de 957-958,963,965,967
+  s_d88c553d4a4f46::t_0125bbeced6977 962,1030
+  s_d88c553d4a4f46::t_5d35d5e93ee7fc 83
+  s_d88c553d4a4f46::t_d261739e6761e0 724
+  s_d88c553d4a4f46::t_5914f4ce698632 673-681,683-686,689-691,693-705
+  s_d88c553d4a4f46::t_d3468bc469448f 98-105
+desktop/inspector.go
+  s_d88c553d4a4f46::t_122eab0feb81d0 170
+  s_d88c553d4a4f46::t_e5c65fd51792dc 177,190-196,198-220
+  s_d88c553d4a4f46::t_69802c117e1f66 179
+  s_d88c553d4a4f46::t_a68a9afca0eb0c 169,171-172,174-175,180,222-239,241-245,247-250,252-265,267-270,272,277-305
+  s_d88c553d4a4f46::t_7aefcd5852dd4d 221
+  s_d88c553d4a4f46::t_f061cb5521071a 40-41,44,48
+  s_d88c553d4a4f46::t_af5d0dc3511ee9 4,7
+  s_d88c553d4a4f46::t_a9b40fb806c887 176,178,181-189
+  s_d88c553d4a4f46::t_2f49410fd94517 38-39,42-43,45-47,49-68
+desktop/l10n/zh.go
+  s_d88c553d4a4f46::t_7ed4fe17bc5695 1147
+  s_d88c553d4a4f46::t_e5c65fd51792dc 1131-1142
+  s_d88c553d4a4f46::t_d0f7ceb49ebddd 1143-1146,1148-1151
+docs/architecture/links.md
+  s_2409f786350358::t_a8a70de38982ec 24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "8e2fce7889af40c1166be151189ed2de0deef7ed",
+  "prompts": {},
+  "sessions": {
+    "s_152172a3193c95": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_azuxrvmu411u",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    },
+    "s_2409f786350358": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_djs8c2awze39",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    },
+    "s_46b4cb35af69da": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_zdnoqutg3ylz",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    },
+    "s_516c5bac5552e7": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_edvbybvv9m3s",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    },
+    "s_cae344fce4ee15": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_ws40h9smutrr",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    },
+    "s_d88c553d4a4f46": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_7ao5x3bflb2s",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
