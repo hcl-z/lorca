@@ -1,0 +1,21 @@
+desktop/tray.go
+  s_33bcf13e73baba::t_ec6c413c9387b4 131-133,138-140
+docs/architecture/desktop-app.md
+  s_33bcf13e73baba::t_ec6c413c9387b4 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "fc33f5d304c5476d3bc38347f6c8d82c3c8d18b0",
+  "prompts": {},
+  "sessions": {
+    "s_33bcf13e73baba": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_mnaa3azz1zdw",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
