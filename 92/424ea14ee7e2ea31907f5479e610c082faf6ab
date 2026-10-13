@@ -1,0 +1,47 @@
+mobile/src/ui/PopupMenu.tsx
+  s_a262cb4407b35d::t_cc25c5de643225 186
+  s_a262cb4407b35d::t_e676f76fdc430f 252
+  s_a262cb4407b35d::t_6184d37979cc4a 1-185,187-251,253-260
+mobile/app/(main)/chat/[id].tsx
+  s_a262cb4407b35d::t_37996cfe1913ca 80-81
+  s_a262cb4407b35d::t_7c8765b2d08b47 920-925
+mobile/src/ui/ChatsScreen.tsx
+  s_a262cb4407b35d::t_43409353a1ca13 331,333
+  s_a262cb4407b35d::t_d8717c9301085f 437
+  s_a262cb4407b35d::t_99666441fd97e7 453
+  s_a262cb4407b35d::t_0f943cd2737600 513
+  s_a262cb4407b35d::t_860f520c68f2e7 529
+  s_a262cb4407b35d::t_cbb9187306b6b4 2,4
+  s_a262cb4407b35d::t_5fc121c5f4e2a7 275-276
+docs/architecture/phone-ui.md
+  s_a262cb4407b35d::t_66e8f6e07b4a86 5
+mobile/modules/lorca-core/android/src/main/java/app/lorca/core/MarkdownView.kt
+  s_a262cb4407b35d::t_1ae92242486553 590-594,600-605,607-612
+mobile/src/ui/theme.ts
+  s_a262cb4407b35d::t_69d5ffa5f06133 6
+  s_a262cb4407b35d::t_4ab611214ed824 200-202
+  s_a262cb4407b35d::t_6e9f350f8a5911 190-193,197-199
+  s_a262cb4407b35d::t_04f8d9952ee609 194-196
+mobile/src/ui/Composer.tsx
+  s_a262cb4407b35d::t_7a9001dc0b78fb 34
+  s_a262cb4407b35d::t_7452e8eb1b6dd5 605
+  s_a262cb4407b35d::t_894bfa11b637f3 357,360-365,368-378
+  s_a262cb4407b35d::t_56e8f004434481 115
+  s_a262cb4407b35d::t_d82d55724c511e 601
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "92424ea14ee7e2ea31907f5479e610c082faf6ab",
+  "prompts": {},
+  "sessions": {
+    "s_a262cb4407b35d": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_6gn4dxu0n6wb",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
