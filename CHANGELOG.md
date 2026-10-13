@@ -12,6 +12,10 @@ phone app's.
 
 - Lorca on the Mac is now the desktop app that also runs on Windows and Linux, and the separate Mac-only app is gone. Download `Lorca <version>.arm64.dmg` from the latest `desktop-v` release; it replaces the old app (both are `app.lorca`) and keeps your account, which lives in `~/.lorca`. Allow it once under System Settings › Privacy & Security › Open Anyway. The old app's update feed ends with 1.0.16, so install this one by hand.
 - The command line, the desktop app, and the phone app share one version number from here on, and one set of notes.
+- A web link in a bot's message shows as a chip with the site's icon and name, on the desktop and on the phone.
+- The desktop app has a new look: a chat's bots and name sit in a pill at the top, which opens and closes the inspector; the inspector shows the bot or group large over tabs for Activity, Profile or Members, Skills, and Routines; the sidebar has Search and Create buttons, larger rows with an unread dot, and a Marketplace button. Messages are larger and roomier, and panes, tabs, and new messages move into place, or only fade with Reduce Motion. The time inside message bubbles and its setting are gone; day rows still show it.
+- The desktop app puts an icon in the menu bar or system tray, and a coding agent a bot runs can be watched in a terminal view.
+- On the phone, Stop ends a running turn, a bot's question has options you tap, with Other… and Skip, and the latest exchange of a direct chat has Copy, Regenerate, and Edit. The phone app has a new monochrome look on iPhone and Android.
 
 ## [1.0.16]
 
