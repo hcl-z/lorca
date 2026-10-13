@@ -4,6 +4,10 @@ Read [ARCHITECTURE.md](./ARCHITECTURE.md) before writing code, then the subject 
 
 Identity is a local key pair. Paired Devices sync through an E2E relay. Provider credentials belong to the account: they sync to every paired Device as a blob encrypted with the account key. The desktop app talks to the local CLI.
 
+## Make a change
+
+Every change follows [Making a change](docs/architecture/development.md#making-a-change): a branch, the tests of what it touches, its doc, a pull request into `main`, and releases cut from `main`.
+
 ## Write the current system
 
 Describe Lorca as it is: mechanisms, stack, and flows in the present tense.

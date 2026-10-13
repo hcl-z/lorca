@@ -117,7 +117,7 @@ One doc per subject under `docs/architecture/`, each short enough to read in one
 | [Phone releases and updates](docs/architecture/phone-updates.md) | TestFlight builds, Android APK releases, and the Android app's self-update: the daily check and offer, the progress dialog, the package installer |
 | [Website](docs/architecture/website.md) | `web/`: the site, its docs, and the install scripts it serves |
 | [Languages](docs/architecture/languages.md) | English and Simplified Chinese in each app, and what the CLI words |
-| [Repo layout and development](docs/architecture/development.md) | Where each crate and app lives, the Mac, phone, and Android development loops, release bundles and their SDK restamp, a local relay |
+| [Repo layout and development](docs/architecture/development.md) | Where each crate and app lives, the Mac, phone, and Android development loops, release bundles and their SDK restamp, a local relay, a change from branch to release |
 
 ## Status
 

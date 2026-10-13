@@ -12,7 +12,7 @@ import { reviewEditParams } from "./reviewEdit";
 import { editedText, rerunnable } from "./rerun";
 import type { AskAnswer } from "./ask";
 import { hostFacts } from "./host";
-import { orderProjectEntries, providerConnectMethod, sectionName, withReviewModel, sameDraft, type Section, type PlaybookContent, type PlaybookRecord, type PlaybookScope, type ProjectContext, type ProjectEntry, type ProjectKind, type ProjectSource, type Attachment, type AutoReview, type Bot, type BrowserProfile, type BudgetLimits, type BudgetState, type CallLimits, type Chat, type ChatMeta, type ChatSearchResults, type ChatUsage, type CustomAPI, type CustomModel, type DurableTask, type Message, type MessageDraft, type ReviewItem, type PluginDetail, type PluginStatus, type ProviderKind, type ProviderStatus, type SavedSecret, routinesAwaitingSetup } from "./model";
+import { connectedProviders, isRunner, PROVIDER_KINDS, orderProjectEntries, providerConnectMethod, sectionName, withReviewModel, sameDraft, type Section, type PlaybookContent, type PlaybookRecord, type PlaybookScope, type ProjectContext, type ProjectEntry, type ProjectKind, type ProjectSource, type Attachment, type AutoReview, type Bot, type BrowserProfile, type BudgetLimits, type BudgetState, type CallLimits, type Chat, type ChatMeta, type ChatSearchResults, type ChatUsage, type CustomAPI, type CustomModel, type DurableTask, type Message, type MessageDraft, type ReviewItem, type PluginDetail, type PluginStatus, type ProviderKind, type ProviderStatus, type SavedSecret, routinesAwaitingSetup } from "./model";
 import { coreHome, loadPrefs, pathOf, wipePrefs } from "./prefs";
 import type { SharedLink, TemplateContents, TemplateImportPreview, TemplateSelection } from "./templates";
 import { clearPushes, installPushHandlers, registerForPushes } from "./push";
@@ -42,6 +42,7 @@ import {
   setThinking,
   upsertMessage,
   useStore,
+  deviceIsOnline,
 } from "./store";
 
 /// A file the composer picked, before it is read and stored.
@@ -681,7 +682,15 @@ class Engine {
     await core.request("projects.asset", { chat_id: chatId, file: { path: pathOf(file.uri), name: file.name, mime: file.mime } });
   }
 
-  async createBot(input: { name: string; description: string; symbol_name: string; accent: string; runner_id: string; provider: string; model?: string; thinking?: string }): Promise<{ bot: Bot; chatId: string }> {
+  /// A "New Bot" on the first online Runner, running the first connected provider, which works out
+  /// its job, name, description, and plugins with the user in its direct chat.
+  async createSettingUpBot(): Promise<{ bot: Bot; chatId: string }> {
+    const { devices, providers } = useStore.getState();
+    const runners = devices.filter(isRunner);
+    const runner = runners.find((r) => deviceIsOnline(r.id)) ?? runners[0];
+    if (!runner) throw new Error(t("Pair a computer running macOS, Linux, or Windows first. Phones never run bots."));
+    const provider = connectedProviders(providers)[0] ?? PROVIDER_KINDS[0];
+    const input = { setting_up: true, symbol_name: "sparkles", accent: "indigo", runner_id: runner.id, provider };
     const { bot, chat_id } = await core.request<{ bot: Bot; chat_id: string }>("bots.create", input);
     return { bot, chatId: chat_id };
   }

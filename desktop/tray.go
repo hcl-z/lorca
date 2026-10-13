@@ -16,9 +16,6 @@ import (
 // lists the chats with unread messages, and the unread total is the number beside the icon on
 // macOS and in the tooltip elsewhere, as the Dock or launcher badge carries it.
 
-//go:embed assets/tray-template.png
-var trayIconTemplate []byte
-
 // trayChatLimit is how many unread chats the menu lists before "more".
 const trayChatLimit = 8
 
@@ -131,20 +128,16 @@ func (a *appDelegate) installTray() {
 	if a.tray != nil || !prefs.get().ShowsTrayIcon {
 		return
 	}
-	icon, template := trayIcon, false
-	switch {
-	case isDevelopment():
-		// Lorca Dev wears its own colors in the menu bar too, so the two are told apart.
+	// The app's own icon, in color, as in the Dock; Lorca Dev wears its own, so the two are told apart.
+	icon := trayIcon
+	if isDevelopment() {
 		icon = trayIconDev
-	case runtime.GOOS == "darwin":
-		icon, template = trayIconTemplate, true
 	}
 	state := currentTrayState()
 	tray, err := mygo.NewTray(mygo.TrayOptions{
-		Icon:           icon,
-		IconIsTemplate: template,
-		ToolTip:        appName(),
-		Menu:           a.trayMenu(state),
+		Icon:    icon,
+		ToolTip: appName(),
+		Menu:    a.trayMenu(state),
 	})
 	if err != nil {
 		return

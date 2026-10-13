@@ -96,7 +96,6 @@ export default function RootLayout() {
               <Stack.Screen name="agent/[id]" options={Platform.OS === "android" ? sheet : { ...sheet, sheetAllowedDetents: [0.7, 1], sheetGrabberVisible: true }} />
               <Stack.Screen name="draft/[id]" options={sheet} />
               <Stack.Screen name="tasks" options={Platform.OS === "android" ? nestedSheet : { ...nestedSheet, sheetAllowedDetents: [0.5, 1], sheetGrabberVisible: true }} />
-              <Stack.Screen name="new-bot" options={sheet} />
               <Stack.Screen name="template" options={sheet} />
               <Stack.Screen name="new-group" options={sheet} />
               <Stack.Screen name="workflows" options={nestedSheet} />

@@ -740,6 +740,27 @@ impl LocalStore {
         Ok(None)
     }
 
+    /// The user's latest text in any chat.
+    pub fn latest_user_text(&self) -> anyhow::Result<Option<String>> {
+        let connection = self.connection.lock().unwrap();
+        let json: Option<String> = connection
+            .query_row(
+                "SELECT message_json FROM messages
+                 WHERE author_kind = 'you' AND body_kind = 'text' AND text_nonempty = 1
+                 ORDER BY created_at DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(json
+            .map(|json| serde_json::from_str::<Message>(&json).context("decoding stored message"))
+            .transpose()?
+            .and_then(|message| match message.body {
+                Body::Text { text, .. } if !text.trim().is_empty() => Some(text.trim().to_string()),
+                _ => None,
+            }))
+    }
+
     /// The user's latest text in the chat, from `since` on.
     pub fn last_user_text(&self, chat_id: &str, since: &str) -> anyhow::Result<Option<String>> {
         let connection = self.connection.lock().unwrap();

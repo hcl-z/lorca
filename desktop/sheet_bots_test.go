@@ -6,7 +6,6 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
-	"slices"
 	"testing"
 
 	"github.com/egoist/lorca/desktop/model"
@@ -45,7 +44,6 @@ func TestRenderBotSheets(t *testing.T) {
 		name string
 		open func(m *mainWindow)
 	}{
-		{"sheet-newbot", func(m *mainWindow) { m.presentNewBot(nil) }},
 		{"sheet-look", func(m *mainWindow) { m.presentBotLook("bot-nova") }},
 		{"sheet-pairing", func(m *mainWindow) { m.presentPairing() }},
 		{"sheet-routine", func(m *mainWindow) { m.presentRoutine("rt-reviews", store.Bot("bot-nova"), nil) }},
@@ -110,72 +108,6 @@ func lookTestImage(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return path
-}
-
-func TestNewBotSheet(t *testing.T) {
-	var created string
-	m, tt := sheetTester(t, func(m *mainWindow) { m.presentNewBot(func(id string) { created = id }) })
-	if !tt.HasText(L("%@ is not connected yet. The bot is created now and its first turn waits until you connect it in Settings.", "DeepSeek")) &&
-		!tt.HasText(L("%@ is connected. Turns run on %@.", "DeepSeek", "Workbench")) {
-		t.Errorf("no note: %q", tt.Texts())
-	}
-	// Create Bot waits for a name.
-	if err := tt.Click(L("Create Bot")); err != nil {
-		t.Fatal(err)
-	}
-	settle(tt)
-	if created != "" || !m.hasSheet() {
-		t.Fatal("created a bot without a name")
-	}
-	if !tt.Focused(L("Name")) {
-		t.Error("the name field does not have the focus")
-	}
-	if err := tt.Click("binoculars.fill"); err != nil {
-		t.Fatal(err)
-	}
-	settle(tt)
-	// Back to the name field, right of its label.
-	label, _ := tt.Find(L("Name"))
-	tt.ClickAt(label.X+formLabelWidth+60, label.Y+label.H/2)
-	tt.Type("Analyst")
-	tt.Key(0, ui.KeyTab)
-	tt.Type("Reads the numbers.")
-	settle(tt)
-	renderTo(t, tt, "sheet-newbot-filled")
-	// Return in the description creates the bot.
-	tt.Key(0, ui.KeyEnter)
-	settle(tt)
-	if created == "" || m.hasSheet() {
-		t.Fatalf("Return did not create the bot (sheet up: %v)", m.hasSheet())
-	}
-	bot := store.Bot(created)
-	if bot == nil || bot.Name != "Analyst" || bot.Description != "Reads the numbers." || bot.SymbolName != "binoculars.fill" || bot.Accent != "teal" {
-		t.Errorf("bot %+v", bot)
-	}
-	if bot != nil && (bot.RunnerID != "dev-workbench" || bot.Provider != model.ProviderKinds[0] || bot.Model != "" || bot.Thinking != "") {
-		t.Errorf("bot runs %q on %q with %q/%q", bot.Provider, bot.RunnerID, bot.Model, bot.Thinking)
-	}
-}
-
-// New Bot offers no decision provider, and no decision model of a provider that has some.
-func TestNewBotLeavesDecisionModelsOut(t *testing.T) {
-	_, tt := sheetTester(t, func(m *mainWindow) { m.presentNewBot(nil) })
-	if err := tt.Click("DeepSeek (API key)"); err != nil {
-		t.Fatalf("%v in %q", err, tt.Texts())
-	}
-	if got := tt.Menu(); slices.Contains(got, "OpenRouter Decisions (Custom)") || !slices.Contains(got, "Ollama (Custom)") {
-		t.Errorf("providers %q", got)
-	}
-	if err := tt.ChooseMenuItem("OpenCode Zen (API key)"); err != nil {
-		t.Fatal(err)
-	}
-	settle(tt)
-	if err := tt.Click(L("Default (%@)", "DeepSeek V4.1 Flash")); err != nil {
-		t.Fatalf("%v in %q", err, tt.Texts())
-	}
-	if got := tt.Menu(); slices.Contains(got, "Jev 1.13") || slices.Contains(got, "Jev 1.13 Free") || len(got) != 4 {
-		t.Errorf("models %q", got)
-	}
 }
 
 func TestBotLookSheet(t *testing.T) {

@@ -259,10 +259,13 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
                 None => None,
             };
             let from_template = |pick: fn(&crate::marketplace::BotTemplate) -> &String| template.as_ref().map(|(t, _)| pick(t).clone());
+            // A new bot from the apps' New Bot starts as "New Bot" and sets itself up with the
+            // user in its DM.
+            let setting_up = template.is_none() && params["setting_up"].as_bool() == Some(true);
             let bot = Bot {
                 id: opt_string(&params, "id").unwrap_or_default(),
-                name: opt_string(&params, "name").or_else(|| from_template(|t| &t.name)).ok_or("missing name")?,
-                description: opt_string(&params, "description").or_else(|| from_template(|t| &t.description)).unwrap_or_default(),
+                name: if setting_up { crate::model::NEW_BOT_NAME.into() } else { opt_string(&params, "name").or_else(|| from_template(|t| &t.name)).ok_or("missing name")? },
+                description: if setting_up { String::new() } else { opt_string(&params, "description").or_else(|| from_template(|t| &t.description)).unwrap_or_default() },
                 symbol_name: opt_string(&params, "symbol_name").or_else(|| from_template(|t| &t.symbol_name)).unwrap_or_else(|| "sparkles".into()),
                 accent: opt_string(&params, "accent").or_else(|| from_template(|t| &t.accent)).unwrap_or_else(|| "indigo".into()),
                 avatar: store_avatar(app, &params)?.flatten(),
@@ -272,7 +275,7 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
                 thinking: opt_string(&params, "thinking"),
                 // Older apps sent a second behavioral field. `insert_bot` folds it into the
                 // description, then clears this rolling-upgrade slot.
-                legacy_instructions: opt_string(&params, "instructions").unwrap_or_default(),
+                legacy_instructions: opt_string(&params, "instructions").unwrap_or_default(), setting_up,
                 workdir: opt_string(&params, "workdir"),
                 permissions: parse_permissions(&params)?,
                 created_at: 0.0,
@@ -281,6 +284,8 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
             let (bot, chat) = app.create_bot_with_dm(bot, opt_string(&params, "chat_id")).map_err(|e| e.to_string())?;
             if let Some((template, plugins)) = template {
                 crate::marketplace::welcome(app, &bot, &chat.meta.id, &template, plugins, opt_string(&params, "greeting"));
+            } else if setting_up {
+                crate::runtime::start_setup(app, &bot, &chat.meta.id, None, None);
             }
             Ok(json!({ "bot": bot, "chat_id": chat.meta.id }))
         }

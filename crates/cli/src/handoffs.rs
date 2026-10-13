@@ -180,6 +180,10 @@ pub struct HandoffAttempt {
     pub cancellation: Option<HandoffReport>,
     #[serde(default)]
     result_delivery: ResultDelivery,
+    /// On the recipient's Runner, the handoffs its turn made for this work that have not
+    /// settled: the attempt reports once they have, from the turn that continues from them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    waiting_on: Vec<String>,
 }
 
 impl HandoffAttempt {
@@ -356,6 +360,7 @@ fn merge(app: &App, update: &HandoffUpdate) -> Result<Handoff, String> {
             report: None,
             cancellation: None,
             result_delivery: ResultDelivery::Pending,
+            waiting_on: Vec::new(),
         });
         record.attempts.sort_by_key(|a| a.request.attempt);
         record
@@ -388,6 +393,7 @@ pub fn apply_update(app: &Arc<App>, update: HandoffUpdate) -> Result<(), String>
     }
     if let HandoffUpdate::Cancel { request, .. } = &update {
         app.cancel_job(&request.job_id);
+        stop_downstream(app, &request.handoff_id, &request.job_id);
     }
     route_report(app, &update.request().handoff_id)
 }
@@ -423,6 +429,9 @@ pub fn delegate(
     }
     if target.id == from.id {
         return Err("You cannot message yourself".into());
+    }
+    if target.setting_up {
+        return Err(format!("{} is still setting up its job with the user in its own chat. Hand it nothing until it has.", target.name));
     }
     if chat.meta.is_group() && chat.meta.bot_ids.contains(&target.id) {
         return Err(format!(
@@ -491,6 +500,25 @@ pub fn origin_of(app: &App, job: &Job) -> String {
         }
     }
     job.id.clone()
+}
+
+/// The delegated request a turn answers: a handoff's own turn's, or for the turn continuing
+/// from work it passed on, the request still waiting on that work, which the turn's reply or
+/// report settles.
+pub fn bound_request(app: &App, job: &Job) -> Option<HandoffRequest> {
+    match &job.handoff {
+        Some(HandoffJob::Request { request }) => Some(request.clone()),
+        Some(HandoffJob::Result { .. }) => {
+            let origin = origin_of(app, job);
+            let record = list(app).ok()?.into_iter().find(|r| r.current().request.job_id == origin)?;
+            let attempt = record.current();
+            (attempt.request.target_bot_id == job.bot_id
+                && !attempt.waiting_on.is_empty()
+                && !attempt.outcome().is_some_and(|r| r.status.terminal()))
+            .then(|| attempt.request.clone())
+        }
+        None => None,
+    }
 }
 
 fn require_runner(app: &App, runner_id: &str) -> Result<(), String> {
@@ -732,61 +760,181 @@ pub fn finish_job(
             if attempt.outcome().is_some_and(|r| r.status.terminal()) {
                 return route_report(app, &record.id);
             }
-            let (links, evidence, said, failure) = turn_evidence(app, attempt);
             // A turn that failed ends Skipped (`turns::run_job`); a notice it posted on the way,
             // such as a compaction, is no failure by itself. One its limits stopped waits on the
             // user, who can resume it in Limits (`resume_stopped`).
             let limited = outcome == TurnOutcome::Skipped && stopped_at_limits(app, job);
-            // A runtime limit cancels the turn as Stop does; it reports blocked all the same.
-            let status = if limited {
-                HandoffStatus::Blocked
-            } else if cancelled {
-                HandoffStatus::Cancelled
-            } else if outcome == TurnOutcome::Skipped {
-                HandoffStatus::Failed
-            } else if outcome == TurnOutcome::Sent {
-                HandoffStatus::Completed
-            } else {
-                HandoffStatus::Blocked
-            };
-            // The first line is what the requesting chat's marker shows.
-            let summary = match status {
-                HandoffStatus::Cancelled => STOPPED.into(),
-                HandoffStatus::Failed => failure.unwrap_or_else(|| "Couldn't finish.".into()),
-                HandoffStatus::Blocked if limited => failure.unwrap_or_else(|| "Stopped at its limits.".into()),
-                HandoffStatus::Blocked => "Ended the turn without a reply.".into(),
-                _ => said.unwrap_or_else(|| "Done.".into()),
-            };
-            let report = HandoffReport {
-                status,
-                summary,
-                result_links: links,
-                evidence,
-                created_at: now_secs(),
-                started_after: attempt
-                    .report
-                    .as_ref()
-                    .and_then(|r| r.started_after.clone()),
-            };
+            // Work the turn passed on goes on: the attempt reports once it has come back and the
+            // turn continuing from it has finished (`settle_waiting`).
+            if !cancelled && outcome != TurnOutcome::Skipped {
+                let waiting = outstanding_downstream(app, &job.id);
+                if !waiting.is_empty() {
+                    return wait_on(app, request, waiting);
+                }
+            }
+            let report = automatic_report(app, attempt, Some(outcome), cancelled, limited);
             publish_report(app, request.clone(), report)
         }
         Some(HandoffJob::Result {
             handoff_id,
             request_job_id,
         }) => {
-            let _guard = app.handoff_lock.lock().unwrap();
-            let mut record = get(app, handoff_id)?;
-            if let Some(attempt) = record
-                .attempts
-                .iter_mut()
-                .find(|a| a.request.job_id == *request_job_id)
-            {
+            let (request, still_stuck) = {
+                let _guard = app.handoff_lock.lock().unwrap();
+                let mut record = get(app, handoff_id)?;
+                let current_job = record.current().request.job_id.clone();
+                let Some(attempt) = record
+                    .attempts
+                    .iter_mut()
+                    .find(|a| a.request.job_id == *request_job_id)
+                else {
+                    return Ok(());
+                };
                 attempt.result_delivery = ResultDelivery::Finished;
+                let request = attempt.request.clone();
+                // The continuation neither followed up nor cancelled: the work waits on the
+                // user now, through the requesting bot.
+                let still_stuck = (current_job == *request_job_id && attempt.cancellation.is_none())
+                    .then(|| attempt.report.clone())
+                    .flatten()
+                    .filter(|r| matches!(r.status, HandoffStatus::Blocked | HandoffStatus::Failed));
                 save(app, &record, None, Vec::new())?;
+                (request, still_stuck)
+            };
+            if let Some(report) = still_stuck {
+                raise_blocker(app, &request, &report);
             }
-            Ok(())
+            settle_waiting(app, &request.origin_job_id, Some(outcome), cancelled)
         }
         None => Ok(()),
+    }
+}
+
+/// What a delegated turn reports when it did not report itself, from how it ended and what it
+/// left in the recipient's DM. `outcome` is None for work whose last turn is unknown, as
+/// after a restart. The summary's first line is what the requesting chat's marker shows.
+fn automatic_report(app: &App, attempt: &HandoffAttempt, outcome: Option<TurnOutcome>, cancelled: bool, limited: bool) -> HandoffReport {
+    let (links, evidence, said, failure) = turn_evidence(app, attempt);
+    let outputs: Vec<&str> = links.iter().filter(|l| l.kind == "output").map(|l| l.label.as_str()).collect();
+    // A runtime limit cancels the turn as Stop does; it reports blocked all the same.
+    let (status, summary) = if limited {
+        (HandoffStatus::Blocked, failure.unwrap_or_else(|| "Stopped at its limits.".into()))
+    } else if cancelled {
+        (HandoffStatus::Cancelled, STOPPED.into())
+    } else {
+        match outcome {
+            Some(TurnOutcome::Skipped) => (HandoffStatus::Failed, failure.map(|f| format!("Couldn't finish: {f}")).unwrap_or_else(|| "Couldn't finish.".into())),
+            Some(TurnOutcome::Sent) => (HandoffStatus::Completed, said.unwrap_or_else(|| "Done.".into())),
+            // What it published is its result, though it said nothing about it.
+            _ if !outputs.is_empty() => (HandoffStatus::Completed, format!("Published {}.", outputs.join(", "))),
+            None if said.is_some() => (HandoffStatus::Completed, said.unwrap_or_default()),
+            _ => (HandoffStatus::Blocked, "Ended the turn without a reply.".into()),
+        }
+    };
+    HandoffReport {
+        status,
+        summary,
+        result_links: links,
+        evidence,
+        created_at: now_secs(),
+        started_after: attempt.report.as_ref().and_then(|r| r.started_after.clone()),
+    }
+}
+
+/// The handoffs this Runner made for the work of the job `origin_job_id` that have not settled:
+/// with no terminal report yet, or with a report whose continuation still has to run here.
+fn outstanding_downstream(app: &App, origin_job_id: &str) -> Vec<String> {
+    let Some(device) = app.this_device_id() else { return Vec::new() };
+    list(app)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|record| {
+            let attempt = record.current();
+            let request = &attempt.request;
+            if request.source_runner_id != device || request.origin_job_id != origin_job_id {
+                return false;
+            }
+            match attempt.outcome() {
+                Some(report) if report.status.terminal() => {
+                    report.status != HandoffStatus::Cancelled
+                        && attempt.cancellation.is_none()
+                        && attempt.result_delivery != ResultDelivery::Finished
+                        && app.bot(&request.from_bot_id).is_some_and(|b| b.runner_id == request.source_runner_id)
+                }
+                _ => true,
+            }
+        })
+        .map(|record| record.id)
+        .collect()
+}
+
+/// Holds a delegated attempt open while the work its turn passed on goes on, and says so to
+/// every Device as a running report.
+fn wait_on(app: &Arc<App>, request: &HandoffRequest, waiting: Vec<String>) -> Result<(), String> {
+    let names: Vec<String> = waiting
+        .iter()
+        .filter_map(|id| get(app, id).ok())
+        .map(|record| crate::runtime::name_of(app, &record.current().request.target_bot_id))
+        .collect();
+    let _guard = app.handoff_lock.lock().unwrap();
+    let current = get(app, &request.handoff_id)?;
+    let Some(attempt) = current.attempts.iter().find(|a| a.request.job_id == request.job_id) else {
+        return Err("Unknown handoff attempt".into());
+    };
+    if attempt.outcome().is_some_and(|r| r.status.terminal()) {
+        return Ok(());
+    }
+    let report = HandoffReport {
+        status: HandoffStatus::Running,
+        summary: format!("Waiting on {}", names.join(", ")),
+        result_links: Vec::new(),
+        evidence: Vec::new(),
+        created_at: now_secs(),
+        started_after: attempt.report.as_ref().and_then(|r| r.started_after.clone()),
+    };
+    let update = HandoffUpdate::Report { request: request.clone(), report };
+    let mut record = merge(app, &update)?;
+    if let Some(attempt) = record.attempts.iter_mut().find(|a| a.request.job_id == request.job_id) {
+        attempt.waiting_on = waiting;
+    }
+    save(app, &record, Some(&update), Vec::new())
+}
+
+/// Reports a delegated attempt that waited on work its recipient passed on, once that work has
+/// settled: from the turn that continued from it (`outcome`), or after a restart from what the
+/// recipient's DM holds. A continuation that passed more on keeps it waiting; one the user
+/// stopped reports it stopped.
+fn settle_waiting(app: &Arc<App>, origin_job_id: &str, outcome: Option<TurnOutcome>, cancelled: bool) -> Result<(), String> {
+    let Some(device) = app.this_device_id() else { return Ok(()) };
+    let Some(record) = list(app)?.into_iter().find(|r| r.current().request.job_id == origin_job_id) else {
+        return Ok(());
+    };
+    let attempt = record.current();
+    if attempt.request.target_runner_id != device || attempt.waiting_on.is_empty() || attempt.outcome().is_some_and(|r| r.status.terminal()) {
+        return Ok(());
+    }
+    if !cancelled {
+        let still = outstanding_downstream(app, origin_job_id);
+        if !still.is_empty() {
+            if still != attempt.waiting_on {
+                return wait_on(app, &attempt.request, still);
+            }
+            return Ok(());
+        }
+    }
+    let report = automatic_report(app, attempt, outcome, cancelled, false);
+    publish_report(app, attempt.request.clone(), report)
+}
+
+/// On the recipient's Runner, a cancelled attempt stops the work its turn passed on.
+fn stop_downstream(app: &Arc<App>, handoff_id: &str, job_id: &str) {
+    let Ok(record) = get(app, handoff_id) else { return };
+    let Some(attempt) = record.attempts.iter().find(|a| a.request.job_id == job_id) else { return };
+    for id in &attempt.waiting_on {
+        let Ok(down) = get(app, id) else { continue };
+        if let Err(error) = stop(app, id, &down.current().request.job_id) {
+            tracing::error!(%error, handoff_id = %id, "stopping work a cancelled handoff passed on");
+        }
     }
 }
 
@@ -1047,41 +1195,22 @@ fn route_report(app: &Arc<App>, id: &str) -> Result<(), String> {
     }
     let message = result_message(request, report);
     app.upsert_message(message.clone(), true);
-    // A blocked or failed attempt waits on the requesting bot, or on the user through it, until a
-    // follow-up or a cancellation; its continuation already wakes that bot.
-    let prefix = format!("handoff:{}:", request.handoff_id);
-    if matches!(report.status, HandoffStatus::Blocked | HandoffStatus::Failed) {
-        let target = crate::runtime::name_of(app, &request.target_bot_id);
-        let from = crate::runtime::name_of(app, &request.from_bot_id);
-        let summary = report.summary.trim();
-        crate::attention::raise(
-            app,
-            &prefix,
-            &request.job_id,
-            crate::attention::Report {
-                key: String::new(),
-                category: crate::attention::Category::Blocker,
-                title: if report.status == HandoffStatus::Blocked { format!("{target} is blocked") } else { format!("{target} couldn’t finish") },
-                summary: if summary.is_empty() { format!("{target} sent no details.") } else { summary.into() },
-                next_action: format!("Read {target}’s report and tell {from} how to go on."),
-                source: attention_source(app, request),
-                coordinator_bot_id: Some(request.from_bot_id.clone()),
-                urgent: false,
-                quiet: true,
-            },
-            Some(&request.target_bot_id),
-        );
-    } else {
-        crate::attention::settle(app, &attention_source(app, request), &prefix);
-    }
     // A stopped attempt wakes nobody: the user stopped it, and the requesting bot reads the
     // report in its next turn.
-    if attempt.result_delivery == ResultDelivery::Pending
-        && report.status != HandoffStatus::Cancelled
+    let continues = report.status != HandoffStatus::Cancelled
         && app
             .bot(&request.from_bot_id)
-            .is_some_and(|b| b.runner_id == request.source_runner_id)
-    {
+            .is_some_and(|b| b.runner_id == request.source_runner_id);
+    if matches!(report.status, HandoffStatus::Blocked | HandoffStatus::Failed) {
+        // The requesting bot's continuation reads it first, and raises it only when it leaves
+        // the work stuck (`finish_job`).
+        if !continues || attempt.result_delivery == ResultDelivery::Finished {
+            raise_blocker(app, request, report);
+        }
+    } else {
+        crate::attention::settle(app, &attention_source(app, request), &format!("handoff:{}:", request.handoff_id));
+    }
+    if attempt.result_delivery == ResultDelivery::Pending && continues {
         let job = result_job(request);
         if !app.running_jobs.lock().unwrap().contains_key(&job.id) {
             if let Some(task) = request.task_id.clone() {
@@ -1092,6 +1221,31 @@ fn route_report(app: &Arc<App>, id: &str) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// A blocked or failed attempt that waits on the requesting bot, or on the user through it,
+/// until a follow-up or a cancellation, as a quiet attention item.
+fn raise_blocker(app: &Arc<App>, request: &HandoffRequest, report: &HandoffReport) {
+    let target = crate::runtime::name_of(app, &request.target_bot_id);
+    let from = crate::runtime::name_of(app, &request.from_bot_id);
+    let summary = report.summary.trim();
+    crate::attention::raise(
+        app,
+        &format!("handoff:{}:", request.handoff_id),
+        &request.job_id,
+        crate::attention::Report {
+            key: String::new(),
+            category: crate::attention::Category::Blocker,
+            title: if report.status == HandoffStatus::Blocked { format!("{target} is blocked") } else { format!("{target} couldn’t finish") },
+            summary: if summary.is_empty() { format!("{target} sent no details.") } else { summary.into() },
+            next_action: format!("Read {target}’s report and tell {from} how to go on."),
+            source: attention_source(app, request),
+            coordinator_bot_id: Some(request.from_bot_id.clone()),
+            urgent: false,
+            quiet: true,
+        },
+        Some(&request.target_bot_id),
+    );
 }
 
 /// Where a handoff's attention item points: the requesting chat, its task while this Device has
@@ -1220,6 +1374,7 @@ pub fn cancel(
         record_cancellation(app, &request, report)?;
     }
     app.cancel_job(&request.job_id);
+    stop_downstream(app, id, &request.job_id);
     route_report(app, id)?;
     Ok(get(app, id)?.view())
 }
@@ -1312,6 +1467,7 @@ fn stop(app: &Arc<App>, id: &str, job_id: &str) -> Result<(), String> {
         (request, report)
     };
     app.cancel_job(&request.job_id);
+    stop_downstream(app, id, &request.job_id);
     if app.chat(&request.source_chat_id).is_some() {
         app.upsert_message(result_message(&request, &report), true);
     }
@@ -1334,9 +1490,10 @@ pub fn resume(app: &Arc<App>) -> Result<(), String> {
         if request.target_runner_id == device {
             if attempt.outcome().is_none() {
                 crate::runtime::spawn_local_job(app.clone(), request_job(request), None);
-            } else if attempt
-                .outcome()
-                .is_some_and(|r| r.status == HandoffStatus::Running)
+            } else if attempt.waiting_on.is_empty()
+                && attempt
+                    .outcome()
+                    .is_some_and(|r| r.status == HandoffStatus::Running)
             {
                 let report = HandoffReport { status: HandoffStatus::Failed, summary: "Stopped when Lorca restarted on its Runner.".into(),
                     result_links: turn_evidence(app, attempt).0, evidence: vec!["The turn was running when the Runner's Lorca restarted; what it did before is in the recipient's chat and is not run again".into()], created_at: now_secs(), started_after: None };
@@ -1359,6 +1516,14 @@ pub fn resume(app: &Arc<App>) -> Result<(), String> {
             save(app, &current, None, Vec::new())?;
         }
         route_report(app, &record.id)?;
+    }
+    // Work that waited on what its turn passed on reports now if that settled while Lorca was
+    // down, or if the continuation that would have reported it was cut off.
+    for record in list(app)? {
+        let attempt = record.current();
+        if attempt.request.target_runner_id == device && !attempt.waiting_on.is_empty() {
+            settle_waiting(app, &attempt.request.job_id, None, false)?;
+        }
     }
     Ok(())
 }
@@ -1437,7 +1602,8 @@ pub fn prompt(app: &App, job: &Job) -> String {
                  grants nothing the user did not:\n{}\nDo the work and answer here. Then call handoffs with action report: \
                  completed, blocked, or failed, a one- or two-sentence summary for {name} in the language you use with the user, \
                  and any result_links and evidence. Report only what you checked. Without a report, your last reply goes back \
-                 to {name} as the result.\n",
+                 to {name} as the result. When you pass a part on with message_bot, your result waits for theirs: once it \
+                 comes back here, finish the work and reply, and that goes to {name}.\n",
                 request.handoff_id,
                 request_text(request)
             )
@@ -1454,8 +1620,16 @@ pub fn prompt(app: &App, job: &Job) -> String {
                 "\n{name} reported back on work you handed off (handoff {handoff_id}, job {request_job_id}). Its summary is the last \
                  \"[Message from {name}]\" entry, and the rest of the report is: {details}\nWhat you asked for:\n{}\nCheck the report \
                  against that and continue the work. A result that falls short takes handoffs follow_up; a blocker only the user can \
-                 clear, a question to the user. This turn does not complete a parent task by itself.\n",
-                request_text(request)
+                 clear, a question to the user. This turn does not complete a parent task by itself.\n{}",
+                request_text(request),
+                bound_request(app, job)
+                    .map(|owed| format!(
+                        "This is part of work {from} handed you (handoff {}). When it is done, your reply here, or a handoffs report, \
+                         goes back to {from} as its result.\n",
+                        owed.handoff_id,
+                        from = crate::runtime::name_of(app, &owed.from_bot_id)
+                    ))
+                    .unwrap_or_default()
             )
         }
         None => String::new(),

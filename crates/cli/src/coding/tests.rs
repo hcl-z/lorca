@@ -173,7 +173,7 @@ async fn setup() -> Scratch {
         provider: "deepseek".into(),
         model: None,
         thinking: None,
-        legacy_instructions: String::new(),
+        legacy_instructions: String::new(), setting_up: false,
         workdir: Some(home.join("work").to_string_lossy().to_string()),
         permissions: None,
         created_at: 0.0,

@@ -1054,6 +1054,92 @@ fn set_card(app: &Arc<App>, chat_id: &str, message_id: &str, decision: &str, sum
     }
 }
 
+/// The marketplace plugins with an Install card from `post_install_card` waiting in the chat.
+pub fn waiting_install_cards(app: &App, chat_id: &str) -> Vec<String> {
+    app.store
+        .all(chat_id)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|message| match message.body {
+            Body::Permission { plugin_id, tool, decision, arguments, .. } if tool == "install" && decision == "pending" && arguments["recommended"] == json!(true) => Some(plugin_id),
+            _ => None,
+        })
+        .collect()
+}
+
+/// An Install card for a marketplace plugin a bot's job uses, in its chat, which no turn waits
+/// on: the user's Install installs it whenever they get to it (`answer_recommended_install`).
+pub fn post_install_card(app: &Arc<App>, chat_id: &str, bot_id: &str, plugin_id: &str, plugin_name: &str) -> Message {
+    let runner = app.this_device_id().and_then(|id| app.device(&id)).map(|d| d.name).unwrap_or_else(|| "its Runner".into());
+    let message = Message::new(
+        chat_id,
+        Author::Bot { bot_id: bot_id.to_string() },
+        Body::Permission {
+            plugin_id: plugin_id.to_string(),
+            plugin_name: plugin_name.to_string(),
+            tool: "install".into(),
+            summary: format!("Install {plugin_name} on {runner}"),
+            arguments: json!({ "plugin": plugin_id, "recommended": true }),
+            decision: "pending".into(),
+            reason: None,
+            rule: None,
+            command: None,
+            link: None,
+            code: None,
+            secret: None,
+            ask: None,
+        },
+    );
+    app.upsert_message(message.clone(), true);
+    message
+}
+
+/// The user's answer to a card from `post_install_card`; None for any other card. Install
+/// installs the plugin from the marketplace and puts up its sign-in card when it has one; a
+/// failed install leaves the card to try again.
+pub async fn answer_recommended_install(app: &Arc<App>, chat_id: &str, message_id: &str, decision: Decision) -> Option<Result<Value, String>> {
+    let message = app.message(chat_id, message_id)?;
+    let Author::Bot { bot_id } = &message.author else { return None };
+    let Body::Permission { plugin_id, plugin_name, tool, decision: current, arguments, .. } = &message.body else { return None };
+    if tool != "install" || current != "pending" || arguments["recommended"] != json!(true) {
+        return None;
+    }
+    if !matches!(decision, Decision::Allowed | Decision::Always) {
+        set_card(app, chat_id, message_id, "denied", None, None, None);
+        return Some(Ok(json!({ "answered": true })));
+    }
+    // Installed meanwhile, from another card or the marketplace: that install is the one.
+    let existing = {
+        let store = app.plugins.lock().unwrap();
+        let status = store.instances(plugin_id).next().and_then(|plugin| store.status(&plugin.manifest.id));
+        status
+    };
+    let status = match existing {
+        Some(status) => status,
+        None => {
+            let manifest = crate::marketplace::index(app).await.plugins.iter().find(|m| &m.id == plugin_id).cloned();
+            let Some(manifest) = manifest else {
+                return Some(Err(format!("{plugin_name} is no longer in the marketplace.")));
+            };
+            match crate::plugins::install(app, manifest, "marketplace") {
+                Ok(status) => status,
+                Err(error) => return Some(Err(error)),
+            }
+        }
+    };
+    set_card(app, chat_id, message_id, "allowed", Some(format!("Installed {plugin_name}.")), None, None);
+    match status.state.as_str() {
+        "needs_auth" => {
+            if let Err(error) = post_sign_in_card(app, chat_id, bot_id, &status.id) {
+                app.notice(chat_id, format!("{} needs a sign-in ({error}); sign in from this chat's inspector.", status.name));
+            }
+        }
+        "needs_setup" => app.notice(chat_id, format!("{} still needs {}: set it in this chat's inspector, under Plugins.", status.name, status.detail.trim_start_matches("Needs "))),
+        _ => {}
+    }
+    Some(Ok(json!({ "answered": true })))
+}
+
 /// `connect_oauth` with a chat card (chat id, message id) to update as the sign-in goes.
 pub async fn connect_oauth_for_card(app: &Arc<App>, plugin_id: &str, server: &str, card: Option<(String, String)>, elsewhere: Option<Elsewhere>) -> Result<SignInStart, String> {
     let (plugin, spec) = {

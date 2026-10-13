@@ -141,6 +141,10 @@ pub struct Bot {
     /// `description` as soon as the profile is read.
     #[serde(default, rename = "instructions")]
     pub legacy_instructions: String,
+    /// A bot made as `NEW_BOT_NAME` that is still working out its job with the user in its DM: it
+    /// has a placeholder name and no description until `finish_setup` gives it both.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub setting_up: bool,
     /// Working directory for the coding tools on the Runner. Defaults to
     /// `<LORCA_HOME>/workspaces/<bot id>`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -151,6 +155,9 @@ pub struct Bot {
     pub permissions: Option<crate::permissions::BotPermissions>,
     pub created_at: f64,
 }
+
+/// The placeholder name of a bot that sets itself up with the user.
+pub const NEW_BOT_NAME: &str = "New Bot";
 
 /// One Auto-review rule: what a bot wants to do, in the user's words, and whether that runs
 /// on its own or asks first. Always allow on a shell command's card adds the rule Auto-review

@@ -579,7 +579,7 @@ pub async fn import_text(app: &Arc<App>, text: &str, params: &Value) -> Result<V
         provider: provider.into(),
         model: None,
         thinking: None,
-        legacy_instructions: String::new(),
+        legacy_instructions: String::new(), setting_up: false,
         workdir: None,
         permissions: None,
         created_at: 0.0,

@@ -1122,6 +1122,27 @@ type NewBot struct {
 	Thinking    string
 	TemplateID  string
 	Greeting    string
+	// SettingUp makes a "New Bot" that works out its job, name, description, and plugins with the
+	// user in its direct chat; the CLI starts its first turn.
+	SettingUp bool
+}
+
+// NewBotName is the name a bot that sets itself up starts with, as the CLI gives it.
+const NewBotName = "New Bot"
+
+// CreateSettingUpBot makes a "New Bot" on the first Runner, preferring this computer, with the
+// first connected provider, and answers with its id, or "" when no Runner is paired.
+func (s *Store) CreateSettingUpBot() string {
+	var runner *Device
+	for _, device := range s.Runners() {
+		if runner == nil || device.IsThisDevice {
+			runner = device
+		}
+	}
+	if runner == nil {
+		return ""
+	}
+	return s.CreateBot(NewBot{Name: NewBotName, SymbolName: "sparkles", Accent: "indigo", RunnerID: runner.ID, Provider: s.PreferredProvider(), SettingUp: true})
 }
 
 func (s *Store) CreateBot(options NewBot) string {
@@ -1162,6 +1183,9 @@ func (s *Store) CreateBot(options NewBot) string {
 		if options.TemplateID != "" {
 			params["template_id"] = options.TemplateID
 			params["greeting"] = options.Greeting
+		}
+		if options.SettingUp {
+			params["setting_up"] = true
 		}
 		s.perform("bots.create", params)
 	}
