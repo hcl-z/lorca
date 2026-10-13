@@ -1,0 +1,19 @@
+CHANGELOG.md
+  s_46b4cb35af69da::t_cdef121e8e6bc1 15-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "73be914984a2c802434569a72544ae65a2c95483",
+  "prompts": {},
+  "sessions": {
+    "s_46b4cb35af69da": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_zdnoqutg3ylz",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
