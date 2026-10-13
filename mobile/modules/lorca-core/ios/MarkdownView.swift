@@ -1,3 +1,4 @@
+import AVFoundation
 import ExpoModulesCore
 import UIKit
 
@@ -13,6 +14,10 @@ struct MarkdownStyle {
   var quoteColor: UIColor = .tertiaryLabel
   var border: UIColor = .separator
   var tint: UIColor = .systemBlue
+  /// Web links as source chips: a bot's message, not the user's own bubble.
+  var sourceChips = false
+  var chipColor: UIColor = .white
+  var chipBorder: UIColor = .separator
 }
 
 enum MarkdownLayout {
@@ -28,6 +33,52 @@ enum MarkdownLayout {
   static let cellPaddingX: CGFloat = 10
   static let cellPaddingY: CGFloat = 7
   static let columnFloor: CGFloat = 72
+  static let chipIcon: CGFloat = 14
+  /// From the chip's start to its icon.
+  static let chipPad: CGFloat = 6
+  /// How far the chip's center sits below the middle of the line: the words' weight is in the
+  /// x-height, under the middle of a line that also holds the room for ascenders and the leading.
+  static let chipDrop: CGFloat = 0.5
+}
+
+/// A source chip's site and link, on the chip's words.
+final class SourceChipValue: NSObject {
+  let host: String
+  let url: URL
+  init(host: String, url: URL) {
+    self.host = host
+    self.url = url
+  }
+}
+
+/// The sites' icons the app has found, by host, shared by every message. JS hands them over as
+/// they arrive (`setFavicon`); the views redraw then.
+enum SourceIcons {
+  static let changed = Notification.Name("lorca.sourceIcons.changed")
+  private static var icons: [String: UIImage] = [:]
+  private static let lock = NSLock()
+
+  static func image(_ host: String) -> UIImage? {
+    lock.lock()
+    defer { lock.unlock() }
+    return icons[host]
+  }
+
+  static func set(_ host: String, _ data: Data?) {
+    // ImageIO reads PNG, JPEG, GIF, WebP, and ICO.
+    guard let data, let image = UIImage(data: data) else { return }
+    lock.lock()
+    icons[host] = image
+    lock.unlock()
+    DispatchQueue.main.async { NotificationCenter.default.post(name: changed, object: nil) }
+  }
+}
+
+/// A chip's text: a no-break space and room for the icon (two figure spaces) ahead of the label,
+/// and the same behind it, so the fill has air around both. The label's own spaces do not break,
+/// so the icon never parts from it. The desktop app's `chipWords`.
+func chipWords(_ label: String) -> String {
+  "\u{00a0}\u{00a0}\u{2007}\u{2007}\u{00a0}" + label.replacingOccurrences(of: " ", with: "\u{00a0}") + "\u{00a0}\u{00a0}"
 }
 
 extension NSAttributedString.Key {
@@ -35,12 +86,17 @@ extension NSAttributedString.Key {
   static let codeBlock = NSAttributedString.Key("lorca.codeBlock")
   /// Marks quoted text; the value is the x of its bar.
   static let quoteBar = NSAttributedString.Key("lorca.quoteBar")
+  /// Marks a source chip's words; the value is a `SourceChipValue`.
+  static let sourceChip = NSAttributedString.Key("lorca.sourceChip")
 }
 
 /// A TextKit 1 layout manager that paints code block boxes and quote bars behind the text.
 final class MarkdownLayoutManager: NSLayoutManager {
   var codeBackground: UIColor = .clear
   var quoteColor: UIColor = .clear
+  var chipColor: UIColor = .white
+  var chipBorder: UIColor = .separator
+  var chipGlyph: UIColor = .secondaryLabel
 
   override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
     super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
@@ -63,6 +119,33 @@ final class MarkdownLayoutManager: NSLayoutManager {
       let bar = CGRect(x: origin.x + x, y: origin.y + rect.minY, width: MarkdownLayout.quoteBar, height: rect.height)
       quoteColor.setFill()
       UIBezierPath(roundedRect: bar, cornerRadius: MarkdownLayout.quoteBar / 2).fill()
+    }
+    // A source chip: a rounded fill with a hairline under its words, and the site's icon (a globe
+    // until it has one) in the room left at its start.
+    storage.enumerateAttribute(.sourceChip, in: chars) { value, range, _ in
+      guard let chip = value as? SourceChipValue else { return }
+      let font = storage.attribute(.font, at: range.location, effectiveRange: nil) as? UIFont ?? .systemFont(ofSize: 15)
+      let glyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+      enumerateEnclosingRects(forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: container) { line, _ in
+        let height = ceil(font.lineHeight) + 3
+        let rect = CGRect(x: origin.x + line.minX, y: origin.y + line.midY - height / 2 + MarkdownLayout.chipDrop, width: line.width, height: height)
+        let path = UIBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), cornerRadius: height / 2)
+        self.chipColor.setFill()
+        path.fill()
+        self.chipBorder.setStroke()
+        path.lineWidth = 1 / UIScreen.main.scale
+        path.stroke()
+        let size = MarkdownLayout.chipIcon
+        let icon = CGRect(x: rect.minX + MarkdownLayout.chipPad, y: rect.midY - size / 2, width: size, height: size)
+        if let image = SourceIcons.image(chip.host) {
+          UIBezierPath(roundedRect: icon, cornerRadius: 3).addClip()
+          image.draw(in: icon)
+          UIGraphicsGetCurrentContext()?.resetClip()
+        } else if let globe = UIImage(systemName: "globe", withConfiguration: UIImage.SymbolConfiguration(pointSize: size - 1, weight: .medium))?.withTintColor(self.chipGlyph, renderingMode: .alwaysOriginal) {
+          let fit = AVMakeRect(aspectRatio: globe.size, insideRect: icon)
+          globe.draw(in: fit)
+        }
+      }
     }
   }
 }
@@ -146,12 +229,16 @@ final class MarkdownRenderer {
     }
     let font: UIFont = header ? .systemFont(ofSize: style.fontSize - 1, weight: .semibold) : .systemFont(ofSize: style.fontSize - 1)
     let text = NSMutableAttributedString()
-    for span in spans {
+    for span in chipSpans(spans) {
       var attributes: [NSAttributedString.Key: Any] = [
         .font: inlineFont(font, span, bold: header),
         .foregroundColor: style.color,
         .paragraphStyle: paragraph,
       ]
+      if let chip = chipText(span, font: font, base: attributes) {
+        text.append(chip)
+        continue
+      }
       if span.code { attributes[.backgroundColor] = style.codeBackground }
       if span.strike { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
       if let link = span.link, let url = URL(string: link) { attributes[.link] = url }
@@ -251,9 +338,13 @@ final class MarkdownRenderer {
     if let marker = context.marker {
       out.append(NSAttributedString(string: marker, attributes: base))
     }
-    for span in spans {
+    for span in chipSpans(spans) {
       var attributes = base
       attributes[.font] = inlineFont(font, span, bold: bold)
+      if let chip = chipText(span, font: font, base: attributes) {
+        out.append(chip)
+        continue
+      }
       if span.code { attributes[.backgroundColor] = style.codeBackground }
       if span.strike { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
       if let link = span.link, let url = URL(string: link) { attributes[.link] = url }
@@ -343,6 +434,23 @@ final class MarkdownRenderer {
     attributes.removeValue(forKey: .backgroundColor)
     attributes.removeValue(forKey: .strikethroughStyle)
     out.append(NSAttributedString(string: "\n", attributes: attributes))
+  }
+
+  /// The runs of one web link as one span, so the link is one chip.
+  private func chipSpans(_ spans: [Span]) -> [Span] {
+    style.sourceChips ? joinLinkSpans(spans: spans) : spans
+  }
+
+  /// A web link's chip: its words a size smaller, with the chip's mark the layout manager paints
+  /// under them. Nil for a link that stays link text, or any other run.
+  private func chipText(_ span: Span, font: UIFont, base: [NSAttributedString.Key: Any]) -> NSAttributedString? {
+    guard style.sourceChips, !span.code, let link = span.link, let url = URL(string: link), let chip = sourceChip(text: span.text, href: link) else { return nil }
+    var attributes = base
+    attributes.removeValue(forKey: .link)
+    attributes[.font] = UIFont.systemFont(ofSize: font.pointSize - 1.5, weight: span.bold ? .semibold : .medium)
+    attributes[.foregroundColor] = style.color
+    attributes[.sourceChip] = SourceChipValue(host: chip.host, url: url)
+    return NSAttributedString(string: chipWords(chip.label), attributes: attributes)
   }
 
   private func body() -> UIFont {
@@ -492,6 +600,9 @@ final class SelectableTextView: UITextView {
     super.init(frame: .zero, textContainer: container)
     manager.codeBackground = style.codeBackground
     manager.quoteColor = style.quoteColor
+    manager.chipColor = style.chipColor
+    manager.chipBorder = style.chipBorder
+    manager.chipGlyph = style.color.withAlphaComponent(0.55)
     isEditable = false
     isSelectable = true
     isScrollEnabled = false
@@ -500,11 +611,46 @@ final class SelectableTextView: UITextView {
     adjustsFontForContentSizeCategory = false
     tintColor = style.tint
     linkTextAttributes = [.foregroundColor: style.linkColor, .underlineStyle: NSUnderlineStyle.single.rawValue]
+    if style.sourceChips {
+      // A chip's words carry no link, so the chip keeps its own look; a tap on them opens it.
+      let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
+      tap.cancelsTouchesInView = false
+      tap.delegate = self
+      addGestureRecognizer(tap)
+      NotificationCenter.default.addObserver(self, selector: #selector(iconsChanged), name: SourceIcons.changed, object: nil)
+    }
+  }
+
+  @objc private func iconsChanged() {
+    manager.invalidateDisplay(forCharacterRange: NSRange(location: 0, length: storage.length))
+  }
+
+  /// The chip under a point in the view, if any.
+  private func chip(at point: CGPoint) -> SourceChipValue? {
+    let inside = CGPoint(x: point.x - textContainerInset.left, y: point.y - textContainerInset.top)
+    guard storage.length > 0 else { return nil }
+    var fraction: CGFloat = 0
+    let glyph = manager.glyphIndex(for: inside, in: container, fractionOfDistanceThroughGlyph: &fraction)
+    let bounds = manager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
+    guard bounds.insetBy(dx: -2, dy: -4).contains(inside) else { return nil }
+    let index = manager.characterIndexForGlyph(at: glyph)
+    return storage.attribute(.sourceChip, at: index, effectiveRange: nil) as? SourceChipValue
+  }
+
+  @objc private func tapped(_ tap: UITapGestureRecognizer) {
+    guard tap.state == .ended, selectedRange.length == 0, let chip = chip(at: tap.location(in: self)) else { return }
+    UIApplication.shared.open(chip.url)
   }
 
   @available(*, unavailable)
   required init?(coder: NSCoder) {
     fatalError("init(coder:) has not been implemented")
+  }
+}
+
+extension SelectableTextView: UIGestureRecognizerDelegate {
+  func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+    true
   }
 }
 

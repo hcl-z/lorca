@@ -66,6 +66,13 @@ const ANDROID: Record<string, string> = {
   "chevron.up.chevron.down": "arrow_drop_down",
   "arrow.down": "arrow_downward",
   "plus": "add",
+  // The bars' round buttons, the message actions, and the question card.
+  "person.crop.circle": "account_circle",
+  "chevron.left": "arrow_back",
+  "tray.full": "inbox",
+  "checkmark.square.fill": "check_box",
+  square: "check_box_outline_blank",
+  "largecircle.fill.circle": "radio_button_checked",
   // Durable tasks' states and evidence.
   "circle": "radio_button_unchecked",
   "arrow.triangle.2.circlepath": "sync",

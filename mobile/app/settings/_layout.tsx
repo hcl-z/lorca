@@ -11,7 +11,7 @@ export default function SettingsLayout() {
     <Stack
       screenOptions={{
         headerShadowVisible: false,
-        headerStyle: { backgroundColor: Platform.OS === "android" ? p.groupedBackground : p.dark ? "#1C1C1E" : "#F2F2F7" },
+        headerStyle: { backgroundColor: p.groupedBackground as string },
         headerTintColor: (Platform.OS === "android" ? p.label : p.tint) as any,
         headerTitleStyle: { color: p.label as any },
         headerTitleAlign: Platform.OS === "android" ? "left" : undefined,

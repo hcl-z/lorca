@@ -354,8 +354,8 @@ export interface SecretAsk {
   fields: { name: string; label: string }[];
 }
 
-/// A question a bot asks with options (a permission card with `tool` `ask`). The phone lists the
-/// options and takes the answer as a reply in the chat; `answer` is what was picked on a computer.
+/// A question a bot asks with options (a permission card with `tool` `ask`), answered on its card
+/// (`src/core/ask.ts`); `answer` is what was picked, on any Device.
 export interface AskQuestion {
   question: string;
   options: { label: string; description?: string }[];
@@ -530,6 +530,8 @@ export interface Message {
   promoted_at?: number;
   /** A message of the user's the bot's turn holds for its next step; Send now has it read now. */
   queued?: boolean;
+  /** When the user edited it and had it answered again (Unix seconds). */
+  edited_at?: number | null;
   /** A file or document link a bot published: this message is one version of it. */
   output?: Output;
 }

@@ -56,6 +56,10 @@ class MarkdownStyle {
   var quoteColor = 0x4D000000
   var border = 0x33000000
   var tint = Color.BLUE
+  /// Web links as source chips: a bot's message, not the user's own bubble.
+  var sourceChips = false
+  var chipColor = Color.WHITE
+  var chipBorder = 0x17000000
 }
 
 private object Layout {
@@ -71,6 +75,102 @@ private object Layout {
   const val CELL_PADDING_X = 10f
   const val CELL_PADDING_Y = 7f
   const val COLUMN_FLOOR = 72f
+  const val CHIP_ICON = 14f
+  /// From the chip's start to its icon.
+  const val CHIP_PAD = 6f
+}
+
+/// The sites' icons the app has found, by host, shared by every message. JS hands them over as
+/// they arrive (`setFavicon`); the text views showing chips redraw then.
+object SourceIcons {
+  private val icons = java.util.concurrent.ConcurrentHashMap<String, android.graphics.Bitmap>()
+  private val views = java.util.Collections.newSetFromMap(java.util.WeakHashMap<View, Boolean>())
+
+  fun image(host: String): android.graphics.Bitmap? = icons[host]
+
+  fun set(host: String, bytes: ByteArray?) {
+    // BitmapFactory reads PNG, JPEG, GIF, WebP, and ICO.
+    val bitmap = bytes?.let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size) } ?: return
+    icons[host] = bitmap
+    android.os.Handler(android.os.Looper.getMainLooper()).post { synchronized(views) { views.toList() }.forEach { it.invalidate() } }
+  }
+
+  fun watch(view: View) {
+    synchronized(views) { views.add(view) }
+  }
+}
+
+/// A chip's text: a no-break space and room for the icon (two figure spaces) ahead of the label,
+/// and the same behind it. The label's own spaces do not break, so the icon never parts from it.
+/// The desktop app's `chipWords`.
+private fun chipWords(label: String) = "\u00a0\u00a0\u2007\u2007\u00a0" + label.replace(' ', '\u00a0') + "\u00a0\u00a0"
+
+/// A source chip drawn in place of its words: a rounded fill with a hairline, the site's icon (a
+/// globe until it has one) in the room at its start, and the words. As wide as the words are at
+/// the chip's size, so measuring and drawing agree; the URLSpan over it still opens the link.
+private class SourceChipSpan(
+  private val host: String,
+  private val textSize: Float,
+  private val bold: Boolean,
+  private val fill: Int,
+  private val border: Int,
+  private val color: Int,
+  private val density: Float,
+) : android.text.style.ReplacementSpan() {
+  private val shape = Paint(Paint.ANTI_ALIAS_FLAG)
+
+  private fun styled(paint: Paint): Paint = Paint(paint).apply {
+    textSize = this@SourceChipSpan.textSize
+    typeface = Typeface.create(Typeface.DEFAULT, if (bold) Typeface.BOLD else Typeface.NORMAL)
+    isFakeBoldText = false
+    color = this@SourceChipSpan.color
+  }
+
+  override fun getSize(paint: Paint, text: CharSequence, start: Int, end: Int, fm: Paint.FontMetricsInt?): Int {
+    val words = styled(paint)
+    if (fm != null) paint.getFontMetricsInt(fm)
+    return ceil(words.measureText(text, start, end)).toInt()
+  }
+
+  override fun draw(canvas: Canvas, text: CharSequence, start: Int, end: Int, x: Float, top: Int, y: Int, bottom: Int, paint: Paint) {
+    val words = styled(paint)
+    val width = words.measureText(text, start, end)
+    val metrics = words.fontMetrics
+    val height = (metrics.descent - metrics.ascent) + 3 * density
+    // Centered on the words' own middle, a little under the line's.
+    val middle = y + (metrics.ascent + metrics.descent) / 2 + 0.5f * density
+    val rect = RectF(x, middle - height / 2, x + width, middle + height / 2)
+    shape.style = Paint.Style.FILL
+    shape.color = fill
+    canvas.drawRoundRect(rect, height / 2, height / 2, shape)
+    shape.style = Paint.Style.STROKE
+    shape.strokeWidth = 1f
+    shape.color = border
+    canvas.drawRoundRect(rect, height / 2, height / 2, shape)
+    val size = (Layout.CHIP_ICON * density).roundToInt()
+    val left = (x + Layout.CHIP_PAD * density).roundToInt()
+    val iconTop = (middle - size / 2f).roundToInt()
+    val icon = SourceIcons.image(host)
+    if (icon != null) {
+      canvas.drawBitmap(icon, null, android.graphics.Rect(left, iconTop, left + size, iconTop + size), Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+    } else {
+      drawGlobe(canvas, RectF(left.toFloat(), iconTop.toFloat(), (left + size).toFloat(), (iconTop + size).toFloat()))
+    }
+    canvas.drawText(text, start, end, x, y.toFloat(), words)
+  }
+
+  /// A globe in outline, the words' color at 55%: the circle, a meridian, and the equator.
+  private fun drawGlobe(canvas: Canvas, box: RectF) {
+    val inset = 1.2f * density
+    val r = RectF(box.left + inset, box.top + inset, box.right - inset, box.bottom - inset)
+    shape.style = Paint.Style.STROKE
+    shape.strokeWidth = 1.2f * density
+    shape.color = (color and 0x00FFFFFF) or 0x8C000000.toInt()
+    canvas.drawOval(r, shape)
+    val meridian = RectF(r.centerX() - r.width() / 4, r.top, r.centerX() + r.width() / 4, r.bottom)
+    canvas.drawOval(meridian, shape)
+    canvas.drawLine(r.left, r.centerY(), r.right, r.centerY(), shape)
+  }
 }
 
 /// Fixes a paragraph's line height and adds the space above it and, for a code block, below it.
@@ -129,6 +229,8 @@ private sealed class Segment {
 /// table inside a list or quote is written as lines of cells.
 private class MarkdownRenderer(context: Context, private val style: MarkdownStyle) {
   private var out = SpannableStringBuilder()
+  /// Whether a chip was written, so the views showing it redraw when an icon arrives.
+  var hasChips = false
   private val density = context.resources.displayMetrics.density
   private val scaledDensity = context.resources.displayMetrics.scaledDensity
   /// The space the previous block asked for below itself; the next paragraph takes it above.
@@ -167,7 +269,8 @@ private class MarkdownRenderer(context: Context, private val style: MarkdownStyl
   fun cell(spans: List<Span>, header: Boolean): CharSequence {
     val text = SpannableStringBuilder()
     val size = style.fontSize - 1
-    for (span in spans) {
+    for (span in chipSpans(spans)) {
+      if (chip(text, span, size)) continue
       val from = text.length
       text.append(span.text)
       val to = text.length
@@ -237,6 +340,23 @@ private class MarkdownRenderer(context: Context, private val style: MarkdownStyl
     return out.length
   }
 
+  /// The runs of one web link as one span, so the link is one chip.
+  private fun chipSpans(spans: List<Span>): List<Span> = if (style.sourceChips) uniffi.lorca_markdown.joinLinkSpans(spans) else spans
+
+  /// Writes a web link as a source chip; false for a link that stays link text, or any other run.
+  private fun chip(text: SpannableStringBuilder, span: Span, fontSize: Float): Boolean {
+    if (!style.sourceChips || span.code) return false
+    val link = span.link ?: return false
+    val chip = uniffi.lorca_markdown.sourceChip(span.text, link) ?: return false
+    val from = text.length
+    text.append(chipWords(chip.label))
+    val to = text.length
+    text.setSpan(SourceChipSpan(chip.host, sp(fontSize - 1.5f).toFloat(), span.bold, style.chipColor, style.chipBorder, style.color, density), from, to, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    text.setSpan(URLSpan(link), from, to, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    hasChips = true
+    return true
+  }
+
   /// The run's own styles. A bold paragraph carries its own bold span; a run only adds what
   /// the paragraph lacks.
   private fun inline(text: SpannableStringBuilder, span: Span, from: Int, to: Int, fontSize: Float, bold: Boolean) {
@@ -259,7 +379,8 @@ private class MarkdownRenderer(context: Context, private val style: MarkdownStyl
   private fun paragraph(spans: List<Span>, ctx: Ctx, fontSize: Float, lineHeight: Float, after: Float, bold: Boolean = false, color: Int? = null) {
     val start = open()
     ctx.marker?.let { out.append(it) }
-    for (span in spans) {
+    for (span in chipSpans(spans)) {
+      if (chip(out, span, fontSize)) continue
       val from = out.length
       out.append(span.text)
       val to = out.length
@@ -433,7 +554,7 @@ private fun layOutMessage(parent: LinearLayout, style: MarkdownStyle, interactiv
   parent.removeAllViews()
   renderer.render(parseMarkdown(style.markdown)).forEachIndexed { index, segment ->
     val view: View = when (segment) {
-      is Segment.Text -> messageText(context, style, segment.text, interactive)
+      is Segment.Text -> messageText(context, style, segment.text, interactive).also { if (interactive && renderer.hasChips) SourceIcons.watch(it) }
       is Segment.Table -> HorizontalScrollView(context).apply {
         isHorizontalScrollBarEnabled = false
         overScrollMode = View.OVER_SCROLL_NEVER

@@ -5,7 +5,7 @@
 // command, which shows as its card while it needs the user.
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Linking, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Linking, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Pressable } from "./Pressable";
 import * as Clipboard from "expo-clipboard";
 import { haptic } from "./haptics";
@@ -14,8 +14,10 @@ import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSequence, with
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { ShimmerView } from "../../modules/lorca-core/ShimmerView";
-import { agentIsOpen, agentIsRunning, agentName, agentPlace, agentStarted, canBeQuoted, isLive, isSentMessage, showsCard, showsSpeakers, type AgentRun, type Author, type Body, type Bot, type Chat, type CommandRun, type Message } from "../core/model";
+import { agentIsOpen, agentIsRunning, agentName, agentPlace, agentStarted, canBeQuoted, isLive, isSentMessage, showsCard, showsSpeakers, type AgentRun, type AskQuestion, type Author, type Body, type Bot, type Chat, type CommandRun, type Message } from "../core/model";
 import { engine } from "../core/engine";
+import { canRegenerate, rerunnable } from "../core/rerun";
+import { answerWords, askAnswer, sendsOnPick, togglePick } from "../core/ask";
 import { useStore } from "../core/store";
 import { language, t, tc, useLanguage } from "../i18n";
 import { AttachmentBlock } from "./attachments";
@@ -42,7 +44,7 @@ const NOTICE_ICON = 14;
 
 export type Row =
   | { key: string; type: "day"; at: number }
-  | { key: string; type: "message"; message: Message; groupStart: boolean; groupEnd: boolean; showsName: boolean }
+  | { key: string; type: "message"; message: Message; groupStart: boolean; groupEnd: boolean; showsName: boolean; copyable: boolean; regenerable: boolean; editable: boolean }
   | { key: string; type: "marker"; text: string; bot: Bot | undefined; tooltip?: string; groupStart: boolean }
   | { key: string; type: "notice"; text: string; groupStart: boolean }
   | { key: string; type: "permission"; message: Message; body: Extract<Body, { kind: "permission" }>; bot: Bot | undefined; groupStart: boolean }
@@ -58,6 +60,11 @@ export function buildRows(chat: Chat, bots: Map<string, Bot>, workingBotIds: str
   let previous: Message | null = null;
   let previousAuthorKey: string | null = null;
   const shown = chat.messages.filter((m) => m.body.kind !== "tool" || !!m.body.agent || showsCard(m.body) || isSentMessage(m.body));
+  // The latest exchange's actions, under its messages: Copy and Regenerate under the bot's last
+  // reply, Edit under the user's message (`src/core/rerun.ts`).
+  const run = rerunnable(chat, isWorking);
+  const last = shown[shown.length - 1];
+  const latestReply = !isWorking && last?.author.kind === "bot" && last.body.kind === "text" && last.state.kind === "complete" && !last.output ? last.id : undefined;
   for (let i = 0; i < shown.length; i++) {
     const message = shown[i];
     const separated = !previous || message.created_at - previous.created_at >= SEPARATOR_GAP_SECS;
@@ -80,6 +87,9 @@ export function buildRows(chat: Chat, bots: Map<string, Bot>, workingBotIds: str
           groupStart,
           groupEnd,
           showsName: showsSpeakers(chat) && (message.author.kind === "bot" || message.author.kind === "contact") && groupStart,
+          copyable: message.id === latestReply && message.body.text.trim().length > 0,
+          regenerable: message.id === latestReply && canRegenerate(chat, isWorking, message),
+          editable: run?.asked.id === message.id,
         });
         previousAuthorKey = authorKey;
         break;
@@ -246,6 +256,8 @@ export const MessageRow = memo(function MessageRow({
   isGroup,
   onReply,
   onQuotePress,
+  onEdit,
+  onRegenerate,
   flashing,
 }: {
   row: Extract<Row, { type: "message" }>;
@@ -253,6 +265,8 @@ export const MessageRow = memo(function MessageRow({
   isGroup: boolean;
   onReply?: (message: Message) => void;
   onQuotePress?: (messageID: string) => void;
+  onEdit?: (message: Message) => void;
+  onRegenerate?: (message: Message) => void;
   flashing?: boolean;
 }) {
   const held = row.message.queued === true;
@@ -324,13 +338,13 @@ export const MessageRow = memo(function MessageRow({
         <Animated.View
           style={[
             styles.bubble,
-            isYou ? { backgroundColor: p.userBubble, borderBottomRightRadius: groupEnd ? 6 : 18 } : { backgroundColor: failed ? "rgba(255,59,48,0.14)" : p.botBubble, borderBottomLeftRadius: groupEnd ? 6 : 18 },
+            isYou ? [styles.bubbleYou, { backgroundColor: p.userBubble }] : { backgroundColor: failed ? "rgba(255,59,48,0.14)" : p.botBubble },
             pulsing,
             held && styles.held,
           ]}
         >
           {attachments.length > 0 && <AttachmentBlock attachments={attachments} onUserBubble={isYou} maxWidth={attachmentWidth} />}
-          {text.length > 0 && <Markdown text={text} color={isYou ? p.userBubbleText : p.botBubbleText} maxWidth={attachmentWidth} />}
+          {text.length > 0 && <Markdown text={text} color={isYou ? p.userBubbleText : p.botBubbleText} maxWidth={attachmentWidth} sources={message.author.kind === "bot"} />}
           {failed && (
             <View style={styles.bubbleFooter}>
               <Symbol name="exclamationmark.triangle.fill" size={11} color={p.red} />
@@ -339,6 +353,9 @@ export const MessageRow = memo(function MessageRow({
         </Animated.View>
         )}
         </GestureDetector>
+        {(row.copyable || row.regenerable || row.editable || message.edited_at) && !held ? (
+          <MessageActions row={row} isYou={isYou} text={text} onEdit={onEdit} onRegenerate={onRegenerate} />
+        ) : null}
         {held && (
           <Pressable
             onPress={() => engine.sendNow(message.chat_id, message.id).catch((error) => alert(t("Could not send now"), error instanceof Error ? error.message : String(error)))}
@@ -360,12 +377,50 @@ export const MessageRow = memo(function MessageRow({
   a.row.groupStart === b.row.groupStart &&
   a.row.groupEnd === b.row.groupEnd &&
   a.row.showsName === b.row.showsName &&
+  a.row.copyable === b.row.copyable &&
+  a.row.regenerable === b.row.regenerable &&
+  a.row.editable === b.row.editable &&
+  a.onEdit === b.onEdit &&
+  a.onRegenerate === b.onRegenerate &&
   a.bots === b.bots &&
   a.isGroup === b.isGroup &&
   a.onReply === b.onReply &&
   a.onQuotePress === b.onQuotePress &&
   a.flashing === b.flashing,
 );
+
+/// The small round actions under the latest exchange, in the message's own words when they say
+/// something (Edited): Copy and Regenerate under the bot's reply, Edit under the user's message.
+/// Not a long press: that selects the message's text in place.
+function MessageActions({ row, isYou, text, onEdit, onRegenerate }: { row: Extract<Row, { type: "message" }>; isYou: boolean; text: string; onEdit?: (message: Message) => void; onRegenerate?: (message: Message) => void }) {
+  useLanguage();
+  const p = usePalette();
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  const action = (icon: string, label: string, onPress: () => void) => (
+    <Pressable key={label} onPress={onPress} hitSlop={6} ripple="borderless" rippleRadius={16} style={({ pressed }) => [styles.action, { opacity: pressed ? 0.5 : 1 }]} accessibilityRole="button" accessibilityLabel={label}>
+      <Symbol name={icon} size={15} color={p.secondaryLabel} />
+    </Pressable>
+  );
+  return (
+    <View style={[styles.actions, isYou && styles.actionsYou]}>
+      {isYou && row.message.edited_at ? <Text style={[styles.edited, { color: p.tertiaryLabel }]}>{t("Edited")}</Text> : null}
+      {row.copyable
+        ? action(copied ? "checkmark" : "doc.on.doc", copied ? t("Copied") : t("Copy message"), () => {
+            void Clipboard.setStringAsync(text);
+            haptic.success();
+            setCopied(true);
+          })
+        : null}
+      {row.regenerable && onRegenerate ? action("arrow.triangle.2.circlepath", t("Regenerate"), () => onRegenerate(row.message)) : null}
+      {row.editable && onEdit ? action("pencil", t("Edit"), () => onEdit(row.message)) : null}
+    </View>
+  );
+}
 
 /// "Messaged ◉ Name" with the message's first line under it; a tap opens the whole message
 /// in a sheet.
@@ -415,8 +470,31 @@ export const NoticeRow = memo(function NoticeRow({ row }: { row: Extract<Row, { 
 /// call; an Always allow keeps its rule. A bot's Access refusing a call asks for more access: Edit
 /// Access… opens the bot's Access, and Dismiss puts the request away; neither runs the call. In a
 /// group the card sits in the bubbles' column, the bot's avatar beside its bottom edge.
+/// One of a card's choices: ink for the first, gray for the rest.
+function CardButton({ label, primary = false, disabled = false, onPress }: { label: string; primary?: boolean; disabled?: boolean; onPress: () => void }) {
+  const p = usePalette();
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      style={({ pressed }) => [
+        styles.cardButton,
+        primary ? { backgroundColor: p.ink } : { backgroundColor: p.fill, borderWidth: StyleSheet.hairlineWidth, borderColor: p.cardBorder },
+        { opacity: disabled ? 0.45 : pressed ? 0.75 : 1 },
+      ]}
+    >
+      <Text style={[styles.cardButtonText, { color: primary ? p.inkText : p.label }]} numberOfLines={1}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 export const PermissionRow = memo(function PermissionRow({ row, isGroup, onDecide, onFill }: { row: Extract<Row, { type: "permission" }>; isGroup: boolean; onDecide: (message: Message, decision: "allow" | "always" | "deny") => void; onFill: (message: Message) => void }) {
   if (row.body.tool === "secret" && row.body.secret) return <SecretRow row={row} isGroup={isGroup} onDecide={onDecide} onFill={onFill} />;
+  if (row.body.tool === "ask" && row.body.ask) return <QuestionRow row={row} ask={row.body.ask} isGroup={isGroup} onDecide={onDecide} />;
   return <AskRow row={row} isGroup={isGroup} onDecide={onDecide} />;
 });
 
@@ -441,7 +519,7 @@ function SecretRow({ row, isGroup, onDecide, onFill }: { row: Extract<Row, { typ
           <BotAvatar bot={row.bot} size={AVATAR} />
         </View>
       )}
-      <View style={[styles.permission, { backgroundColor: p.cell, borderColor: p.separator }]}>
+      <View style={[styles.permission, { backgroundColor: p.botBubble }]}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <Symbol name="key" size={16} color={pending ? p.tint : p.secondaryLabel} />
           <Text style={[styles.permissionTitle, { color: p.label }]} numberOfLines={2}>
@@ -456,12 +534,8 @@ function SecretRow({ row, isGroup, onDecide, onFill }: { row: Extract<Row, { typ
         {pending ? (
           <>
             <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
-              <Pressable onPress={() => onFill(row.message)} style={({ pressed }) => [styles.permissionButton, { backgroundColor: pressed ? p.separator : p.fill }]} accessibilityRole="button">
-                <Text style={{ color: p.tint, fontSize: 13, fontWeight: "600" }}>{t("Fill In")}</Text>
-              </Pressable>
-              <Pressable onPress={() => onDecide(row.message, "deny")} style={({ pressed }) => [styles.permissionButton, { backgroundColor: pressed ? p.separator : p.fill }]} accessibilityRole="button">
-                <Text style={{ color: p.label, fontSize: 13, fontWeight: "600" }}>{t("Not now")}</Text>
-              </Pressable>
+              <CardButton label={t("Fill In")} primary onPress={() => onFill(row.message)} />
+              <CardButton label={t("Not now")} onPress={() => onDecide(row.message, "deny")} />
             </View>
             <Text style={[styles.ruleNote, { color: p.secondaryLabel }]}>{t("Saved on {runner}. {who} never sees it.", { runner, who })}</Text>
           </>
@@ -543,7 +617,7 @@ const AskRow = memo(function AskRow({ row, isGroup, onDecide }: { row: Extract<R
           <BotAvatar bot={row.bot} size={AVATAR} />
         </View>
       )}
-      <View style={[styles.permission, { backgroundColor: p.cell, borderColor: p.separator }]}>
+      <View style={[styles.permission, { backgroundColor: p.botBubble }]}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <Symbol name={connect ? "person.crop.circle.badge.checkmark" : row.body.tool === "install" ? "puzzlepiece.extension" : "hand.raised"} size={16} color={row.body.decision === "failed" ? p.red : row.body.decision === "connected" ? p.green : p.tint} />
           <Text style={[styles.permissionTitle, { color: p.label }]} numberOfLines={2}>
@@ -553,7 +627,7 @@ const AskRow = memo(function AskRow({ row, isGroup, onDecide }: { row: Extract<R
         {pending && shell ? (
           <Pressable
             onPress={() => router.push({ pathname: "/command/[id]", params: { id: row.message.id, chat: row.message.chat_id, title } })}
-            style={({ pressed }) => [styles.command, { backgroundColor: p.code, opacity: pressed ? 0.6 : 1 }]}
+            style={({ pressed }) => [styles.command, { backgroundColor: p.innerCard, opacity: pressed ? 0.6 : 1 }]}
             accessibilityRole="button"
             accessibilityLabel={t("Show the full command")}
           >
@@ -580,13 +654,13 @@ const AskRow = memo(function AskRow({ row, isGroup, onDecide }: { row: Extract<R
                 }
                 if (row.body.link) void Linking.openURL(row.body.link);
               }}
-              style={({ pressed }) => [styles.permissionButton, { backgroundColor: pressed ? p.separator : p.fill }]}
+              style={({ pressed }) => [styles.permissionButton, { backgroundColor: p.ink, opacity: pressed ? 0.8 : 1 }]}
               accessibilityRole="button"
               accessibilityLabel={copied ? t("Copied") : t("Copy code and open")}
             >
               <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-                {copied ? <Symbol name="checkmark" size={13} color={p.green} weight="semibold" /> : null}
-                <Text style={{ color: copied ? p.green : p.tint, fontSize: 13, fontWeight: "600" }}>
+                {copied ? <Symbol name="checkmark" size={13} color={p.inkText} weight="semibold" /> : null}
+                <Text style={{ color: p.inkText, fontSize: 13, fontWeight: "600" }}>
                   {copied ? t("Copied") : t("Copy code and open")}
                 </Text>
               </View>
@@ -595,24 +669,145 @@ const AskRow = memo(function AskRow({ row, isGroup, onDecide }: { row: Extract<R
         ) : null}
         {pending ? (
           <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
-            {choices.map(([label, decision]) => (
-              <Pressable
+            {choices.map(([label, decision], index) => (
+              <CardButton
                 key={decision}
+                label={label}
+                primary={index === 0}
                 onPress={() =>
                   decision === "access"
                     ? row.message.author.kind === "bot" && router.push({ pathname: "/chat-info/access/[id]", params: { id: row.message.author.bot_id, close: "1" } })
                     : onDecide(row.message, decision)
                 }
-                style={({ pressed }) => [styles.permissionButton, { backgroundColor: pressed ? p.separator : p.fill }]}
-              >
-                <Text style={{ color: decision === "deny" ? p.label : p.tint, fontSize: 13, fontWeight: "600" }}>
-                  {label}
-                </Text>
-              </Pressable>
+              />
             ))}
           </View>
         ) : null}
         {ruleNote ? <Text style={[styles.ruleNote, { color: p.secondaryLabel }]}>{ruleNote}</Text> : null}
+      </View>
+    </View>
+  );
+});
+
+/// A bot's question with options, as the desktop's card: the question, then each option as a row
+/// with its number, description, and Recommended on the bot's pick, a radio for one pick or a box
+/// for several, and Other… for the user's own words where the question takes them. One pick sends
+/// on its tap; several, or Other, send with Submit. Skip leaves the choice to the bot. A refusal
+/// from the Runner (offline, expired) puts the card back with why under it. Answered, it keeps the
+/// question and says what was picked.
+const QuestionRow = memo(function QuestionRow({ row, ask, isGroup, onDecide }: { row: Extract<Row, { type: "permission" }>; ask: AskQuestion; isGroup: boolean; onDecide: (message: Message, decision: "allow" | "always" | "deny") => void }) {
+  useLanguage();
+  const p = usePalette();
+  const [picked, setPicked] = useState<number[]>([]);
+  const [writing, setWriting] = useState(false);
+  const [other, setOther] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const showsAvatar = isGroup && row.message.author.kind === "bot";
+  const pending = row.body.decision === "pending";
+  const who = row.bot?.name ?? t("The bot");
+  const send = (choices: number[], words: string) => {
+    const result = askAnswer(ask, choices, words);
+    if ("error" in result) return;
+    setBusy(true);
+    setProblem(null);
+    haptic.send();
+    engine
+      .answerPermission(row.message.chat_id, row.message.id, "allow", result.answer)
+      .catch((error) => setProblem(error instanceof Error ? error.message : String(error)))
+      .finally(() => setBusy(false));
+  };
+  const pick = (index: number) => {
+    if (busy) return;
+    const next = togglePick(ask, picked, index);
+    setPicked(next);
+    if (sendsOnPick(ask)) {
+      setWriting(false);
+      send(next, "");
+    }
+  };
+  const canSubmit = "answer" in askAnswer(ask, ask.multiple ? picked : [], writing ? other : "");
+  const decided: Record<string, string> = { allowed: t("Answered"), denied: t("Skipped"), expired: t("No answer in time"), dismissed: t("Answered in the chat instead") };
+  const answered = answerWords(ask, t(", "));
+  return (
+    <View style={[styles.messageRow, { paddingTop: row.groupStart ? 14 : 6 }]}>
+      {showsAvatar && (
+        <View style={{ width: AVATAR + GUTTER, alignSelf: "flex-end" }}>
+          <BotAvatar bot={row.bot} size={AVATAR} />
+        </View>
+      )}
+      <View style={[styles.permission, { backgroundColor: p.botBubble }]}>
+        <Text style={[styles.caption, { color: p.secondaryLabel }]}>{t("{who} asks you to choose", { who })}</Text>
+        <Text style={[styles.questionText, { color: p.label }]}>{ask.question}</Text>
+        {pending ? (
+          <>
+            <View style={[styles.innerCard, styles.options, { backgroundColor: p.innerCard }]}>
+              {ask.options.map((option, index) => {
+                const on = picked.includes(index);
+                return (
+                  <Pressable
+                    key={`${index}-${option.label}`}
+                    onPress={() => pick(index)}
+                    disabled={busy}
+                    style={({ pressed }) => [styles.option, index > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: p.separator }, { opacity: pressed ? 0.6 : 1 }]}
+                    accessibilityRole={ask.multiple ? "checkbox" : "radio"}
+                    accessibilityState={{ checked: on, disabled: busy }}
+                  >
+                    <Symbol name={ask.multiple ? (on ? "checkmark.square.fill" : "square") : on ? "largecircle.fill.circle" : "circle"} size={19} color={on ? p.ink : p.tertiaryLabel} />
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                        <Text style={[styles.optionLabel, { color: p.label }]}>{`${index + 1}. ${option.label}`}</Text>
+                        {ask.recommended === index ? (
+                          <View style={[styles.recommended, { backgroundColor: p.fill }]}>
+                            <Text style={[styles.recommendedText, { color: p.secondaryLabel }]}>{t("Recommended")}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      {option.description ? <Text style={[styles.reasonText, { color: p.secondaryLabel }]}>{option.description}</Text> : null}
+                    </View>
+                  </Pressable>
+                );
+              })}
+              {ask.allow_other ? (
+                <Pressable
+                  onPress={() => {
+                    setWriting(true);
+                    if (!ask.multiple) setPicked([]);
+                  }}
+                  disabled={busy || writing}
+                  style={[styles.option, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: p.separator }]}
+                  accessibilityRole="button"
+                >
+                  <Symbol name="pencil" size={17} color={writing ? p.ink : p.tertiaryLabel} />
+                  {writing ? (
+                    <TextInput
+                      autoFocus
+                      value={other}
+                      onChangeText={setOther}
+                      placeholder={t("Your own answer")}
+                      placeholderTextColor={p.tertiaryLabel as any}
+                      style={[styles.otherInput, { color: p.label }]}
+                      keyboardAppearance={p.dark ? "dark" : "light"}
+                      returnKeyType="send"
+                      onSubmitEditing={() => canSubmit && send(ask.multiple ? picked : [], other)}
+                    />
+                  ) : (
+                    <Text style={[styles.optionLabel, { color: p.secondaryLabel }]}>{t("Other…")}</Text>
+                  )}
+                </Pressable>
+              ) : null}
+            </View>
+            {problem ? <Text style={[styles.reasonText, { color: p.red }]}>{problem}</Text> : null}
+            <View style={styles.cardButtons}>
+              {ask.multiple || writing ? <CardButton label={t("Submit")} primary disabled={busy || !canSubmit} onPress={() => send(ask.multiple ? picked : [], writing ? other : "")} /> : null}
+              <CardButton label={t("Skip")} disabled={busy} onPress={() => onDecide(row.message, "deny")} />
+            </View>
+          </>
+        ) : (
+          <Text style={[styles.reasonText, { color: p.secondaryLabel }]}>
+            {answered ? t("You chose {answer}", { answer: answered }) : (decided[row.body.decision] ?? row.body.decision)}
+          </Text>
+        )}
       </View>
     </View>
   );
@@ -655,7 +850,7 @@ export const DraftRow = memo(function DraftRow({ row, isGroup }: { row: Extract<
       </Text>
     ) : null;
   const buttons: [string, () => void, boolean][] = [
-    [t("Send"), () => void send(false), true],
+    [draft.kind === "email" ? t("Send email") : t("Send"), () => void send(false), true],
     ...(card.direct ? [[t("Always Send"), () => void send(true), true] as [string, () => void, boolean]] : []),
     [t("Discard"), () => void act(t("Couldn't discard this draft"), () => engine.discardDraft(row.message.chat_id, row.message.id)), false],
   ];
@@ -670,10 +865,9 @@ export const DraftRow = memo(function DraftRow({ row, isGroup }: { row: Extract<
         onPress={open}
         accessibilityRole="button"
         accessibilityHint={pending ? t("Opens the draft to edit") : undefined}
-        style={({ pressed }) => [styles.permission, { backgroundColor: pressed ? p.fill : p.cell, borderColor: p.separator }]}
+        style={({ pressed }) => [styles.permission, { backgroundColor: p.botBubble, opacity: pressed ? 0.85 : 1 }]}
       >
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <Symbol name={draft.kind === "email" ? "envelope" : "bubble.left"} size={16} color={p.tint} />
           <Text style={[styles.permissionTitle, { color: p.label, flex: 1 }]} numberOfLines={2}>
             {title}
           </Text>
@@ -681,43 +875,38 @@ export const DraftRow = memo(function DraftRow({ row, isGroup }: { row: Extract<
             <Text style={[styles.caption, { color: card.state === "failed" ? p.red : card.state === "uncertain" ? accentColor("orange", p.dark) : p.secondaryLabel }]}>{state}</Text>
           ) : null}
         </View>
-        <Text style={[styles.caption, { color: p.secondaryLabel, marginTop: -4 }]} numberOfLines={1}>
-          {card.account}
-        </Text>
-        <View style={{ gap: 2 }}>
-          {header(t("To"), draft.to)}
-          {header(t("Cc"), draft.cc)}
-          {header(t("Bcc"), draft.bcc)}
-        </View>
-        {draft.subject ? (
-          <Text style={[styles.draftSubject, { color: p.label }]} numberOfLines={2}>
-            {draft.subject}
-          </Text>
-        ) : null}
-        <Text style={[styles.reasonText, { color: p.label }]} numberOfLines={8}>
-          {draft.body}
-        </Text>
-        {(draft.attachments ?? []).map((file, index) => (
-          <View key={`${file.name}-${index}`} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            <Symbol name="paperclip" size={13} color={p.secondaryLabel} />
-            <Text style={[styles.reasonText, { color: p.label, flexShrink: 1 }]} numberOfLines={1}>
-              {file.name}
+        <View style={[styles.innerCard, { backgroundColor: p.innerCard }]}>
+          <View style={{ gap: 2 }}>
+            <Text style={[styles.draftHeader, { color: p.secondaryLabel }]} numberOfLines={1}>
+              {card.account}
             </Text>
-            {file.size > 0 ? <Text style={[styles.caption, { color: p.secondaryLabel }]}>{fileSize(file.size)}</Text> : null}
+            {header(t("To"), draft.to)}
+            {header(t("Cc"), draft.cc)}
+            {header(t("Bcc"), draft.bcc)}
           </View>
-        ))}
+          {draft.subject ? (
+            <Text style={[styles.draftSubject, { color: p.label }]} numberOfLines={2}>
+              {draft.subject}
+            </Text>
+          ) : null}
+          <Text style={[styles.draftBody, { color: p.label }]} numberOfLines={10}>
+            {draft.body}
+          </Text>
+          {(draft.attachments ?? []).map((file, index) => (
+            <View key={`${file.name}-${index}`} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Symbol name="paperclip" size={13} color={p.secondaryLabel} />
+              <Text style={[styles.reasonText, { color: p.label, flexShrink: 1 }]} numberOfLines={1}>
+                {file.name}
+              </Text>
+              {file.size > 0 ? <Text style={[styles.caption, { color: p.secondaryLabel }]}>{fileSize(file.size)}</Text> : null}
+            </View>
+          ))}
+        </View>
         {card.note ? <Text style={[styles.ruleNote, { color: card.state === "failed" ? p.red : accentColor("orange", p.dark) }]}>{card.note}</Text> : null}
         {pending ? (
           <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
-            {buttons.map(([label, onPress, tinted]) => (
-              <Pressable
-                key={label}
-                onPress={onPress}
-                disabled={busy || (tinted && !sendable(draft))}
-                style={({ pressed }) => [styles.permissionButton, { backgroundColor: pressed ? p.separator : p.fill, opacity: busy ? 0.5 : 1 }]}
-              >
-                <Text style={{ color: tinted ? p.tint : p.label, fontSize: 13, fontWeight: "600" }}>{label}</Text>
-              </Pressable>
+            {buttons.map(([label, onPress, tinted], index) => (
+              <CardButton key={label} label={label} primary={index === 0} disabled={busy || (tinted && !sendable(draft))} onPress={onPress} />
             ))}
           </View>
         ) : null}
@@ -789,7 +978,7 @@ export const CommandRow = memo(function CommandRow({
           <BotAvatar bot={row.bot} size={AVATAR} />
         </View>
       )}
-      <View style={[styles.permission, { backgroundColor: p.cell, borderColor: p.separator }]}>
+      <View style={[styles.permission, { backgroundColor: p.botBubble }]}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <Symbol name="terminal" size={16} color={p.tint} />
           <Text style={[styles.permissionTitle, { color: p.label, flex: 1 }]} numberOfLines={2}>
@@ -800,7 +989,7 @@ export const CommandRow = memo(function CommandRow({
               disabled={stopping}
               onPress={() => void stop()}
               hitSlop={6}
-              style={({ pressed }) => [styles.headerButton, { backgroundColor: pressed ? p.separator : p.fill, opacity: stopping ? 0.5 : 1 }]}
+              style={({ pressed }) => [styles.headerButton, { backgroundColor: p.innerCard, opacity: stopping ? 0.5 : pressed ? 0.7 : 1 }]}
               accessibilityRole="button"
             >
               <Text style={{ color: p.label, fontSize: 13, fontWeight: "600" }}>{t("Stop")}</Text>
@@ -809,7 +998,7 @@ export const CommandRow = memo(function CommandRow({
         </View>
         <Pressable
           onPress={() => router.push({ pathname: "/command/[id]", params: { id: row.message.id, chat: row.message.chat_id, title: t("{who}'s command", { who }) } })}
-          style={({ pressed }) => [styles.command, { backgroundColor: p.code, opacity: pressed ? 0.6 : 1 }]}
+          style={({ pressed }) => [styles.command, { backgroundColor: p.innerCard, opacity: pressed ? 0.6 : 1 }]}
           accessibilityRole="button"
           accessibilityLabel={t("Show the full command")}
         >
@@ -822,19 +1011,15 @@ export const CommandRow = memo(function CommandRow({
         {error ? <Text style={[styles.reasonText, { color: p.red }]}>{error}</Text> : null}
         {run.state === "asking" ? (
           <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
-            {choices.map(([label, decision]) => (
-              <Pressable key={decision} onPress={() => onDecide(row.message, decision)} style={({ pressed }) => [styles.permissionButton, { backgroundColor: pressed ? p.separator : p.fill }]}>
-                <Text style={{ color: decision === "deny" ? p.label : p.tint, fontSize: 13, fontWeight: "600" }}>{label}</Text>
-              </Pressable>
+            {choices.map(([label, decision], index) => (
+              <CardButton key={decision} label={label} primary={index === 0} onPress={() => onDecide(row.message, decision)} />
             ))}
           </View>
         ) : null}
         {run.state === "asking" && run.rule ? <Text style={[styles.ruleNote, { color: p.secondaryLabel }]}>{t("Always allow adds the rule “{rule}”.", { rule: run.rule })}</Text> : null}
         {run.state === "waiting" && takesInput ? (
           <View style={{ flexDirection: "row", marginTop: 4 }}>
-            <Pressable onPress={() => onAnswer(row.message)} style={({ pressed }) => [styles.permissionButton, { backgroundColor: pressed ? p.separator : p.fill }]} accessibilityRole="button">
-              <Text style={{ color: p.tint, fontSize: 13, fontWeight: "600" }}>{t("Answer")}</Text>
-            </Pressable>
+            <CardButton label={t("Answer")} primary onPress={() => onAnswer(row.message)} />
           </View>
         ) : null}
       </View>
@@ -972,7 +1157,7 @@ export const AgentRow = memo(function AgentRow({
           <BotAvatar bot={row.bot} size={AVATAR} />
         </View>
       )}
-      <View style={[styles.permission, { backgroundColor: p.cell, borderColor: p.separator }]}>
+      <View style={[styles.permission, { backgroundColor: p.botBubble }]}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <Symbol name="chevron.left.forwardslash.chevron.right" size={15} color={p.tint} />
           <Text style={[styles.permissionTitle, { color: p.label, flex: 1 }]} numberOfLines={2}>
@@ -983,7 +1168,7 @@ export const AgentRow = memo(function AgentRow({
               disabled={busy}
               onPress={() => void run(() => onStop(row.message))}
               hitSlop={6}
-              style={({ pressed }) => [styles.headerButton, { backgroundColor: pressed ? p.separator : p.fill, opacity: busy ? 0.5 : 1 }]}
+              style={({ pressed }) => [styles.headerButton, { backgroundColor: p.innerCard, opacity: busy ? 0.5 : pressed ? 0.7 : 1 }]}
               accessibilityRole="button"
             >
               <Text style={{ color: p.label, fontSize: 13, fontWeight: "600" }}>{t("Stop")}</Text>
@@ -1000,7 +1185,7 @@ export const AgentRow = memo(function AgentRow({
         {question?.kind === "command" && question.command ? (
           <Pressable
             onPress={() => router.push({ pathname: "/command/[id]", params: { id: row.message.id, chat: row.message.chat_id, title: t("{who}'s command", { who: name }) } })}
-            style={({ pressed }) => [styles.command, { backgroundColor: p.code, opacity: pressed ? 0.6 : 1 }]}
+            style={({ pressed }) => [styles.command, { backgroundColor: p.innerCard, opacity: pressed ? 0.6 : 1 }]}
             accessibilityRole="button"
             accessibilityLabel={t("Show the full command")}
           >
@@ -1014,10 +1199,8 @@ export const AgentRow = memo(function AgentRow({
         {error ? <Text style={[styles.reasonText, { color: p.red }]}>{error}</Text> : null}
         {question && (question.kind === "start" || question.kind === "command") ? (
           <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
-            {decisions.map(([label, decision]) => (
-              <Pressable key={decision} onPress={() => onDecide(row.message, decision)} style={({ pressed }) => [styles.permissionButton, { backgroundColor: pressed ? p.separator : p.fill }]}>
-                <Text style={{ color: decision === "deny" ? p.label : p.tint, fontSize: 13, fontWeight: "600" }}>{label}</Text>
-              </Pressable>
+            {decisions.map(([label, decision], index) => (
+              <CardButton key={decision} label={label} primary={index === 0} onPress={() => onDecide(row.message, decision)} />
             ))}
           </View>
         ) : null}
@@ -1028,10 +1211,10 @@ export const AgentRow = memo(function AgentRow({
                 key={`${index}-${choice}`}
                 disabled={busy}
                 onPress={() => void run(() => onChoose(row.message, index))}
-                style={({ pressed }) => [styles.choiceButton, { backgroundColor: pressed ? p.separator : p.fill, opacity: busy ? 0.5 : 1 }]}
+                style={({ pressed }) => [styles.choiceButton, { backgroundColor: p.innerCard, opacity: busy ? 0.5 : pressed ? 0.7 : 1 }]}
                 accessibilityRole="button"
               >
-                <Text style={{ color: p.tint, fontSize: 14, fontWeight: "600" }} numberOfLines={2}>
+                <Text style={{ color: p.label, fontSize: 14, fontWeight: "600" }} numberOfLines={2}>
                   {choice}
                 </Text>
               </Pressable>
@@ -1040,9 +1223,7 @@ export const AgentRow = memo(function AgentRow({
         ) : null}
         {question?.kind === "text" ? (
           <View style={{ flexDirection: "row", marginTop: 4 }}>
-            <Pressable onPress={() => onAnswer(row.message)} style={({ pressed }) => [styles.permissionButton, { backgroundColor: pressed ? p.separator : p.fill }]} accessibilityRole="button">
-              <Text style={{ color: p.tint, fontSize: 13, fontWeight: "600" }}>{t("Answer")}</Text>
-            </Pressable>
+            <CardButton label={t("Answer")} primary onPress={() => onAnswer(row.message)} />
           </View>
         ) : null}
         {question && (question.kind === "start" || question.kind === "command") && question.rule ? <Text style={[styles.ruleNote, { color: p.secondaryLabel }]}>{t("Always allow adds the rule “{rule}”.", { rule: question.rule })}</Text> : null}
@@ -1148,22 +1329,42 @@ const styles = StyleSheet.create({
   held: { opacity: 0.55 },
   sendNow: { alignSelf: "flex-end", marginTop: 4, marginRight: 6 },
   sendNowText: { fontSize: 13, fontWeight: "600" },
-  bubble: { borderRadius: 18, paddingHorizontal: 13, paddingVertical: 9, gap: 2 },
+  bubble: { borderRadius: 20, paddingHorizontal: 14, paddingVertical: 10, gap: 2 },
+  // The user's bubble is a capsule while it holds one line, as the reference's.
+  bubbleYou: { borderRadius: 22 },
+  actions: { flexDirection: "row", alignItems: "center", gap: 2, marginTop: 4, marginLeft: 2 },
+  actionsYou: { alignSelf: "flex-end", marginLeft: 0, marginRight: 2 },
+  action: { width: 30, height: 28, alignItems: "center", justifyContent: "center", borderRadius: 14 },
+  edited: { fontSize: Font.caption, marginRight: 4 },
   bubbleFooter: { flexDirection: "row", justifyContent: "flex-end", alignItems: "center" },
   centered: { alignItems: "center", paddingHorizontal: INSET },
   markerLine: { flexDirection: "row", alignItems: "center" },
   notice: { flexDirection: "row", alignItems: "flex-start", gap: 8, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, maxWidth: 360 },
   // The card takes what the row leaves beside the avatar column, up to `maxWidth`.
-  permission: { flex: 1, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12, paddingVertical: 10, gap: 6, maxWidth: 420 },
-  permissionTitle: { fontSize: 14, fontWeight: "600", flexShrink: 1 },
-  permissionButton: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8 },
+  // A card in the transcript, after the reference's: a gray panel as the bot's bubbles are, what it
+  // holds on white cards inside it, and its choices as equal buttons, the first in ink.
+  permission: { flex: 1, borderRadius: 20, padding: 14, gap: 8, maxWidth: 420 },
+  permissionTitle: { fontSize: 15, fontWeight: "600", flexShrink: 1 },
+  permissionButton: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10 },
+  cardButtons: { flexDirection: "row", gap: 8, marginTop: 4 },
+  questionText: { fontSize: Font.message, lineHeight: 22, fontWeight: "500" },
+  options: { paddingVertical: 0, paddingHorizontal: 0, gap: 0, overflow: "hidden" },
+  option: { flexDirection: "row", alignItems: "flex-start", gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
+  optionLabel: { fontSize: 15, fontWeight: "500", lineHeight: 20 },
+  otherInput: { flex: 1, fontSize: 15, paddingVertical: 0, minHeight: 20 },
+  recommended: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
+  recommendedText: { fontSize: 11, fontWeight: "600" },
+  cardButton: { flex: 1, minHeight: 40, borderRadius: 10, paddingHorizontal: 10, alignItems: "center", justifyContent: "center" },
+  cardButtonText: { fontSize: 15, fontWeight: "600" },
+  innerCard: { borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, gap: 6 },
   choiceButton: { paddingHorizontal: 12, paddingVertical: 9, borderRadius: 8 },
   agentTask: { fontSize: 14, lineHeight: 19, marginTop: 6 },
   agentDetail: { fontSize: 12, marginTop: 3 },
   draftHeader: { fontSize: 13, lineHeight: 18 },
-  draftSubject: { fontSize: 14, fontWeight: "600", lineHeight: 19 },
+  draftSubject: { fontSize: 15, fontWeight: "600", lineHeight: 20 },
+  draftBody: { fontSize: 15.5, lineHeight: 22 },
   headerButton: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 7 },
-  command: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7, marginTop: 2 },
+  command: { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, marginTop: 2 },
   commandText: { fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 12.5, lineHeight: 17 },
   output: { borderRadius: 8, marginTop: 2, overflow: "hidden" },
   // Six lines of `commandText`, then the block scrolls.

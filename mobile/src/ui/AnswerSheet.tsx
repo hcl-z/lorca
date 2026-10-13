@@ -7,7 +7,7 @@
 import { Host as ComposeHost, Icon as ComposeIcon, IconButton, ModalBottomSheet, OutlinedTextField, Text as ComposeText } from "@expo/ui/jetpack-compose";
 import { fillMaxWidth, padding as composePadding } from "@expo/ui/jetpack-compose/modifiers";
 import { BottomSheet, Button as SwiftButton, Group, HStack, Host as SwiftHost, Image as SwiftImage, SecureField, Text as SwiftText, TextField, VStack } from "@expo/ui/swift-ui";
-import { accessibilityLabel, autocorrectionDisabled, background, buttonBorderShape, buttonStyle, disabled, font, foregroundStyle, onSubmit, padding, presentationDragIndicator, shapes, submitLabel, textInputAutocapitalization } from "@expo/ui/swift-ui/modifiers";
+import { tint, accessibilityLabel, autocorrectionDisabled, background, buttonBorderShape, buttonStyle, disabled, font, foregroundStyle, onSubmit, padding, presentationDragIndicator, shapes, submitLabel, textInputAutocapitalization } from "@expo/ui/swift-ui/modifiers";
 import { useState } from "react";
 import { Platform, StyleSheet } from "react-native";
 import type { CommandRun } from "../core/model";
@@ -89,7 +89,7 @@ export function AnswerSheet({ run, prompt, onSend, onDismiss }: { run?: CommandR
               ) : (
                 <TextField autoFocus placeholder={placeholder} onTextChange={setText} modifiers={field} />
               )}
-              <SwiftButton onPress={() => void send()} modifiers={[buttonStyle("glassProminent"), buttonBorderShape("circle"), disabled(sending), accessibilityLabel(t("Send"))]}>
+              <SwiftButton onPress={() => void send()} modifiers={[buttonStyle("glassProminent"), buttonBorderShape("circle"), tint(p.ink), disabled(sending), accessibilityLabel(t("Send"))]}>
                 <SwiftImage systemName="arrow.up" />
               </SwiftButton>
             </HStack>
