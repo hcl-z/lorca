@@ -185,7 +185,7 @@ fn create_lead_bot(app: &Arc<App>) {
     let bot = crate::model::Bot {
         id: String::new(),
         name: LEAD_BOT_NAME.into(),
-        description: "Chief of staff. Plans the work and delegates each task to the right teammate, proposing a new one when none fits. Does hands-on work when necessary.".into(),
+        description: "Chief of staff. Routes each request to the teammate whose job it is and pulls their results together, proposing a new teammate when none fits. Does the work itself only when no teammate's job covers it.".into(),
         symbol_name: "sparkles".into(),
         accent: "indigo".into(),
         avatar: None,
@@ -193,7 +193,7 @@ fn create_lead_bot(app: &Arc<App>) {
         provider: "deepseek".into(),
         model: None,
         thinking: None,
-        legacy_instructions: String::new(),
+        legacy_instructions: String::new(), setting_up: false,
         workdir: None,
         permissions: None,
             created_at: 0.0,

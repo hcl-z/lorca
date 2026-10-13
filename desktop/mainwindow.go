@@ -1056,9 +1056,15 @@ func (m *mainWindow) shortcuts(c *ui.Context) {
 
 // MARK: - Actions
 
-// newBot makes a bot: every bot has a direct chat, so creating one lands in that chat right away.
+// newBot makes a "New Bot" and lands in its direct chat, where it works out its job, name, and
+// plugins with the user.
 func (m *mainWindow) newBot() {
-	m.presentNewBot(func(botID string) { m.open(store.DM(botID)) })
+	botID := store.CreateSettingUpBot()
+	if botID == "" {
+		beep()
+		return
+	}
+	m.open(store.DM(botID))
 }
 
 // newGroupChat makes a group chat and lands in it.

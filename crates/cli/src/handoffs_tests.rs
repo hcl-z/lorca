@@ -1056,3 +1056,178 @@ async fn resuming_a_stopped_delegated_turn_sends_the_next_attempt() {
     assert!(resume_stopped(&f.target, job).unwrap_err().contains("nothing to resume"));
     settle(&f.target).await;
 }
+
+/// A third bot, Writer, on the requesting Runner, which the specialist passes work on to.
+fn add_writer(f: &Fixture) -> Bot {
+    let writer = Bot { id: "writer".into(), name: "Writer".into(), ..f.chef.clone() };
+    let (writer, _) = f.source.create_bot_with_dm(writer, None).unwrap();
+    f.target.state.lock().unwrap().bots.push(writer.clone());
+    writer
+}
+
+/// The specialist's delegated turn passes the drafting on to Writer.
+fn pass_on(f: &Fixture, request: &HandoffRequest, writer: &Bot) -> HandoffRequest {
+    let value = delegate(
+        &f.target,
+        &f.specialist.id,
+        &request.target_chat_id,
+        request.hops,
+        &request.job_id,
+        DelegateInput { bot_id: writer.id.clone(), message: "Draft the report".into(), ..Default::default() },
+    )
+    .unwrap();
+    get(&f.target, value["handoff_id"].as_str().unwrap()).unwrap().current().request.clone()
+}
+
+fn said_by(app: &App, bot: &Bot, chat_id: &str, text: &str, at: f64) -> Message {
+    let mut message = Message::new(chat_id, Author::Bot { bot_id: bot.id.clone() }, Body::text(text));
+    message.created_at = at;
+    app.upsert_message(message.clone(), true);
+    message
+}
+
+/// Writer's report, as it reaches the specialist's Runner, without the turn it starts.
+fn writer_reports(f: &Fixture, passed: &HandoffRequest, status: HandoffStatus) {
+    let report = HandoffReport { status, summary: "Drafted it".into(), result_links: Vec::new(), evidence: Vec::new(), created_at: now_secs(), started_after: None };
+    let update = HandoffUpdate::Report { request: passed.clone(), report };
+    let record = merge(&f.target, &update).unwrap();
+    save(&f.target, &record, None, Vec::new()).unwrap();
+}
+
+/// Work the recipient passes on keeps the requester's handoff open: the requester hears back
+/// once, after the recipient has the teammate's result and has finished from it.
+#[tokio::test]
+async fn passed_on_work_reports_once_the_recipient_finishes_from_it() {
+    let f = fixture(true);
+    let writer = add_writer(&f);
+    let request = delegate_work(&f);
+    let job = request_job(&request);
+    stage_job(&f.target, &job).unwrap();
+    assert!(begin_job(&f.target, &job).unwrap());
+    let passed = pass_on(&f, &request, &writer);
+    said_by(&f.target, &f.specialist, &request.target_chat_id, "Asked Writer for the draft.", now_secs() + 1.0);
+    finish_job(&f.target, &job, TurnOutcome::Sent, false).unwrap();
+
+    let waiting = get(&f.target, &request.handoff_id).unwrap();
+    let report = waiting.current().outcome().unwrap();
+    assert_eq!((report.status, report.summary.as_str()), (HandoffStatus::Running, "Waiting on Writer"));
+    assert_eq!(waiting.current().waiting_on, vec![passed.handoff_id.clone()]);
+    // The specialist's continuation answers for the work it owes.
+    assert_eq!(bound_request(&f.target, &result_job(&passed)).map(|r| r.job_id), Some(request.job_id.clone()));
+
+    // Writer's result is in, but the turn that continues from it has yet to run.
+    writer_reports(&f, &passed, HandoffStatus::Completed);
+    assert_eq!(outstanding_downstream(&f.target, &request.job_id), vec![passed.handoff_id.clone()]);
+    said_by(&f.target, &f.specialist, &request.target_chat_id, "Here is the annotated report.", now_secs() + 2.0);
+    finish_job(&f.target, &result_job(&passed), TurnOutcome::Sent, false).unwrap();
+
+    let report = get(&f.target, &request.handoff_id).unwrap().current().outcome().unwrap().clone();
+    assert_eq!((report.status, report.summary.as_str()), (HandoffStatus::Completed, "Here is the annotated report."));
+    transfer(&f.target, &f.source, "handoff");
+    settle(&f.source).await;
+    assert_eq!(get(&f.source, &request.handoff_id).unwrap().current().outcome().unwrap().summary, "Here is the annotated report.");
+}
+
+/// A restart leaves waiting work waiting, and reports it when what it waited on settled with
+/// no continuation left to run.
+#[tokio::test]
+async fn a_restart_keeps_waiting_work_and_settles_it_once_nothing_is_left() {
+    let f = fixture(true);
+    let writer = add_writer(&f);
+    let request = delegate_work(&f);
+    let job = request_job(&request);
+    stage_job(&f.target, &job).unwrap();
+    begin_job(&f.target, &job).unwrap();
+    let passed = pass_on(&f, &request, &writer);
+    said_by(&f.target, &f.specialist, &request.target_chat_id, "Writer is drafting it.", now_secs() + 1.0);
+    finish_job(&f.target, &job, TurnOutcome::Sent, false).unwrap();
+
+    resume(&f.target).unwrap();
+    let report = get(&f.target, &request.handoff_id).unwrap().current().outcome().unwrap().clone();
+    assert_eq!(report.status, HandoffStatus::Running, "{}", report.summary);
+
+    // Writer reported and the continuation was cut off by the restart.
+    writer_reports(&f, &passed, HandoffStatus::Completed);
+    {
+        let mut record = get(&f.target, &passed.handoff_id).unwrap();
+        record.attempts.last_mut().unwrap().result_delivery = ResultDelivery::Started;
+        save(&f.target, &record, None, Vec::new()).unwrap();
+    }
+    resume(&f.target).unwrap();
+    let report = get(&f.target, &request.handoff_id).unwrap().current().outcome().unwrap().clone();
+    assert_eq!((report.status, report.summary.as_str()), (HandoffStatus::Completed, "Writer is drafting it."));
+}
+
+/// Stopping the requester's work stops what the recipient passed on too.
+#[tokio::test]
+async fn cancelling_waiting_work_stops_what_it_passed_on() {
+    let f = fixture(true);
+    let writer = add_writer(&f);
+    let request = delegate_work(&f);
+    let job = request_job(&request);
+    stage_job(&f.target, &job).unwrap();
+    begin_job(&f.target, &job).unwrap();
+    let passed = pass_on(&f, &request, &writer);
+    finish_job(&f.target, &job, TurnOutcome::Sent, false).unwrap();
+    cancel(&f.source, &f.chef.id, &request.handoff_id, &request.job_id, "Not needed").unwrap();
+    let record = get(&f.source, &request.handoff_id).unwrap();
+    apply_update(&f.target, HandoffUpdate::Cancel { request: request.clone(), report: record.current().cancellation.clone().unwrap() }).unwrap();
+    let down = get(&f.target, &passed.handoff_id).unwrap();
+    assert_eq!(down.current().outcome().unwrap().status, HandoffStatus::Cancelled);
+}
+
+/// A turn that said nothing but published an output completed with it.
+#[tokio::test]
+async fn a_turn_that_only_published_an_output_completes() {
+    let f = fixture(true);
+    let request = delegate_work(&f);
+    let job = request_job(&request);
+    stage_job(&f.target, &job).unwrap();
+    begin_job(&f.target, &job).unwrap();
+    let mut published = Message::new(&request.target_chat_id, Author::Bot { bot_id: f.specialist.id.clone() }, Body::text(""));
+    published.output = Some(crate::outputs::Output {
+        id: "output-report".into(),
+        name: "report.pdf".into(),
+        mime: "application/pdf".into(),
+        bot_id: f.specialist.id.clone(),
+        chat_id: request.target_chat_id.clone(),
+        task_id: None,
+        version: 1,
+        previous_message_id: None,
+        url: None,
+        evidence: None,
+    });
+    f.target.upsert_message(published, true);
+    finish_job(&f.target, &job, TurnOutcome::Pass, false).unwrap();
+    let report = get(&f.target, &request.handoff_id).unwrap().current().outcome().unwrap().clone();
+    assert_eq!((report.status, report.summary.as_str()), (HandoffStatus::Completed, "Published report.pdf."));
+}
+
+/// A failure waits for the requesting bot's continuation before it becomes an attention item,
+/// and one the continuation followed up never does.
+#[tokio::test]
+async fn a_failure_reaches_attention_only_when_the_continuation_leaves_it_stuck() {
+    let f = fixture(true);
+    for follow in [false, true] {
+        let request = delegate_work(&f);
+        let failed = HandoffReport { status: HandoffStatus::Failed, summary: "Couldn't finish: the disk is full".into(), result_links: vec![request_link(&request)], evidence: Vec::new(), created_at: now_secs(), started_after: None };
+        {
+            let update = HandoffUpdate::Report { request: request.clone(), report: failed };
+            let mut record = merge(&f.source, &update).unwrap();
+            // The continuation is running as the report is routed.
+            record.attempts.last_mut().unwrap().result_delivery = ResultDelivery::Started;
+            save(&f.source, &record, None, Vec::new()).unwrap();
+        }
+        route_report(&f.source, &request.handoff_id).unwrap();
+        let blocked = |app: &App| crate::attention::view(app).unwrap().items.into_iter().filter(|i| i.summary.contains("disk is full")).count();
+        assert_eq!(blocked(&f.source), 0);
+        if follow {
+            follow_up(&f.source, &f.chef.id, &request.handoff_id, &request.job_id, "Try again after cleanup", None).unwrap();
+        }
+        finish_job(&f.source, &result_job(&request), TurnOutcome::Sent, false).unwrap();
+        assert_eq!(blocked(&f.source), if follow { 0 } else { 1 }, "follow up: {follow}");
+        if !follow {
+            cancel(&f.source, &f.chef.id, &request.handoff_id, &request.job_id, "Moving on").unwrap();
+        }
+    }
+}

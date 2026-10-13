@@ -403,7 +403,7 @@ async fn ask_decision_model(app: &App, decider: &Decider, state: &str, chinese: 
 }
 
 /// Whether `text` is Chinese: it has Han characters and none of the kana Japanese has.
-fn is_chinese(text: &str) -> bool {
+pub(crate) fn is_chinese(text: &str) -> bool {
     text.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)) && !text.chars().any(|c| ('\u{3040}'..='\u{30ff}').contains(&c))
 }
 
@@ -717,7 +717,7 @@ mod tests {
         });
         let bot = |id: &str, name: &str| Bot {
             id: id.into(), name: name.into(), description: String::new(), symbol_name: String::new(), accent: String::new(), avatar: None,
-            runner_id: "runner".into(), provider: "deepseek".into(), model: None, thinking: None, legacy_instructions: String::new(), workdir: None, permissions: None, created_at: 0.0,
+            runner_id: "runner".into(), provider: "deepseek".into(), model: None, thinking: None, legacy_instructions: String::new(), setting_up: false, workdir: None, permissions: None, created_at: 0.0,
         };
         let (devops, dm) = app.create_bot_with_dm(bot("bot-devops", "DevOps"), None).unwrap();
         app.create_bot_with_dm(bot("bot-chef", "Chef"), None).unwrap();

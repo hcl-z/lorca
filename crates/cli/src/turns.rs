@@ -203,8 +203,10 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
     let mut tools: Vec<Arc<dyn Tool>> = vec![
         Arc::new(ListTeammates { app: app.clone(), chat_id: chat.meta.id.clone() }),
         Arc::new(MessageBot { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone(), hops: job.hops, task_id: job.task_id.clone(), origin: origin.clone() }),
-        Arc::new(Handoffs { app: app.clone(), bot_id: bot.id.clone(), request: match &job.handoff { Some(crate::handoffs::HandoffJob::Request { request }) => Some(request.clone()), _ => None }, origin }),
-        Arc::new(CreateBot { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone() }),
+        Arc::new(Handoffs { app: app.clone(), bot_id: bot.id.clone(), request: crate::handoffs::bound_request(app, job), origin }),
+        Arc::new(CreateBot { app: app.clone(), bot: bot.clone() }),
+        Arc::new(FinishSetup { app: app.clone(), bot: bot.clone() }),
+        Arc::new(RecommendPlugins { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone() }),
         Arc::new(EditBot { app: app.clone(), bot: bot.clone() }),
         Arc::new(Routines { app: app.clone(), bot: bot.clone() }),
         Arc::new(crate::channels::ChannelsTool { app: app.clone(), bot: bot.clone(), user_started: matches!(job.kind.as_str(), "turn" | "room_turn") }),
@@ -273,6 +275,13 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
     let options = CodemodeOptions { mcp_types: !plugin_briefs.is_empty(), timeout, guidance: Some(SCRIPT_GUIDANCE.into()), ..CodemodeOptions::default() };
     // Codemode itself also rechecks after any asynchronous review; its children have guards.
     tools.extend(crate::permissions::guarded::tools(app, &bot, &chat.meta.id, vec![Arc::new(CodemodeTool::new(plugin_tools.clone(), options).with_store(script_store).with_functions(functions))]));
+    if bot.setting_up {
+        // A new bot works out its job with the user, settles its profile, and lists its plugins
+        // before it does anything else.
+        tools.retain(|tool| SETUP_TOOLS.contains(&tool.name()));
+    } else {
+        tools.retain(|tool| tool.name() != "finish_setup");
+    }
 
     // A transcript that no longer fits, or that has outgrown what a turn rebuilds, is
     // summarized before the turn starts, from the chat, so the model never sees the overflow
@@ -347,7 +356,7 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
     };
     let notes = TurnNotes {
         recent_work: recent_work_brief(app, &bot, &chat.meta.id, now_secs() as i64),
-        cue: if job.kind == "room_turn" { Some(room_turn_cue(app, &chat, &bot, job)) } else { event.as_ref().map(|e| e.data.clone()).or(command_end.clone()).or(check_found).map(|cue| without_secrets(app, cue)) },
+        cue: if job.kind == "room_turn" { Some(room_turn_cue(app, &chat, &bot, job)) } else if job.kind == SETUP_JOB { Some("[You were just created. Start setting yourself up with the user now.]".to_string()) } else { event.as_ref().map(|e| e.data.clone()).or(command_end.clone()).or(check_found).map(|cue| without_secrets(app, cue)) },
         setup: job.setup.as_ref().map(|setup| setup_cue(app, setup)),
     };
     let (mut messages, mut cache_points) = with_turn_notes(messages, &notes);
@@ -410,6 +419,7 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         app.register_step_interrupt(&chat.meta.id, &job.id, interrupt.clone());
     }
     let mut failed = false;
+    let mut loop_error = None;
     let mut recovered = false;
     loop {
         let context = AgentContext {
@@ -421,6 +431,7 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         if let Err(error) = run_agent_loop_continue(context, &config, &tx, cancel.clone()).await {
             tracing::error!(%error, "agent loop");
             failed = true;
+            loop_error = Some(error.to_string());
         }
         // The model said the context no longer fits: summarize the chat and try the turn once
         // more from the shorter transcript.
@@ -468,6 +479,11 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         if let Some(text) = left_running_notice(&state.left_in_background()) {
             app.notice(&chat.meta.id, text);
         }
+    }
+    // A loop that failed outside a model reply leaves no failed message to say why, so a
+    // notice does; a delegated turn's report reads it from there.
+    if let Some(error) = loop_error.filter(|_| failed && !state.failed && !cancel.is_cancelled()) {
+        app.notice(&chat.meta.id, format!("{} couldn't finish: {error}", bot.name));
     }
     state.finish();
     // A structured report/brief has its own alert. Other text in the reporting turn stays
@@ -1719,6 +1735,9 @@ fn first_line(text: &str, max: usize) -> Option<String> {
 // MARK: - Context
 
 fn system_prompt(app: &Arc<App>, chat: &Chat, bot: &Bot, job: &Job, store: &MemoryStore, routine: Option<&Routine>, plugins: &[crate::plugins::mcp::PluginBrief]) -> String {
+    if bot.setting_up {
+        return setup_prompt(app, bot, chat, job);
+    }
     let members: Vec<Bot> = chat.meta.bot_ids.iter().filter_map(|id| app.bot(id)).collect();
     let runner = app.device(&bot.runner_id);
     let workdir = bot.working_directory(&app.config.home);
@@ -1752,8 +1771,15 @@ fn system_prompt(app: &Arc<App>, chat: &Chat, bot: &Bot, job: &Job, store: &Memo
              - When a message names other bots with @ and not you, PASS.\n\
              - One message per turn, short, addressed to the group. Do not narrate or repeat what others said.\n\
              - Teammates in this chat read it: talk to them here. message_bot is only for bots outside this chat.\n\
-             - The owner holds the work; when it is unclear who should act, leave it to them.\n",
+             - The owner holds the work; when it is unclear who should act, leave it to them.\n\
+             - When the owner assigns you a part with @, do that part and report it here.\n",
         );
+        if chat.meta.owner_bot_id.as_deref() == Some(bot.id.as_str()) && members.len() > 1 {
+            prompt.push_str(
+                "\nYou are the owner. Split the work and assign each part with @Name to the member whose job it is, one \
+                 member per part; do only the part that is your own job, then pull the results together for the user.\n",
+            );
+        }
         if job.is_winding_down {
             prompt.push_str("\nThis exchange is wrapping up: PASS unless something essential is missing.\n");
         }
@@ -1762,8 +1788,7 @@ fn system_prompt(app: &Arc<App>, chat: &Chat, bot: &Bot, job: &Job, store: &Memo
     } else {
         prompt.push_str(
             "\nThis is your direct chat with the user. You always answer here. When the user mentions another bot with @, \
-             or a task belongs to a teammate, call message_bot: it delivers your message to that bot, who answers the user \
-             in their own chat. Include expected_output and acceptance_criteria; results report back here automatically. Then tell the user briefly what you passed on.\n",
+             call message_bot: it delivers your message to that bot, who answers the user in their own chat.\n",
         );
     }
 
@@ -1792,12 +1817,7 @@ fn system_prompt(app: &Arc<App>, chat: &Chat, bot: &Bot, job: &Job, store: &Memo
         }
     }
 
-    prompt.push_str(&format!(
-        "\nTeam: call list_teammates to see every bot and its id. If the right teammate does not exist yet, propose one and \
-         create it with create_bot once the user agrees; keep every bot to one clear job. When the user wants a bot, \
-         including you (your id is {}), to behave differently, change its profile with edit_bot.\n",
-        bot.id
-    ));
+    prompt.push_str(&team_prompt(app, bot, chat));
     prompt.push_str(&crate::workflows::context_for_turn(app, &bot.id, job));
     prompt.push_str(&crate::handoffs::prompt(app, job));
     prompt.push_str(&routines_prompt(app, bot));
@@ -1870,6 +1890,62 @@ fn system_prompt(app: &Arc<App>, chat: &Chat, bot: &Bot, job: &Job, store: &Memo
     if let Some(runner) = runner {
         prompt.push_str(&format!("\nYou run on the Runner \"{}\" ({}).", runner.name, runner.os_version));
     }
+    prompt
+}
+
+/// Most teammates the system prompt names; list_teammates has the rest.
+const TEAM_PROMPT_BOTS: usize = 20;
+
+/// The team part of the system prompt: every other bot with its id, its job, and the plugins
+/// its Access is limited to, then how to route work to them. Online state stays in
+/// list_teammates, since it changes far more often than the roster and would cost the chat its
+/// prompt cache.
+fn team_prompt(app: &App, bot: &Bot, chat: &Chat) -> String {
+    let bots = app.state.lock().unwrap().bots.clone();
+    let others: Vec<&Bot> = bots.iter().filter(|b| b.id != bot.id && !(chat.meta.is_group() && chat.meta.bot_ids.contains(&b.id))).collect();
+    let mut prompt = String::from("\nTeam: ");
+    if others.is_empty() {
+        prompt.push_str(if chat.meta.is_group() { "no bots outside this chat yet.\n" } else { "you have no teammates yet.\n" });
+    } else {
+        prompt.push_str(if chat.meta.is_group() { "the bots outside this chat, by id:\n" } else { "your teammates, by id:\n" });
+        for other in others.iter().take(TEAM_PROMPT_BOTS) {
+            let host = app.device(&other.runner_id).map(|d| d.name).unwrap_or_else(|| "unassigned".into());
+            let mut line = format!("- {} (id {})", other.name, other.id);
+            if other.setting_up {
+                line.push_str(": still setting up its job with the user; hand it nothing yet");
+            } else if let Some(description) = first_line(&other.description, 160) {
+                line.push_str(&format!(": {description}"));
+            }
+            if let Some(connections) = other.permissions.as_ref().and_then(|p| p.connections.as_ref()) {
+                let names: Vec<String> = connections
+                    .iter()
+                    .filter(|(_, grant)| !grant.capabilities.is_empty())
+                    .map(|(id, _)| app.plugins.lock().unwrap().status(id).map(|s| s.name).unwrap_or_else(|| id.clone()))
+                    .collect();
+                line.push_str(&format!(" · plugins: {}", if names.is_empty() { "none".to_string() } else { names.join(", ") }));
+            }
+            prompt.push_str(&format!("{line} · runs on {host}\n"));
+        }
+        if others.len() > TEAM_PROMPT_BOTS {
+            prompt.push_str(&format!("- and {} more: list_teammates lists every bot\n", others.len() - TEAM_PROMPT_BOTS));
+        }
+        prompt.push_str(
+            "Route work before you start it. A part that falls in a teammate's job goes to them with message_bot, even when \
+             you could do it yourself; split a request that spans several jobs and hand each part to one teammate, with \
+             context, expected_output, and acceptance_criteria. Do the work yourself only when it is your own job, when no \
+             teammate's job covers it, or when a line from what you already know answers it. Tell the user in one line who \
+             took which part. Results report back here on their own and start your next turn: check them against what you \
+             asked for, then answer the user. Work a teammate handed to you is yours; pass on only a part that is plainly \
+             another teammate's job. list_teammates also says whose Runner is online and the model each runs.\n",
+        );
+    }
+    prompt.push_str(&format!(
+        "When the user asks for a bot, call create_bot at once with what they said as brief, and ask them nothing about it: \
+         the new bot works out its job, name, and plugins with them in its own chat. When the right teammate for a request \
+         does not exist yet, offer to create one. Keep every bot to one clear job. When the user wants a bot, including you (your id is {}), to behave differently, change its \
+         profile with edit_bot.\n",
+        bot.id
+    ));
     prompt
 }
 
@@ -2763,7 +2839,6 @@ fn model_name(offered: &[OfferedModel], model: Option<&str>) -> String {
 
 struct CreateBot {
     app: Arc<App>,
-    chat_id: String,
     bot: Bot,
 }
 
@@ -2773,20 +2848,145 @@ impl Tool for CreateBot {
         "create_bot"
     }
     fn description(&self) -> &str {
-        "Create a new teammate bot on your Runner with one clear job. In a group chat the new bot joins it right away; \
-         in a direct chat it gets its own direct chat and can be added to a group later. Propose the team first and create \
-         bots only once the user agrees."
+        "Create a new teammate bot on your Runner. It starts as \"New Bot\" in its own direct chat and sets itself up there \
+         with the user: it works out its job with them, settles its name and description, and lists the plugins it needs. \
+         When the user asks for a bot, call this at once, without asking about its job, name, or plugins, and pass what the \
+         user said they want as brief. Do nothing else for it afterwards."
+    }
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "brief": { "type": "string", "description": "What the user said they want this bot for, in their words; the new bot starts from it" },
+                "provider": { "type": "string", "enum": self.app.credentials.lock().unwrap().kinds(), "description": "Defaults to your own provider" },
+                "model": { "type": "string", "description": "A model id the provider offers. Defaults to the provider's default model" },
+                "thinking": { "type": "string", "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"], "description": "How much the model thinks, a level the model takes. Defaults to the model's default" },
+                "workdir": { "type": "string", "description": "Working directory for its tools. Defaults to a private workspace under the CLI home; give it your own path to share files" }
+            },
+            "additionalProperties": false
+        })
+    }
+    fn execution_mode(&self) -> Option<ToolExecutionMode> {
+        Some(ToolExecutionMode::Sequential)
+    }
+    async fn execute(&self, _id: &str, args: Value, _cancel: CancellationToken, _on_update: ToolUpdateFn) -> Result<ToolResult, ToolError> {
+        if args.get("permissions").is_some() { return Err("Only the user can change bot access in its profile.".into()); }
+        let provider = args["provider"].as_str().map(str::to_string).unwrap_or_else(|| self.bot.provider.clone());
+        check_provider(&self.app, &provider)?;
+        let field = |key: &str| args[key].as_str().map(str::trim).filter(|v| !v.is_empty());
+        let (model, thinking) = (field("model"), field("thinking"));
+        let runs = Runs { provider, model: None, thinking: None }.change(&self.app, None, model, thinking)?;
+        let runs_with = (args["provider"].is_string() || model.is_some() || thinking.is_some()).then(|| runs.describe(&self.app));
+        let permissions = self.app.bot(&self.bot.id).ok_or("The calling bot is gone")?.permissions;
+        let bot = Bot {
+            id: String::new(),
+            name: crate::model::NEW_BOT_NAME.into(),
+            description: String::new(),
+            symbol_name: "sparkles".into(),
+            accent: "indigo".into(),
+            avatar: None,
+            runner_id: self.bot.runner_id.clone(),
+            provider: runs.provider,
+            model: runs.model,
+            thinking: runs.thinking,
+            legacy_instructions: String::new(), setting_up: true,
+            workdir: args["workdir"].as_str().map(|w| w.trim().to_string()).filter(|w| !w.is_empty()),
+            permissions,
+            created_at: 0.0,
+        };
+        let (created, dm) = self.app.create_bot_with_dm(bot, None).map_err(|e| ToolError(e.to_string()))?;
+        crate::runtime::start_setup(&self.app, &created, &dm.meta.id, Some(&self.bot), field("brief"));
+        let runner = self.app.device(&created.runner_id).map(|d| d.name).unwrap_or_else(|| "this Runner".into());
+        let mut text = format!(
+            "Created {} (id {}) on {runner}. It is talking with the user in its own chat now to work out its job, its name and \
+             description, and the plugins it needs. Tell the user in one line to open that chat. Do not hand it work or set it up \
+             yourself.",
+            created.name, created.id
+        );
+        if let Some(runs) = runs_with {
+            text.push_str(&format!(" It runs {runs}."));
+        }
+        Ok(ToolResult::text(text).with_details(json!({ "summary": format!("Created {}", created.name), "bot_id": created.id })))
+    }
+}
+
+/// The tools a bot has while it sets itself up with the user.
+const SETUP_TOOLS: [&str; 5] = ["ask_user", "finish_setup", "search_plugins", "recommend_plugins", "memory_update"];
+
+/// The system prompt of a bot still setting itself up (`Bot::setting_up`): how to work out its
+/// job with the user, settle its profile, and list its plugins.
+fn setup_prompt(app: &App, bot: &Bot, chat: &Chat, job: &Job) -> String {
+    let installed: Vec<String> = app
+        .plugins
+        .lock()
+        .unwrap()
+        .statuses()
+        .into_iter()
+        .filter(|status| bot.permissions.as_ref().is_none_or(|p| p.allows_connection(&status.id)))
+        .map(|status| format!("{} ({})", status.name, status.state))
+        .collect();
+    let language = if setup_speaks_chinese(app, chat) { "Simplified Chinese" } else { "English" };
+    let mut prompt = format!(
+        "You are a new bot in Lorca, just created, with the placeholder name \"{}\" and no job yet (your id is {}). This is your \
+         direct chat with the user. Before you do any work, set yourself up with them, in this order:\n\
+         1. Work out your job. Ask one short question at a time, using ask_user when there are a few likely answers, until you \
+         know what you do, for whom, with which services, accounts, or files, how often, and what you must never do without \
+         asking. Stop asking once you know enough; do not do the job yet.\n\
+         2. Propose a name (one or two words) and a description: your job and how you work, in the user's language, a few \
+         sentences. Ask the user to confirm or change them.\n\
+         3. Once they confirm, call finish_setup with the name and description.\n\
+         4. Then find the plugins your job needs: search_plugins with a few words from your job, in English and in the user's \
+         language, then recommend_plugins once with the ones that plainly fit, usually one to three. It lists them in this \
+         chat with Install and Sign in cards the user answers whenever they like. Tell the user which cards to tap, and that \
+         you are ready.\n\
+         Plugins your Runner has that you may use already: {}.\n\
+         Talk with the user in the language they write in; until they write, use {language}. Keep every message short.\n",
+        bot.name,
+        bot.id,
+        if installed.is_empty() { "none".to_string() } else { installed.join(", ") },
+    );
+    if job.kind == SETUP_JOB {
+        prompt.push_str("This is your first turn: greet the user in one sentence as their new bot, then ask your first question.\n");
+    }
+    prompt.push_str(&memory_prompt(&MemoryStore::for_bot(&app.config.home, bot)));
+    prompt
+}
+
+/// Whether a bot setting up starts in Chinese: the brief it was made with, else the user's
+/// latest words anywhere on this Device.
+fn setup_speaks_chinese(app: &App, chat: &Chat) -> bool {
+    let brief = app.message(&chat.meta.id, &format!("setup-{}", chat.meta.bot_ids.first().cloned().unwrap_or_default())).and_then(|m| match m.body {
+        Body::Handoff { reason, .. } => Some(reason),
+        _ => None,
+    });
+    let words = brief.or_else(|| app.store.latest_user_text().ok().flatten()).unwrap_or_default();
+    crate::plugins::review::is_chinese(&words)
+}
+
+/// The first turn of a bot that sets itself up, started by its `setup-<bot id>` marker.
+pub const SETUP_JOB: &str = crate::runtime::SETUP_JOB;
+
+/// Gives a bot setting itself up its name and description, once the user has confirmed them,
+/// and ends its setup.
+struct FinishSetup {
+    app: Arc<App>,
+    bot: Bot,
+}
+
+#[async_trait]
+impl Tool for FinishSetup {
+    fn name(&self) -> &str {
+        "finish_setup"
+    }
+    fn description(&self) -> &str {
+        "Save the name and description the user confirmed for you, and end your setup. Then find and recommend your plugins."
     }
     fn parameters(&self) -> Value {
         json!({
             "type": "object",
             "properties": {
                 "name": { "type": "string", "description": "Short name, one or two words" },
-                "description": { "type": "string", "description": "What it does and how it should work: scope, standards, tone, constraints, and what to ask before acting" },
-                "provider": { "type": "string", "enum": self.app.credentials.lock().unwrap().kinds(), "description": "Defaults to your own provider" },
-                "model": { "type": "string", "description": "A model id the provider offers. Defaults to the provider's default model" },
-                "thinking": { "type": "string", "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"], "description": "How much the model thinks, a level the model takes. Defaults to the model's default" },
-                "workdir": { "type": "string", "description": "Working directory for its tools. Defaults to a private workspace under the CLI home; give it your own path to share files" }
+                "description": { "type": "string", "description": "Your job and how you work: scope, standards, tone, constraints, and what to ask before acting, in the user's language" }
             },
             "required": ["name", "description"],
             "additionalProperties": false
@@ -2797,7 +2997,6 @@ impl Tool for CreateBot {
     }
     async fn execute(&self, _id: &str, args: Value, _cancel: CancellationToken, _on_update: ToolUpdateFn) -> Result<ToolResult, ToolError> {
         let name = args["name"].as_str().unwrap_or("").trim().trim_start_matches('@').to_string();
-        if args.get("permissions").is_some() { return Err("Only the user can change bot access in its profile.".into()); }
         let description = args["description"].as_str().unwrap_or("").trim().to_string();
         if name.is_empty() || description.is_empty() {
             return Err("name and description are required".into());
@@ -2805,64 +3004,214 @@ impl Tool for CreateBot {
         if name.chars().count() > 24 {
             return Err("Keep the name under 24 characters".into());
         }
-        if self.app.state.lock().unwrap().bots.iter().any(|b| b.name.eq_ignore_ascii_case(&name)) {
-            return Err(ToolError(format!("A bot named {name} already exists. Pick another name or use message_bot.")));
+        if name.eq_ignore_ascii_case(crate::model::NEW_BOT_NAME) {
+            return Err("Pick a name for your job with the user, not the placeholder.".into());
         }
-        let provider = args["provider"].as_str().map(str::to_string).unwrap_or_else(|| self.bot.provider.clone());
-        check_provider(&self.app, &provider)?;
-        let field = |key: &str| args[key].as_str().map(str::trim).filter(|v| !v.is_empty());
-        let (model, thinking) = (field("model"), field("thinking"));
-        let runs = Runs { provider, model: None, thinking: None }.change(&self.app, None, model, thinking)?;
-        let runs_with = (args["provider"].is_string() || model.is_some() || thinking.is_some()).then(|| runs.describe(&self.app));
+        if self.app.state.lock().unwrap().bots.iter().any(|b| b.id != self.bot.id && b.name.eq_ignore_ascii_case(&name)) {
+            return Err(ToolError(format!("A bot named {name} already exists. Propose another name to the user.")));
+        }
+        if !self.app.bot(&self.bot.id).is_some_and(|b| b.setting_up) {
+            return Err("Your setup is finished already; the user changes your profile in your chat's details.".into());
+        }
         let (symbol_name, accent) = look_for(&name);
-        let bot = Bot {
-            id: String::new(),
-            name: name.clone(),
-            description,
-            symbol_name,
-            accent,
-            avatar: None,
-            runner_id: self.bot.runner_id.clone(),
-            provider: runs.provider,
-            model: runs.model,
-            thinking: runs.thinking,
-            legacy_instructions: String::new(),
-            workdir: args["workdir"].as_str().map(|w| w.trim().to_string()).filter(|w| !w.is_empty()),
-            permissions: self.app.bot(&self.bot.id).ok_or("The calling bot is gone")?.permissions,
-            created_at: 0.0,
-        };
-        let (created, _dm) = self.app.create_bot_with_dm(bot, None).map_err(|e| ToolError(e.to_string()))?;
-
-        let mut joined_here = false;
-        if let Some(chat) = self.app.chat(&self.chat_id) {
-            if chat.meta.is_group() && chat.meta.bot_ids.len() < MAX_GROUP_BOTS {
-                let id = created.id.clone();
-                self.app
-                    .update_chat_meta(&self.chat_id, |meta| {
-                        if !meta.bot_ids.contains(&id) {
-                            meta.bot_ids.push(id.clone());
-                        }
-                    })
-                    .map_err(|e| ToolError(e.to_string()))?;
-                self.app.notice(&self.chat_id, format!("{} created {} and added them to the chat.", self.bot.name, created.name));
-                joined_here = true;
-            }
-        }
-
-        let runner = self.app.device(&created.runner_id).map(|d| d.name).unwrap_or_else(|| "this Runner".into());
-        let mut text = if joined_here {
-            format!("Created {} (id {}) on {runner}. They are in this chat now and take turns after you.", created.name, created.id)
-        } else {
-            format!(
-                "Created {} (id {}) on {runner} with their own direct chat. To work with them together, the user can add them to a group chat.",
-                created.name, created.id
-            )
-        };
-        if let Some(runs) = runs_with {
-            text.push_str(&format!(" They run {runs}."));
-        }
-        Ok(ToolResult::text(text).with_details(json!({ "summary": format!("Created {}", created.name), "bot_id": created.id })))
+        self.app
+            .update_bot(&self.bot.id, |bot| {
+                bot.name = name.clone();
+                bot.description = description.clone();
+                bot.symbol_name = symbol_name.clone();
+                bot.accent = accent.clone();
+                bot.setting_up = false;
+            })
+            .map_err(|e| ToolError(e.to_string()))?;
+        Ok(ToolResult::text(format!(
+            "You are {name} now. Next, in this turn: search_plugins with a few words from your job, then recommend_plugins once \
+             with the ones that fit, and tell the user which cards to tap and that you are ready."
+        ))
+        .with_details(json!({ "summary": format!("Set up as {name}") })))
     }
+}
+
+/// Lists plugins a bot's job needs in its chat, with an Install or Sign in card for each one not
+/// ready, and returns at once: nobody waits on the cards.
+struct RecommendPlugins {
+    app: Arc<App>,
+    chat_id: String,
+    bot: Bot,
+}
+
+#[async_trait]
+impl Tool for RecommendPlugins {
+    fn name(&self) -> &str {
+        "recommend_plugins"
+    }
+    fn description(&self) -> &str {
+        "List plugins your job needs in this chat for the user: one line of where each stands, and an Install card for each one \
+         not installed or a Sign in card for each one not signed in. Returns at once; the user answers the cards whenever they \
+         like, and you can use a plugin once it is ready. Name plugins by id or name from search_plugins or your plugin list."
+    }
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": { "plugins": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 10, "description": "Plugin ids or names" } },
+            "required": ["plugins"],
+            "additionalProperties": false
+        })
+    }
+    fn execution_mode(&self) -> Option<ToolExecutionMode> {
+        Some(ToolExecutionMode::Sequential)
+    }
+    async fn execute(&self, _id: &str, args: Value, _cancel: CancellationToken, _on_update: ToolUpdateFn) -> Result<ToolResult, ToolError> {
+        let wanted: Vec<String> = args["plugins"].as_array().map(|items| items.iter().filter_map(|i| i.as_str()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()).unwrap_or_default();
+        if wanted.is_empty() {
+            return Err("plugins names at least one plugin".into());
+        }
+        if self.app.this_device_id().as_deref() != Some(self.bot.runner_id.as_str()) {
+            return Err("Plugins are installed on your Runner, which is not this Device.".into());
+        }
+        let bot = self.app.bot(&self.bot.id).ok_or("This bot is gone")?;
+        let connectors = resolve_connectors(&self.app, &wanted, &bot).await;
+        let lines = recommend_plugins(&self.app, &bot, &self.chat_id, &connectors);
+        let listed = connectors.iter().filter(|c| c.installed.is_some() || c.in_marketplace).count();
+        Ok(ToolResult::text(format!("Listed for the user:\n{}", lines.join("\n"))).with_details(json!({ "summary": format!("Recommended {listed} plugins") })))
+    }
+}
+
+/// A plugin a bot asked to recommend: installed on this Runner, in the marketplace, or neither,
+/// and whether its Access lets it use the plugin.
+#[derive(Debug, Clone)]
+struct Connector {
+    wanted: String,
+    name: String,
+    installed: Option<crate::model::PluginStatus>,
+    /// In the marketplace and not installed here.
+    in_marketplace: bool,
+    off_in_access: bool,
+}
+
+impl Connector {
+    /// Where it stands, said to the bot.
+    fn line(&self) -> String {
+        let id = self.installed.as_ref().map(|s| s.id.as_str()).unwrap_or(&self.wanted);
+        let state = if self.off_in_access {
+            "off in your Access: the user turns it on in your Access".to_string()
+        } else {
+            match (&self.installed, self.in_marketplace) {
+                (Some(status), _) => match status.state.as_str() {
+                    "ready" => "ready".into(),
+                    "needs_auth" | "insufficient_access" => "a Sign in card is in the chat".into(),
+                    "needs_setup" => format!("the user still sets {} in the chat inspector, under Plugins", status.detail.trim_start_matches("Needs ")),
+                    _ => status.detail.clone(),
+                },
+                (None, true) => "an Install card is in the chat".into(),
+                (None, false) => "no such plugin here or in the marketplace: search_plugins lists what exists".into(),
+            }
+        };
+        format!("- {} ({id}): {state}", self.name)
+    }
+}
+
+/// Lists `connectors` in the bot's chat: a notice of where each stands, then an Install card
+/// for each one not installed and a Sign in card for each one that needs it, leaving out a card
+/// already waiting there. Nothing waits on the cards. Returns a line per plugin for the bot.
+fn recommend_plugins(app: &Arc<App>, bot: &Bot, chat_id: &str, connectors: &[Connector]) -> Vec<String> {
+    let lines = connectors.iter().map(Connector::line).collect();
+    let known: Vec<&Connector> = connectors.iter().filter(|c| c.installed.is_some() || c.in_marketplace).collect();
+    if known.is_empty() {
+        return lines;
+    }
+    let group = |pick: &dyn Fn(&Connector) -> bool| known.iter().filter(|c| pick(c)).map(|c| c.name.clone()).collect::<Vec<_>>();
+    let state = |c: &Connector| c.installed.as_ref().map(|s| s.state.clone());
+    let ready = group(&|c| !c.off_in_access && state(c).as_deref() == Some("ready"));
+    let missing = group(&|c| !c.off_in_access && (c.installed.is_none() || matches!(state(c).as_deref(), Some("needs_auth" | "insufficient_access"))));
+    let off = group(&|c| c.off_in_access);
+    let mut text = format!("Plugins for {}'s job:", bot.name);
+    if !ready.is_empty() {
+        text.push_str(&format!(" {} ready.", ready.join(", ")));
+    }
+    if !missing.is_empty() {
+        text.push_str(&format!(" Install or sign in to {} below whenever you like.", missing.join(", ")));
+    }
+    for c in known.iter().filter(|c| !c.off_in_access && state(c).as_deref() == Some("needs_setup")) {
+        let detail = c.installed.as_ref().map(|s| s.detail.trim_start_matches("Needs ").to_string()).unwrap_or_default();
+        text.push_str(&format!(" {} still needs {detail}: set it in this chat's inspector, under Plugins.", c.name));
+    }
+    if !off.is_empty() {
+        text.push_str(&format!(" Turn on {} in {}'s Access to use {}.", off.join(", "), bot.name, if off.len() == 1 { "it" } else { "them" }));
+    }
+    app.notice(chat_id, text);
+    let waiting = crate::plugins::mcp::waiting_install_cards(app, chat_id);
+    for c in known.iter().filter(|c| !c.off_in_access) {
+        match &c.installed {
+            None if !waiting.contains(&c.wanted) => {
+                crate::plugins::mcp::post_install_card(app, chat_id, &bot.id, &c.wanted, &c.name);
+            }
+            Some(status) if matches!(status.state.as_str(), "needs_auth" | "insufficient_access") => {
+                // A sign-in card already waiting in the chat is answered again, not doubled.
+                if let Err(error) = crate::plugins::mcp::post_sign_in_card(app, chat_id, &bot.id, &status.id) {
+                    tracing::warn!(%error, plugin = %status.id, "recommending a sign-in");
+                }
+            }
+            _ => {}
+        }
+    }
+    lines
+}
+
+/// Finds each plugin a bot names: the Runner's installs by id, name, or account name, every
+/// account of a service named by its id, then the marketplace. One the bot's Access leaves out,
+/// installed or once installed, is marked off.
+async fn resolve_connectors(app: &Arc<App>, wanted: &[String], bot: &Bot) -> Vec<Connector> {
+    let statuses = app.plugins.lock().unwrap().statuses();
+    let mut index = None;
+    let mut connectors: Vec<Connector> = Vec::new();
+    for name in wanted {
+        let lower = name.to_lowercase();
+        let installed: Vec<&crate::model::PluginStatus> = statuses
+            .iter()
+            .filter(|s| {
+                s.id.to_lowercase() == lower
+                    || s.name.to_lowercase() == lower
+                    || s.account_name.as_deref().is_some_and(|a| a.to_lowercase() == lower)
+                    || s.service_id.as_deref().is_some_and(|service| service.to_lowercase() == lower)
+            })
+            .collect();
+        if !installed.is_empty() {
+            for status in installed {
+                if connectors.iter().any(|c| c.installed.as_ref().is_some_and(|s| s.id == status.id)) {
+                    continue;
+                }
+                let label = match &status.account_name {
+                    Some(account) if !status.name.contains(account.as_str()) => format!("{} · {account}", status.name),
+                    _ => status.name.clone(),
+                };
+                let off_in_access = !bot.permissions.as_ref().is_none_or(|p| p.allows_connection(&status.id));
+                connectors.push(Connector { wanted: name.clone(), name: label, installed: Some(status.clone()), in_marketplace: false, off_in_access });
+            }
+            continue;
+        }
+        if index.is_none() {
+            index = Some(crate::marketplace::index(app).await);
+        }
+        let find = |index: &crate::marketplace::Index| index.plugins.iter().find(|m| m.id.to_lowercase() == lower || m.name.to_lowercase() == lower).cloned();
+        let mut manifest = index.as_deref().and_then(find);
+        // A plugin published since this Runner's last check is in a newer index.
+        if manifest.is_none() && crate::marketplace::check_for_missing(app).await {
+            index = Some(crate::marketplace::current(app));
+            manifest = index.as_deref().and_then(find);
+        }
+        let connector = match manifest {
+            Some(m) if connectors.iter().any(|c| c.in_marketplace && c.wanted == m.id) => continue,
+            Some(m) => {
+                // Installed, a single-account plugin keeps its id; a named account gets a new one,
+                // which only an Access that lists no plugins takes in.
+                let off_in_access = !bot.permissions.as_ref().and_then(|p| p.connections.as_ref()).is_none_or(|listed| !m.named_accounts && listed.get(&m.id).is_some_and(|grant| !grant.capabilities.is_empty()));
+                Connector { wanted: m.id.clone(), name: m.name.clone(), installed: None, in_marketplace: true, off_in_access }
+            }
+            None => Connector { wanted: name.clone(), name: name.clone(), installed: None, in_marketplace: false, off_in_access: false },
+        };
+        connectors.push(connector);
+    }
+    connectors
 }
 
 /// Changes a teammate's profile (or the caller's own). The new profile applies from that bot's next turn.
@@ -3656,20 +4005,20 @@ mod tests {
         let app = &scratch.0;
         crate::identity::create(app, Some("Runner".into())).unwrap();
         let caller = app.state.lock().unwrap().bots[0].clone();
-        let chat_id = app.dm_with(&caller.id, None).unwrap().meta.id;
-        let create = CreateBot { app: app.clone(), bot: caller.clone(), chat_id };
+        let create = CreateBot { app: app.clone(), bot: caller.clone() };
         let policy = serde_json::from_value(json!({"connections":{},"shell":false,"filesystem":"none"})).unwrap();
         app.update_bot(&caller.id, |bot| bot.permissions = Some(policy)).unwrap();
         let update: ToolUpdateFn = Arc::new(|_| {});
-        create.execute("new", json!({"name":"Inbox", "description":"Read selected inbox"}), CancellationToken::new(), update.clone()).await.unwrap();
-        let created = app.state.lock().unwrap().bots.iter().find(|bot| bot.name == "Inbox").unwrap().clone();
+        create.execute("new", json!({"brief":"Read selected inbox"}), CancellationToken::new(), update.clone()).await.unwrap();
+        let created = app.state.lock().unwrap().bots.iter().find(|bot| bot.setting_up).unwrap().clone();
         assert_eq!(created.permissions, app.bot(&caller.id).unwrap().permissions, "inherit current policy, not the turn's snapshot");
         let edit = EditBot { app: app.clone(), bot: caller.clone() };
         let refused = edit.execute("grant", json!({"bot_id":caller.id,"permissions":{}}), CancellationToken::new(), update.clone()).await.unwrap_err();
         assert!(refused.0.contains("Only the user"));
-        let refused = create.execute("grant", json!({"name":"Admin","description":"Use everything","permissions":{}}), CancellationToken::new(), update).await.unwrap_err();
+        let refused = create.execute("grant", json!({"brief":"Use everything","permissions":{}}), CancellationToken::new(), update).await.unwrap_err();
         assert!(refused.0.contains("Only the user"));
         assert_eq!(app.state.lock().unwrap().bots.len(), 2);
+        settle_jobs(app).await;
     }
 
     fn bot(id: &str, name: &str) -> Bot {
@@ -3684,7 +4033,7 @@ mod tests {
             provider: "deepseek".into(),
             model: None,
             thinking: None,
-            legacy_instructions: String::new(),
+            legacy_instructions: String::new(), setting_up: false,
             workdir: None,
             permissions: None,
             created_at: 0.0,
@@ -3779,6 +4128,45 @@ mod tests {
         let store = MemoryStore::for_bot(&app.config.home, &chef);
         assert!(!system_prompt(app, &group, &chef, &room_job("room", "b1"), &store, None, &[]).contains("what this group is for"));
         assert!(!system_prompt(app, &dm, &chef, &room_job("dm", "b1"), &store, None, &[]).contains("what this group is for"));
+    }
+
+    /// Every bot reads its teammates with their ids, jobs, and plugins, and how to route work to
+    /// them; whose Runner is online stays out, so the prompt keeps its cache.
+    #[test]
+    fn a_bot_reads_its_team_and_routes_work_to_it() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        let chef = Bot { description: "Chief of staff".into(), ..bot("b1", "Chef") };
+        let scout = Bot {
+            description: "Finds sources and links every claim.\nNever publishes.".into(),
+            permissions: Some(serde_json::from_value(json!({ "connections": { "notes": { "capabilities": ["read"] } } })).unwrap()),
+            ..bot("b2", "Scout")
+        };
+        let writer = Bot { description: "Turns findings into drafts".into(), ..bot("b3", "Writer") };
+        let dm = chat("dm", "dm", None, &["b1"]);
+        let mut group = chat("room", "group", Some("Launch"), &["b1", "b2"]);
+        group.meta.owner_bot_id = Some("b1".into());
+        {
+            let mut state = app.state.lock().unwrap();
+            state.bots.extend([chef.clone(), scout.clone(), writer.clone()]);
+            state.chats.extend([dm.clone(), group.clone()]);
+        }
+        let store = MemoryStore::for_bot(&app.config.home, &chef);
+        let prompt = system_prompt(app, &dm, &chef, &room_job("dm", "b1"), &store, None, &[]);
+        assert!(prompt.contains("- Scout (id b2): Finds sources and links every claim. · plugins: notes · runs on unassigned\n"), "{prompt}");
+        assert!(prompt.contains("- Writer (id b3): Turns findings into drafts · runs on unassigned\n"), "{prompt}");
+        assert!(!prompt.contains("- Chef (id b1)"), "{prompt}");
+        assert!(prompt.contains("Route work before you start it."), "{prompt}");
+        app.state.lock().unwrap().device_online.insert("dev".into());
+        assert_eq!(system_prompt(app, &dm, &chef, &room_job("dm", "b1"), &store, None, &[]), prompt);
+
+        // In a group the members are listed already; only the owner splits and assigns the work.
+        let owner = system_prompt(app, &group, &chef, &room_job("room", "b1"), &store, None, &[]);
+        assert!(owner.contains("You are the owner."), "{owner}");
+        assert!(!owner.contains("- Scout (id b2)") && owner.contains("- Writer (id b3)"), "{owner}");
+        let store = MemoryStore::for_bot(&app.config.home, &scout);
+        let member = system_prompt(app, &group, &scout, &room_job("room", "b2"), &store, None, &[]);
+        assert!(!member.contains("You are the owner.") && member.contains("When the owner assigns you a part with @"), "{member}");
     }
 
     /// A message the turn holds for its next step says so on every Device until the turn reads
@@ -5216,18 +5604,111 @@ mod tests {
         crate::identity::create(app, Some("Runner".into())).unwrap();
         let chef = Bot { runner_id: app.this_device_id().unwrap(), ..bot("b1", "Chef") };
         app.state.lock().unwrap().bots = vec![chef.clone()];
-        let create = CreateBot { app: app.clone(), chat_id: "chat".into(), bot: chef };
+        let create = CreateBot { app: app.clone(), bot: chef };
         let no_updates: ToolUpdateFn = Arc::new(|_| {});
         let run = |args: Value| create.execute("call", args, CancellationToken::new(), no_updates.clone());
 
-        let error = run(json!({ "name": "Scout", "description": "Finds sources", "model": "claude-opus-5-5" })).await.unwrap_err();
+        let error = run(json!({ "model": "claude-opus-5-5" })).await.unwrap_err();
         assert!(error.0.starts_with("DeepSeek has no model claude-opus-5-5."), "{}", error.0);
-        assert!(app.state.lock().unwrap().bots.iter().all(|b| b.name != "Scout"));
+        assert_eq!(app.state.lock().unwrap().bots.len(), 1);
 
-        let result = run(json!({ "name": "Scout", "description": "Finds sources", "provider": "anthropic", "model": "claude-opus-5-5", "thinking": "high" })).await.unwrap();
-        assert!(result.content[0].as_text().unwrap().ends_with(" They run Claude Opus 5.5 on Anthropic, thinking high."));
-        let scout = app.state.lock().unwrap().bots.iter().find(|b| b.name == "Scout").cloned().unwrap();
-        assert_eq!((scout.provider, scout.model, scout.thinking), ("anthropic".into(), Some("claude-opus-5-5".into()), Some("high".into())));
+        let result = run(json!({ "provider": "anthropic", "model": "claude-opus-5-5", "thinking": "high" })).await.unwrap();
+        assert!(result.content[0].as_text().unwrap().ends_with(" It runs Claude Opus 5.5 on Anthropic, thinking high."));
+        let made = app.state.lock().unwrap().bots.iter().find(|b| b.setting_up).cloned().unwrap();
+        assert_eq!((made.provider, made.model, made.thinking), ("anthropic".into(), Some("claude-opus-5-5".into()), Some("high".into())));
+        settle_jobs(app).await;
+    }
+
+    /// A bot the user asks for starts as "New Bot" with its creator's Access, its chat opens with
+    /// the creator's brief, and it sets itself up with the user with only its setup tools.
+    #[tokio::test]
+    async fn create_bot_makes_a_new_bot_that_sets_itself_up() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        crate::identity::create(app, Some("Runner".into())).unwrap();
+        let chef = Bot { runner_id: app.this_device_id().unwrap(), ..bot("b1", "Chef") };
+        let policy = serde_json::from_value(json!({ "shell": false })).unwrap();
+        app.state.lock().unwrap().bots = vec![Bot { permissions: Some(policy), ..chef.clone() }];
+        let create = CreateBot { app: app.clone(), bot: chef.clone() };
+        let no_updates: ToolUpdateFn = Arc::new(|_| {});
+        let result = create.execute("call", json!({ "brief": "帮我建一个日历管理bot，帮我更新日历" }), CancellationToken::new(), no_updates.clone()).await.unwrap();
+        assert!(result.content[0].as_text().unwrap().contains("It is talking with the user in its own chat now"));
+        let made = app.state.lock().unwrap().bots.iter().find(|b| b.setting_up).cloned().unwrap();
+        assert_eq!((made.name.as_str(), made.description.as_str()), (crate::model::NEW_BOT_NAME, ""));
+        assert_eq!(made.permissions, app.bot(&chef.id).unwrap().permissions);
+        let dm = app.dm_with(&made.id, None).unwrap();
+        let marker = app.message(&dm.meta.id, &format!("setup-{}", made.id)).unwrap();
+        assert!(matches!(marker.body, Body::Handoff { ref from, ref reason, .. } if from == "b1" && reason.starts_with("帮我建")));
+        settle_jobs(app).await;
+
+        // Its prompt is the setup's, in the brief's language, and teammates hand it nothing yet.
+        let prompt = system_prompt(app, &dm, &made, &room_job(&dm.meta.id, &made.id), &MemoryStore::for_bot(&app.config.home, &made), None, &[]);
+        assert!(prompt.contains("call finish_setup") && prompt.contains("until they write, use Simplified Chinese"), "{prompt}");
+        let chef_dm = chat("chef", "dm", None, &["b1"]);
+        let team = team_prompt(app, &chef, &chef_dm);
+        assert!(team.contains(&format!("- New Bot (id {}): still setting up its job with the user", made.id)), "{team}");
+
+        // finish_setup gives it the confirmed profile and ends the setup, once.
+        let finish = FinishSetup { app: app.clone(), bot: made.clone() };
+        let error = finish.execute("call", json!({ "name": "New Bot", "description": "x" }), CancellationToken::new(), no_updates.clone()).await.unwrap_err();
+        assert!(error.0.contains("placeholder"));
+        let error = finish.execute("call", json!({ "name": "chef", "description": "x" }), CancellationToken::new(), no_updates.clone()).await.unwrap_err();
+        assert!(error.0.contains("already exists"));
+        finish.execute("call", json!({ "name": "日历", "description": "管理用户的日历" }), CancellationToken::new(), no_updates.clone()).await.unwrap();
+        let done = app.bot(&made.id).unwrap();
+        assert!(!done.setting_up && done.name == "日历" && done.description == "管理用户的日历");
+        assert!(finish.execute("call", json!({ "name": "别名", "description": "x" }), CancellationToken::new(), no_updates).await.is_err());
+    }
+
+    async fn settle_jobs(app: &App) {
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            while !app.running_jobs.lock().unwrap().is_empty() {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    /// A bot lists the plugins its job needs with cards that wait on nothing, once each, and one
+    /// its Access leaves out only in words.
+    #[tokio::test]
+    async fn recommend_plugins_lists_cards_that_wait_on_nothing() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        crate::identity::create(app, Some("Runner".into())).unwrap();
+        let notes: crate::plugins::Manifest = serde_json::from_value(json!({ "id": "notes", "name": "Notes", "servers": { "main": { "type": "stdio", "command": "true" } } })).unwrap();
+        crate::plugins::install(app, notes, "inline").unwrap();
+        let scout = Bot { runner_id: app.this_device_id().unwrap(), ..bot("b1", "Scout") };
+        app.state.lock().unwrap().bots = vec![scout.clone()];
+        let dm = app.dm_with(&scout.id, None).unwrap().meta.id;
+        let tool = RecommendPlugins { app: app.clone(), chat_id: dm.clone(), bot: scout.clone() };
+        let no_updates: ToolUpdateFn = Arc::new(|_| {});
+        let result = tool.execute("call", json!({ "plugins": ["Notes", "github", "gmail", "nope"] }), CancellationToken::new(), no_updates.clone()).await.unwrap();
+        let text = result.content[0].as_text().unwrap();
+        assert!(text.contains("- Notes (notes): ready") && text.contains("- GitHub (github): an Install card is in the chat") && text.contains("- nope (nope): no such plugin"), "{text}");
+        let installs = |app: &App| crate::plugins::mcp::waiting_install_cards(app, &dm);
+        assert_eq!(installs(app), ["github", "gmail"]);
+        let rows = app.store.all(&dm).unwrap();
+        assert!(rows.iter().any(|m| matches!(&m.body, Body::Notice { text, .. } if text == "Plugins for Scout's job: Notes ready. Install or sign in to GitHub, Gmail below whenever you like.")), "{rows:?}");
+        // Asked again, it adds no second card.
+        tool.execute("call", json!({ "plugins": ["github"] }), CancellationToken::new(), no_updates.clone()).await.unwrap();
+        assert_eq!(installs(app), ["github", "gmail"]);
+        // Deny closes a card with no turn waiting on it.
+        let gmail = rows.iter().find(|m| matches!(&m.body, Body::Permission { plugin_id, .. } if plugin_id == "gmail")).unwrap();
+        assert!(crate::plugins::mcp::answer_recommended_install(app, &dm, &gmail.id, crate::plugins::mcp::Decision::Denied).await.unwrap().is_ok());
+        assert_eq!(installs(app), ["github"]);
+
+        // An Access kept to Notes: GitHub and any Gmail account stay off, with no card.
+        let policy = serde_json::from_value(json!({ "connections": { "notes": { "capabilities": ["read"] } } })).unwrap();
+        app.update_bot(&scout.id, |bot| bot.permissions = Some(policy)).unwrap();
+        let other = app.dm_with(&scout.id, None).unwrap().meta.id;
+        assert_eq!(other, dm);
+        let before = installs(app);
+        let result = tool.execute("call", json!({ "plugins": ["linear", "gmail"] }), CancellationToken::new(), no_updates).await.unwrap();
+        let text = result.content[0].as_text().unwrap();
+        assert!(text.contains("- Linear (linear): off in your Access") && text.contains("- Gmail (gmail): off in your Access"), "{text}");
+        assert_eq!(installs(app), before);
     }
 
     #[test]

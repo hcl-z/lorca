@@ -1125,6 +1125,10 @@ pub async fn serve_request(app: &Arc<App>, verb: &str, body: &Value, requested_b
             if mcp::answer(app, message_id, decision) {
                 return Ok(json!({ "answered": true }));
             }
+            // A plugin recommended for a new bot's job, installed when the user gets to it.
+            if let Some(answered) = mcp::answer_recommended_install(app, chat_id, message_id, decision).await {
+                return answered;
+            }
             // Not a waiting tool: a sign-in card, answered by starting the flow.
             mcp::answer_sign_in(app, chat_id, message_id, decision, elsewhere()).await
         }

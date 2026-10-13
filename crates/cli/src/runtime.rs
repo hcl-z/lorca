@@ -173,6 +173,29 @@ pub fn greet_new_bot(app: &Arc<App>, chat_id: &str, bot_id: &str, text: &str, se
     start_turn(app, job);
 }
 
+/// The first turn of a bot that sets itself up with the user (`Bot::setting_up`).
+pub const SETUP_JOB: &str = "setup";
+
+/// Starts a new bot's setup in its DM, wherever it runs. Its creator's brief, when a bot made it,
+/// opens the chat as a "Message from" marker the new bot reads; otherwise a notice does.
+pub fn start_setup(app: &Arc<App>, bot: &Bot, chat_id: &str, creator: Option<&Bot>, brief: Option<&str>) {
+    let body = match (creator, brief.map(str::trim).filter(|b| !b.is_empty())) {
+        (Some(creator), Some(brief)) => Body::Handoff { from: creator.id.clone(), to: bot.id.clone(), reason: brief.to_string() },
+        (Some(creator), None) => Body::Notice { text: format!("{} created a new bot", creator.name), routine_id: None },
+        (None, _) => Body::Notice { text: "New bot".into(), routine_id: None },
+    };
+    let author = match (&body, creator) {
+        (Body::Handoff { .. }, Some(creator)) => Author::Bot { bot_id: creator.id.clone() },
+        _ => Author::System,
+    };
+    let mut marker = Message::new(chat_id, author, body);
+    marker.id = format!("setup-{}", bot.id);
+    app.upsert_message(marker.clone(), true);
+    let mut job = user_turn_job(app, chat_id, &bot.id, &marker.id);
+    job.kind = SETUP_JOB.into();
+    start_turn(app, job);
+}
+
 /// Stops work in a chat on this Device and forwards job-specific cancellations to every other
 /// Runner currently doing that work. This is the hard Stop path; ordinary messages steer and
 /// do not call it.
@@ -888,7 +911,7 @@ mod tests {
             provider: "deepseek".into(),
             model: None,
             thinking: None,
-            legacy_instructions: String::new(),
+            legacy_instructions: String::new(), setting_up: false,
             workdir: None,
             permissions: None,
             created_at: 0.0,

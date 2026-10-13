@@ -203,7 +203,17 @@ export function ChatsScreen({ sidebar = false }: { sidebar?: boolean }) {
   }, []);
   const newItems: { icon: string; android: ImageSourcePropType; title: string; run: () => void }[] = [
     { icon: "person.2.fill", android: AndroidIcons.group, title: t("New Group Chat"), run: () => router.push("/new-group") },
-    { icon: "person.badge.plus", android: AndroidIcons.personAdd, title: t("New Bot"), run: () => router.push("/new-bot") },
+    {
+      icon: "person.badge.plus",
+      android: AndroidIcons.personAdd,
+      title: t("New Bot"),
+      // The new bot works out its job, name, and plugins with the user in its own chat.
+      run: () =>
+        void engine.createSettingUpBot().then(
+          ({ chatId }) => router.push(`/chat/${chatId}`),
+          (error) => alert(t("Could not create the bot"), error instanceof Error ? error.message : String(error)),
+        ),
+    },
     { icon: "square.and.arrow.down", android: AndroidIcons.download, title: t("New Bot from Template…"), run: () => router.push("/template") },
     { icon: "point.3.connected.trianglepath.dotted", android: AndroidIcons.workflow, title: t("New Workflow"), run: () => router.push("/workflows") },
     { icon: "folder.badge.plus", android: AndroidIcons.newFolder, title: t("New Section"), run: () => newSection() },
