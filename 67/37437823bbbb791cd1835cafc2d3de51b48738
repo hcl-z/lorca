@@ -1,0 +1,77 @@
+docs/architecture/bot-permissions.md
+  s_33bcf13e73baba::t_d2445193d83e2e 27
+desktop/mainwindow.go
+  s_33bcf13e73baba::t_d2445193d83e2e 1059-1060,1062-1067
+crates/cli/src/handoffs_tests.rs
+  s_33bcf13e73baba::t_d2445193d83e2e 1059-1233
+crates/cli/src/push.rs
+  s_33bcf13e73baba::t_d2445193d83e2e 299
+crates/cli/src/turns.rs
+  s_33bcf13e73baba::t_d2445193d83e2e 206-209,278-284,359,422,434,483-487,1738-1740,1774-1775,1777-1782,1791,1820,1896-1951,2851-2854,2860,2880,2883-2886,2892,2894,2897-2907,2909-2911,2913-3096,3098-3107,3109-3154,3157-3214,4008,4012-4013,4018,4021,4036,4133-4171,5607,5611,5613-5671,5673-5711
+docs/architecture/bots.md
+  s_33bcf13e73baba::t_d2445193d83e2e 15-17,29,34-42
+crates/cli/src/api.rs
+  s_33bcf13e73baba::t_d2445193d83e2e 262-264,267-268,278,287-288
+crates/cli/src/handoffs.rs
+  s_33bcf13e73baba::t_d2445193d83e2e 183-186,363,396,433-435,505-523,767-775,782-792,794-800,802-805,807,813-940,1200,1203-1213,1226-1250,1377,1470,1493-1496,1520-1527,1605-1606,1623-1632
+crates/cli/src/plugins/mod.rs
+  s_33bcf13e73baba::t_d2445193d83e2e 1128-1131
+crates/cli/src/plugins/mcp.rs
+  s_33bcf13e73baba::t_d2445193d83e2e 1057-1142
+crates/cli/src/workflows.rs
+  s_33bcf13e73baba::t_d2445193d83e2e 608,1043
+crates/cli/src/plugins/review.rs
+  s_33bcf13e73baba::t_d2445193d83e2e 406,720
+docs/architecture/plugins.md
+  s_33bcf13e73baba::t_d2445193d83e2e 30
+desktop/l10n/zh.go
+  s_33bcf13e73baba::t_d2445193d83e2e 309
+desktop/onboarding.go
+  s_33bcf13e73baba::t_d2445193d83e2e 54,147
+crates/cli/src/local_store.rs
+  s_33bcf13e73baba::t_d2445193d83e2e 743-763
+crates/cli/src/coding/tests.rs
+  s_33bcf13e73baba::t_d2445193d83e2e 176
+docs/architecture/attention.md
+  s_33bcf13e73baba::t_d2445193d83e2e 19
+mobile/src/ui/ChatsScreen.tsx
+  s_33bcf13e73baba::t_d2445193d83e2e 206-216
+crates/cli/src/routines.rs
+  s_33bcf13e73baba::t_d2445193d83e2e 1050
+crates/cli/src/app.rs
+  s_33bcf13e73baba::t_d2445193d83e2e 2339
+crates/cli/src/identity.rs
+  s_33bcf13e73baba::t_d2445193d83e2e 188,196
+docs/architecture/handoffs.md
+  s_33bcf13e73baba::t_d2445193d83e2e 17-19,23,37
+docs/architecture/tools.md
+  s_33bcf13e73baba::t_d2445193d83e2e 10,15-16
+crates/cli/src/templates/mod.rs
+  s_33bcf13e73baba::t_d2445193d83e2e 582
+desktop/model/store.go
+  s_33bcf13e73baba::t_d2445193d83e2e 1125-1145,1187-1188
+crates/cli/src/model.rs
+  s_33bcf13e73baba::t_d2445193d83e2e 144-147,159-160
+crates/cli/src/local_review.rs
+  s_33bcf13e73baba::t_d2445193d83e2e 963
+crates/cli/src/runtime.rs
+  s_33bcf13e73baba::t_d2445193d83e2e 176-198,914
+mobile/src/core/engine.ts
+  s_33bcf13e73baba::t_d2445193d83e2e 15,45,685-693
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "6737437823bbbb791cd1835cafc2d3de51b48738",
+  "prompts": {},
+  "sessions": {
+    "s_33bcf13e73baba": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_mnaa3azz1zdw",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
