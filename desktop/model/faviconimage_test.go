@@ -50,6 +50,21 @@ func TestFaviconImageLeavesOtherFormatsAlone(t *testing.T) {
 	}
 }
 
+// A bitmap whose header says it is longer than the entry is refused, not read past its end.
+func TestFaviconImageRefusesAHeaderPastItsEntry(t *testing.T) {
+	var dib bytes.Buffer
+	for _, field := range []any{uint32(1 << 20), int32(16), int32(32), uint16(1), uint16(32), uint32(0), uint32(0), int32(0), int32(0), uint32(0), uint32(0)} {
+		binary.Write(&dib, binary.LittleEndian, field)
+	}
+	entry := []byte{16, 16, 0, 0, 1, 0, 32, 0}
+	entry = binary.LittleEndian.AppendUint32(entry, uint32(dib.Len()))
+	entry = binary.LittleEndian.AppendUint32(entry, 6+16)
+	file := append(append([]byte{0, 0, 1, 0, 1, 0}, entry...), dib.Bytes()...)
+	if got, err := FaviconImage(file); err != errIcon {
+		t.Fatalf("got %d bytes, %v; want errIcon", len(got), err)
+	}
+}
+
 func TestFaviconImageTakesTheSmallestAtLeastThirtyTwo(t *testing.T) {
 	// Three 24-bit bitmaps, 16, 48, and 32 on a side, each filled with its side as the red value.
 	var entries, images bytes.Buffer

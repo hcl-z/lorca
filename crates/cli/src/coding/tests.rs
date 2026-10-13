@@ -385,6 +385,36 @@ async fn a_restart_keeps_the_handle_and_a_follow_up_resumes_the_session() {
 }
 
 #[tokio::test]
+async fn an_agent_asking_when_lorca_quits_is_cut_off_and_the_bot_hears_it() {
+    let scratch = setup().await;
+    let app = &scratch.app;
+    let mut auto_review = app.auto_review();
+    auto_review.is_enabled = false;
+    app.set_auto_review(auto_review);
+    let tool = tool(&scratch);
+    let row = start_row(app, "call-1");
+    call(&tool, "call-1", json!({ "action": "start", "folder": "shop", "prompt": "Add dark mode" })).await.unwrap();
+    card_when(app, &row, |card| card.state == "asking").await;
+    let id = app.coding_agents.of("chat", "b1")[0].id();
+
+    // Lorca quits while the agent waits on its question: it stops, cut off, its question gone.
+    app.coding_agents.shutdown(app).await;
+    let asked = app.coding_agents.find("chat", "b1", &id).unwrap();
+    assert_eq!(asked.record().state, "stopped");
+    assert_eq!(asked.record().outcome.as_deref(), Some("Stopped when Lorca quit"));
+    assert_eq!(asked.record().news, Some(News::Interrupted));
+    assert!(asked.question.lock().unwrap().is_none());
+
+    // After the restart the bot is owed the turn that says so.
+    app.coding_agents.agents.lock().unwrap().clear();
+    load(app);
+    let cut_off = app.coding_agents.find("chat", "b1", &id).unwrap();
+    let job = crate::runtime::agent_job(app, "chat", "b1", &cut_off.record().message_id);
+    let cue = wake_cue(app, &job).expect("the bot has news");
+    assert!(cue.contains("was cut off when Lorca quit"), "{cue}");
+}
+
+#[tokio::test]
 async fn an_agent_that_was_done_when_lorca_quit_leaves_the_bot_nothing_to_hear() {
     let scratch = setup().await;
     let app = &scratch.app;

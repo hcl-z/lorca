@@ -153,16 +153,23 @@ async fn fetch_icon(client: &reqwest::Client, host: &str, url: reqwest::Url) -> 
     Ok((mime.into(), bytes))
 }
 
-/// A GET that follows redirects within the same HTTPS host, up to `limit` bytes of body.
+/// Whether `url` is on the site whose addresses were checked: HTTPS to `host` on 443, where the
+/// client's resolver pins it. An icon link or a redirect elsewhere is never requested.
+fn on_site(url: &reqwest::Url, host: &str) -> bool {
+    url.scheme() == "https" && url.host_str() == Some(host) && url.port_or_known_default() == Some(443)
+}
+
+/// A GET that follows redirects within the same HTTPS host, up to `limit` bytes of body. Every URL
+/// is checked before it is requested, the first one too, since a page names its icons.
 async fn get(client: &reqwest::Client, host: &str, mut url: reqwest::Url, limit: usize) -> Result<(u16, Vec<u8>), String> {
     for _ in 0..=MAX_REDIRECTS {
+        if !on_site(&url, host) {
+            return Err("Another site".into());
+        }
         let response = client.get(url.clone()).send().await.map_err(|e| lorca_tls::describe(&e))?;
         if response.status().is_redirection() {
             let location = response.headers().get(LOCATION).and_then(|value| value.to_str().ok()).ok_or("Redirect without a place")?;
             url = url.join(location).map_err(|e| e.to_string())?;
-            if url.scheme() != "https" || url.host_str() != Some(host) {
-                return Err("Redirects to another site".into());
-            }
             continue;
         }
         let mut response = response.error_for_status().map_err(|e| e.to_string())?;
@@ -232,6 +239,17 @@ mod tests {
         }
         for ip in ["1.1.1.1", "93.184.216.34", "2606:4700:4700::1111"] {
             assert!(is_public(ip.parse().unwrap()), "{ip}");
+        }
+    }
+
+    #[test]
+    fn icon_links_and_redirects_stay_on_the_checked_site() {
+        let base = reqwest::Url::parse("https://example.com/").unwrap();
+        for link in ["/favicon.ico", "icons/a.png", "https://example.com/a.png", "https://example.com:443/a.png"] {
+            assert!(on_site(&base.join(link).unwrap(), "example.com"), "{link}");
+        }
+        for link in ["https://localhost/a.png", "//intranet.example/a.png", "https://10.0.0.1/a.png", "http://example.com/a.png", "https://example.com:8443/a.png", "https://cdn.example.com/a.png"] {
+            assert!(!on_site(&base.join(link).unwrap(), "example.com"), "{link}");
         }
     }
 
