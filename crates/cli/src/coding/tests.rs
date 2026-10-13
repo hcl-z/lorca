@@ -374,6 +374,36 @@ async fn a_restart_keeps_the_handle_and_a_follow_up_resumes_the_session() {
     app.coding_agents.agents.lock().unwrap().clear();
     load(app);
     assert_eq!(card(app, &row).outcome.as_deref(), Some("Stopped when Lorca quit"));
+
+    // The bot is owed a turn that tells the user it was cut off, once.
+    let cut_off = app.coding_agents.find("chat", "b1", &id).unwrap();
+    assert_eq!(cut_off.record().news, Some(News::Interrupted));
+    let job = crate::runtime::agent_job(app, "chat", "b1", &cut_off.record().message_id);
+    let cue = wake_cue(app, &job).expect("the bot has news");
+    assert!(cue.contains("was cut off when Lorca quit") && cue.contains("coding_agent send"), "{cue}");
+    assert!(wake_cue(app, &job).is_none(), "heard once");
+}
+
+#[tokio::test]
+async fn an_agent_that_was_done_when_lorca_quit_leaves_the_bot_nothing_to_hear() {
+    let scratch = setup().await;
+    let app = &scratch.app;
+    let mut auto_review = app.auto_review();
+    auto_review.is_enabled = false;
+    app.set_auto_review(auto_review);
+    let tool = tool(&scratch);
+    let row = start_row(app, "call-1");
+    call(&tool, "call-1", json!({ "action": "start", "folder": "shop", "prompt": "Add dark mode" })).await.unwrap();
+    card_when(app, &row, |card| card.state == "asking").await;
+    crate::plugins::mcp::answer(app, &row, Decision::Denied);
+    card_when(app, &row, |card| card.state == "idle").await;
+    let id = app.coding_agents.of("chat", "b1")[0].id();
+    // Its own finishing news was read by the bot; quitting while idle adds none.
+    app.coding_agents.find("chat", "b1", &id).unwrap().record.lock().unwrap().news = None;
+    app.coding_agents.shutdown(app).await;
+    app.coding_agents.agents.lock().unwrap().clear();
+    load(app);
+    assert!(app.coding_agents.find("chat", "b1", &id).unwrap().record().news.is_none());
 }
 
 #[tokio::test]

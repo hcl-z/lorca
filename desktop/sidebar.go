@@ -184,10 +184,13 @@ func groupCollapsed(group sidebarGroup) bool {
 	}
 }
 
+// sidebarInset is the gap between the sidebar's edge and its search field, rows, and footer.
+const sidebarInset = 12
+
 func (m *mainWindow) chatsSidebar(c *ui.Context) {
 	p := colors(c)
 	s := &m.chatsList
-	ui.Column(c).Padding(2, 10, 6, 10).Children(func() {
+	ui.Column(c).Padding(2, sidebarInset, 6, sidebarInset).Children(func() {
 		// The field is the way into the palette: a click opens it, and the field never takes the
 		// keyboard.
 		field := searchChrome(c, ui.ButtonBase(c)).Justify(ui.Start).Label(L("Search")).FocusRing(false)
@@ -314,7 +317,7 @@ func (m *mainWindow) chatsSidebar(c *ui.Context) {
 				hint = shortcutText(fmt.Sprintf("CmdOrCtrl+%d", at+1))
 			}
 			m.chatRow(c, row.chat, i == selected, focused, hint)
-		}).Grow(1).Padding(2, 8, 8, 8)
+		}).Grow(1).Padding(2, sidebarInset, 8, sidebarInset)
 	})
 	m.sidebarFooter(c)
 }
@@ -637,7 +640,7 @@ func muteChat(chatID string, seconds int) {
 // appearance switch and the marketplace at the other end.
 func (m *mainWindow) sidebarFooter(c *ui.Context) {
 	p := colors(c)
-	ui.Row(c).Gap(2).Padding(6, 8, 8, 8).Children(func() {
+	ui.Row(c).Gap(2).Padding(6, sidebarInset, 8, sidebarInset).Children(func() {
 		if hoverButton(c, hoverButtonOptions{Symbol: "gearshape", Tooltip: L("Settings (%@)", shortcutText("CmdOrCtrl+,")), Label: L("Settings")}).Clicked() {
 			m.selectSettings(model.PaneGeneral)
 		}
@@ -787,7 +790,7 @@ func (m *mainWindow) settingsSidebar(c *ui.Context) {
 	}
 
 	var list ui.Element
-	ui.Column(c).Padding(2, 10, 6, 10).Children(func() {
+	ui.Column(c).Padding(2, sidebarInset, 6, sidebarInset).Children(func() {
 		field := searchField(c, &s.query, "")
 		if s.focusSearch {
 			field.Focus()
@@ -811,7 +814,7 @@ func (m *mainWindow) settingsSidebar(c *ui.Context) {
 			s.focusList = true
 		}
 	})
-	list = ui.Scroll(c).Grow(1).MinHeight(0).Padding(2, 8, 8, 8).Focusable().FocusRing(false).Role(ui.RoleList).Label(L("Settings"))
+	list = ui.Scroll(c).Grow(1).MinHeight(0).Padding(2, sidebarInset, 8, sidebarInset).Focusable().FocusRing(false).Role(ui.RoleList).Label(L("Settings"))
 	if s.focusList {
 		list.Focus()
 		s.focusList = false
@@ -862,7 +865,7 @@ func (m *mainWindow) settingsSidebar(c *ui.Context) {
 			ui.Text(c, L("No Results for “%@”", text)).Padding(18, 8).FontSize(12).TextColor(p.Label2).TextAlign(ui.Center)
 		}
 	})
-	ui.Row(c).Gap(2).Padding(6, 8, 8, 8).Children(func() {
+	ui.Row(c).Gap(2).Padding(6, sidebarInset, 8, sidebarInset).Children(func() {
 		if hoverButton(c, hoverButtonOptions{Symbol: "chevron.left", Size: 13, Title: L("Back"), Tooltip: L("Back to Chats (esc)"), Label: L("Back to Chats")}).Clicked() {
 			m.closeSettings()
 		}

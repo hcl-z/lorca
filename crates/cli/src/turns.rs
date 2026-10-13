@@ -1861,7 +1861,10 @@ fn system_prompt(app: &Arc<App>, chat: &Chat, bot: &Bot, job: &Job, store: &Memo
             "\nFor a larger coding job in a repository on this Runner (a feature, a fix with tests, a refactor), or when the user \
              asks for Claude Code or Codex, hand it to a coding agent with coding_agent: it works on its own in a git worktree \
              while you supervise. Say what proof you expect back, check its work against the request when you hear it is done, \
-             send it follow-ups, and report to the user with its outputs. Its commands go through Auto-review as yours do.\n",
+             send it follow-ups, and report to the user with its outputs. Its commands go through Auto-review as yours do. \
+             Once you start one, tell the user in a message what you started and that you will report when it is done: never \
+             end the turn on the tool call alone. When you hear it is done, stalled, ended, or cut off, always tell the user \
+             how it went in your own words.\n",
         );
     }
     if let Some(runner) = runner {

@@ -49,6 +49,21 @@ func (s settingsPane) general(c *ui.Context) {
 				}
 			}), timestamps)
 		})
+		s.section(c, L("App Icon"), nil, func(k *card) {
+			trayIcon, badge := trayIconEntry().row, unreadBadgeEntry().row
+			s.mark(c, accessoryRow(c, k, trayIcon, "", func() {
+				on := saved.ShowsTrayIcon
+				if settingsSwitch(c, &on, trayIcon, false) {
+					setPrefs(PreferencesPatch{ShowsTrayIcon: &on})
+				}
+			}), trayIcon)
+			s.mark(c, accessoryRow(c, k, badge, "", func() {
+				on := saved.UnreadBadge
+				if settingsSwitch(c, &on, badge, false) {
+					setPrefs(PreferencesPatch{UnreadBadge: &on})
+				}
+			}), badge)
+		})
 		s.section(c, L("Appearance"), nil, func(k *card) {
 			appearance, appLanguage := appearanceEntry().row, appLanguageEntry().row
 			s.mark(c, accessoryRow(c, k, appearance, "", func() {

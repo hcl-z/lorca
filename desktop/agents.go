@@ -53,6 +53,22 @@ func agentDetail(agent *model.AgentRun) string {
 	return strings.Join(parts, " · ")
 }
 
+// agentTint is the dot's color: blue while it works, orange when it waits on the user or stalled,
+// green once done, red when it failed, and quiet for the rest.
+func agentTint(agent *model.AgentRun, p *palette) ui.Color {
+	switch {
+	case agent.Question != nil || agent.Stalled:
+		return p.Orange
+	case agent.State == model.AgentStarting || agent.State == model.AgentWorking:
+		return p.Accent
+	case agent.State == model.AgentIdle:
+		return p.Green
+	case agent.State == model.AgentFailed:
+		return p.Red
+	}
+	return p.Label3
+}
+
 // agentOutput is its last lines with something on them, while it works.
 func agentOutput(agent *model.AgentRun) string {
 	if agent.Question != nil || (agent.State != model.AgentStarting && agent.State != model.AgentWorking) {
@@ -125,26 +141,53 @@ func (m *mainWindow) agentCard(c *ui.Context, chat *model.Chat, message *model.M
 			}
 		})
 	}
+	// Its last lines are drawn on a terminal while it works; text where none can start.
+	var screen *agentScreen
+	if agentOutput(agent) != "" {
+		screen = cardScreen(message.ID)
+	} else {
+		releaseCardScreen(message.ID)
+	}
+	screened := screen != nil
 	holder.Children(func() {
 		cardFrame(c, cardAvatar, groupStart, agentSpokenText(agent, name), func() {
-			ui.Row(c).Size(18, 18).Center().TextColor(p.Accent).Children(func() { symbol(c, "chevron.left.forwardslash.chevron.right", 16, 2) })
 			ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Children(func() {
-				ui.Row(c).Gap(8).MinWidth(0).Children(func() {
-					ui.Text(c, agentTitle(agent, name)).Grow(1).Shrink(1).MinWidth(0).FontSize(12.5).FontWeight(600).FixedLineHeight(17).SingleLine()
-					if agent.IsRunning() && pushButton(c, L("Stop"), pushOptions{Small: true, Disabled: st.busy}).Clicked() {
-						run(func(done func(error)) { store.StopAgent(chatID, messageID, done) }, L("Could not stop %@", agent.Name()))
+				// The agent's own mark, then its name; Stop sits at the end while it runs.
+				ui.Row(c).Gap(8).MinWidth(0).AlignItems(ui.Center).Children(func() {
+					ui.Box(c).Size(16, 16).TextColor(p.Label).Children(func() { ui.Image(c, agentMark(agent.Kind)).Fill() })
+					ui.Text(c, agentTitle(agent, name)).Grow(1).Shrink(1).MinWidth(0).FontSize(13).FontWeight(600).FixedLineHeight(18).SingleLine()
+					if agent.IsRunning() {
+						// Stop is a small square on a round fill, which darkens under the pointer.
+						stop := ui.ButtonBase(c).Size(24, 24).Radius(radiusCapsule).Justify(ui.Center).Background(p.Code).TextColor(p.Label2).Label(L("Stop")).Tooltip(L("Stop"))
+						switch {
+						case st.busy:
+							stop.Disabled(true)
+						case stop.Pressed():
+							stop.Background(p.Pressed).TextColor(p.Label)
+						case stop.Hovered():
+							stop.Background(p.Hover).TextColor(p.Label)
+						}
+						stop.Transition(controlFade)
+						stop.Children(func() { symbol(c, "stop.fill", 11, 1.75) })
+						if stop.Clicked() {
+							run(func(done func(error)) { store.StopAgent(chatID, messageID, done) }, L("Could not stop %@", agent.Name()))
+						}
 					}
 				})
 				// What it works on and how it stands; a click opens its transcript.
 				body := func() {
 					if agent.Task != "" {
-						ui.Text(c, agent.Task).Margin(3, 0, 0, 0).FontSize(12).LineHeight(1.35).MaxLines(2).Tooltip(agent.Task)
+						ui.Text(c, agent.Task).Margin(6, 0, 0, 0).FontSize(12.5).LineHeight(1.4).MaxLines(2).Tooltip(agent.Task)
 					}
 					if detail := agentDetail(agent); detail != "" {
-						ui.Text(c, detail).Margin(3, 0, 0, 0).FontSize(11).TextColor(p.Label2).SingleLine().Tooltip(agent.Outcome)
+						// A dot for how it stands, before the words.
+						ui.Row(c).Gap(6).Margin(5, 0, 0, 0).MinWidth(0).AlignItems(ui.Center).Children(func() {
+							ui.Box(c).Size(6, 6).Radius(3).Background(agentTint(agent, p))
+							ui.Text(c, detail).Grow(1).Shrink(1).MinWidth(0).FontSize(11).TextColor(p.Label2).SingleLine().Tooltip(agent.Outcome)
+						})
 					}
-					if text := agentOutput(agent); text != "" {
-						commandOutput(c, text, 6).Margin(8, 0, 0, 0)
+					if text := agentOutput(agent); text != "" && !screened {
+						commandOutput(c, text, 6).Margin(10, 0, 0, 0)
 					}
 				}
 				if agent.Started() {
@@ -156,6 +199,11 @@ func (m *mainWindow) agentCard(c *ui.Context, chat *model.Chat, message *model.M
 				} else {
 					ui.Column(c).FillWidth().Children(body)
 				}
+				// Its last lines on a terminal of their own, beside the button so that selecting
+				// them does not open the transcript.
+				if screened {
+					agentScreenView(c, screen, agentOutput(agent), 6*15+10).Margin(10, 0, 0, 0)
+				}
 				q := agent.Question
 				if q != nil && q.Kind == "command" {
 					if commandBlock(c, "$ "+model.FirstLine(q.Command), 1) {
@@ -163,14 +211,14 @@ func (m *mainWindow) agentCard(c *ui.Context, chat *model.Chat, message *model.M
 					}
 				}
 				if q != nil && (q.Kind == "choices" || q.Kind == "text") && q.Text != "" {
-					commandOutput(c, q.Text, 8).Margin(8, 0, 0, 0)
+					commandOutput(c, q.Text, 8).Margin(10, 0, 0, 0)
 				}
 				if q != nil && q.IsPermission() && q.Reason != "" {
 					ui.Text(c, q.Reason).Margin(7, 0, 0, 0).FontSize(11.5).LineHeight(1.35).TextColor(p.Label2).MaxLines(4)
 				}
 				switch {
 				case q != nil && q.IsPermission():
-					ui.Row(c).Wrap().Gap(6).Margin(10, 0, 0, 0).Children(func() {
+					ui.Row(c).Wrap().Gap(6).Margin(12, 0, 0, 0).Children(func() {
 						for _, choice := range q.Decisions() {
 							if pushButton(c.Key(choice.Decision), choice.Title, pushOptions{Small: true}).Clicked() {
 								store.AnswerPermission(chatID, messageID, choice.Decision)
@@ -178,7 +226,7 @@ func (m *mainWindow) agentCard(c *ui.Context, chat *model.Chat, message *model.M
 						}
 					})
 				case q != nil && q.Kind == "choices":
-					ui.Row(c).Gap(6).Margin(10, 0, 0, 0).Children(func() {
+					ui.Row(c).Gap(6).Margin(12, 0, 0, 0).Children(func() {
 						options := make([]popUpOption, len(q.Choices))
 						for i, choice := range q.Choices {
 							options[i] = popUpOption{Value: strconv.Itoa(i), Label: choice}
@@ -194,7 +242,7 @@ func (m *mainWindow) agentCard(c *ui.Context, chat *model.Chat, message *model.M
 						}
 					})
 				case q != nil && q.Kind == "text":
-					ui.Row(c).Gap(6).Margin(10, 0, 0, 0).Children(func() {
+					ui.Row(c).Gap(6).Margin(12, 0, 0, 0).Children(func() {
 						send := func() {
 							text := st.answer
 							run(func(done func(error)) {
@@ -239,6 +287,7 @@ type agentTranscript struct {
 	closed            bool
 	timer             *time.Timer
 	scroll            ui.ScrollState
+	screen            *agentScreen // nil where the terminal cannot start
 }
 
 func (t *agentTranscript) load() {
@@ -280,12 +329,13 @@ func (t *agentTranscript) close() {
 	if t.timer != nil {
 		t.timer.Stop()
 	}
+	t.screen.close()
 }
 
 // presentAgentTranscript shows what a coding agent was sent, said, and did, or what its pane
 // shows; on the Runner, an agent in a terminal host offers to show its pane there.
 func (w *appWindow) presentAgentTranscript(chatID string, message *model.Message, agent *model.AgentRun) {
-	t := &agentTranscript{chatID: chatID, messageID: message.ID, remote: !store.RunsHere(message)}
+	t := &agentTranscript{chatID: chatID, messageID: message.ID, remote: !store.RunsHere(message), screen: newAgentScreen(11.5)}
 	t.load()
 	title := agent.Name()
 	if place := agent.Place(); place != "" {
@@ -307,6 +357,10 @@ func (w *appWindow) presentAgentTranscript(chatID string, message *model.Message
 			}
 		}
 		result := sheetFrame(c, options, func() {
+			if t.screen != nil && t.text != "" {
+				agentScreenView(c, t.screen, t.text, 420)
+				return
+			}
 			box := ui.Scroll(c).Height(420).FillWidth().Padding(9, 10).Radius(8).Background(p.Code).TextColor(p.Label)
 			box.TrackScroll(&t.scroll)
 			box.Children(func() {

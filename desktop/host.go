@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/url"
 	"runtime"
-	"strconv"
 	"strings"
 	"unicode/utf16"
 
@@ -14,17 +13,22 @@ import (
 // What the app does with the system around its windows: the unread badge, links, and
 // notifications.
 
-// setBadge shows the chats' unread count where the system has a place for it: the launcher entry
-// on Linux, the tray's tooltip elsewhere. Zero clears it.
+// setBadge shows the chats' unread count where the system has a place for it: the Dock icon on
+// macOS and the launcher entry on Linux, and with the tray's menu and count. Zero clears it.
 func setBadge(count int) {
-	mygo.App.SetBadgeCount(count)
-	if app.tray != nil {
-		tip := appName()
-		if count > 0 {
-			tip += " · " + strconv.Itoa(count)
-		}
-		app.tray.SetToolTip(tip)
+	setNativeBadge(shownCount(count))
+	app.refreshTray()
+}
+
+// setNativeBadge puts the count on the system's icon; a test stands in for it.
+var setNativeBadge = mygo.App.SetBadgeCount
+
+// shownCount is the unread total as the badge shows it: nothing while the user has the badge off.
+func shownCount(count int) int {
+	if !prefs.get().UnreadBadge {
+		return 0
 	}
+	return count
 }
 
 // openExternal opens a web link in the browser or a mail link in the mail app. The links come from

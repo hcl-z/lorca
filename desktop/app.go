@@ -47,7 +47,7 @@ type appDelegate struct {
 	// onboarding never replaces a main window that just appeared.
 	stoppedWaiting bool
 	tray           *mygo.Tray
-	trayWords      [2]string
+	trayKey        string
 	quitting       bool
 	notifier       *notifier
 }
@@ -142,22 +142,13 @@ func (a *appDelegate) didFinishLaunching() {
 }
 
 // storeChanged keeps what the app shows outside its windows in step with the store: the unread
-// badge and the tray's words.
+// badge and the tray's menu.
 func (a *appDelegate) storeChanged(event model.Event) {
 	a.presentPendingTemplateLink()
 	switch event.Kind {
-	case model.EventIdentityChanged, model.EventSnapshotReplaced, model.EventChatsChanged:
-		count := 0
-		if store.HasIdentity == nil || *store.HasIdentity {
-			// A muted chat keeps its count in the sidebar but leaves the badge alone.
-			now := time.Now()
-			for _, chat := range store.Chats {
-				if !chat.IsMuted(now) {
-					count += chat.UnreadCount
-				}
-			}
-		}
-		setBadge(count)
+	case model.EventIdentityChanged, model.EventSnapshotReplaced, model.EventChatsChanged, model.EventAttentionChanged:
+		// A muted chat keeps its count in the sidebar but leaves the badge alone.
+		setBadge(unreadTotal())
 	}
 }
 
@@ -495,46 +486,10 @@ func (a *appDelegate) openChat(chatID string) {
 	})
 }
 
-// installTray puts the app in the notification area on Windows and Linux, where closing its
-// windows would otherwise leave nothing to bring it back by, and bots here stop with the app.
-func (a *appDelegate) installTray() {
-	if runtime.GOOS == "darwin" {
-		return
-	}
-	icon := trayIcon
-	if isDevelopment() {
-		icon = trayIconDev
-	}
-	a.trayWords = [2]string{L("Open %@", appName()), L("Quit %@", appName())}
-	tray, err := mygo.NewTray(mygo.TrayOptions{
-		Icon:    icon,
-		ToolTip: appName(),
-		Menu:    a.trayMenu(a.trayWords[0], a.trayWords[1]),
-	})
-	if err != nil {
-		return
-	}
-	// A click on the icon brings the app back, as a click on its Dock icon does; the menu is on
-	// the right button on Windows, and all a click shows on Linux.
-	tray.OnClick(func() { post(a.reopen) })
-	a.tray = tray
-}
-
-func (a *appDelegate) trayMenu(open, quit string) *mygo.Menu {
-	return mygo.NewMenu([]*mygo.MenuItem{
-		{Label: open, Click: func(*mygo.MenuItem, *mygo.Window) { a.reopen() }},
-		mygo.Separator(),
-		{Label: quit, Click: func(*mygo.MenuItem, *mygo.Window) { mygo.App.Quit() }},
-	})
-}
-
 // languageChanged words what the app shows outside its windows in the language now in force.
 func (a *appDelegate) languageChanged() {
-	words := [2]string{L("Open %@", appName()), L("Quit %@", appName())}
-	if a.tray != nil && words != a.trayWords {
-		a.trayWords = words
-		a.tray.SetMenu(a.trayMenu(words[0], words[1]))
-	}
+	a.trayKey = ""
+	a.refreshTray()
 	installMenuBar()
 	for _, w := range []*appWindow{onboardingAppWindow(), settingsAppWindow()} {
 		if w != nil && w.win != nil {

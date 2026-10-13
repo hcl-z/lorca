@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/egoist/lorca/desktop/model"
@@ -118,7 +119,47 @@ func TestRenderAgentCard(t *testing.T) {
 	}
 	settle(tt)
 	renderBoth(t, tt, "agent-transcript")
-	if !tt.HasText(model.MockAgentTranscript) {
+	// The transcript is drawn by the terminal, whose cells are not text elements; where the
+	// plugin's library cannot load, it is plain text.
+	if screen := newAgentScreen(11); screen != nil {
+		screen.close()
+		if !tt.HasText("Terminal") {
+			t.Errorf("the transcript has no terminal: %q", tt.Texts())
+		}
+	} else if !tt.HasText(model.MockAgentTranscript) {
 		t.Errorf("the transcript is not shown: %q", tt.Texts())
+	}
+}
+
+func TestAnAgentScreenShowsItsTranscript(t *testing.T) {
+	screen := newAgentScreen(11)
+	if screen == nil {
+		t.Skip("the terminal plugin's library is not available")
+	}
+	defer screen.close()
+	screen.show(model.MockAgentTranscript)
+	if got := screen.term.Text(); !strings.Contains(got, "● Edit(src/pages/download.astro)") {
+		t.Errorf("the screen shows %q", got)
+	}
+	screen.show("> next")
+	if got := screen.term.Text(); strings.Contains(got, "Edit(") || !strings.Contains(got, "> next") {
+		t.Errorf("a new text replaces the old: %q", got)
+	}
+}
+
+// What an agent printed never drives the terminal: past the sequences the screen writes itself, no
+// escape, bell, or C1 control gets through, so no clipboard write, link, or title can.
+func TestAnAgentScreenDropsControlCharacters(t *testing.T) {
+	const reset = "\x1bc\x1b[3J\x1b[?25l"
+	got := string(screenBytes("a\x1b]52;c;ZXZpbA==\x07b\tc\r\nd\u009be"))
+	body, ok := strings.CutPrefix(got, reset)
+	if !ok {
+		t.Fatalf("no reset first: %q", got)
+	}
+	if strings.ContainsAny(body, "\x1b\x07\u009b") {
+		t.Errorf("a control character of the text survives: %q", body)
+	}
+	if body != "a]52;c;ZXZpbA==b c\r\nde" {
+		t.Errorf("the text is %q", body)
 	}
 }

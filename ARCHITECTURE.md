@@ -84,6 +84,7 @@ One doc per subject under `docs/architecture/`, each short enough to read in one
 | [Message drafts](docs/architecture/drafts.md) | Emails and Slack messages a bot writes in a chat as drafts the user edits, sends, or discards; sending directly; edits as feedback |
 | [Outputs and evidence](docs/architecture/outputs.md) | Bot-generated files and document links, immutable versions, task evidence references, encrypted transport and native previews |
 | [Stop](docs/architecture/stopping.md) | What Stop ends: the turn's model call and tool calls, a call that never returns, commands and browser calls, the work it handed off on any Runner; what keeps running |
+| [Web links in messages](docs/architecture/links.md) | Source chips for http(s) links in the desktop app, and the CLI's `links.favicon` that fetches a site's icon |
 | [Terminal sessions](docs/architecture/terminal-sessions.md) | A bot's commands in terminals of their own: when a call returns, background commands, the command's card, answering and stopping, Running tasks |
 | [Coding agents](docs/architecture/coding-agents.md) | Claude Code or Codex a bot runs on its Runner and supervises: worktrees, Herdr and Luvus panes or Lorca running it, its saved secrets, review of its commands and its pane's questions, transcripts and follow-ups, outputs and wake-ups, the card |
 | [Questions](docs/architecture/questions.md) | A bot asking the user to choose: `ask_user`, the card and its answer, each app |

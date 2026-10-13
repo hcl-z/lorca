@@ -96,6 +96,8 @@ pub(crate) enum News {
     Stalled,
     /// It exited on its own.
     Ended { outcome: String },
+    /// Lorca quit while it was at work, so its process went with it.
+    Interrupted,
 }
 
 /// An agent as it survives a restart, in `agents/agents.json`.
@@ -481,15 +483,16 @@ impl Agents {
                 continue;
             }
             let Some(driver) = agent.driver.lock().unwrap().take() else { continue };
+            // Read before the stop, which the supervisor may answer first.
+            let at_work = matches!(agent.record.lock().unwrap().state.as_str(), "starting" | "working");
             agent.stopping.store(true, Ordering::SeqCst);
             driver.stop().await;
-            {
+            if at_work {
                 let mut record = agent.record.lock().unwrap();
-                if matches!(record.state.as_str(), "starting" | "working") {
-                    record.state = "stopped".into();
-                    record.outcome = Some("Stopped when Lorca quit".into());
-                    record.ended_at = Some(crate::config::now_secs());
-                }
+                record.state = "stopped".into();
+                record.outcome = Some("Stopped when Lorca quit".into());
+                record.ended_at = Some(crate::config::now_secs());
+                record.news = Some(News::Interrupted);
             }
             *agent.question.lock().unwrap() = None;
             self.sync(app, &agent);
@@ -523,6 +526,9 @@ pub fn load(app: &Arc<App>) {
         }
         let reattach = record.host.is_some() && record.target.is_some() && matches!(record.state.as_str(), "starting" | "working" | "idle" | "asking");
         if !reattach && matches!(record.state.as_str(), "checking" | "asking" | "starting" | "working") {
+            if record.state != "checking" {
+                record.news = Some(News::Interrupted);
+            }
             record.state = "stopped".into();
             record.outcome = Some("Stopped when Lorca quit".into());
             record.ended_at = Some(now);
@@ -547,6 +553,21 @@ pub fn load(app: &Arc<App>) {
         }
     }
     save(app);
+}
+
+/// The bot hears what its agent did that no turn has told it yet, which `load` brings back: an
+/// agent that Lorca's quitting cut off, or whose news the last run lost. An agent in a terminal
+/// host that is followed again reports for itself.
+pub fn wake_unheard(app: &Arc<App>) {
+    for agent in app.coding_agents.all() {
+        let (news, following) = {
+            let record = agent.record.lock().unwrap();
+            (record.news.is_some(), record.host.is_some() && matches!(record.state.as_str(), "starting" | "working" | "asking"))
+        };
+        if news && !following {
+            wake(app, &agent);
+        }
+    }
 }
 
 fn records_path(app: &App) -> PathBuf {
@@ -1056,6 +1077,11 @@ pub fn wake_cue(app: &App, job: &crate::model::Job) -> Option<String> {
         ),
         News::Ended { outcome } => format!(
             "[{who}, which you started {place}, has ended: {outcome}.{} Tell the user, or send it a message to start it again on its session.]",
+            tail()
+        ),
+        News::Interrupted => format!(
+            "[{who}, which you started {place} on “{}”, was cut off when Lorca quit while it worked; what it had changed in its folder is kept.{} Tell the user it was interrupted and how far it got, and send it a message with coding_agent send to start it again on its session if the job is not done.]",
+            record.task,
             tail()
         ),
     };
