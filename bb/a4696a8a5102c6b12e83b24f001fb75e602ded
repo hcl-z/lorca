@@ -1,0 +1,25 @@
+mobile/modules/lorca-core/android/src/main/java/app/lorca/core/MarkdownView.kt
+  s_33bcf13e73baba::t_680afea1c6c4c8 105-106
+desktop/sources.go
+  s_33bcf13e73baba::t_44d9192891aeb9 27-29,31
+mobile/modules/lorca-core/ios/MarkdownView.swift
+  s_33bcf13e73baba::t_6d94611fb93fb2 79-81,83
+docs/architecture/links.md
+  s_33bcf13e73baba::t_61afb51f2d4eb5 9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "bba4696a8a5102c6b12e83b24f001fb75e602ded",
+  "prompts": {},
+  "sessions": {
+    "s_33bcf13e73baba": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_mnaa3azz1zdw",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
