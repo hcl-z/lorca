@@ -376,7 +376,7 @@ func (m *mainWindow) composerView(c *ui.Context, chat *model.Chat, members []*mo
 				} else if s.reply != nil {
 					placeholder = L("Reply…")
 				}
-				input := ui.TextAreaBase(c, &s.draft).Lines(1, composerMaxLines).Padding(5, 0).FontSize(textMessage + 0.5).FixedLineHeight(20).
+				input := ui.TextAreaBase(c, &s.draft).Lines(1, composerMaxLines).Padding(5, 0).FontSize(textMessage).FixedLineHeight(22).
 					TextColor(p.Label).Placeholder(placeholder).Label(placeholder).FocusRing(false)
 				// Mentions read as addressed, not as typed punctuation: in the bot's color, bold.
 				for _, mention := range mentionRuns(runes, mentionable) {

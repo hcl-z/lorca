@@ -24,7 +24,7 @@ const (
 	avatarGutter     = 10
 	groupTopPadding  = 14
 	tightTopPadding  = 4
-	maxBubbleWidth   = 580
+	maxBubbleWidth   = 680
 	userLeftGutter   = 72
 	bubbleIndent     = horizontalInset + chatAvatarSize + avatarGutter
 	separatorGap     = 15 * time.Minute
@@ -49,8 +49,6 @@ type chatState struct {
 	// composerHeight is the composer's as the last frame laid it out, which the transcript keeps
 	// clear at its end.
 	composerHeight float32
-	// transcriptScroll is how far the transcript is scrolled, which the header's scroll edge reads.
-	transcriptScroll *ui.ScrollState
 	// viewport is the transcript's box as the last frame laid it out; a message's toolbar keeps
 	// out from under the header at its top and the composer at its end.
 	viewport ui.Rect
@@ -165,13 +163,9 @@ func (m *mainWindow) chatView(c *ui.Context, chatID string) {
 	view.Children(func() {
 		s.list.Key = func(i int) any { return rows[i].key }
 		bottom := s.composerHeight
-		transcript := ui.List(c, &s.list, len(rows), func(i int) {
+		ui.List(c, &s.list, len(rows), func(i int) {
 			m.chatRowView(c, chat, rows[i], s)
 		}).Fill().Padding(headerHeight+8, 0, bottom+14, 0).ScrollbarInsets(headerHeight, 0, bottom, 0).Label(L("Transcript"))
-		// Kept with the transcript's element, which scrolls from where the state says when the two
-		// differ: a state of the chat's own would move a transcript built anew.
-		s.transcriptScroll = ui.Local(transcript, "scroll", func() ui.ScrollState { return ui.ScrollState{} })
-		transcript.TrackScroll(s.transcriptScroll)
 		// Nearing the first message: ask for the page before it.
 		if first, _ := s.list.Visible(); first < 8 && chat.HasMore {
 			store.LoadOlderMessages(chatID)
@@ -200,6 +194,17 @@ func (m *mainWindow) chatView(c *ui.Context, chatID string) {
 			c.AnimationFrame()
 		}
 	})
+}
+
+// riseIn brings a row that just arrived (made less than messageArrival ago) into the transcript:
+// up from 10 DIPs lower as it fades in. A row older than that, or built again as the transcript
+// scrolls, shows in place.
+func riseIn(c *ui.Context, row ui.Element, made time.Time) {
+	if c.Now().Sub(made) >= messageArrival {
+		return
+	}
+	shown := row.Keyframes("arrive", []ui.Keyframe{{Value: 0}, {At: 260 * time.Millisecond, Value: 1, Ease: ui.EaseOut}})
+	row.Translate(0, 10*(1-shown)).Opacity(shown)
 }
 
 // glassButton is AppKit's glass bezel on a round button: what is behind it frosted under a
@@ -328,13 +333,13 @@ func (m *mainWindow) messageCell(c *ui.Context, chat *model.Chat, message *model
 	case showsAvatar:
 		left = bubbleIndent
 	}
-	showTimestamps := prefs.get().ShowTimestamps
 	// The bubble as the last frame laid it out, which the floating toolbar is placed beside.
 	var bubbleBox ui.Rect
 	row := ui.Row(c).Padding(top, horizontalInset, 0, left)
 	if isUser {
 		row.Justify(ui.End)
 	}
+	riseIn(c, row, message.CreatedAt)
 	row.Children(func() {
 		column := ui.Column(c).MinWidth(0).MaxWidth(maxBubbleWidth).AlignItems(ui.Start)
 		if isUser {
@@ -367,7 +372,7 @@ func (m *mainWindow) messageCell(c *ui.Context, chat *model.Chat, message *model
 				m.outputCard(c, chat, message, s)
 				return
 			}
-			bubble := ui.Column(c).MaxWidthPercent(100).MinWidth(0).Padding(9, 14).Radius(radiusXL + 2).FontSize(textMessage)
+			bubble := ui.Column(c).MaxWidthPercent(100).MinWidth(0).Padding(12, 18).Radius(radiusSheet).FontSize(textMessage)
 			bubbleBox = bubble.Bounds()
 			if isUser {
 				// A selection is the ink's text color, faint, where the accent's own highlight would vanish.
@@ -413,32 +418,14 @@ func (m *mainWindow) messageCell(c *ui.Context, chat *model.Chat, message *model
 			bubble.Children(func() {
 				if len(message.Attachments) > 0 {
 					below := float32(0)
-					switch {
-					case text != "":
+					if text != "" {
 						below = 8
-					case showTimestamps:
-						below = 4
 					}
 					attachmentTiles(c, chat.ID, message, isUser).Margin(0, 0, below, 0)
 				}
-				if text == "" && !showTimestamps {
-					return
+				if text != "" {
+					markdownView(c, text, markdownOptions{OnUserBubble: isUser, Menu: replyMenu}).Shrink(1)
 				}
-				body := ui.Row(c).AlignItems(ui.End).Gap(8).MinWidth(0)
-				if text == "" {
-					body.Justify(ui.End)
-				}
-				body.Children(func() {
-					if text != "" {
-						markdownView(c, text, markdownOptions{OnUserBubble: isUser, Menu: replyMenu}).Grow(1).Shrink(1)
-					}
-					if showTimestamps {
-						stamp := ui.Text(c, model.Clock(message.CreatedAt)).FontSize(textCaption).FixedLineHeight(15).TextColor(p.Label3).FontFeatures("tnum").NoWrap()
-						if isUser {
-							stamp.TextColor(ui.RGBA(255, 255, 255, 0.7))
-						}
-					}
-				})
 			})
 			if !message.EditedAt.IsZero() {
 				ui.Text(c, L("Edited")).Margin(2, 4, 0, 4).FontSize(textCaption).TextColor(p.Label3).Tooltip(model.Clock(message.EditedAt))

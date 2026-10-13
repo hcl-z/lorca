@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"strings"
 	"time"
 
@@ -21,6 +22,40 @@ var (
 	pressSpring = ui.Animation{Spring: ui.SpringOptions{Duration: 180 * time.Millisecond}}
 	haloFade    = ui.Animation{Duration: 140 * time.Millisecond}
 )
+
+// Motion the views share. A side pane opens and closes on a spring that settles without
+// bouncing; a tab's selection glides to the tab picked; what a pane shows anew (another chat,
+// another tab) fades in from a few DIPs lower; a message that just arrived rises into place; an
+// unread dot pops in and out. Reduce Motion keeps the fades and drops the moving.
+var (
+	paneSpring      = ui.Animation{Spring: ui.SpringOptions{Duration: 340 * time.Millisecond}}
+	selectionSpring = ui.Animation{Spring: ui.SpringOptions{Duration: 280 * time.Millisecond, Bounce: 0.12}}
+	contentEnter    = ui.ElementTransition{Enter: &ui.Motion{Y: 6}, Duration: 180 * time.Millisecond}
+	dotPop          = ui.ElementTransition{
+		Animation: &ui.Animation{Spring: ui.SpringOptions{Duration: 260 * time.Millisecond, Bounce: 0.3}},
+		Enter:     &ui.Motion{Scale: 0.2}, Exit: &ui.Motion{Scale: 0.2},
+	}
+	// messageArrival is how long after it was made a message still rises in as it shows.
+	messageArrival = 900 * time.Millisecond
+)
+
+// selectionThumb is a segmented control's raised selection, under the selected segment's
+// content; `match` names the control, so the thumb glides from the segment picked before.
+func selectionThumb(c *ui.Context, match any, fill ui.Color, radius float32) {
+	ui.Box(c).Absolute().Top(0).Left(0).Right(0).Bottom(0).Radius(radius).Background(fill).
+		Shadow(0, 1, 3, 0, ui.RGBA(0, 0, 0, 0.12)).PassThrough().
+		Transition(ui.ElementTransition{Animation: &selectionSpring, Match: match})
+}
+
+// segmentContent is a segment's words or symbol, centered on a layer of their own: MyGo paints a
+// parent's absolute children after the others, in their order, so this layer, built after the
+// thumb, draws over it.
+func segmentContent(c *ui.Context) ui.Element {
+	return ui.Row(c).Absolute().Top(0).Left(0).Right(0).Bottom(0).Justify(ui.Center).AlignItems(ui.Center).PassThrough()
+}
+
+// thumbMatch is the identity a segmented control's thumb glides by.
+type thumbMatch struct{ label string }
 
 // sinkWhenPressed scales `e` down to `scale` while the pointer holds it, and back up once let go.
 func sinkWhenPressed(e ui.Element, pressed bool, scale float32) {
@@ -659,16 +694,76 @@ func segmented(c *ui.Context, selected *int, label string, labels ...string) ui.
 	parts.Track.Padding(2).Radius(radiusMD).Background(p.Chip).Label(label)
 	parts.Track.Children(func() {
 		for i, text := range labels {
-			// Each segment is as wide as its words.
-			seg := parts.Segment(i).Height(22).Padding(0, 10).Radius(radiusSM).FontSize(12).TextColor(p.Label2).Justify(ui.Center).Shrink(0)
+			// Each segment is as wide as its words in their selected weight, so picking one moves
+			// none; the words sit on a layer over the thumb, so the segment takes its width here.
+			w, _ := c.MeasureText(0, ui.Span{Text: text, Size: 12, Weight: 500})
+			seg := parts.Segment(i).Width(float32(math.Ceil(float64(w))) + 21).Height(22).Radius(radiusSM).FontSize(12).TextColor(p.Label2).Shrink(0)
+			on := i == *selected
 			switch {
-			case i == *selected:
-				seg.Background(p.ButtonBG).TextColor(p.Label).FontWeight(500).Shadow(0, 1, 2, 0, ui.RGBA(0, 0, 0, 0.12))
+			case on:
+				seg.TextColor(p.Label).FontWeight(500)
 			case seg.Hovered():
 				seg.TextColor(p.Label).Background(p.Hover)
 			}
 			seg.Transition(controlFade)
-			seg.Children(func() { ui.Text(c, text).SingleLine() })
+			seg.Children(func() {
+				if on {
+					selectionThumb(c, thumbMatch{label}, p.ButtonBG, radiusSM)
+				}
+				segmentContent(c).Children(func() { ui.Text(c, text).SingleLine() })
+			})
+		}
+	})
+	return parts.Track
+}
+
+// roundButton is a symbol on a raised disc inside a hairline, as the sidebar's Search and Create.
+func roundButton(c *ui.Context, name, tooltip, label string) ui.Element {
+	p := colors(c)
+	b := ui.ButtonBase(c).Size(30, 30).Radius(15).Justify(ui.Center).TextColor(p.Label).Background(p.ButtonBG).
+		Border(1, p.ButtonBorder).Shadow(0, 1, 2, 0, p.Shadow.Alpha(0.06)).Label(label).Tooltip(tooltip)
+	pressed := b.Pressed()
+	switch {
+	case pressed:
+		b.Background(p.ButtonPressed)
+	case b.Hovered():
+		b.Background(p.ButtonHover)
+	}
+	b.Transition(controlFade)
+	sinkWhenPressed(b, pressed, 0.92)
+	b.Children(func() { symbol(c, name, 15, 1.9) })
+	return b
+}
+
+// iconTab is a tab of iconTabs: its symbol, and its title as tooltip and label.
+type iconTab struct {
+	Symbol string
+	Title  string
+}
+
+// iconTabs is a row of tabs that are symbols alone, sharing the width: a segmented control whose
+// selection is a raised capsule on a neutral track.
+func iconTabs(c *ui.Context, selected *int, label string, tabs []iconTab) ui.Element {
+	p := colors(c)
+	parts := ui.SegmentedBase(c, selected, len(tabs))
+	parts.Track.Height(34).Padding(3).Gap(2).Radius(radiusCapsule).Background(p.Chip).Label(label)
+	parts.Track.Children(func() {
+		for i, tab := range tabs {
+			seg := parts.Segment(i).Grow(1).Basis(0).Height(28).Radius(radiusCapsule).TextColor(p.Label2).Justify(ui.Center).Label(tab.Title).Tooltip(tab.Title)
+			on := i == *selected
+			switch {
+			case on:
+				seg.TextColor(p.Label)
+			case seg.Hovered():
+				seg.TextColor(p.Label).Background(p.Hover)
+			}
+			seg.Transition(controlFade)
+			seg.Children(func() {
+				if on {
+					selectionThumb(c, thumbMatch{label}, p.ButtonBG, radiusCapsule)
+				}
+				segmentContent(c).Children(func() { symbol(c, tab.Symbol, 15, 1.9) })
+			})
 		}
 	})
 	return parts.Track

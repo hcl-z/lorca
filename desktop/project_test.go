@@ -87,6 +87,7 @@ func projectFixture(t *testing.T) (*mainWindow, *ui.Tester, *projectBackend, fun
 	m.userWantsInspector = true
 	app.main = m
 	m.selectChat("chat-relay")
+	m.inspector.tab = tabProfile
 	tt := ui.NewTester(m.frame(m.view), 1180, 900)
 	step := func() {
 		for {
@@ -117,7 +118,9 @@ func projectFixture(t *testing.T) (*mainWindow, *ui.Tester, *projectBackend, fun
 func TestTheProjectSectionListsEntriesAndSaysWhatNeedsTheUser(t *testing.T) {
 	m := demoWindow(t)
 	m.selectChat("chat-relay")
-	tt := ui.NewTester(m.frame(m.view), 1180, 900)
+	m.inspector.tab = tabProfile
+	// Tall enough for every entry under the profile and the members.
+	tt := ui.NewTester(m.frame(m.view), 1180, 1300)
 	settle(tt)
 	if !showsLine(tt, "Project") {
 		t.Fatalf("no Project caption in %q", tt.Texts())
@@ -216,6 +219,7 @@ func TestANewLinkNeedsItsAddress(t *testing.T) {
 func TestRenderProject(t *testing.T) {
 	m := demoWindow(t)
 	m.selectChat("chat-relay")
+	m.inspector.tab = tabProfile
 	tt := ui.NewTester(m.frame(m.view), 1180, 760)
 	settle(tt)
 	// Without LORCA_RENDER the states are only built, which is quick.

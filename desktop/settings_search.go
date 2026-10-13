@@ -42,10 +42,6 @@ func sendOnReturnEntry() settingsEntry {
 	return entry(model.PaneGeneral, title, "", L("enter send newline keyboard chats"))
 }
 
-func timestampsEntry() settingsEntry {
-	return entry(model.PaneGeneral, L("Show timestamps in transcripts"), "", L("time date messages chats"))
-}
-
 // trayIconEntry: the icon is in the menu bar on a Mac and in the notification area elsewhere.
 func trayIconEntry() settingsEntry {
 	title := L("Show icon in the notification area")
@@ -173,7 +169,7 @@ func (s settingsEntry) matches(query string) bool {
 func entriesIn(pane model.SettingsPane, device *model.Device) []settingsEntry {
 	switch pane {
 	case model.PaneGeneral:
-		out := []settingsEntry{sendOnReturnEntry(), timestampsEntry(), trayIconEntry(), unreadBadgeEntry(), appearanceEntry(), appLanguageEntry()}
+		out := []settingsEntry{sendOnReturnEntry(), trayIconEntry(), unreadBadgeEntry(), appearanceEntry(), appLanguageEntry()}
 		if updatesEnabled() {
 			out = append(out, versionEntry(), automaticChecksEntry(), automaticDownloadsEntry())
 		}

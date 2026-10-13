@@ -148,6 +148,7 @@ func TestRenderRoutineStatesInInspector(t *testing.T) {
 	m := demoWindow(t)
 	m.selectChat("chat-nova")
 	routineStates(t)
+	m.inspector.tab = tabRoutines
 	tt := ui.NewTester(m.frame(m.view), 1180, 900)
 	settle(tt)
 	if !tt.HasText(L("Needs sign-in")) || !tt.HasText(L("Can’t connect")) {

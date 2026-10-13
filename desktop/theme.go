@@ -29,6 +29,8 @@ type palette struct {
 	ButtonHover, ButtonPressed ui.Color
 	// SwitchOff is a switch's track while off.
 	SwitchOff ui.Color
+	// Scrollbar is a scroll container's thumb.
+	Scrollbar ui.Color
 
 	Indigo, Blue, Teal, Green, Orange, Pink, Purple, Red ui.Color
 
@@ -69,6 +71,7 @@ var lightPalette = palette{
 	ButtonHover:   ui.Hex("#ededed"),
 	ButtonPressed: ui.Hex("#e2e2e2"),
 	SwitchOff:     ui.RGBA(0, 0, 0, 0.14),
+	Scrollbar:     ui.RGBA(0, 0, 0, 0.16),
 
 	Indigo: ui.Hex("#5856d6"),
 	Blue:   ui.Hex("#007aff"),
@@ -140,6 +143,7 @@ var darkPalette = palette{
 	ButtonHover:   ui.Hex("#2a2a2c"),
 	ButtonPressed: ui.Hex("#333336"),
 	SwitchOff:     ui.RGBA(255, 255, 255, 0.16),
+	Scrollbar:     ui.RGBA(255, 255, 255, 0.2),
 
 	Indigo: ui.Hex("#5e5ce6"),
 	Blue:   ui.Hex("#0a84ff"),
@@ -192,7 +196,7 @@ var darkPalette = palette{
 
 // Text sizes, in DIPs.
 const (
-	textMessage = 13.5
+	textMessage = 15
 	textBody    = 13
 	textSmall   = 12
 	textCaption = 10.5
@@ -337,7 +341,11 @@ func applyTheme(c *ui.Context) {
 	t.Success = p.Green
 	t.Selection = p.Accent.Alpha(0.32)
 	t.Focus = p.Accent.Alpha(0.7)
-	t.Scrollbar = p.Label3
+	// A thin, faint thumb that shows under the pointer; High Contrast keeps the stronger one.
+	t.Scrollbar, t.ScrollbarWidth = p.Scrollbar, 4
+	if c.Preferences().HighContrast {
+		t.Scrollbar, t.ScrollbarWidth = p.Label3, 6
+	}
 	t.Radius = radiusMD
 	t.FontSize = textBody * scaleOf(c)
 	c.SetTheme(&t)

@@ -25,6 +25,8 @@ func settingsWindowTester(t *testing.T, height int) (*mainWindow, *ui.Tester) {
 	t.Cleanup(func() { settingsUpdatesEnabled, settingsUpdaterState = enabled, state })
 	m.showSettingsDevice("")
 	tt := ui.NewTester(m.frame(m.view), 1180, height)
+	// The inspector closes as Settings opens; these tests click rows at once, so nothing slides.
+	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
 	return m, tt
 }
 
