@@ -1,6 +1,7 @@
 import { FlashList } from "@shopify/flash-list";
-import { MenuView, type MenuAction, type MenuComponentRef } from "@expo/ui/community/menu";
+import { type MenuAction, type MenuComponentRef } from "@expo/ui/community/menu";
 import { haptic } from "./haptics";
+import { PopupMenu } from "./PopupMenu";
 import { Link, Stack, useRouter } from "expo-router";
 import Swipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -281,6 +282,8 @@ export function ChatsScreen({ sidebar = false }: { sidebar?: boolean }) {
           getItemType={(item) => ("snippet" in item ? "search" : item.kind)}
           contentInsetAdjustmentBehavior="automatic"
           maintainVisibleContentPosition={KEEP_OFFSET}
+          drawDistance={600}
+          removeClippedSubviews={false}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
           onScrollBeginDrag={closeOpenRow}
@@ -335,9 +338,9 @@ function AndroidListBar({ top, status, needsAttention, newItems, onSettings, onA
           {status}
         </View>
         <RoundButton icon="magnifyingglass" label={t("Search")} onPress={onSearch} />
-        <MenuView ref={menuRef} actions={actions} onPressAction={({ nativeEvent }) => newItems[Number(nativeEvent.event)]?.run()}>
+        <PopupMenu ref={menuRef} actions={actions} onPressAction={({ nativeEvent }) => newItems[Number(nativeEvent.event)]?.run()}>
           <RoundButton icon="plus" label={t("New")} onPress={() => menuRef.current?.show()} />
-        </MenuView>
+        </PopupMenu>
       </View>
     </View>
   );
@@ -441,7 +444,7 @@ const GroupHeader = memo(function GroupHeader({ group, collapsed, sections, widt
   );
   if (!actions.length) return header;
   return (
-    <MenuView
+    <PopupMenu
       ref={menuRef}
       actions={actions}
       shouldOpenOnLongPress
@@ -457,7 +460,7 @@ const GroupHeader = memo(function GroupHeader({ group, collapsed, sections, widt
       }}
     >
       {header}
-    </MenuView>
+    </PopupMenu>
   );
 });
 
@@ -517,7 +520,7 @@ const MenuChatRow = memo(function MenuChatRow({ chat, bots, working, responding,
   ];
 
   return (
-    <MenuView
+    <PopupMenu
       ref={menuRef}
       actions={actions}
       shouldOpenOnLongPress
@@ -533,7 +536,7 @@ const MenuChatRow = memo(function MenuChatRow({ chat, bots, working, responding,
       <View style={{ width }}>
         <ChatRow chat={chat} bots={bots} title={chatTitle(chat)} working={working} responding={responding} selected={selected} onPress={onPress} onLongPress={ios ? undefined : onLongPress} />
       </View>
-    </MenuView>
+    </PopupMenu>
   );
 });
 

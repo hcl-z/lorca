@@ -77,6 +77,8 @@ const JUMP_DISC = 36;
 /// How near the computed end a scroll offset counts as there. Android rounds the composer's
 /// space to whole pixels.
 const END_TOLERANCE = Platform.OS === "ios" ? 1 : 2;
+/** How far past the viewport, in points, the transcript keeps its rows drawn. */
+const DRAW_DISTANCE = 1000;
 const ANDROID_BAR_HEIGHT = 56;
 const ANDROID_FADE_HEIGHT = 24;
 
@@ -915,6 +917,12 @@ export default function ChatScreen() {
             // The space under an anchored message reaches the native scroll view a frame after
             // JS sets it; a scroll sent meanwhile would be clamped to the range without it.
             scrollToOverflowEnabled
+            // Rows are laid out ahead of the viewport so a quick flick finds them drawn: the
+            // default 250 leaves bare background at the edge when the rows' heights are still
+            // being measured. Detaching offscreen views (Android's default for a scroll view)
+            // would blank a recycled row until it is attached again.
+            drawDistance={DRAW_DISTANCE}
+            removeClippedSubviews={false}
             keyboardDismissMode="interactive"
             maintainVisibleContentPosition={maintainVisibleContentPosition}
             contentContainerStyle={{

@@ -3,7 +3,7 @@
 // user's bubble, and a switch that is on; system blue only for links. Bots keep their accents.
 
 import { getMaterialColors, type MaterialColors, type RgbaHex } from "@expo/ui/jetpack-compose";
-import { Platform, useColorScheme, type ColorValue } from "react-native";
+import { Platform, useColorScheme, type ColorValue, type ViewStyle } from "react-native";
 import type { Accent } from "../core/model";
 
 export interface Palette {
@@ -187,11 +187,19 @@ export function withAlpha(hex: string, alpha: number): string {
 }
 
 /// The soft shadow under a floating round button or capsule, as in the reference's white discs.
-export function floatShadow(p: Palette) {
-  return Platform.select({
-    ios: { shadowColor: p.shadow, shadowOpacity: p.dark ? 0.4 : 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } },
-    default: { elevation: 2 },
-  });
+/// It belongs on a view that does not clip (`overflow: "hidden"` removes an iOS shadow) and that
+/// has a background of its own, since the shadow takes the view's shape. On Android a dark surface
+/// shows no elevation, so there the hairline edge alone separates the disc, and a light one gets a
+/// short, tinted shadow rather than the default's gray smudge.
+export function floatShadow(p: Palette): ViewStyle {
+  if (Platform.OS === "ios") return { shadowColor: p.shadow, shadowOpacity: p.dark ? 0.35 : 0.1, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } };
+  return p.dark ? { elevation: 0 } : { elevation: 3, shadowColor: "rgba(0,0,0,0.45)" };
+}
+
+/// The shadow under a popup menu: larger and softer than a button's, as it floats over everything.
+export function menuShadow(p: Palette): ViewStyle {
+  if (Platform.OS === "ios") return { shadowColor: p.shadow, shadowOpacity: p.dark ? 0.5 : 0.18, shadowRadius: 24, shadowOffset: { width: 0, height: 8 } };
+  return { elevation: p.dark ? 0 : 12, shadowColor: "rgba(0,0,0,0.5)" };
 }
 
 /// The eight bot accents, as the Mac app's system colors, with a lifted twin for gradients.

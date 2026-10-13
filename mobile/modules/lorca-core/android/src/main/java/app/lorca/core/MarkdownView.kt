@@ -587,11 +587,28 @@ class MarkdownView(context: Context, appContext: AppContext) : ExpoView(context,
 
   override val shouldUseAndroidLayout = true
 
+  /// What the views on screen were built from. FlashList hands a recycled row all its props
+  /// again, usually the same ones: rebuilding then would empty the view for a frame (the new
+  /// children have no size until the next layout pass) and show a blank bubble mid-scroll.
+  private var built: List<Any>? = null
+
   init {
     orientation = VERTICAL
   }
 
   fun render() {
+    val signature = listOf(
+      style.markdown, style.maxWidth, style.fontSize, style.codeFontSize, style.color, style.linkColor,
+      style.codeBackground, style.quoteColor, style.border, style.tint, style.sourceChips, style.chipColor, style.chipBorder,
+    )
+    if (signature == built) return
+    built = signature
     layOutMessage(this, style, interactive = true)
+    // The new children are sized and placed now, inside the frame React Native gave this view,
+    // rather than by a pass posted after it.
+    if (width > 0 && height > 0) {
+      measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY))
+      layout(left, top, right, bottom)
+    }
   }
 }
