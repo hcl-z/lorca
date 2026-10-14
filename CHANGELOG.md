@@ -8,11 +8,18 @@ phone app's.
 
 ## [Unreleased]
 
+## [1.0.19]
+
+- Lorca catches up with upstream. Everything egoist/lorca shipped since the last sync is in: the Attention, Telegram, output, and Auto-review work below, plus a Runner that stays online while busy, a custom model's own thinking levels, and the phone's typing indicator.
 - Right-click a brief in Attention and choose Dismiss to take it off the list on every Device; the coordinator's next brief shows again. A brief also leaves once every item it is about is resolved.
 - A bot resolves an Attention item it alone reported as soon as it sees the work is done, such as a run it approved or a pull request that merged, so you no longer clear them by hand.
 - A bot listening on Telegram sees the photos people send it, with a caption or without one, and an album's photos together as one message. The photo shows in the conversation on every Device.
 - Several outputs in a row from one bot, such as the proof files a coding agent saves, show as one list with a line each.
-- Auto-review allows an action by default, and holds only one it can name a rule for. A held action goes back to the bot before it reaches you.
+- Auto-review allows an action by default, and holds only one it can name a rule for. A held action goes back to the bot before it reaches you, and push to a branch of the working repository is no longer held.
+- A custom provider's model offers the thinking levels its own list declares, `xhigh` and `max` included, and sends them as written.
+- While a bot's turn runs for a message a Telegram channel took, that chat shows the bot typing, and the reply stops it.
+- Every bot has a built-in `lorca` skill that points at the docs on lorca.app, so it looks up how Lorca works instead of guessing.
+- The phone app shows Telegram's and Slack's real marks on a chat's avatar badge, keeps the transcript scrollable while a reply arrives, and no longer crashes from an unbounded composer inset.
 
 ## [1.0.18]
 
