@@ -11,6 +11,11 @@ members = [
   "crates/markdown",
 ]
 
+[profile.dev]
+# Line tables keep the file and line in a panic's backtrace; the variables a debugger would show
+# take most of a debug build's disk (liblorca alone was 500 MB), and linking them is slow.
+debug = "line-tables-only"
+
 [workspace.package]
 version = "1.0.19"
 edition = "2021"
