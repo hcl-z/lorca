@@ -276,6 +276,172 @@ func TestOutputLinkAndUnavailableFile(t *testing.T) {
 	}
 }
 
+// addFileOutput puts one more file output in the fixture's chat.
+func (f *outputFixture) addFileOutput(id, name, mime, contents string) {
+	dir := f.t.TempDir()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(contents), 0600); err != nil {
+		f.t.Fatal(err)
+	}
+	f.files["att-"+id] = path
+	attachment := map[string]any{"id": "att-" + id, "name": name, "mime": mime, "size": len(contents)}
+	f.messages = append(f.messages, map[string]any{"id": "msg-" + id, "chat_id": "chat-relay", "author": map[string]any{"kind": "bot", "bot_id": "bot-patch"},
+		"body":  map[string]any{"kind": "text", "text": "", "attachments": []any{attachment}},
+		"state": map[string]any{"kind": "complete"}, "created_at": float64(time.Now().Unix()),
+		"output": map[string]any{"id": "out-" + id, "name": name, "mime": mime, "bot_id": "bot-patch", "chat_id": "chat-relay", "version": 1}})
+}
+
+func TestOutputViewerDrawsMarkdownAndShowsItsSource(t *testing.T) {
+	m := demoWindow(t)
+	m.selectChat("chat-relay")
+	f := newOutputFixture(t)
+	f.addFileOutput("guide", "Guide.md", "text/markdown", "# Welcome to Lorca\n\nA **bold** claim.\n")
+	f.install(false)
+	tt := ui.NewTester(m.frame(m.view), 1180, 760)
+	f.pump(tt, "the inspector's outputs", func() bool { return tt.HasText("Release notes") })
+
+	m.presentOutput("chat-relay", "out-guide")
+	f.pump(tt, "the drawn page", func() bool { return tt.HasText("Welcome to Lorca") })
+	wantText(t, tt, L("Preview"), L("Source"), L("Copy"))
+	if strings.Contains(strings.Join(tt.Texts(), "\n"), "# Welcome") {
+		t.Fatalf("the page shows Markdown marks: %q", tt.Texts())
+	}
+
+	if err := tt.Click(L("Source")); err != nil {
+		t.Fatal(err)
+	}
+	f.pump(tt, "the source", func() bool { return strings.Contains(strings.Join(tt.Texts(), "\n"), "# Welcome to Lorca") })
+}
+
+func TestOutputViewerShowsAnHTMLFileAsSourceWithoutAWebView(t *testing.T) {
+	m := demoWindow(t)
+	m.selectChat("chat-relay")
+	f := newOutputFixture(t)
+	f.addFileOutput("page", "page.html", "text/html", "<h1>Hello</h1>\n")
+	f.install(false)
+	tt := ui.NewTester(m.frame(m.view), 1180, 760)
+	f.pump(tt, "the inspector's outputs", func() bool { return tt.HasText("Release notes") })
+
+	// The test window has no native window to make a web view in, so the page shows as its source
+	// with no switch between looks.
+	m.presentOutput("chat-relay", "out-page")
+	f.pump(tt, "the source", func() bool { return strings.Contains(strings.Join(tt.Texts(), "\n"), "<h1>Hello</h1>") })
+	if tt.HasText(L("Preview")) {
+		t.Fatalf("a page with no web view offers a preview: %q", tt.Texts())
+	}
+}
+
+func TestFileInAChatOpensInTheViewer(t *testing.T) {
+	m := demoWindow(t)
+	m.selectChat("chat-relay")
+	f := newOutputFixture(t)
+	f.addFileOutput("guide", "Guide.md", "text/markdown", "# Welcome to Lorca\n")
+	f.install(false)
+	tt := ui.NewTester(m.frame(m.view), 1180, 760)
+	f.pump(tt, "the inspector's outputs", func() bool { return tt.HasText("Release notes") })
+
+	m.presentFile(model.Attachment{ID: "att-guide", Name: "Guide.md", Mime: "text/markdown", Size: 19}, "chat-relay", "msg-guide")
+	f.pump(tt, "the drawn page", func() bool { return tt.HasText("Welcome to Lorca") })
+	wantText(t, tt, L("Save As…"), L("Open"), L("Done"))
+	tt.Key(0, ui.KeyEscape)
+	settle(tt)
+	if m.hasSheet() {
+		t.Fatal("Escape left the viewer up")
+	}
+}
+
+func TestImageInAChatOpensInTheLightbox(t *testing.T) {
+	m := demoWindow(t)
+	m.selectChat("chat-relay")
+	f := newOutputFixture(t)
+	f.install(true)
+	tt := ui.NewTester(m.frame(m.view), 1180, 760)
+	f.pump(tt, "the transcript's files", func() bool { return tt.HasText(L("View all")) })
+
+	attachment := model.Attachment{ID: "att-header", Name: "Header after.png", Mime: "image/png", Size: 4096, Width: 640, Height: 360}
+	m.presentImage(attachment, "chat-relay", "msg-header")
+	f.pump(tt, "the lightbox", func() bool { return tt.HasText("640 × 360 · 4 KB") })
+	wantText(t, tt, "Header after.png")
+	if tt.HasText(L("Done")) || tt.HasText(L("Fit")) {
+		t.Fatal("the lightbox has a file sheet's buttons")
+	}
+	tt.Key(0, ui.KeyEscape)
+	settle(tt)
+	if m.hasSheet() {
+		t.Fatal("Escape left the lightbox up")
+	}
+}
+
+func TestReadViewerContentCutsLongTextAndLeavesBinaryAlone(t *testing.T) {
+	dir := t.TempDir()
+	long := filepath.Join(dir, "long.txt")
+	os.WriteFile(long, []byte(strings.Repeat("é", viewerTextLimit)), 0600)
+	read, err := readViewerContent(model.PreviewText, long)
+	if err != nil || !read.truncated || len(read.text) > viewerTextLimit || len(read.text) < viewerTextLimit-1 {
+		t.Fatalf("long text read as %d bytes, truncated %v, err %v", len(read.text), read.truncated, err)
+	}
+	binary := filepath.Join(dir, "data.txt")
+	os.WriteFile(binary, []byte{0xff, 0xfe, 0x00, 0x80}, 0600)
+	if read, err = readViewerContent(model.PreviewText, binary); err != nil || read.text != "" {
+		t.Fatalf("binary data read as %q, err %v", read.text, err)
+	}
+}
+
+func TestPreviewNavigationKeepsThePageWhereItIs(t *testing.T) {
+	var opened []string
+	open := previewOpenLink
+	previewOpenLink = func(link string) { opened = append(opened, link) }
+	t.Cleanup(func() { previewOpenLink = open })
+	closed := 0
+	navigate := previewNavigation(previewOrigin, func() { closed++ })
+	if event := (&mygo.NavigateEvent{URL: previewOrigin + "close"}); true {
+		navigate(event)
+		if !event.DefaultPrevented() || closed != 1 {
+			t.Fatalf("the page's close request prevented %v and closed %d times", event.DefaultPrevented(), closed)
+		}
+	}
+	for _, c := range []struct {
+		url              string
+		clicked          bool
+		prevented, opens bool
+	}{
+		{previewOrigin, false, false, false},
+		{previewOrigin + "#section", true, false, false},
+		{"about:blank", false, false, false},
+		{"https://example.com/docs", true, true, true},
+		{"https://example.com/ads", false, true, false},
+		{previewOrigin + "other.html", true, true, true},
+	} {
+		before := len(opened)
+		event := &mygo.NavigateEvent{URL: c.url, UserInitiated: c.clicked}
+		navigate(event)
+		if event.DefaultPrevented() != c.prevented || (len(opened) > before) != c.opens {
+			t.Errorf("%s (clicked %v): prevented %v, opened %v", c.url, c.clicked, event.DefaultPrevented(), len(opened) > before)
+		}
+	}
+}
+
+func TestLightboxPageCarriesThePictureAndAskingToClose(t *testing.T) {
+	page := lightboxHTML("image/jpeg", []byte("abc"))
+	for _, want := range []string{`src="data:image/jpeg;base64,YWJj"`, `"` + previewOrigin + `close"`, "gesturechange", "ctrlKey"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the page lacks %s", want)
+		}
+	}
+	if strings.Contains(page, "__IMAGE__") || strings.Contains(page, "__CLOSE__") {
+		t.Fatal("the page keeps a placeholder")
+	}
+	if !strings.Contains(lightboxHTML("application/octet-stream", nil), "data:image/png;base64,") {
+		t.Fatal("a picture of no known type is not given an image type")
+	}
+}
+
+func TestFileURL(t *testing.T) {
+	if got := fileURL("/tmp/a b/report.pdf"); got != "file:///tmp/a%20b/report.pdf" {
+		t.Fatalf("fileURL = %q", got)
+	}
+}
+
 func TestOutputsInTheTranscript(t *testing.T) {
 	m := demoWindow(t)
 	m.selectChat("chat-relay")
@@ -296,7 +462,7 @@ func TestOutputsInTheTranscript(t *testing.T) {
 	settle(tt)
 	renderBoth(t, tt, "outputs-transcript")
 	// The tile of a file that could not be fetched retries on a click.
-	if err := tt.Click("Before.png"); err != nil {
+	if err := tt.Click(L("Couldn't download · Retry")); err != nil {
 		t.Fatal(err)
 	}
 	f.pump(tt, "the retried tile", func() bool { return !tt.HasText(L("Couldn't download · Retry")) })
@@ -351,15 +517,15 @@ func TestARunOfOutputsJoinsIntoOneList(t *testing.T) {
 		bitmaps.Unlock()
 	}
 	rows := buildRows(store.Chat("chat-relay"), nil, "")
-	// Before.png, the same bot's a minute earlier, starts the run; another bot's link ends the one
-	// before it.
+	// Before.png is a picture, which stands apart from the files around it; the proofs after it are
+	// a run of their own, and another bot's link ends the one before.
 	var run []outputStack
 	for _, row := range rows {
 		if row.kind == rowMessage && (row.message.ID == "msg-notes" || row.message.ID == "msg-missing" || strings.HasPrefix(row.message.ID, "msg-proof")) {
 			run = append(run, row.stack)
 		}
 	}
-	want := []outputStack{{}, {below: true}, {above: true, below: true}, {above: true, below: true}, {above: true, below: true}, {above: true}}
+	want := []outputStack{{}, {}, {below: true}, {above: true, below: true}, {above: true, below: true}, {above: true}}
 	if !slices.Equal(run, want) {
 		t.Fatalf("the run's rows are %v, want %v", run, want)
 	}

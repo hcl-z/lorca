@@ -118,6 +118,12 @@ func isOutputCard(message *model.Message) bool {
 	return message.Output != nil && message.Author.Kind != model.AuthorYou
 }
 
+// isImageOutput is a bot's published picture, which shows as the picture, not as a card of a file,
+// and stands apart from a run of files.
+func isImageOutput(message *model.Message) bool {
+	return isOutputCard(message) && message.Output.URL == "" && len(message.Attachments) > 0 && message.Attachments[0].PreviewKind() == model.PreviewImage
+}
+
 // buildRows lays the transcript out as rows, after the macOS app's rebuildRows: a day separator
 // after fifteen minutes of silence or a new day, the messages (tool calls only as a sent
 // message's marker or a command's card while it needs the user), and at the end the working row
@@ -145,10 +151,12 @@ func buildRows(chat *model.Chat, working []string, stoppedNotice string) []chatR
 		}
 		previousDate = message.CreatedAt
 	}
-	// Each run of one bot's outputs, with nothing between them, joins into one list.
+	// Each run of one bot's file outputs, with nothing between them, joins into one list; a
+	// picture is not in one.
 	for i := 1; i < len(rows); i++ {
 		above, below := &rows[i-1], &rows[i]
-		if above.kind == rowMessage && below.kind == rowMessage && isOutputCard(above.message) && isOutputCard(below.message) && above.message.Author.Same(below.message.Author) {
+		if above.kind == rowMessage && below.kind == rowMessage && isOutputCard(above.message) && isOutputCard(below.message) &&
+			!isImageOutput(above.message) && !isImageOutput(below.message) && above.message.Author.Same(below.message.Author) {
 			above.stack.below, below.stack.above = true, true
 		}
 	}
@@ -348,7 +356,8 @@ func (m *mainWindow) messageCell(c *ui.Context, chat *model.Chat, message *model
 	top := float32(groupTopPadding)
 	switch {
 	case stack.above:
-		top = 0
+		// The cards of a run stand a few points apart.
+		top = tightTopPadding
 	case !groupStart:
 		top = tightTopPadding
 	}
@@ -531,11 +540,12 @@ func (m *mainWindow) revealMessage(s *chatState, messageID string) {
 // MARK: - Outputs
 
 const (
-	outputCardWidth  = 320
-	outputPreviewMax = 200
-	outputPreviewMin = 96
-	// outputStackIcon is the icon's box in a run's row.
-	outputStackIcon = 24
+	outputCardWidth = 320
+	// outputIconTile is the tinted tile an output's icon sits on.
+	outputIconTile = 40
+	// outputImageMax and outputImageMin bound a published picture's longest and shortest side.
+	outputImageMax = 360
+	outputImageMin = 96
 )
 
 // outputTint is the color of an output's icon, by what it is.
@@ -561,22 +571,27 @@ func outputTint(p *palette, kind model.OutputKind) ui.Color {
 	return p.Label2
 }
 
-// outputCard is a published output in the transcript, standing without a bubble: an image's
-// preview, the file's icon, name, type and size, and what the bot checked. It shows no time: the
-// stamps belong to the bubbles. A click opens the
-// output's sheet; the menu opens or saves the file, and replies to it. A run of one bot's outputs
-// joins into one list, a compact row each: the icon, name, type and size, and the check's symbol;
-// the check's words are in the output's sheet.
+// outputCard is a published file or link in the transcript, standing without a bubble: a card with
+// the file's icon on a tinted tile, its name, and its type and size, and under them what the bot
+// checked. It shows no time: the stamps belong to the bubbles. A click opens the output's sheet;
+// the menu opens or saves the file, and replies to it. A run of one bot's outputs is a column of
+// such cards a few points apart, each with the check's symbol at its end in place of its words,
+// which are in the output's sheet. A picture is not a card: see imageOutput.
 func (m *mainWindow) outputCard(c *ui.Context, chat *model.Chat, message *model.Message, stack outputStack, s *chatState) {
+	if isImageOutput(message) {
+		m.imageOutput(c, chat, message, s)
+		return
+	}
 	p := colors(c)
 	output := message.Output
 	kind := output.Kind()
 	tint := outputTint(p, kind)
 	var attachment *model.Attachment
-	path, fileError := "", ""
+	fileError := ""
 	if len(message.Attachments) > 0 {
 		attachment = &message.Attachments[0]
-		path = store.LocalFile(*attachment, chat.ID, message.ID)
+		// Asking for the file starts its fetch; the card shows only whether that failed.
+		store.LocalFile(*attachment, chat.ID, message.ID)
 		fileError = store.AttachmentError(attachment.ID)
 	}
 	detail := output.TypeName()
@@ -589,25 +604,15 @@ func (m *mainWindow) outputCard(c *ui.Context, chat *model.Chat, message *model.
 		}
 	}
 	ui.Row(c).AlignItems(ui.End).Gap(8).MaxWidthPercent(100).MinWidth(0).Children(func() {
-		card := ui.ButtonBase(c.Key("output:"+message.ID)).Width(outputCardWidth).MaxWidthPercent(100).Shrink(1).Radius(12).Clip().
-			Background(p.OutputCard).Border(1, p.Separator).Shadow(0, 1, 2, 0, ui.RGBA(0, 0, 0, 0.04)).Cursor(ui.CursorPointer).Label(output.Name).Tooltip(output.Name)
-		if stack.stacked() {
-			// Rounded and closed only at the run's ends; the rows between share their edges.
-			top, bottom := float32(12), float32(12)
-			topBorder, bottomBorder := float32(1), float32(1)
-			if stack.above {
-				top, topBorder = 0, 0
-			}
-			if stack.below {
-				bottom, bottomBorder = 0, 0
-			}
-			card.Radius(top, top, bottom, bottom).BorderWidth(topBorder, 1, bottomBorder, 1)
-			if stack.above {
-				card.Shadow(0, 0, 0, 0, ui.RGBA(0, 0, 0, 0))
-			}
-			if evidence := output.Evidence; evidence != nil && fileError == "" {
-				card.Tooltip(output.Name + "\n" + evidence.Title() + " · " + evidence.StatusText())
-			}
+		card := ui.ButtonBase(c.Key("output:"+message.ID)).Width(outputCardWidth).MaxWidthPercent(100).Shrink(1).Radius(radiusXL).Clip().
+			Background(p.OutputCard).Border(1, p.Separator).Cursor(ui.CursorPointer).Label(output.Name).Tooltip(output.Name).Transition(controlFade)
+		// A card lifts a little under the pointer: a firmer edge and a soft shadow.
+		if card.Hovered() {
+			card.Border(1, p.ButtonBorder).Shadow(0, 2, 8, 0, p.Shadow.Alpha(0.08))
+		}
+		sinkWhenPressed(card, card.Pressed(), 0.99)
+		if evidence := output.Evidence; evidence != nil && stack.stacked() && fileError == "" {
+			card.Tooltip(output.Name + "\n" + evidence.Title() + " · " + evidence.StatusText())
 		}
 		if s.flashID == message.ID {
 			if elapsed := c.Now().Sub(s.flashAt); elapsed < 1100*time.Millisecond {
@@ -619,22 +624,13 @@ func (m *mainWindow) outputCard(c *ui.Context, chat *model.Chat, message *model.
 			}
 		}
 		card.Children(func() {
-			if stack.stacked() {
-				thumbnail := ""
-				if kind == model.OutputImage && fileError == "" {
-					thumbnail = path
-				}
-				outputStackRow(c, p, output, tint, detail, fileError, thumbnail, stack.above)
-				return
-			}
 			ui.Column(c).FillWidth().Children(func() {
-				if kind == model.OutputImage && attachment != nil && fileError == "" {
-					outputCardPreview(c, *attachment, path)
-				}
-				ui.Row(c).FillWidth().Padding(10, 12).Gap(10).AlignItems(ui.Center).Children(func() {
-					ui.Box(c).TextColor(tint).Children(func() { symbol(c, output.Symbol(), 26, 1.6) })
-					ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(1).Children(func() {
-						ui.Text(c, output.Name).FontSize(13).FontWeight(600).TextColor(p.Label).SingleLine()
+				ui.Row(c).FillWidth().Padding(11, 14, 11, 11).Gap(12).AlignItems(ui.Center).Children(func() {
+					ui.Box(c).Size(outputIconTile, outputIconTile).Radius(radiusLG).Background(tint.Alpha(0.12)).Center().TextColor(tint).Children(func() {
+						symbol(c, output.Symbol(), 20, 1.7)
+					})
+					ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(2).Children(func() {
+						ui.Text(c, output.Name).FontSize(13.5).FontWeight(600).TextColor(p.Label).SingleLine()
 						switch {
 						case fileError != "":
 							ui.Text(c, L("Couldn't download · Retry")).FontSize(11.5).TextColor(p.Red).SingleLine()
@@ -642,8 +638,12 @@ func (m *mainWindow) outputCard(c *ui.Context, chat *model.Chat, message *model.
 							ui.Text(c, detail).FontSize(11.5).TextColor(p.Label2).FontFeatures("tnum").SingleLine()
 						}
 					})
+					if evidence := output.Evidence; evidence != nil && stack.stacked() {
+						symbolName, checkTint := evidenceSymbol(p, *evidence)
+						ui.Box(c).TextColor(checkTint).Children(func() { symbol(c, symbolName, 15, 2) })
+					}
 				})
-				if evidence := output.Evidence; evidence != nil {
+				if evidence := output.Evidence; evidence != nil && !stack.stacked() {
 					outputCheck(c, p, *evidence)
 				}
 			})
@@ -676,36 +676,74 @@ func (m *mainWindow) outputCard(c *ui.Context, chat *model.Chat, message *model.
 	})
 }
 
-// outputStackRow is an output's row in a run of them: the icon (an image's own picture, once its
-// bytes at `thumbnail` are here), name, type and size, and the check's symbol at the end, under a
-// rule from the text's edge when a row is above it.
-func outputStackRow(c *ui.Context, p *palette, output *model.Output, tint ui.Color, detail, fileError, thumbnail string, ruled bool) {
-	ui.Column(c).FillWidth().Children(func() {
-		if ruled {
-			ui.Box(c).Margin(0, 0, 0, 12+outputStackIcon+10).Height(1).Background(p.Separator)
+// imageOutput is a published picture in the transcript: the picture itself, whole, with the bot's
+// check under it when there is one, and no name or size. A click opens it in the lightbox, or
+// fetches it again when it could not be fetched; the menu opens or saves the file, and replies to
+// it. The output's versions are in the sheet its row in the inspector opens.
+func (m *mainWindow) imageOutput(c *ui.Context, chat *model.Chat, message *model.Message, s *chatState) {
+	p := colors(c)
+	output := message.Output
+	attachment := message.Attachments[0]
+	path := store.LocalFile(attachment, chat.ID, message.ID)
+	fileError := store.AttachmentError(attachment.ID)
+	width, height := fitImage(attachment, outputImageMax, outputImageMin)
+	ui.Row(c).MaxWidthPercent(100).MinWidth(0).Children(func() {
+		card := ui.ButtonBase(c.Key("output:" + message.ID)).Width(width).MaxWidthPercent(100).Shrink(1).Radius(12).Clip().Background(p.Code).
+			Cursor(ui.CursorPointer).Label(output.Name).Tooltip(output.Name)
+		if output.Evidence != nil {
+			card.Border(1, p.Separator)
 		}
-		ui.Row(c).FillWidth().Height(44).Padding(0, 12).Gap(10).AlignItems(ui.Center).Children(func() {
-			ui.Box(c).Size(outputStackIcon, outputStackIcon).Center().TextColor(tint).Children(func() {
-				if bitmap := loadBitmap(thumbnail); bitmap != nil {
-					ui.Image(c, bitmap).Size(outputStackIcon, outputStackIcon).Radius(5).Fit(ui.Cover)
-				} else {
-					symbol(c, output.Symbol(), 20, 1.6)
-				}
-			})
-			ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(1).Children(func() {
-				ui.Text(c, output.Name).FontSize(13).FontWeight(600).TextColor(p.Label).SingleLine()
-				switch {
+		if s.flashID == message.ID {
+			if elapsed := c.Now().Sub(s.flashAt); elapsed < 1100*time.Millisecond {
+				phase := float64(elapsed) / float64(1100*time.Millisecond)
+				card.Opacity(float32(1 - 0.65*math.Abs(math.Sin(phase*2*math.Pi))))
+				c.AnimationFrame()
+			} else {
+				s.flashID = ""
+			}
+		}
+		card.Children(func() {
+			ui.Column(c).FillWidth().Children(func() {
+				switch bitmap := loadBitmap(path); {
 				case fileError != "":
-					ui.Text(c, L("Couldn't download · Retry")).FontSize(11.5).TextColor(p.Red).SingleLine()
-				case detail != "":
-					ui.Text(c, detail).FontSize(11.5).TextColor(p.Label2).FontFeatures("tnum").SingleLine()
+					ui.Row(c).FillWidth().Height(height).Padding(0, 14).AlignItems(ui.Center).Justify(ui.Center).TextColor(p.Red).Children(func() {
+						ui.Text(c, L("Couldn't download · Retry")).FontSize(12).TextAlign(ui.Center)
+					})
+				case bitmap != nil:
+					ui.Image(c, bitmap).FillWidth().Height(height).Fit(ui.Cover)
+				default:
+					ui.Row(c).FillWidth().Height(height).AlignItems(ui.Center).Justify(ui.Center).Children(func() { spinner(c, 18) })
+				}
+				if evidence := output.Evidence; evidence != nil {
+					outputCheck(c, p, *evidence)
 				}
 			})
-			if evidence := output.Evidence; evidence != nil {
-				symbolName, checkTint := evidenceSymbol(p, *evidence)
-				ui.Box(c).TextColor(checkTint).Children(func() { symbol(c, symbolName, 15, 2) })
+		})
+		card.ContextMenu(func(menu *ui.Menu) {
+			if fileError != "" {
+				if menu.Item(L("Try Again")).Chosen() {
+					store.RetryAttachment(attachment, chat.ID, message.ID)
+				}
+			} else {
+				m.outputMenu(menu, message)
+			}
+			if message.CanBeQuoted() {
+				menu.Separator()
+				if menu.Item(L("Reply")).Chosen() {
+					m.startReply(s, message)
+				}
+				if menu.Item(L("Give Feedback…")).Chosen() {
+					m.presentFeedback(chat.ID, message)
+				}
 			}
 		})
+		if card.Clicked() {
+			if fileError != "" {
+				store.RetryAttachment(attachment, chat.ID, message.ID)
+			} else if path != "" {
+				m.presentImage(attachment, chat.ID, message.ID)
+			}
+		}
 	})
 }
 
@@ -718,33 +756,6 @@ func evidenceSymbol(p *palette, evidence model.OutputEvidence) (string, ui.Color
 		return "xmark.circle.fill", p.Red
 	}
 	return "circle.dashed", p.Label2
-}
-
-// outputCardPreview is an image output's picture across the top of its card: the whole picture when
-// it is wide, the top of it when it is tall, as a page's screenshot starts at its top.
-func outputCardPreview(c *ui.Context, attachment model.Attachment, path string) {
-	p := colors(c)
-	width, height := float32(max(attachment.Width, 4)), float32(max(attachment.Height, 3))
-	if attachment.Width == 0 || attachment.Height == 0 {
-		width, height = 4, 3
-	}
-	full := outputCardWidth * height / width
-	box := min(max(full, outputPreviewMin), outputPreviewMax)
-	// The card's rounded clip does not reach a picture everywhere, so the preview and its picture
-	// round their own top corners, inside the card's 1-DIP border.
-	frame := ui.Box(c).FillWidth().Height(box).Clip().Radius(11, 11, 0, 0).Background(p.Code)
-	frame.Children(func() {
-		bitmap := loadBitmap(path)
-		if bitmap == nil {
-			return
-		}
-		if full >= box {
-			ui.Image(c, bitmap).Width(outputCardWidth).Height(full).Radius(11, 11, 0, 0).Fit(ui.FillBox)
-		} else {
-			ui.Image(c, bitmap).FillWidth().Height(box).Radius(11, 11, 0, 0).Fit(ui.Cover)
-		}
-	})
-	ui.Box(c).FillWidth().Height(1).Background(p.Separator)
 }
 
 // outputCheck is what the bot checked: how it went, its summary, and the command it ran.
@@ -777,17 +788,24 @@ const (
 // imageSize is an image's box, from the width and height the message carries, before the bytes
 // are here.
 func imageSize(attachment model.Attachment) (float32, float32) {
+	return fitImage(attachment, imageMax, imageMin)
+}
+
+// fitImage is the box of a picture shown no larger than its own size nor than `limit` on a side,
+// with the proportions the message carries and no side shorter than `least`.
+func fitImage(attachment model.Attachment, limit, least float64) (float32, float32) {
 	width, height := float64(max(attachment.Width, 1)), float64(max(attachment.Height, 1))
 	if attachment.Width == 0 || attachment.Height == 0 {
 		width, height = 4, 3
 	}
-	scale := math.Min(math.Min(imageMax/width, imageMax/height), 1)
-	return float32(math.Max(imageMin, math.Ceil(width*scale))), float32(math.Max(imageMin, math.Ceil(height*scale)))
+	scale := math.Min(math.Min(limit/width, limit/height), 1)
+	return float32(math.Max(least, math.Ceil(width*scale))), float32(math.Max(least, math.Ceil(height*scale)))
 }
 
 // attachmentTiles are thumbnails and file cards inside a bubble, above the text: images side by
 // side, wrapping at the bubble's edge, and each file card on a row of its own. A click opens the
-// file, or retries a fetch that failed; the menu also saves a copy.
+// file in the viewer, or retries a fetch that failed; the menu also opens it in its app and saves
+// a copy.
 func attachmentTiles(c *ui.Context, chatID string, message *model.Message, onUser bool) ui.Element {
 	p := colors(c)
 	var rows [][]model.Attachment
@@ -865,7 +883,11 @@ func attachmentTiles(c *ui.Context, chatID string, message *model.Message, onUse
 						if fileError != "" {
 							store.RetryAttachment(attachment, chatID, messageID)
 						} else if path != "" && app.main != nil {
-							app.main.openAttachment(attachment)
+							if attachment.PreviewKind() == model.PreviewImage {
+								app.main.presentImage(attachment, chatID, messageID)
+							} else {
+								app.main.presentFile(attachment, chatID, messageID)
+							}
 						}
 					}
 				}

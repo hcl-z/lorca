@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/egoist/lorca/desktop/model"
 	"github.com/egoist/mygo"
@@ -13,9 +12,9 @@ import (
 )
 
 // Outputs, after the macOS app: what a chat's bots published shows in the inspector, the latest
-// three with View all for the rest. A row opens the output's sheet: a preview of the file or the
-// link, what the bot checked, and its versions. Open hands the file to its app or the link to the
-// browser; Save As… copies the file. The files come from the local CLI.
+// three with View all for the rest. A row opens the output's sheet: the file in the viewer
+// (viewer.go) or the link, what the bot checked, and its versions. Open hands the file to its app
+// or the link to the browser; Save As… copies the file. The files come from the local CLI.
 
 // outputSaveDestination asks where to save a copy; tests put their own in its place.
 var outputSaveDestination = func(parent *mygo.Window, name string) (string, error) {
@@ -178,26 +177,19 @@ func copyFile(source, target string) error {
 	return os.Rename(temporary.Name(), target)
 }
 
-// outputPreview is what a file's preview shows once read: an image, or the start of a text file.
-type outputPreview struct {
-	bitmap  *ui.Bitmap
-	text    string
-	loading bool
-}
-
 // outputSheet is one output's sheet; picked is the version on screen, empty for the latest. shown
 // is the output as last listed, kept while a resync lists the chat again.
 type outputSheet struct {
 	chatID, outputID string
 	picked           string
-	previews         map[string]*outputPreview
+	viewer           *fileViewer
 	shown            model.OutputSeries
 }
 
 // presentOutput puts up one output's sheet.
 func (w *appWindow) presentOutput(chatID, outputID string) {
-	state := &outputSheet{chatID: chatID, outputID: outputID, previews: map[string]*outputPreview{}}
-	w.present(func(c *ui.Context, s *sheet) { state.view(c, s) }, nil)
+	state := &outputSheet{chatID: chatID, outputID: outputID, viewer: newFileViewer()}
+	w.present(func(c *ui.Context, s *sheet) { state.view(c, s) }, state.viewer.close)
 }
 
 func (o *outputSheet) series() (model.OutputSeries, bool) {
@@ -235,12 +227,21 @@ func (o *outputSheet) view(c *ui.Context, s *sheet) {
 		fileError = store.AttachmentError(attachment.ID)
 	}
 	link := output.DocumentURL()
+	// The check and the versions sit under the file; the viewer leaves them their room.
+	o.viewer.reserve = 0
+	if output.Evidence != nil {
+		o.viewer.reserve += 164
+	}
+	if len(series.Versions) > 1 {
+		o.viewer.reserve += 46 + 40*float32(len(series.Versions))
+	}
 	confirm := L("Open")
 	if fileError != "" {
 		confirm = L("Try Again")
 	}
 	options := sheetOptions{Title: output.Name, Subtitle: bot + " · " + model.DaySeparator(message.CreatedAt), Width: 480, Confirm: confirm, Cancel: L("Done")}
 	if attachment != nil {
+		options.Width = viewerSheetWidth
 		options.Leading = func() {
 			if pushButton(c.Key("output-save"), L("Save As…"), pushOptions{Disabled: path == ""}).Clicked() {
 				s.window.saveAttachment(*attachment)
@@ -249,7 +250,7 @@ func (o *outputSheet) view(c *ui.Context, s *sheet) {
 	}
 	result := sheetFrame(c, options, func() {
 		if attachment != nil {
-			o.previewBox(c, *attachment, message.ID, path, fileError)
+			o.viewer.view(c, s.window, *attachment, message.ID, path, fileError)
 		}
 		if link != "" {
 			section(c, L("Link"), sectionCaption, nil, func(k *card) {
@@ -311,93 +312,6 @@ func (o *outputSheet) view(c *ui.Context, s *sheet) {
 		s.window.openOutput(message)
 		s.dismiss()
 	}
-}
-
-// previewBox shows the file: an image, the start of a text file, or what it is, as Quick Look does
-// in the macOS app; while it is on its way, or when it could not be fetched, it says so.
-func (o *outputSheet) previewBox(c *ui.Context, attachment model.Attachment, messageID, path, fileError string) {
-	p := colors(c)
-	box := ui.Column(c.Key("preview")).Height(260).Radius(10).Clip().Background(p.BotBubble).Border(1, p.BotBubbleBorder).
-		AlignItems(ui.Center).Justify(ui.Center)
-	box.Children(func() {
-		placeholder := func(text, detail string) {
-			ui.Column(c).Gap(4).Padding(0, 24).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, text).FontSize(13).TextColor(p.Label2).TextAlign(ui.Center)
-				if detail != "" {
-					ui.Text(c, detail).FontSize(11).TextColor(p.Label3).TextAlign(ui.Center)
-				}
-			})
-		}
-		switch {
-		case fileError != "":
-			placeholder(L("This file couldn't be downloaded."), strings.ToUpper(fileError[:1])+fileError[1:])
-			return
-		case path == "":
-			placeholder(L("Downloading…"), "")
-			return
-		}
-		preview := o.preview(attachment, messageID, path)
-		switch {
-		case preview.bitmap != nil:
-			ui.Image(c, preview.bitmap).Width(440).MaxWidthPercent(100).Height(240).Fit(ui.Contain)
-		case preview.text != "":
-			ui.Scroll(c).FillWidth().Grow(1).MinHeight(0).Background(p.Code).Padding(8, 10).Children(func() {
-				ui.Text(c, preview.text).Font(monoFont).FontSize(11.5).LineHeight(1.45).Selectable()
-			})
-		case !preview.loading:
-			ui.Column(c).Gap(6).AlignItems(ui.Center).TextColor(p.Label2).Children(func() {
-				symbol(c, "doc", 40, 1.2)
-				ui.Text(c, attachment.Name).FontSize(13).FontWeight(500).TextColor(p.Label)
-				ui.Text(c, model.SizeText(attachment.Size)).FontSize(11).TextColor(p.Label2)
-			})
-		}
-	})
-}
-
-// preview reads the version's file once, off the main thread: an image, or up to 64 KB of a text
-// file.
-func (o *outputSheet) preview(attachment model.Attachment, messageID, path string) *outputPreview {
-	if preview := o.previews[messageID]; preview != nil {
-		return preview
-	}
-	preview := &outputPreview{loading: true}
-	o.previews[messageID] = preview
-	model.Async(store, func() (outputPreview, error) { return readPreview(attachment, path) }, func(read outputPreview, err error) {
-		*preview = read
-		invalidateWindows()
-	})
-	return preview
-}
-
-func readPreview(attachment model.Attachment, path string) (outputPreview, error) {
-	var result outputPreview
-	file, err := os.Open(path)
-	if err != nil {
-		return result, err
-	}
-	defer file.Close()
-	switch {
-	case attachment.IsImage():
-		data, err := io.ReadAll(io.LimitReader(file, 100<<20))
-		if err != nil {
-			return result, err
-		}
-		result.bitmap, err = ui.DecodeBitmap(data)
-		return result, err
-	case strings.HasPrefix(attachment.Mime, "text/") || attachment.Mime == "application/json" || attachment.Mime == "application/xml":
-		data, err := io.ReadAll(io.LimitReader(file, 64<<10))
-		if err != nil {
-			return result, err
-		}
-		// The cut may split the last character; a file that is not UTF-8 shows as a file.
-		for cut := 0; cut < utf8.UTFMax && len(data) > 0 && !utf8.Valid(data); cut++ {
-			data = data[:len(data)-1]
-		}
-		if utf8.Valid(data) {
-			result.text = string(data)
-		}
-	}
-	return result, nil
 }
 
 // presentAllOutputs lists every output of the chat, for the inspector's View all.

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -500,7 +501,7 @@ I'll find the link first.
     0 fail`
 
 func researcherThread() []*Message {
-	return []*Message{
+	thread := []*Message{
 		mockMessage(You, textBody("Read the setup guide as a new user. What would you want explained sooner?"), minutesAgo(80)),
 		mockMessage(BotAuthor("bot-scout"), textBody("I'd explain the Device roles right after pairing: your computer runs the bots, and your phone lets you chat with them. I added that note to `research/onboarding.md`."), minutesAgo(45)),
 		// Sources: sites with a mock icon, sites without one, and one address cited twice.
@@ -508,6 +509,10 @@ func researcherThread() []*Message {
 		mockMessage(You, textBody("Read the setup guides of five similar apps and compare what each explains first."), minutesAgo(34)),
 		mockMessage(System, Body{Kind: BodyNotice, Text: "Stopped at the token limit. Raise it in Limits to resume."}, minutesAgo(28)),
 	}
+	// The files Researcher published, among the messages of their hour.
+	thread = append(thread, mockOutputMessages()...)
+	slices.SortStableFunc(thread, func(a, b *Message) int { return a.CreatedAt.Compare(b.CreatedAt) })
+	return thread
 }
 
 func writerThread() []*Message {

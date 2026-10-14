@@ -3309,6 +3309,7 @@ func (s *Store) ResetMockData() {
 	s.mockBrowser = nil
 	s.Bots = mockBots()
 	s.Chats = mockChats()
+	s.seedMockFiles()
 	s.Routines = mockRoutines()
 	s.mockPlaybooks = mockPlaybooks()
 	s.Playbooks = nil
