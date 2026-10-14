@@ -1,0 +1,131 @@
+desktop/chat_test.go
+  s_a37b694d555475::t_563be9496fe5e0 83-93,95-98,100-102
+  s_a37b694d555475::t_9d097d129dee76 81-82
+  s_a37b694d555475::t_5261e382542e5d 103-116,118-121
+  s_a37b694d555475::t_fe7c37311dadd6 117
+  s_a37b694d555475::t_148b24903c650a 94,99
+mobile/src/core/rerun.ts
+  s_a37b694d555475::t_e6b82713adfddd 27
+desktop/mainwindow.go
+  s_a37b694d555475::t_eda6bd6e93ed8f 1072-1074
+docs/architecture/handoffs.md
+  s_a37b694d555475::t_906745426e082f 9
+desktop/model/store.go
+  s_a37b694d555475::t_09c363b7385d19 1015-1016
+  s_a37b694d555475::t_e569b31c52ab95 1098-1107,1115,1118-1125,1130
+mobile/src/core/model.ts
+  s_a37b694d555475::t_37e00b7524bff7 707-726
+crates/cli/src/plugins/review.rs
+  s_a37b694d555475::t_66dc6d3adf6916 723-724
+docs/architecture/tools.md
+  s_a37b694d555475::t_451b3e399db391 7
+  s_a37b694d555475::t_b12174a731779e 16
+desktop/model/mentions_test.go
+  s_a37b694d555475::t_3a0883a0c217a5 1-55
+crates/cli/src/turns.rs
+  s_a37b694d555475::t_94784d7944cca7 213-214
+  s_a37b694d555475::t_a1487c3b083503 2455
+  s_a37b694d555475::t_0fb95df590ad85 1950-1952
+  s_a37b694d555475::t_a62ce8847df7cc 5679-5733
+desktop/model/mentions.go
+  s_a37b694d555475::t_be0343571dcb4a 1-107
+mobile/src/ui/transcript.tsx
+  s_a37b694d555475::t_ab3bbd879c3ec3 370-380
+  s_a37b694d555475::t_357f589cbcda19 17
+  s_a37b694d555475::t_6edf7ead3b3b09 408-409
+  s_a37b694d555475::t_a783f7c6ddaa34 1369-1370
+  s_a37b694d555475::t_d1b9dafc4a7595 97
+  s_a37b694d555475::t_f4af52b68edb3e 49
+  s_a37b694d555475::t_df0a36e78e1b36 119-120,124
+  s_a37b694d555475::t_341fce6432bb34 41-42
+desktop/chat.go
+  s_a37b694d555475::t_56e78ed8eb1732 492-496,498-501,503-504
+  s_a37b694d555475::t_7e4e2ca8b6730a 497,502,505-506
+  s_a37b694d555475::t_4813f4dc0afbe4 453
+  s_a37b694d555475::t_d1ce00284ad516 911-914
+  s_a37b694d555475::t_7e63b42612bf8e 294-297
+mobile/src/i18n/zh.ts
+  s_a37b694d555475::t_ec44cde2273432 603
+  s_a37b694d555475::t_4716198c355192 211
+  s_a37b694d555475::t_c24342809dbabd 274
+crates/cli/src/lib.rs
+  s_a37b694d555475::t_29368e0eb3e93f 35-36
+crates/cli/src/handoffs.rs
+  s_a37b694d555475::t_6b97121e2b4847 684
+  s_a37b694d555475::t_dca3f2a2c7d410 581
+  s_a37b694d555475::t_97d1df0d671edf 578-580,582-611
+crates/cli/src/runtime.rs
+  s_a37b694d555475::t_8f98cb5038f3c4 137
+crates/cli/src/app.rs
+  s_a37b694d555475::t_0d756c2633f97f 1507-1563
+desktop/sheet_bots_test.go
+  s_a37b694d555475::t_c7555499dbec85 260
+  s_a37b694d555475::t_8a11e92307925e 261-263,268-269
+  s_a37b694d555475::t_7fde9c3d9cf476 247,249
+mobile/src/core/engine.ts
+  s_a37b694d555475::t_dc74c60c67a61e 731-739
+mobile/src/ui/format.ts
+  s_a37b694d555475::t_c235bd618e6761 163-165
+  s_a37b694d555475::t_13abc665161005 276-279
+desktop/model/markdown.go
+  s_a37b694d555475::t_eb9c9e4b200d26 30-31
+crates/cli/src/feedback/mod.rs
+  s_a37b694d555475::t_eb0e3ab831dff3 845
+desktop/l10n/zh.go
+  s_a37b694d555475::t_f0d0c51e8da218 811
+  s_a37b694d555475::t_e6e102d5a7f17c 410
+  s_a37b694d555475::t_7a2b27fcf8260f 1179
+crates/cli/src/api.rs
+  s_a37b694d555475::t_c5b4158f6a5228 545-547,551,555
+crates/cli/src/local_store.rs
+  s_a37b694d555475::t_aedaa65bf67cb6 902
+  s_a37b694d555475::t_06bcfdfe8a0f21 880
+docs/architecture/bots.md
+  s_a37b694d555475::t_a351c47b924841 22
+  s_a37b694d555475::t_127953b4a55df7 32
+  s_a37b694d555475::t_34c8d4f23a84e9 21
+crates/cli/src/groups.rs
+  s_a37b694d555475::t_a39adc9e6115e4 216,220,224
+  s_a37b694d555475::t_1d9f25bdbe83c1 178
+  s_a37b694d555475::t_af96e31bcd002b 1-177,179-215,217-219,221-223,225-236,238-241
+  s_a37b694d555475::t_db62b2dc7d1847 237
+desktop/sheet_picker.go
+  s_a37b694d555475::t_5b3288c59c375b 93
+  s_a37b694d555475::t_4365175559bf84 101
+  s_a37b694d555475::t_8171965f1aa462 53-55,61,63-66,69
+mobile/app/new-group.tsx
+  s_a37b694d555475::t_7c82b068354ba5 28
+  s_a37b694d555475::t_a168e6afc3ee11 19
+  s_a37b694d555475::t_fdbfc2c24836a1 44-46
+crates/cli/src/handoffs_tests.rs
+  s_a37b694d555475::t_206e10ddb28b62 219-223,229-237
+  s_a37b694d555475::t_fa073654552cd8 224-228
+desktop/markdown_view.go
+  s_a37b694d555475::t_2a3728c11f15b4 32-33
+  s_a37b694d555475::t_8096ed67902df4 97,102,104-105
+  s_a37b694d555475::t_89a395cb7d90bb 101,103
+  s_a37b694d555475::t_7e3035c33f9eaa 34
+crates/cli/src/workflows.rs
+  s_a37b694d555475::t_7181faf63ed3ef 1509
+mobile/src/core/core.test.ts
+  s_a37b694d555475::t_a52742d6b3ceb4 12
+  s_a37b694d555475::t_b6fbf1140a65b5 607-623
+mobile/src/core/rerun.test.ts
+  s_a37b694d555475::t_32bd7682c71649 43-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "bc949086901c0a87465626b61ee32a3df4a14305",
+  "prompts": {},
+  "sessions": {
+    "s_a37b694d555475": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_q48mb4d42g7j",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
