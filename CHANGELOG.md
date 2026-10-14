@@ -8,6 +8,12 @@ phone app's.
 
 ## [Unreleased]
 
+## [1.0.21]
+
+- A file viewer on the desktop, and an image lightbox. A file in a chat, or an output in the inspector, opens in a sheet that draws it as it is: an image fitted or at its own size, Markdown as a page, an HTML page or a PDF in a web view, and other text as it is, with Preview and Source for Markdown and HTML and a Copy button for text. A published picture shows in the transcript as the picture itself and opens in a lightbox: the picture alone on a dark ground, pinch to zoom, a drag to move it, and Save As… on its bar.
+- A bot keeps its skills as files. A skill is now a folder with a `SKILL.md`, the format Claude Code, Codex, and Cursor read, in one of three places: the skills every bot on a computer uses, a bot's own, or a group's. A bot reads them from the next turn, writes them with the file tools, and the chat says which ones it saved, changed, or removed. Lorca ships three: one pointing at its docs, one on writing a skill, and one that brings in the skills other tools saved.
+- Skills travel to your other Devices, and a Skill Store to find them: search ClawHub and skills.sh, or paste a link to a skill on GitHub, and add it to a bot or a group. A skill saved elsewhere since the sheet opened offers the latest version or saving over it.
+
 ## [1.0.20]
 
 - A Skill Store. Search ClawHub and skills.sh, or paste a link to a skill on GitHub, and add it to a bot or a group; it works as soon as it is added. Open it from Skills with Add from Skills….
