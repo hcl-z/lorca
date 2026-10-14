@@ -1,0 +1,27 @@
+Cargo.lock
+  s_32ed21d6a43770::t_11f7af2f109306 1915,1972,2003,2012,2026,2034,2047,2080
+Cargo.toml
+  s_32ed21d6a43770::t_11f7af2f109306 20
+package.json
+  s_32ed21d6a43770::t_11f7af2f109306 4
+mobile/app.config.ts
+  s_32ed21d6a43770::t_11f7af2f109306 5
+desktop/mygo.config.ts
+  s_32ed21d6a43770::t_11f7af2f109306 9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "97710428332963206e7580d4bdc7f0c63f857af0",
+  "prompts": {},
+  "sessions": {
+    "s_32ed21d6a43770": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_hm7lt2lexsxq",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
