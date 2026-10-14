@@ -145,6 +145,64 @@ func (o Output) Symbol() string {
 	return "doc"
 }
 
+// PreviewKind is how the viewer shows a file: rendered, or as the words it holds.
+type PreviewKind int
+
+const (
+	PreviewNone PreviewKind = iota
+	PreviewImage
+	PreviewMarkdown
+	PreviewHTML
+	PreviewPDF
+	PreviewText
+)
+
+var previewExtensions = map[string]PreviewKind{
+	"png": PreviewImage, "jpg": PreviewImage, "jpeg": PreviewImage, "gif": PreviewImage, "webp": PreviewImage, "bmp": PreviewImage,
+	"md": PreviewMarkdown, "markdown": PreviewMarkdown, "mdx": PreviewMarkdown,
+	"html": PreviewHTML, "htm": PreviewHTML, "xhtml": PreviewHTML,
+	"pdf": PreviewPDF,
+}
+
+// textExtensions are the files whose words the viewer shows as they are. SVG is here: the viewer
+// draws bitmaps, so a vector image shows as its source.
+var textExtensions = map[string]bool{
+	"txt": true, "log": true, "json": true, "jsonl": true, "yaml": true, "yml": true, "toml": true, "xml": true,
+	"csv": true, "tsv": true, "css": true, "js": true, "mjs": true, "ts": true, "tsx": true, "jsx": true, "go": true,
+	"rs": true, "py": true, "rb": true, "swift": true, "java": true, "kt": true, "c": true, "h": true, "cc": true,
+	"cpp": true, "sh": true, "sql": true, "svg": true, "diff": true, "patch": true, "ini": true, "conf": true,
+}
+
+// PreviewKindOf is how a file of this name and media type is shown: its extension decides, then its
+// media type.
+func PreviewKindOf(name, mime string) PreviewKind {
+	ext := strings.ToLower(strings.TrimPrefix(path.Ext(name), "."))
+	if kind, ok := previewExtensions[ext]; ok {
+		return kind
+	}
+	if textExtensions[ext] {
+		return PreviewText
+	}
+	switch {
+	case mime == "image/svg+xml":
+		return PreviewText
+	case strings.HasPrefix(mime, "image/"):
+		return PreviewImage
+	case mime == "application/pdf":
+		return PreviewPDF
+	case mime == "text/html":
+		return PreviewHTML
+	case mime == "text/markdown":
+		return PreviewMarkdown
+	case strings.HasPrefix(mime, "text/"), mime == "application/json", mime == "application/xml":
+		return PreviewText
+	}
+	return PreviewNone
+}
+
+// PreviewKind is how the viewer shows the attachment.
+func (a Attachment) PreviewKind() PreviewKind { return PreviewKindOf(a.Name, a.Mime) }
+
 // TypeName is "HTML", "PNG", or the link's host: what the output's card says it is beside its size.
 func (o Output) TypeName() string {
 	if o.URL != "" {

@@ -1,8 +1,11 @@
 package model
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"reflect"
 	"sync/atomic"
 	"testing"
@@ -17,6 +20,64 @@ func (t outputTransport) Request(method string, params any) (json.RawMessage, er
 	return t.request(method, params)
 }
 func (outputTransport) Reconnect() {}
+
+func TestPreviewKindOf(t *testing.T) {
+	for _, c := range []struct {
+		name, mime string
+		want       PreviewKind
+	}{
+		{"shot.PNG", "", PreviewImage},
+		{"photo", "image/jpeg", PreviewImage},
+		{"logo.svg", "image/svg+xml", PreviewText},
+		{"README.md", "text/plain", PreviewMarkdown},
+		{"notes", "text/markdown", PreviewMarkdown},
+		{"page.html", "application/octet-stream", PreviewHTML},
+		{"report.pdf", "", PreviewPDF},
+		{"report", "application/pdf", PreviewPDF},
+		{"main.go", "application/octet-stream", PreviewText},
+		{"data.json", "application/json", PreviewText},
+		{"out", "text/plain", PreviewText},
+		{"sheet.xlsx", "application/vnd.ms-excel", PreviewNone},
+		{"movie.mp4", "video/mp4", PreviewNone},
+		{"archive.zip", "", PreviewNone},
+	} {
+		if got := PreviewKindOf(c.name, c.mime); got != c.want {
+			t.Errorf("PreviewKindOf(%q, %q) = %d, want %d", c.name, c.mime, got, c.want)
+		}
+	}
+}
+
+func TestDemoOutputsHaveFilesOnDisk(t *testing.T) {
+	s := NewStore(nil, func(fn func()) { fn() }, true)
+	s.ResetMockData()
+	series := s.Outputs("chat-scout")
+	if len(series) != 6 {
+		t.Fatalf("Researcher published %d outputs, want 6", len(series))
+	}
+	kinds := map[PreviewKind]bool{}
+	for _, each := range series {
+		message := each.Latest()
+		attachment := message.Attachments[0]
+		path := s.LocalFile(attachment, "chat-scout", message.ID)
+		data, err := os.ReadFile(path)
+		if err != nil || int64(len(data)) != attachment.Size {
+			t.Fatalf("%s: read %d bytes of %d, err %v", attachment.Name, len(data), attachment.Size, err)
+		}
+		kinds[attachment.PreviewKind()] = true
+	}
+	for _, want := range []PreviewKind{PreviewImage, PreviewMarkdown, PreviewHTML, PreviewPDF, PreviewText} {
+		if !kinds[want] {
+			t.Errorf("no demo output of preview kind %d", want)
+		}
+	}
+	pdf := mockPDF()
+	start := bytes.LastIndex(pdf, []byte("startxref\n"))
+	var offset int
+	fmt.Sscanf(string(pdf[start+len("startxref\n"):]), "%d", &offset)
+	if !bytes.HasPrefix(pdf[offset:], []byte("xref\n")) {
+		t.Fatal("the demo PDF's startxref does not point at its table")
+	}
+}
 
 func nextOutputPost(t *testing.T, posts <-chan func()) {
 	t.Helper()
