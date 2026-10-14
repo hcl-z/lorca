@@ -8,6 +8,15 @@ phone app's.
 
 ## [Unreleased]
 
+## [1.0.20]
+
+- A Skill Store. Search ClawHub and skills.sh, or paste a link to a skill on GitHub, and add it to a bot or a group; it works as soon as it is added. Open it from Skills with Add from Skills….
+- A bot's handoff shows on both sides: the chat that sent the request gets its own "Messaged" marker beside the recipient's "Message from", even for a follow-up or a call that never finished.
+- Bots make and manage groups with the new `create_group` and `edit_group` tools. New Group Chat asks what the group is for, and the first bot picked owns the work. An `@Name` of another member reads in that member's color on the desktop, and as a "→ Name" line under the bubble on the phone.
+- The marketplace has 39 more connectors, with their marks, among them Tavily, Perplexity, Asana, HubSpot, MongoDB, PagerDuty, and China-market services such as 百度地图, 语雀, 钉钉, Gitee, and 腾讯地图. Zhipu's web search now also has the page reader and Zread.
+- The marketplace lists by category or everything at once: a switch in its title row shows every plugin and bot in one grid, featured ones first.
+- Development builds keep `target/debug` small, with line tables only and a cleaner for the build cache (`bun run clean:rust`).
+
 ## [1.0.19]
 
 - Lorca catches up with upstream. Everything egoist/lorca shipped since the last sync is in: the Attention, Telegram, output, and Auto-review work below, plus a Runner that stays online while busy, a custom model's own thinking levels, and the phone's typing indicator.
