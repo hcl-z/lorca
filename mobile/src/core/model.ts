@@ -1476,7 +1476,7 @@ export const STALE_PROJECT_ENTRY = "This entry changed on another Device.";
 /// Whose skill it is: one bot's, in every chat it is in (`bot`), or a group's, for the bots in
 /// that group (`project`).
 export interface PlaybookScope {
-  kind: "bot" | "project";
+  kind: "bot" | "project" | "shared";
   id: string;
 }
 
@@ -1493,9 +1493,12 @@ export interface PlaybookContent {
   examples: string;
   references: PlaybookFile[];
   scripts: PlaybookFile[];
+  /// The skill's text files outside references and scripts, which the screens do not show and a
+  /// save sends back.
+  other?: PlaybookFile[];
 }
 
-/// A skill as the roster lists it, without its body.
+/// A skill as the Runner lists it, without its body. Its id is its name, which is its folder's.
 export interface PlaybookSummary {
   id: string;
   scope: PlaybookScope;
@@ -1505,6 +1508,9 @@ export interface PlaybookSummary {
   revision: number;
   hash: string;
   updated_at: number;
+  /// The skill's folder on its Runner, and whether Lorca ships it.
+  path?: string;
+  builtin?: boolean;
 }
 
 /// One step of a skill's history: who changed it where, and what it said then.
@@ -1527,6 +1533,53 @@ export interface PlaybookRecord {
   hash: string;
   content: PlaybookContent | null;
   revisions: PlaybookRevision[];
+  path?: string;
+  builtin?: boolean;
+}
+
+/// A skill in the Runner's list (`skills.list`).
+export interface SkillRow {
+  scope: PlaybookScope;
+  name: string;
+  description: string;
+  path: string;
+  builtin: boolean;
+  updated_at: number | null;
+}
+
+/// One skill as `skills.get` and `skills.save` answer: its instructions, and its files beside
+/// SKILL.md with their text where they have any.
+export interface SkillView extends SkillRow {
+  instructions: string;
+  hash: string;
+  files: { path: string; size: number; text: string | null }[];
+}
+
+export function skillSummaryOf(row: SkillRow): PlaybookSummary {
+  return { id: row.name, scope: row.scope, name: row.name, description: row.description, status: "saved", revision: 1, hash: "", updated_at: row.updated_at ?? 0, path: row.path, builtin: row.builtin };
+}
+
+/// A skill as the screens hold it: files under references and scripts in their sections, the other
+/// text files kept to be sent back. A file with no text, a binary or a very large one, is the
+/// Runner's to keep.
+export function skillRecordOf(view: SkillView): PlaybookRecord {
+  const content: PlaybookContent = { name: view.name, description: view.description, instructions: view.instructions, examples: "", references: [], scripts: [], other: [] };
+  for (const file of view.files) {
+    if (file.text === null) continue;
+    const entry = { path: file.path, text: file.text };
+    if (file.path.startsWith("references/")) content.references.push(entry);
+    else if (file.path.startsWith("scripts/")) content.scripts.push(entry);
+    else content.other!.push(entry);
+  }
+  return { id: view.name, scope: view.scope, status: "saved", revision: 1, hash: view.hash, content, revisions: [], path: view.path, builtin: view.builtin };
+}
+
+/// What a save sends: the examples go into the instructions, since a skill has one body, and every
+/// text file goes back, the ones the screens do not show included.
+export function skillInputOf(content: PlaybookContent) {
+  const examples = content.examples.trim();
+  const instructions = examples ? `${content.instructions}\n\n## Examples\n\n${examples}` : content.instructions;
+  return { name: content.name, description: content.description, instructions, files: [...content.references, ...content.scripts, ...(content.other ?? [])] };
 }
 
 /// Whose skills a chat shows: the bot's in a DM, the group's in a group.

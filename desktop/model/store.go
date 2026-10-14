@@ -157,9 +157,14 @@ type Store struct {
 	Providers []ProviderCredential
 	// Models are what the CLI's catalog offers, for the Model and Thinking pickers.
 	Models []ProviderModel
-	// Playbooks are every bot's and group's skills and drafts, from the roster; a body is fetched
-	// when one opens.
+	// Playbooks are the skills of the bots and groups the Skills section has shown, listed by the
+	// CLI (`skills.list`); a body is fetched when one opens.
 	Playbooks []PlaybookSummary
+	// skillsKey is the bot and chat the list was last asked for, skillsAt when, and skillsLoading
+	// whether an answer is awaited.
+	skillsKey     [2]string
+	skillsAt      time.Time
+	skillsLoading bool
 	// mockPlaybooks are the demo's skills, bodies and all.
 	mockPlaybooks []PlaybookRecord
 
@@ -504,7 +509,6 @@ func (s *Store) apply(snapshot WireSnapshot) {
 	s.Sections = ToSections(snapshot.Sections)
 	s.Providers = ToProviders(snapshot.Providers)
 	s.Models = ToModels(snapshot.Models)
-	s.Playbooks = snapshot.Playbooks
 	s.runningJobs = nil
 	for _, turn := range snapshot.RunningTurns {
 		s.runningJobs = append(s.runningJobs, runningJob{id: turn.JobID, chatID: turn.ChatID, botID: turn.BotID, routineID: str(turn.RoutineID)})
@@ -615,9 +619,6 @@ func (s *Store) handle(name string, data json.RawMessage) {
 		}
 		if roster.Models != nil {
 			s.Models = ToModels(roster.Models)
-		}
-		if roster.Playbooks != nil {
-			s.Playbooks = *roster.Playbooks
 		}
 		var changed []string
 		chats := make([]*Chat, 0, len(roster.Chats))

@@ -34,10 +34,11 @@ const NOT_THIS_ELEMENT: [&str; 12] = [
     "not found in the current page snapshot",
 ];
 
-/// The steps of a saved skill this turn sees, by its name, id, or `playbook://` path.
+/// The recorded steps of a skill this turn sees, by its name: the bot's own first, then its
+/// group's, then a shared one.
 pub fn skill_steps(app: &App, bot_id: &str, chat_id: &str, skill: &str) -> Result<(String, Steps), String> {
-    let scopes = crate::playbooks::scopes_for_turn(app, bot_id, chat_id);
-    let (name, text) = crate::playbooks::resource_for_turn(app, &scopes, skill, steps::PATH)?;
+    let scopes = crate::skills::scopes_for_turn(app, bot_id, chat_id);
+    let (name, text) = crate::skills::resource(app, &scopes, skill, steps::PATH)?;
     Ok((name, steps::parse(&text)?))
 }
 

@@ -457,7 +457,7 @@ async fn a_recording_reaches_the_bot_with_secrets_left_out_and_stays_encrypted()
     let words: String = shown.iter().filter_map(ContentPart::as_text).collect::<Vec<_>>().join("\n");
     assert!(words.contains(r#""value":"Spring sale""#) && words.contains(r#""secret":true"#), "{words}");
     assert!(!words.contains("sk-account-key"), "what looks like the account's credential is kept as a secret");
-    assert!(words.contains(&format!("message_ids [\"{}\"]", message.id)) && words.contains("kind \"recording\""));
+    assert!(words.contains(&format!("[\"{}\"]", message.id)) && words.contains("browser-steps.json") && words.contains("write-skill"));
     assert!(words.contains("on “Ads” https://ads.example.com/") && words.contains("→ “New” https://ads.example.com/new"));
     assert_eq!(shown.iter().filter(|part| matches!(part, ContentPart::Image { .. })).count(), 1, "the screenshot the recorder took, and no file outside its folder");
     assert!(!super::recording_content(app, &message.id, &reference, false).iter().any(|part| matches!(part, ContentPart::Image { .. })));
@@ -468,22 +468,22 @@ async fn a_recording_reaches_the_bot_with_secrets_left_out_and_stays_encrypted()
     let said: Vec<&str> = said.content.iter().filter_map(ContentPart::as_text).collect();
     assert!(said[0].starts_with("I recorded this in the Work browser") && said[1].starts_with(&format!("[Recording {}, message {}", reference.id, message.id)), "{said:?}");
 
-    // The bot drafts a skill from it, citing the user's message.
+    // The bot saves a skill from it, citing the user's message.
     let steps_file = json!({ "profile": "Work", "inputs": { "campaign": "The campaign's name" }, "steps": [
         { "action": "goto", "url": "https://ads.example.com/" },
         { "action": "fill", "targets": ["getByLabel('Campaign name', { exact: true })"], "value": "{{campaign}}" },
     ] });
-    let content = crate::playbooks::PlaybookContent {
-        name: "new-campaign".into(), description: "Start an ad campaign".into(), instructions: "Run it with browser_session run.".into(), examples: String::new(),
-        references: Vec::new(), scripts: vec![crate::playbooks::Resource { path: crate::browser::steps::PATH.into(), text: steps_file.to_string() }],
+    let scope = crate::skills::Scope::bot(&owner.id);
+    crate::skills_turn::selected_evidence(app, &scope, &owner.id, &chat_id, "recording", std::slice::from_ref(&message.id)).unwrap();
+    let skill = |steps: String| crate::skills::Input {
+        name: "new-campaign".into(), description: "Start an ad campaign".into(), instructions: "Run it with browser_session run.".into(),
+        files: vec![crate::skills::InputFile { path: crate::browser::steps::PATH.into(), text: steps }],
     };
-    let scope = crate::playbooks::Scope::bot(&owner.id);
-    crate::playbooks::selected_evidence(app, &scope, &owner.id, &chat_id, "recording", std::slice::from_ref(&message.id)).unwrap();
-    let mut broken = content.clone();
-    broken.scripts[0].text = json!({ "profile": "Work", "steps": [{ "action": "click" }] }).to_string();
-    assert!(crate::playbooks::draft(app, &scope, broken, Default::default()).unwrap_err().contains("step 1 needs 1 to 8 targets"));
-    crate::playbooks::draft(app, &scope, content, Default::default()).unwrap();
-    assert!(super::replay::skill_steps(app, &owner.id, &chat_id, "new-campaign").unwrap_err().contains("once the user saves it"), "a draft isn't run");
+    let broken = skill(json!({ "profile": "Work", "steps": [{ "action": "click" }] }).to_string());
+    assert!(crate::skills::save(app, &scope, None, broken, "").unwrap_err().contains("step 1 needs 1 to 8 targets"));
+    crate::skills::save(app, &scope, None, skill(steps_file.to_string()), "").unwrap();
+    assert!(super::replay::skill_steps(app, &owner.id, &chat_id, "new-campaign").is_ok(), "a saved skill runs at once");
+    assert!(super::replay::skill_steps(app, &owner.id, &chat_id, "no-such-skill").is_err());
 
     // Closing the browser drops a recording in progress.
     crate::browser::serve(app, "browser.record", &json!({ "bot_id": owner.id, "session_id": session.id }), true).await.unwrap();
@@ -495,11 +495,11 @@ async fn a_recording_reaches_the_bot_with_secrets_left_out_and_stays_encrypted()
 }
 
 fn save_skill(app: &App, owner: &Bot, name: &str, steps: Value) {
-    let content = crate::playbooks::PlaybookContent {
-        name: name.into(), description: "Repeat the recorded workflow".into(), instructions: "Run it with browser_session run.".into(), examples: String::new(),
-        references: Vec::new(), scripts: vec![crate::playbooks::Resource { path: crate::browser::steps::PATH.into(), text: steps.to_string() }],
+    let skill = crate::skills::Input {
+        name: name.into(), description: "Repeat the recorded workflow".into(), instructions: "Run it with browser_session run.".into(),
+        files: vec![crate::skills::InputFile { path: crate::browser::steps::PATH.into(), text: steps.to_string() }],
     };
-    crate::playbooks::save(app, &crate::playbooks::Scope::bot(&owner.id), None, content, 0, "", Default::default()).unwrap();
+    crate::skills::save(app, &crate::skills::Scope::bot(&owner.id), None, skill, "").unwrap();
 }
 
 /// A page with a Create button that leads to /new, and nothing else to click.

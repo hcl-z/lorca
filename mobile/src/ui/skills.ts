@@ -3,7 +3,7 @@
 // screen share while a skill is open.
 
 import { create } from "zustand";
-import { canBeQuoted, type Chat, type Message, type PlaybookContent, type PlaybookFile, type PlaybookRecord, type PlaybookRevision, type PlaybookScope } from "../core/model";
+import { canBeQuoted, type Chat, type Message, type PlaybookContent, type PlaybookFile, type PlaybookRecord, type PlaybookScope } from "../core/model";
 import { t } from "../i18n";
 
 /// The name as the core takes it: lowercase, hyphens for spaces.
@@ -27,23 +27,13 @@ export function safeFileName(name: string): boolean {
 
 /// Who can use the skill, and for a draft, that it waits for a save.
 export function skillScopeLine(scope: PlaybookScope, isDraft: boolean, names: { bot?: string; group?: string }): string {
+  if (scope.kind === "shared") return t("Every bot on this Runner can use it.");
   if (scope.kind === "project") {
     const group = names.group ?? t("Group");
     return isDraft ? t("A draft. Once you save it, the bots in {group} can use it there.", { group }) : t("The bots in {group} can use it there.", { group });
   }
   const bot = names.bot ?? t("The bot");
   return isDraft ? t("A draft. Once you save it, {bot} can use it in every chat.", { bot }) : t("{bot} can use it in every chat.", { bot });
-}
-
-/// What happened at a step of a skill's history, in a word or three.
-export function historyWord(step: PlaybookRevision, steps: PlaybookRevision[]): string {
-  if (step.status === "deleted") return t("Deleted");
-  if (step.status === "draft") {
-    if (step.provenance.kind === "corrections") return t("Drafted from corrections");
-    return step.provenance.kind === "recording" ? t("Drafted from a recording") : t("Drafted from a chat");
-  }
-  if (step.provenance.kind === "edit" && step.revision > 1) return steps.some((before) => before.revision === step.revision - 1 && before.status === "draft") ? t("Saved") : t("Edited");
-  return t("Created");
 }
 
 /// The messages Save as Skill offers in a chat: the user's and the bots' completed text, the
@@ -115,5 +105,6 @@ export function skillFormContent(form: SkillForm): PlaybookContent {
 
 /// Whether the form says something other than the record.
 export function skillFormChanged(form: SkillForm, record: PlaybookRecord | undefined): boolean {
-  return JSON.stringify(skillFormContent(form)) !== JSON.stringify(record?.content ?? skillFormContent({ name: "", description: "", instructions: "", examples: "", files: [] }));
+  const held = record?.content ? { ...record.content, other: undefined } : skillFormContent({ name: "", description: "", instructions: "", examples: "", files: [] });
+  return JSON.stringify(skillFormContent(form)) !== JSON.stringify(held);
 }

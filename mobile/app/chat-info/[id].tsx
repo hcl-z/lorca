@@ -1,11 +1,11 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MenuView, type MenuComponentRef } from "@expo/ui/community/menu";
 import { Platform, PlatformColor, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { Pressable } from "../../src/ui/Pressable";
 import { chatTitle, engine } from "../../src/core/engine";
 import { BROWSER_PLUGIN_ID, isMuted, PROJECT_KINDS, projectSymbol, skillScopeOf, providerKinds, providerLabel, providerModels, PROVIDER_KINDS, taskSymbol, thinkingLabel, thinkingLevels, withCustomModels, type Bot, type Routine } from "../../src/core/model";
-import { deviceIsOnline, useBotMap, useBudget, useChannels, useChat, useDurableTasks, useOpenReviews, useOutputs, useProject, useRoutines, useSkills, useStoppedTurn, useStore, useWorkingBotIds } from "../../src/core/store";
+import { deviceIsOnline, useBotMap, useBudget, useChannels, useChat, useDurableTasks, useOpenReviews, useOutputs, useProject, useRoutines, useSharedSkills, useSkills, useStoppedTurn, useStore, useWorkingBotIds } from "../../src/core/store";
 import { channelProblem, listenSummary, serviceSymbol } from "../../src/ui/channels";
 import { t, tc, useLanguage } from "../../src/i18n";
 import { AvatarCluster, BotAvatar } from "../../src/ui/Avatar";
@@ -62,8 +62,20 @@ export default function ChatInfoScreen() {
   const project = useProject(chat?.kind === "group" ? chat.id : undefined);
   const [allProject, setAllProject] = useState(false);
   const skillScope = chat ? skillScopeOf(chat) : undefined;
-  const skills = useSkills(skillScope);
+  const ownSkills = useSkills(skillScope);
+  const sharedSkills = useSharedSkills();
+  const skills = useMemo(() => [...ownSkills, ...sharedSkills], [ownSkills, sharedSkills]);
   const [allSkills, setAllSkills] = useState(false);
+  // The skills are folders on the bot's Runner: asked for as Details opens, and now and then
+  // after, since a bot writes them as files.
+  const skillsBotId = chat?.kind === "group" ? (chat.owner_bot_id ?? chat.bot_ids[0]) : chat?.bot_ids[0];
+  useEffect(() => {
+    if (!id || !skillsBotId) return;
+    const ask = () => void engine.showSkills(skillsBotId, id).catch(() => undefined);
+    ask();
+    const timer = setInterval(ask, 15000);
+    return () => clearInterval(timer);
+  }, [id, skillsBotId]);
   const feedback = useFeedback(bot?.id);
   const limits = useBudget("chat", chat?.id, bot?.runner_id);
   const stoppedTurn = useStoppedTurn(chat?.id, bot?.runner_id);
@@ -356,12 +368,12 @@ export default function ChatInfoScreen() {
         <Section title={t("Skills")}>
           {(allSkills || skills.length <= 5 ? skills : skills.slice(0, 4)).map((skill) => (
             <Row
-              key={skill.id}
+              key={`${skill.scope.kind}/${skill.id}`}
               title={skill.name}
               subtitle={skill.description}
               subtitleLines={2}
               icon="book.closed"
-              detail={skill.status === "draft" ? t("Draft") : undefined}
+              detail={skill.scope.kind === "shared" ? t("Every bot") : undefined}
               chevron
               onPress={() => router.push({ pathname: "/chat-info/skill/[id]", params: { id: skill.id, kind: skill.scope.kind, scope: skill.scope.id } })}
             />

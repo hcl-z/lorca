@@ -45,9 +45,6 @@ pub mod model;
 pub mod outputs;
 pub mod pairing;
 pub mod permissions;
-pub mod playbooks;
-#[cfg(feature = "runner")]
-pub mod playbook_tools;
 pub mod plugins;
 pub mod project_context;
 #[cfg(feature = "provider-auth")]
@@ -74,6 +71,11 @@ pub mod served;
 pub mod service;
 #[cfg(feature = "cli")]
 pub mod skill_hub;
+pub mod skills;
+#[cfg(feature = "cli")]
+pub mod skills_sync;
+#[cfg(feature = "runner")]
+pub mod skills_turn;
 #[cfg(feature = "runner")]
 pub mod shell;
 pub mod sync;

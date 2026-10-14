@@ -75,9 +75,7 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
     }
     match method {
         method if method.starts_with("templates.") => crate::templates::dispatch(app, method, &params).await,
-        method if method.starts_with("playbooks.") => crate::playbooks::dispatch(app, method, params).await,
-        #[cfg(feature = "cli")]
-        method if method.starts_with("skills.") => crate::skill_hub::dispatch(app, method, params).await,
+        method if method.starts_with("skills.") => crate::skills::dispatch(app, method, params).await,
         method if method.starts_with("events.") => crate::event_triggers::dispatch(app, method, params).await,
         "links.favicon" => crate::favicon::dispatch(app, &params).await,
         "projects.get" | "projects.save" | "projects.refresh" | "projects.asset" | "projects.asset_path" => {

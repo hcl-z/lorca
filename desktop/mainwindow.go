@@ -410,6 +410,8 @@ func (m *mainWindow) run(id string) {
 		m.newSkill()
 	case "skillStore":
 		m.skillStore()
+	case "sharedSkillStore":
+		m.presentSharedSkillStore()
 	case "stopResponding":
 		if id := m.selection.ChatID; id != "" {
 			store.StopResponding(id)
@@ -857,6 +859,9 @@ func (m *mainWindow) leadingButtons(c *ui.Context, inContent bool) {
 				}
 				if menu.Item(L("Create Group Chat…")).Chosen() {
 					runCommand("newGroupChat")
+				}
+				if menu.Item(L("Add a Skill for Every Bot…")).Chosen() {
+					runCommand("sharedSkillStore")
 				}
 				menu.Separator()
 				if menu.Item(L("Pair a Device…")).Chosen() {

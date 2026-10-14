@@ -15,10 +15,9 @@ import { isStaleSkill, type PlaybookRecord, type PlaybookScope } from "../../../
 import { useStore } from "../../../src/core/store";
 import { t, useLanguage } from "../../../src/i18n";
 import { alert } from "../../../src/ui/alert";
-import { daySeparator } from "../../../src/ui/format";
 import { FieldRow, Row, Section } from "../../../src/ui/forms";
 import { SaveToolbar } from "../../../src/ui/navigation";
-import { addSkillFile, fillSkillForm, historyWord, safeFileName, skillFormChanged, skillFormContent, skillNameProblem, skillScopeLine, useSkillForm } from "../../../src/ui/skills";
+import { addSkillFile, fillSkillForm, safeFileName, skillFormChanged, skillFormContent, skillNameProblem, skillScopeLine, useSkillForm } from "../../../src/ui/skills";
 import { Font } from "../../../src/ui/theme";
 
 export default function SkillScreen() {
@@ -32,7 +31,6 @@ export default function SkillScreen() {
   const [busy, setBusy] = useState(false);
   const bot = useStore((s) => (scope.kind === "bot" ? s.bots.find((b) => b.id === scope.id) : undefined));
   const group = useStore((s) => (scope.kind === "project" ? s.chats.find((c) => c.id === scope.id) : undefined));
-  const devices = useStore((s) => s.devices);
 
   // The form starts from the record, fetched when this phone has not got it yet.
   useEffect(() => {
@@ -100,9 +98,10 @@ export default function SkillScreen() {
   async function share() {
     if (!record?.content) return;
     try {
-      const file = new File(Paths.cache, `${record.content.name}.json`);
-      file.write(await engine.exportPlaybook(scope, record.id));
-      await Sharing.shareAsync(file.uri, { mimeType: "application/json", dialogTitle: record.content.name, UTI: "public.json" });
+      const file = new File(Paths.cache, `${record.content.name}.zip`);
+      const archive = atob(await engine.exportPlaybook(scope, record.id));
+      file.write(Uint8Array.from(archive, (char) => char.charCodeAt(0)));
+      await Sharing.shareAsync(file.uri, { mimeType: "application/zip", dialogTitle: record.content.name, UTI: "public.zip-archive" });
     } catch (error) {
       alert(t("Couldn't export the skill"), error instanceof Error ? error.message : String(error));
     }
@@ -110,7 +109,7 @@ export default function SkillScreen() {
 
   function confirmDelete() {
     if (!record) return;
-    alert(t("Delete “{name}”?", { name: record.content?.name ?? "" }), isDraft ? t("The draft is deleted.") : t("Your bots stop using this skill. This can't be undone."), [
+    alert(t("Delete “{name}”?", { name: record.content?.name ?? "" }), isDraft ? t("The draft is deleted.") : t("Your bots stop using this skill. Its folder stays in the skills folder's .trash for 30 days."), [
       { text: t("Cancel"), style: "cancel" },
       {
         text: t("Delete"),
@@ -127,7 +126,6 @@ export default function SkillScreen() {
     ]);
   }
 
-  const steps = [...(record?.revisions ?? [])].sort((a, b) => b.revision - a.revision || b.created_at - a.created_at);
   const fileRows = (folder: "references" | "scripts") =>
     form.files
       .filter((file) => file.folder === folder)
@@ -169,24 +167,11 @@ export default function SkillScreen() {
           {fileRows("scripts")}
           <Row title={t("Add Script")} icon="plus" onPress={() => addFile("scripts")} />
         </Section>
-        {/* How the skill changed, newest first; a row shows its instructions then. */}
-        {steps.length > 0 && (
-          <Section title={t("History")}>
-            {steps.map((step) => {
-              const device = devices.find((d) => d.id === step.device_id)?.name;
-              const when = daySeparator(new Date(step.created_at * 1000));
-              return (
-                <Row
-                  key={step.id}
-                  title={historyWord(step, steps)}
-                  subtitle={device ? `${when} · ${device}` : when}
-                  onPress={() => alert(historyWord(step, steps), step.content?.instructions ?? t("Deleted"))}
-                  action={false}
-                />
-              );
-            })}
+        {record?.path ? (
+          <Section footer={t("Bots read and write this folder on the Runner.")}>
+            <Row title={record.path} icon="folder" action={false} />
           </Section>
-        )}
+        ) : null}
         {record?.status === "saved" && (
           <Section>
             <Row title={t("Export")} icon="square.and.arrow.up" onPress={() => void share()} />

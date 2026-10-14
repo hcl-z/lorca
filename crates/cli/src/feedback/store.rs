@@ -49,7 +49,7 @@ pub enum Target {
     RoutinePrompt { id: String },
     Playbook { scope: Scope, id: String },
 }
-pub use crate::playbooks::Scope;
+pub use crate::skills::Scope;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Feedback {

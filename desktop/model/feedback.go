@@ -494,7 +494,7 @@ func (s *Store) demoFeedback(botID string) BotFeedback {
 		Targets: []FeedbackTargetName{
 			{Name: "Morning brief", Target: brief}, {Name: "Launch checklist", Target: checklist},
 			{Name: "Review requests", Target: FeedbackTarget{Kind: "routine_prompt", ID: "rt-reviews"}},
-			{Name: "launch-post", Target: FeedbackTarget{Kind: "playbook", ID: "playbook-launch-post", Scope: &FeedbackScope{Kind: "project", ID: "chat-relay"}}},
+			{Name: "launch-post", Target: FeedbackTarget{Kind: "playbook", ID: "launch-post", Scope: &FeedbackScope{Kind: "project", ID: "chat-relay"}}},
 		},
 	}
 }

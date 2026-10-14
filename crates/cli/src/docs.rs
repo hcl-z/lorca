@@ -1,46 +1,83 @@
-//! The builtin `lorca` skill every bot's skill catalog lists: where Lorca's user docs are on
-//! lorca.app, as Markdown, so a bot answers how to use Lorca from them instead of guessing, or
-//! reading the CLI's binary for strings.
+//! The skills Lorca ships to every bot: `lorca` points at its user docs on lorca.app, so a bot
+//! answers how to use Lorca from them instead of guessing; `write-skill` and `save-skill` say how
+//! to keep a way of working as a skill and how to bring in skills other tools saved. They are
+//! written into the shared skills folder, where every bot reads them like any skill.
 
-use serde_json::{json, Value};
+use std::path::Path;
 
-/// The skill's name, and its directory under `playbook://`, which no saved skill's id
-/// (`playbook-…`) can take.
-pub const NAME: &str = "lorca";
+use sha2::{Digest, Sha256};
 
-const DESCRIPTION: &str = "Lorca's user docs: what it can do and how to use it.";
+use crate::app::App;
+use crate::skills::BUILTIN_MARK;
 
-/// The skill's row in the turn's catalog, as `playbooks::catalog` writes the user's.
-pub fn catalog_row() -> Value {
-    json!({ "name": NAME, "description": DESCRIPTION, "scope": "builtin", "path": format!("playbook://{NAME}/SKILL.md") })
+/// A skill that ships with Lorca and its files, by path in the skill's folder.
+pub struct Builtin {
+    pub name: &'static str,
+    pub files: &'static [(&'static str, &'static str)],
 }
 
-/// Whether a `list_playbooks` query finds the skill, as it finds the user's.
-pub fn matches(query: &str) -> bool {
-    format!("{NAME} {DESCRIPTION}").to_lowercase().contains(&query.to_lowercase())
+pub const BUILTINS: [Builtin; 3] = [
+    Builtin { name: "lorca", files: &[("SKILL.md", include_str!("../skills/lorca/SKILL.md"))] },
+    Builtin {
+        name: "write-skill",
+        files: &[
+            ("SKILL.md", include_str!("../skills/write-skill/SKILL.md")),
+            ("references/format.md", include_str!("../skills/write-skill/references/format.md")),
+        ],
+    },
+    Builtin {
+        name: "save-skill",
+        files: &[
+            ("SKILL.md", include_str!("../skills/save-skill/SKILL.md")),
+            ("references/locations.md", include_str!("../skills/save-skill/references/locations.md")),
+        ],
+    },
+];
+
+impl Builtin {
+    /// What this build ships of the skill, to tell an older copy from it.
+    fn digest(&self) -> String {
+        let mut hasher = Sha256::new();
+        for (path, text) in self.files {
+            hasher.update(path.as_bytes());
+            hasher.update([0]);
+            hasher.update(text.as_bytes());
+        }
+        hasher.finalize().iter().map(|byte| format!("{byte:02x}")).collect()
+    }
 }
 
-/// A file of the skill by its `playbook://lorca/` path; None for another skill's path.
-pub fn read(path: &str) -> Option<Result<String, String>> {
-    let resource = path.strip_prefix("playbook://")?.strip_prefix(NAME)?.strip_prefix('/')?;
-    Some(if resource == "SKILL.md" { Ok(skill()) } else { Err(format!("The {NAME} skill has only SKILL.md.")) })
+fn write(dir: &Path, builtin: &Builtin) -> std::io::Result<()> {
+    for (path, text) in builtin.files {
+        let file = dir.join(path);
+        if let Some(parent) = file.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(file, text)?;
+    }
+    std::fs::write(dir.join(BUILTIN_MARK), builtin.digest())
 }
 
-fn skill() -> String {
-    format!(
-        "---\nname: {NAME}\ndescription: {DESCRIPTION}\n---\n\n\
-         Lorca's user docs are on its website, as Markdown:\n\n\
-         - https://lorca.app/llms.txt lists every page by section, with a line on what each covers. Start here.\n\
-         - https://lorca.app/docs/<page>.md is one page, such as https://lorca.app/docs/routines.md. A link in the list or \
-         in a page, such as /docs/routines#timezones, names that page.\n\
-         - https://lorca.app/llms-full.txt is every page in one file, to search across them.\n\
-         - The Simplified Chinese pages are under /zh: https://lorca.app/zh/llms.txt and https://lorca.app/zh/docs/<page>.md.\n\n\
-         When the user asks what Lorca can do, how to do something in it, or why it behaves as it does, read the list, then \
-         the pages that cover it, and answer from them, with the steps and the names of the menus and settings they give. \
-         Fetch them with your web fetch tool when you have one, else with `curl -fsSL <url>`. Do not answer from memory, and \
-         do not read Lorca's binary, app bundle, or data files to find out how it works.\n\n\
-         The website describes the newest Lorca. When the user's app lacks something a page describes, an update brings it.\n"
-    )
+/// Writes the skills Lorca ships into the shared skills folder, and rewrites one an older build
+/// wrote. A folder of that name the user made, or one whose mark the user removed to keep their
+/// own version, is left alone.
+pub fn install(app: &App) {
+    let root = app.config.home.join("skills");
+    for builtin in &BUILTINS {
+        let dir = root.join(builtin.name);
+        let mark = std::fs::read_to_string(dir.join(BUILTIN_MARK)).ok();
+        if dir.exists() && mark.is_none() {
+            continue;
+        }
+        let intact = builtin.files.iter().all(|(path, text)| std::fs::read_to_string(dir.join(path)).is_ok_and(|held| held == *text));
+        if mark.as_deref() == Some(builtin.digest().as_str()) && intact {
+            continue;
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+        if let Err(error) = write(&dir, builtin) {
+            tracing::warn!(%error, skill = builtin.name, "writing a skill Lorca ships");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -48,13 +85,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_skill_points_at_the_website() {
-        let skill = read("playbook://lorca/SKILL.md").unwrap().unwrap();
-        assert!(skill.starts_with("---\nname: lorca\ndescription: Lorca's user docs"));
-        assert!(skill.contains("https://lorca.app/llms.txt") && skill.contains("https://lorca.app/docs/<page>.md"));
-        assert!(read("playbook://lorca/references/routines.md").unwrap().is_err());
-        assert!(read("playbook://playbook-123/SKILL.md").is_none());
-        assert!(matches("DOCS") && matches("") && !matches("zzqx"));
-        assert_eq!(catalog_row()["path"], "playbook://lorca/SKILL.md");
+    fn the_shipped_skills_are_valid_and_named_as_reserved() {
+        let names: Vec<&str> = BUILTINS.iter().map(|builtin| builtin.name).collect();
+        assert_eq!(names, crate::skills::BUILTIN_NAMES);
+        for builtin in &BUILTINS {
+            let (_, text) = builtin.files.iter().find(|(path, _)| *path == "SKILL.md").unwrap();
+            let (fields, body) = crate::skills::parse_skill_md(text);
+            assert_eq!(fields["name"], builtin.name);
+            assert!(!fields["description"].is_empty() && !body.trim().is_empty());
+        }
+        let lorca = BUILTINS[0].files[0].1;
+        assert!(lorca.contains("https://lorca.app/llms.txt") && lorca.contains("https://lorca.app/docs/<page>.md"));
+    }
+
+    #[test]
+    fn installing_writes_the_skills_and_respects_a_folder_the_user_took_over() {
+        let home = std::env::temp_dir().join(format!("lorca-docs-{}", uuid::Uuid::new_v4()));
+        let app = App::load(crate::config::Config { home: home.clone(), port: 0 }).unwrap();
+        let shared = home.join("skills");
+        install(&app);
+        assert!(shared.join("lorca/SKILL.md").is_file() && shared.join("write-skill/references/format.md").is_file() && shared.join("save-skill/references/locations.md").is_file());
+        assert!(crate::skills::list_scope(&app, &crate::skills::Scope::shared()).iter().all(|skill| skill.builtin));
+
+        std::fs::write(shared.join("lorca/SKILL.md"), "changed").unwrap();
+        install(&app);
+        assert!(std::fs::read_to_string(shared.join("lorca/SKILL.md")).unwrap().contains("llms.txt"), "a copy the mark vouches for is rewritten");
+        std::fs::remove_file(shared.join("write-skill").join(BUILTIN_MARK)).unwrap();
+        std::fs::write(shared.join("write-skill/SKILL.md"), "mine").unwrap();
+        install(&app);
+        assert_eq!(std::fs::read_to_string(shared.join("write-skill/SKILL.md")).unwrap(), "mine", "no mark, no overwrite");
+        let _ = std::fs::remove_dir_all(home);
     }
 }

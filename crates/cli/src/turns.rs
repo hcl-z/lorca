@@ -188,6 +188,7 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         .into_iter()
         .filter(|brief| bot.permissions.as_ref().is_none_or(|policy| policy.allows_connection(&brief.id)))
         .collect();
+    let skills_before = crate::skills_turn::fingerprint(app, &bot.id, &chat.meta.id);
     let mut system_prompt = system_prompt(app, &chat, &bot, job, &store, routine.as_ref(), &plugin_briefs);
     if let Some(event) = &event {
         if event.message_id.is_some() {
@@ -250,11 +251,6 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         }));
     }
     tools.extend(memory_tools(app, &store, &chat));
-    tools.extend(crate::playbook_tools::tools(app, &bot.id, &chat.meta.id));
-    if job.kind == crate::workflows::SAMPLE_JOB {
-        // It reads the user's skills as its routine will, and proposes none.
-        tools.retain(|tool| tool.name() != "propose_playbook");
-    }
     tools.push(Arc::new(Recall { app: app.clone(), store: store.clone(), bot: bot.clone() }));
     if crate::project_context::project_for_turn(app, &chat.meta.id, &bot.id).is_some() {
         tools.push(Arc::new(crate::project_context::ProjectContextTool { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone() }));
@@ -500,6 +496,11 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
             }
         }
     }
+    // A bot writes its skills as files, so what it kept or changed is said in the chat, and sent
+    // to the account's other Devices.
+    crate::skills_turn::announce(app, &bot, &chat.meta.id, &skills_before);
+    #[cfg(feature = "cli")]
+    crate::skills_sync::scan(app);
     // A routine's run counts in its streak with the provider; one that failed without the
     // provider's error to say why, or that was stopped, leaves the streak as it was.
     let error = state.last_error.as_deref().filter(|_| state.failed);
@@ -778,7 +779,7 @@ impl LoopHooks for TurnHooks {
             return Some(BeforeToolCallResult { block: true, reason: Some("Workflow feedback cannot authorize routine or bot changes. Stage a proposal or ask the user in chat.".into()), args: None, terminate: false });
         }
         if !self.plugin_tools.is_plugin_tool(&ctx.tool_call.name) {
-            if let Err(denied) = crate::permissions::check_tool(&self.app, &self.bot, &ctx.tool_call.name) {
+            if let Err(denied) = crate::permissions::check_tool_call(&self.app, &self.bot, &ctx.tool_call.name, &ctx.tool_call.arguments) {
                 return Some(crate::permissions::refuse(&self.app, &self.chat_id, &self.bot, denied));
             }
         }
@@ -1836,7 +1837,7 @@ fn system_prompt(app: &Arc<App>, chat: &Chat, bot: &Bot, job: &Job, store: &Memo
     prompt.push_str(&memory_prompt(store));
     prompt.push_str("\nPublish deliverables with publish_output so the user can retrieve them on paired Devices. Attach test results and, for visual changes, before/after screenshots as evidence. Report failures and what remains unverified; publishing evidence does not complete a task. Creating or uploading to an external service uses its reviewed tools.\n");
     prompt.push_str(&crate::project_context::prompt(app, &chat.meta.id, &bot.id));
-    prompt.push_str(&crate::playbook_tools::prompt(app, &bot.id, &chat.meta.id));
+    prompt.push_str(&crate::skills_turn::prompt(app, bot, &chat.meta.id));
 
     prompt.push_str(
         "\nWrite like a teammate in a chat app: short and direct, usually one to three sentences, and one line when one \

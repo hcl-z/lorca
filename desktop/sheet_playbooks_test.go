@@ -8,21 +8,28 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// A DM shows its bot's skills and a group its own, drafts first; a chat with none shows the section
-// with a note and the Skill Store. A row opens the skill's sheet, which says who can use it.
+// A DM shows its bot's skills and a group its own, with the ones every bot uses below; a chat with
+// none shows the section with a note. A row opens the skill's sheet, which says who can use it.
 func TestInspectorSkills(t *testing.T) {
 	m := demoWindow(t)
 	m.selectChat("chat-patch")
 	m.inspector.tab = tabSkills
 	tt := ui.NewTester(m.frame(m.view), 1180, 900)
 	settle(tt)
-	wantText(t, tt, L("Skills"), "flaky-tests", "release-notes", "ship-checklist", L("Draft"))
+	wantText(t, tt, L("Skills"), "flaky-tests", "release-notes", "ship-checklist", "plain-replies", L("Every bot uses this skill"))
+	if tt.HasText(L("Every Bot's Skills")) {
+		t.Error("the skills every bot uses are listed with the bot's, not in a section of their own")
+	}
 	renderBoth(t, tt, "skills-inspector")
 
 	m.selectChat("chat-scout")
 	settle(tt)
-	wantText(t, tt, L("No skills yet. Add one from the Skill Store, save a chat as a skill, or ask a bot to write one."), L("Add from Skills…"))
-	renderBoth(t, tt, "skills-inspector-empty")
+	// A bot with no skills of its own still lists the ones every bot uses.
+	wantText(t, tt, "plain-replies", L("Every bot uses this skill"))
+	if tt.HasText("release-notes") {
+		t.Error("a bot lists another bot's own skills")
+	}
+	renderBoth(t, tt, "skills-inspector-shared-only")
 	m.selectChat("chat-relay")
 	settle(tt)
 	wantText(t, tt, "launch-post")
@@ -36,16 +43,18 @@ func TestInspectorSkills(t *testing.T) {
 		t.Fatal(err)
 	}
 	settleTransitions(tt)
-	wantText(t, tt, L("%@ can use it in every chat.", "Developer"), L("Instructions"), L("History"), L("Delete…"))
+	wantText(t, tt, L("%@ can use it in every chat.", "Developer"), L("Instructions"), L("Delete…"))
+	if tt.HasText(L("History")) {
+		t.Error("a skill is a folder, with no history to show")
+	}
 	renderBoth(t, tt, "skills-sheet")
-	for i, name := range []string{"references", "scripts", "history"} {
-		if err := tt.Click([]string{L("References"), L("Scripts"), L("History")}[i]); err != nil {
+	for i, name := range []string{"references", "scripts"} {
+		if err := tt.Click([]string{L("References"), L("Scripts")}[i]); err != nil {
 			t.Fatal(err)
 		}
 		settle(tt)
 		renderTo(t, tt, "skills-sheet-"+name)
 	}
-	wantText(t, tt, L("Edited"), L("Created"))
 }
 
 // A new skill saves only once it has a name the CLI takes, a description, and instructions; a name
@@ -104,13 +113,16 @@ func TestSaveAsSkill(t *testing.T) {
 	settleTransitions(tt)
 	wantText(t, tt, "relay-deploy", L("A draft. Once you save it, %@ can use it in every chat.", "Developer"))
 	renderBoth(t, tt, "skills-captured-draft")
-	if after := store.Skills(model.BotScope("bot-patch")); len(after) != before+1 || !after[0].IsDraft() {
-		t.Errorf("the draft is not listed first: %+v", after)
+	if after := store.Skills(model.BotScope("bot-patch")); len(after) != before {
+		t.Errorf("a draft is not a skill until it is saved: %+v", after)
 	}
 	if err := tt.Click(L("Cancel")); err != nil {
 		t.Fatal(err)
 	}
 	settleTransitions(tt)
+	if after := store.Skills(model.BotScope("bot-patch")); len(after) != before {
+		t.Errorf("a cancelled draft left a skill behind: %+v", after)
+	}
 
 	m.selectChat("chat-relay")
 	settle(tt)
@@ -137,8 +149,9 @@ func TestSaveAsSkill(t *testing.T) {
 	renderBoth(t, tt, "skills-corrections")
 }
 
-// The Skill Store lists ClawHub's skills, searches as the field is typed, takes an address, and Add
-// saves a skill for the bot at once.
+// The Skill Store opens from a Skills section's + for that bot: topics to try while the field is
+// empty, skills.sh's skills as a topic or the field searches, an address, and Add, which saves the
+// skill for the bot at once.
 func TestSkillStore(t *testing.T) {
 	m := demoWindow(t)
 	m.selectChat("chat-scout")
@@ -149,18 +162,20 @@ func TestSkillStore(t *testing.T) {
 	scope, _ := model.SkillScope(chat, store.BotsIn(chat))
 	bot := store.Bot(scope.ID)
 
-	if err := tt.Click(L("Add from Skills…")); err != nil {
+	if err := tt.Click(L("Add a Skill")); err != nil {
 		t.Fatal(err)
 	}
 	settleTransitions(tt)
-	wantText(t, tt, L("Skill Store"))
+	wantText(t, tt, L("Skill Store"), L("New Blank Skill…"), "pdf", "react")
+	renderBoth(t, tt, "skill-store")
+
+	if err := tt.Click("pdf"); err != nil {
+		t.Fatal(err)
+	}
 	time.Sleep(450 * time.Millisecond)
 	settle(tt)
-	wantText(t, tt, L("Popular on ClawHub"), "PDF Tools", "Code Review", "Weekly Report", "GifGrep")
-	if tt.HasText(L("Categories")) {
-		t.Errorf("the store has a view switch: %q", tt.Texts())
-	}
-	renderBoth(t, tt, "skill-store")
+	wantText(t, tt, L("%d skills on skills.sh", 1), "anthropics/skills", L("%@ installs", "210.2K"))
+	renderBoth(t, tt, "skill-store-results")
 
 	if err := tt.Click(L("Add")); err != nil {
 		t.Fatal(err)
@@ -169,28 +184,53 @@ func TestSkillStore(t *testing.T) {
 	time.Sleep(750 * time.Millisecond)
 	settle(tt)
 	skills := store.Skills(scope)
-	if len(skills) != 1 || skills[0].IsDraft() {
+	if len(skills) != 1 || skills[0].Name != "pdf" {
 		t.Fatalf("Add saves one skill at once: %+v", skills)
 	}
-	wantText(t, tt, L("Added"), L("Added “%@”. %@ uses it from now on.", skills[0].Name, bot.Name))
-	renderBoth(t, tt, "skill-store-added")
+	wantText(t, tt, L("Added"), L("Added “%@” for %@. It's used from the next turn.", "pdf", bot.Name))
 
-	if err := tt.Click(L("Search skills or paste a link")); err != nil {
+	if err := tt.Click(L("Search skills.sh or paste a link")); err != nil {
 		t.Fatal(err)
 	}
-	tt.Type("gif")
-	time.Sleep(450 * time.Millisecond)
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Key(0, ui.KeyBackspace)
+	tt.Type("zz")
+	// The search waits for typing to pause, then the demo answers a moment later.
+	time.Sleep(400 * time.Millisecond)
 	settle(tt)
-	time.Sleep(450 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 	settle(tt)
-	wantText(t, tt, L("Results"), "GifGrep")
-	if tt.HasText("Weekly Report") {
-		t.Errorf("a search lists only what matches: %q", tt.Texts())
-	}
+	wantText(t, tt, L("Nothing on skills.sh matches “%@”. Try other words, or paste a link to a skill.", "zz"))
 
 	tt.Key(ui.Cmd, ui.KeyA)
 	tt.Key(0, ui.KeyBackspace)
 	tt.Type("anthropics/skills@pdf")
 	settle(tt)
-	wantText(t, tt, "anthropics/skills@pdf", L("A skill at this address"))
+	wantText(t, tt, "anthropics/skills@pdf", L("The skill at this address"))
+}
+
+// The sidebar's Create › Add a Skill for Every Bot… opens the store for the skills every bot on
+// this computer uses, and what it adds is listed with them.
+func TestSharedSkillStore(t *testing.T) {
+	m := demoWindow(t)
+	m.selectChat("chat-scout")
+	tt := ui.NewTester(m.frame(m.view), 1180, 900)
+	settle(tt)
+	m.presentSharedSkillStore()
+	settleTransitions(tt)
+	wantText(t, tt, L("Skills for %@. They work as soon as you add them, so read one before you rely on it.", L("every bot on this computer")))
+	before := len(store.SharedSkills())
+	if err := tt.Click("react"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(450 * time.Millisecond)
+	settle(tt)
+	if err := tt.Click(L("Add")); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(750 * time.Millisecond)
+	settle(tt)
+	if shared := store.SharedSkills(); len(shared) != before+1 {
+		t.Fatalf("the skill is not one every bot uses: %+v", shared)
+	}
 }

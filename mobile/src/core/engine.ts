@@ -12,7 +12,7 @@ import { reviewEditParams } from "./reviewEdit";
 import { editedText, rerunnable } from "./rerun";
 import type { AskAnswer } from "./ask";
 import { hostFacts } from "./host";
-import { connectedProviders, isRunner, PROVIDER_KINDS, orderProjectEntries, providerConnectMethod, sectionName, withReviewModel, sameDraft, type Section, type PlaybookContent, type PlaybookRecord, type PlaybookScope, type ProjectContext, type ProjectEntry, type ProjectKind, type ProjectSource, type Attachment, type AutoReview, type Bot, type BrowserProfile, type BudgetLimits, type BudgetState, type CallLimits, type Chat, type ChatMeta, type ChatSearchResults, type ChatUsage, type CustomAPI, type CustomModel, type DurableTask, type Message, type MessageDraft, type ReviewItem, type PluginDetail, type PluginStatus, type ProviderKind, type ProviderStatus, type SavedSecret, routinesAwaitingSetup } from "./model";
+import { connectedProviders, isRunner, PROVIDER_KINDS, orderProjectEntries, providerConnectMethod, sectionName, withReviewModel, sameDraft, skillInputOf, skillRecordOf, skillSummaryOf, type SkillRow, type SkillView, type Section, type PlaybookContent, type PlaybookRecord, type PlaybookScope, type ProjectContext, type ProjectEntry, type ProjectKind, type ProjectSource, type Attachment, type AutoReview, type Bot, type BrowserProfile, type BudgetLimits, type BudgetState, type CallLimits, type Chat, type ChatMeta, type ChatSearchResults, type ChatUsage, type CustomAPI, type CustomModel, type DurableTask, type Message, type MessageDraft, type ReviewItem, type PluginDetail, type PluginStatus, type ProviderKind, type ProviderStatus, type SavedSecret, routinesAwaitingSetup } from "./model";
 import { coreHome, loadPrefs, pathOf, wipePrefs } from "./prefs";
 import type { SharedLink, TemplateContents, TemplateImportPreview, TemplateSelection } from "./templates";
 import { clearPushes, installPushHandlers, registerForPushes } from "./push";
@@ -21,6 +21,7 @@ import {
   setBudgets,
   acceptReview,
   applyRoster,
+  applySkills,
   botById,
   chatById,
   endActivity,
@@ -485,43 +486,70 @@ class Engine {
   /// The skills this phone fetched or drafted, by id, so a screen opens on one at once.
   readonly skills = new Map<string, PlaybookRecord>();
 
-  /// A skill's body and history.
+  /// The skills of a bot in a chat, listed by the bot's Runner: the bot's, the group's, and the
+  /// ones every bot there uses. They replace what this phone held for the same three folders.
+  async loadSkills(botId: string, chatId: string): Promise<void> {
+    const list = await core.request<{ skills: SkillRow[] }>("skills.list", { bot_id: botId, chat_id: chatId });
+    applySkills(list.skills.map(skillSummaryOf), [{ kind: "shared", id: "" }, { kind: "bot", id: botId }, { kind: "project", id: chatId }]);
+  }
+
+  /// A skill's body and files, fetched from its Runner.
   async playbook(scope: PlaybookScope, id: string): Promise<PlaybookRecord> {
-    const record = await core.request<PlaybookRecord>("playbooks.get", { scope, id });
+    const record = skillRecordOf(await core.request<SkillView>("skills.get", { scope, name: id }));
     this.skills.set(record.id, record);
     return record;
   }
 
-  /// Saves a new skill, or a new revision over the one `over` holds; the core refuses it when the
-  /// skill changed since `over` was read.
+  /// Saves a skill: a new folder, or `over` rewritten. The Runner refuses it when the folder changed
+  /// since `over` was read. A draft from a chat has no folder yet, so it saves as a new skill.
   async savePlaybook(scope: PlaybookScope, content: PlaybookContent, over?: PlaybookRecord): Promise<PlaybookRecord> {
-    const record = await core.request<PlaybookRecord>("playbooks.save", {
+    const current = over && over.status !== "draft" ? over : undefined;
+    const view = await core.request<SkillView>("skills.save", {
       scope,
-      content,
-      expected_revision: over?.revision ?? 0,
-      expected_hash: over?.hash ?? "",
-      ...(over ? { id: over.id, provenance: { kind: "edit" } } : {}),
+      current: current?.id ?? "",
+      skill: skillInputOf({ ...content, other: over?.content?.other ?? [] }),
+      expected_hash: current?.hash ?? "",
     });
+    const record = skillRecordOf(view);
+    if (over) this.skills.delete(over.id);
     this.skills.set(record.id, record);
+    void this.reloadSkills(scope);
     return record;
   }
 
   async removePlaybook(record: PlaybookRecord): Promise<void> {
-    await core.request("playbooks.remove", { scope: record.scope, id: record.id, expected_revision: record.revision, expected_hash: record.hash });
+    if (record.status !== "draft") await core.request("skills.remove", { scope: record.scope, name: record.id, expected_hash: record.hash });
     this.skills.delete(record.id);
+    void this.reloadSkills(record.scope);
   }
 
-  /// Has the bot's Runner write a draft from the picked messages, with the bot's provider. The
-  /// draft is used once it is saved.
+  /// Has the bot's Runner write a draft from the picked messages, with the bot's provider. Nothing
+  /// is saved yet: the screen opens the draft, and Save writes the folder.
   async draftPlaybook(scope: PlaybookScope, botId: string, chatId: string, kind: "workflow" | "corrections", messageIds: string[]): Promise<PlaybookRecord> {
-    const record = await core.request<PlaybookRecord>("playbooks.draft", { scope, bot_id: botId, chat_id: chatId, kind, message_ids: messageIds });
+    const made = await core.request<{ name: string; description: string; instructions: string }>("skills.generate", { scope, bot_id: botId, chat_id: chatId, kind, message_ids: messageIds });
+    const content: PlaybookContent = { name: made.name, description: made.description, instructions: made.instructions, examples: "", references: [], scripts: [] };
+    const record: PlaybookRecord = { id: `draft-${Date.now()}`, scope, status: "draft", revision: 0, hash: "", content, revisions: [] };
     this.skills.set(record.id, record);
     return record;
   }
 
-  /// The skill as a portable file's JSON: its content and bundled files, nothing about the account.
+  /// The skill as a zip of its folder, in base64: its files, scrubbed of credentials, nothing about
+  /// the account.
   async exportPlaybook(scope: PlaybookScope, id: string): Promise<string> {
-    return JSON.stringify(await core.request("playbooks.export", { scope, id }), null, 2);
+    return (await core.request<{ data: string }>("skills.export", { scope, name: id })).data;
+  }
+
+  /// Lists the skills again for the bot and chat last shown, after a change.
+  private skillsShown?: { botId: string; chatId: string };
+
+  private async reloadSkills(_scope: PlaybookScope): Promise<void> {
+    if (this.skillsShown) await this.loadSkills(this.skillsShown.botId, this.skillsShown.chatId).catch(() => undefined);
+  }
+
+  /// The Details screen asks as it opens and now and then after, since a bot writes its skills as files.
+  async showSkills(botId: string, chatId: string): Promise<void> {
+    this.skillsShown = { botId, chatId };
+    await this.loadSkills(botId, chatId);
   }
 
   // MARK: - Templates

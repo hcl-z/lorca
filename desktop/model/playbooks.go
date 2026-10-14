@@ -23,7 +23,11 @@ type PlaybookScope struct {
 func BotScope(id string) PlaybookScope   { return PlaybookScope{Kind: "bot", ID: id} }
 func GroupScope(id string) PlaybookScope { return PlaybookScope{Kind: "project", ID: id} }
 
-func (s PlaybookScope) IsGroup() bool { return s.Kind == "project" }
+// SharedScope is the skills every bot on a Runner uses.
+func SharedScope() PlaybookScope { return PlaybookScope{Kind: "shared"} }
+
+func (s PlaybookScope) IsGroup() bool  { return s.Kind == "project" }
+func (s PlaybookScope) IsShared() bool { return s.Kind == "shared" }
 
 // SkillScope is whose skills a chat shows: the bot's in a DM, the group's in a group.
 func SkillScope(chat *Chat, members []*Bot) (PlaybookScope, bool) {
@@ -52,6 +56,9 @@ type PlaybookContent struct {
 	Examples     string         `json:"examples"`
 	References   []PlaybookFile `json:"references"`
 	Scripts      []PlaybookFile `json:"scripts"`
+	// Other are the skill's text files outside references/ and scripts/. The sheet does not show
+	// them; a save sends them back, so editing a skill does not drop them.
+	Other []PlaybookFile `json:"-"`
 }
 
 func (c PlaybookContent) clone() PlaybookContent {
@@ -67,6 +74,7 @@ func (c PlaybookContent) clone() PlaybookContent {
 
 // PlaybookSummary is a skill as the roster lists it, without its body.
 type PlaybookSummary struct {
+	// ID is the skill's name, which is its folder's.
 	ID          string        `json:"id"`
 	Scope       PlaybookScope `json:"scope"`
 	Name        string        `json:"name"`
@@ -75,6 +83,11 @@ type PlaybookSummary struct {
 	Revision    uint64        `json:"revision"`
 	Hash        string        `json:"hash"`
 	UpdatedAt   float64       `json:"updated_at"`
+	// Path is the skill's folder on its Runner. Builtin is a skill Lorca ships.
+	Path    string `json:"path"`
+	Builtin bool   `json:"builtin"`
+	// Source is the address the skill was imported from, empty for one written here.
+	Source string `json:"source"`
 }
 
 func (s PlaybookSummary) IsDraft() bool { return s.Status == "draft" }
@@ -103,12 +116,17 @@ type PlaybookRecord struct {
 	Hash      string             `json:"hash"`
 	Content   *PlaybookContent   `json:"content"`
 	Revisions []PlaybookRevision `json:"revisions"`
+	// Path is the skill's folder on its Runner. Builtin is a skill Lorca ships, which is not edited.
+	// Source is the address it was imported from.
+	Path    string `json:"path"`
+	Builtin bool   `json:"builtin"`
+	Source  string `json:"source"`
 }
 
 func (r PlaybookRecord) IsDraft() bool { return r.Status == "draft" }
 
 func (r PlaybookRecord) summary() PlaybookSummary {
-	s := PlaybookSummary{ID: r.ID, Scope: r.Scope, Status: r.Status, Revision: r.Revision, Hash: r.Hash}
+	s := PlaybookSummary{ID: r.ID, Scope: r.Scope, Status: r.Status, Revision: r.Revision, Hash: r.Hash, Source: r.Source}
 	if r.Content != nil {
 		s.Name, s.Description = r.Content.Name, r.Content.Description
 	}
@@ -158,7 +176,7 @@ func (s *Store) Playbook(scope PlaybookScope, id string, done func(PlaybookRecor
 	if s.IsMock {
 		record, ok := PlaybookRecord{}, false
 		for _, each := range s.mockPlaybooks {
-			if each.ID == id {
+			if each.ID == id && each.Scope == scope {
 				record, ok = each, true
 			}
 		}
@@ -172,41 +190,58 @@ func (s *Store) Playbook(scope PlaybookScope, id string, done func(PlaybookRecor
 		return
 	}
 	Async(s, func() (PlaybookRecord, error) {
-		return call[PlaybookRecord](s, "playbooks.get", map[string]any{"scope": scope, "id": id})
+		view, err := call[skillView](s, "skills.get", s.scoped(scope, map[string]any{"name": id}))
+		return view.record(), err
 	}, done)
 }
 
-// SavePlaybook saves a new skill, or a new revision over the one `over` holds. The CLI refuses it
-// with ErrPlaybookChanged when the skill changed since `over` was read.
+// SavePlaybook saves a new skill, or rewrites the one `over` holds. The CLI refuses it with
+// ErrPlaybookChanged when the skill changed since `over` was read.
 func (s *Store) SavePlaybook(scope PlaybookScope, content PlaybookContent, over *PlaybookRecord, done func(PlaybookRecord, error)) {
+	s.SavePlaybookVia(scope, s.skillsKey[0], content, over, done)
+}
+
+// SavePlaybookVia is SavePlaybook with a shared skill kept on `via`'s Runner, or this computer
+// for "".
+func (s *Store) SavePlaybookVia(scope PlaybookScope, via string, content PlaybookContent, over *PlaybookRecord, done func(PlaybookRecord, error)) {
 	if s.IsMock {
 		saved := s.saveMockPlaybook(content.clone(), scope, over, "saved")
 		s.post(func() { done(saved, nil) })
 		return
 	}
-	params := map[string]any{"scope": scope, "content": content.clone(), "expected_revision": uint64(0), "expected_hash": ""}
-	if over != nil {
-		params["id"], params["expected_revision"], params["expected_hash"] = over.ID, over.Revision, over.Hash
-		params["provenance"] = map[string]any{"kind": "edit"}
+	// A draft from the chat has no folder yet, so it saves as a new skill.
+	params := s.scopedVia(scope, via, map[string]any{"current": "", "skill": content.clone().skillInput(), "expected_hash": ""})
+	if over != nil && over.ID != "" {
+		params["current"], params["expected_hash"] = over.ID, over.Hash
 	}
 	Async(s, func() (PlaybookRecord, error) {
-		record, err := call[PlaybookRecord](s, "playbooks.save", params)
-		return record, playbookError(err)
-	}, done)
+		view, err := call[skillView](s, "skills.save", params)
+		return view.record(), playbookError(err)
+	}, func(record PlaybookRecord, err error) {
+		if err == nil {
+			s.invalidateSkills()
+		}
+		done(record, err)
+	})
 }
 
 func (s *Store) RemovePlaybook(record PlaybookRecord, done func(error)) {
 	if s.IsMock {
-		s.mockPlaybooks = slices.DeleteFunc(slices.Clone(s.mockPlaybooks), func(each PlaybookRecord) bool { return each.ID == record.ID })
+		s.mockPlaybooks = slices.DeleteFunc(slices.Clone(s.mockPlaybooks), func(each PlaybookRecord) bool { return each.ID == record.ID && each.Scope == record.Scope })
 		s.mockPlaybooksChanged()
 		s.post(func() { done(nil) })
 		return
 	}
-	params := map[string]any{"scope": record.Scope, "id": record.ID, "expected_revision": record.Revision, "expected_hash": record.Hash}
+	params := s.scoped(record.Scope, map[string]any{"name": record.ID, "expected_hash": record.Hash})
 	Async(s, func() (struct{}, error) {
-		_, err := call[json.RawMessage](s, "playbooks.remove", params)
+		_, err := call[json.RawMessage](s, "skills.remove", params)
 		return struct{}{}, playbookError(err)
-	}, func(_ struct{}, err error) { done(err) })
+	}, func(_ struct{}, err error) {
+		if err == nil {
+			s.invalidateSkills()
+		}
+		done(err)
+	})
 }
 
 // DraftPlaybook has the bot's provider write a draft from the messages picked in the chat; the
@@ -225,11 +260,20 @@ func (s *Store) DraftPlaybook(scope PlaybookScope, botID, chatID, kind string, m
 		return
 	}
 	params := map[string]any{"scope": scope, "bot_id": botID, "chat_id": chatID, "kind": kind, "message_ids": slices.Clone(messageIDs)}
-	Async(s, func() (PlaybookRecord, error) { return call[PlaybookRecord](s, "playbooks.draft", params) }, done)
+	Async(s, func() (PlaybookRecord, error) {
+		draft, err := call[struct {
+			Name         string `json:"name"`
+			Description  string `json:"description"`
+			Instructions string `json:"instructions"`
+		}](s, "skills.generate", params)
+		content := PlaybookContent{Name: draft.Name, Description: draft.Description, Instructions: draft.Instructions, References: []PlaybookFile{}, Scripts: []PlaybookFile{}}
+		// Nothing is saved yet: the sheet opens the draft, and Save writes the folder.
+		return PlaybookRecord{Scope: scope, Status: "draft", Content: &content}, err
+	}, done)
 }
 
-// ExportPlaybook is the skill as a portable file: its content and bundled files, nothing about the
-// account, indented.
+// ExportPlaybook is the skill as a zip of its folder, scrubbed of credentials: its files, nothing
+// about the account.
 func (s *Store) ExportPlaybook(scope PlaybookScope, id string, done func([]byte, error)) {
 	indent := func(data []byte) ([]byte, error) {
 		var out bytes.Buffer
@@ -247,35 +291,29 @@ func (s *Store) ExportPlaybook(scope PlaybookScope, id string, done func([]byte,
 		})
 		return
 	}
+	// The CLI answers with a zip of the skill's folder, which any agent's skills folder takes.
 	Async(s, func() ([]byte, error) {
-		data, err := call[json.RawMessage](s, "playbooks.export", map[string]any{"scope": scope, "id": id})
+		archive, err := call[struct {
+			Data string `json:"data"`
+		}](s, "skills.export", s.scoped(scope, map[string]any{"name": id}))
 		if err != nil {
 			return nil, err
 		}
-		return indent(data)
+		return decodeArchive(archive.Data)
 	}, done)
 }
 
+// saveMockPlaybook is the demo's save: the folder is the skill's name, and saving a skill over
+// another name moves it.
 func (s *Store) saveMockPlaybook(content PlaybookContent, scope PlaybookScope, over *PlaybookRecord, status string) PlaybookRecord {
-	record := PlaybookRecord{ID: fmt.Sprintf("playbook-%d", time.Now().UnixNano()), Scope: scope}
-	kind := "manual"
-	if status == "draft" {
-		kind = "workflow"
+	record := PlaybookRecord{ID: content.Name, Scope: scope, Status: status, Revision: 1, Hash: fmt.Sprintf("hash-%d", time.Now().UnixNano()), Content: &content}
+	s.mockPlaybooks = slices.DeleteFunc(slices.Clone(s.mockPlaybooks), func(each PlaybookRecord) bool {
+		return each.Scope == scope && (each.ID == record.ID || (over != nil && each.ID == over.ID))
+	})
+	if status != "draft" {
+		s.mockPlaybooks = append(s.mockPlaybooks, record)
+		s.mockPlaybooksChanged()
 	}
-	if over != nil {
-		record, kind = *over, "edit"
-		record.Revisions = slices.Clone(over.Revisions)
-	}
-	record.Revision++
-	record.Status, record.Hash, record.Content = status, fmt.Sprintf("hash-%d", time.Now().UnixNano()), &content
-	step := PlaybookRevision{ID: fmt.Sprintf("%s-%d", record.ID, record.Revision), Revision: record.Revision, Status: status, Content: &content, CreatedAt: float64(time.Now().Unix())}
-	step.Provenance.Kind = kind
-	if device := s.ThisDevice(); device != nil {
-		step.DeviceID = device.ID
-	}
-	record.Revisions = append(record.Revisions, step)
-	s.mockPlaybooks = append(slices.DeleteFunc(slices.Clone(s.mockPlaybooks), func(each PlaybookRecord) bool { return each.ID == record.ID }), record)
-	s.mockPlaybooksChanged()
 	return record
 }
 

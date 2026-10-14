@@ -136,6 +136,7 @@ var commandTable = []command{
 		_, ok := model.SkillScope(chat, store.BotsIn(chat))
 		return ok
 	}},
+	{id: "sharedSkillStore", title: func() string { return L("Add a Skill for Every Bot…") }, opensMain: true},
 	{id: "stopResponding", title: func() string { return L("Stop Responding") }, accelerator: "CmdOrCtrl+.", enabled: chatSelected},
 	{
 		// The Mac's ⌃B has no counterpart here: Ctrl+B toggles the sidebar.

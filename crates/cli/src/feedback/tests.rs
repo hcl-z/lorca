@@ -386,12 +386,12 @@ fn diff_handles_unicode_empty_files_and_shared_suffix() {
 }
 
 #[tokio::test]
-async fn a_skill_revision_is_a_guarded_save_with_its_provenance_and_undoes_the_same_way() {
+async fn a_skill_revision_is_a_guarded_save_and_undoes_the_same_way() {
     let s = scratch();
     let scope = Scope::bot(&s.bot);
-    let content = crate::playbooks::PlaybookContent { name: "launch-brief".into(), description: "How to write the launch brief".into(), instructions: "Summarize the inbox.".into(), ..Default::default() };
-    let saved = crate::playbooks::save(&s.app, &scope, None, content, 0, "", Default::default()).unwrap();
-    let id = saved["id"].as_str().unwrap().to_string();
+    let skill = |instructions: &str| crate::skills::Input { name: "launch-brief".into(), description: "How to write the launch brief".into(), instructions: instructions.into(), files: Vec::new() };
+    crate::skills::save(&s.app, &scope, None, skill("Summarize the inbox."), "").unwrap();
+    let id = "launch-brief".to_string();
     let target = Target::Playbook { scope: scope.clone(), id: id.clone() };
     assert!(skills(&s.app, &s.bot).iter().any(|(t, name)| *t == target && name == "launch-brief"));
     let f = record(&s.app, &s.bot, input(&s, Kind::Explicit)).await.unwrap();
@@ -399,29 +399,23 @@ async fn a_skill_revision_is_a_guarded_save_with_its_provenance_and_undoes_the_s
     assert!(propose(&s.app, &s.bot, Proposed { after: json!({"instructions": "x"}), ..proposed("") }).await.is_err(), "text only");
     let p = propose(&s.app, &s.bot, proposed("Summarize the inbox. Put the summary first.")).await.unwrap();
     let applied = decide(&s.app, &s.bot, &p.id, &p.diff_hash, true, "device").await.unwrap();
-    let view = crate::playbooks::get(&s.app, &scope, &id).unwrap();
-    assert_eq!(view["content"]["instructions"], "Summarize the inbox. Put the summary first.");
-    assert_eq!(view["content"]["name"], "launch-brief", "only the instructions change");
-    assert_eq!(view["revision"], 2);
-    assert_eq!(view["provenance"]["kind"], "workflow_feedback");
-    assert_eq!(view["provenance"]["message_ids"][0], s.origin.message_id.as_str());
+    let view = crate::skills::get(&s.app, &scope, &id).unwrap();
+    assert_eq!(view["instructions"], "Summarize the inbox. Put the summary first.");
+    assert_eq!(view["name"], "launch-brief", "only the instructions change");
+    assert_eq!(view["description"], "How to write the launch brief");
 
     // An edit the user made since refuses the undo, as it would refuse a stale suggestion.
     let current = read_target(&s.app, &s.bot, &target).await.unwrap();
-    let mut edited: crate::playbooks::PlaybookContent = serde_json::from_value(view["content"].clone()).unwrap();
-    edited.instructions = "Written by hand.".into();
-    crate::playbooks::save(&s.app, &scope, Some(&id), edited, 2, &current.hash, Default::default()).unwrap();
+    crate::skills::save(&s.app, &scope, Some(&id), skill("Written by hand."), &current.hash).unwrap();
     let revision = applied["revision"]["id"].as_str().unwrap();
     assert!(rollback(&s.app, &s.bot, revision, &current.hash, "device").await.is_err());
     let stale = propose(&s.app, &s.bot, proposed("Another change.")).await.unwrap();
     let hand = read_target(&s.app, &s.bot, &target).await.unwrap();
-    let mut back: crate::playbooks::PlaybookContent = serde_json::from_value(crate::playbooks::get(&s.app, &scope, &id).unwrap()["content"].clone()).unwrap();
-    back.instructions = "Summarize the inbox. Put the summary first.".into();
-    crate::playbooks::save(&s.app, &scope, Some(&id), back, hand.revision, &hand.hash, Default::default()).unwrap();
+    crate::skills::save(&s.app, &scope, Some(&id), skill("Summarize the inbox. Put the summary first."), &hand.hash).unwrap();
     assert!(decide(&s.app, &s.bot, &stale.id, &stale.diff_hash, true, "device").await.unwrap_err().contains("changed"));
     let current = read_target(&s.app, &s.bot, &target).await.unwrap();
     rollback(&s.app, &s.bot, revision, &current.hash, "device").await.unwrap();
-    assert_eq!(crate::playbooks::get(&s.app, &scope, &id).unwrap()["content"]["instructions"], "Summarize the inbox.");
+    assert_eq!(crate::skills::get(&s.app, &scope, &id).unwrap()["instructions"], "Summarize the inbox.");
     assert!(read_target(&s.app, &s.bot, &Target::Playbook { scope: Scope::bot("another-bot"), id }).await.is_err());
 }
 #[tokio::test]
