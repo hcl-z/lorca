@@ -1012,6 +1012,8 @@ func (s *Store) Preview(chat *Chat) string {
 	case BodyHandoff:
 		if slices.Contains(chat.BotIDs, content.Handoff.To) && !slices.Contains(chat.BotIDs, content.Handoff.From) {
 			body = L("Message from %@: %@", s.botName(content.Handoff.From, L("a teammate")), content.Handoff.Reason)
+		} else if slices.Contains(chat.BotIDs, content.Handoff.From) && !slices.Contains(chat.BotIDs, content.Handoff.To) {
+			body = L("Messaged %@: %@", s.botName(content.Handoff.To, L("a teammate")), content.Handoff.Reason)
 		} else {
 			body = L("Handed off to %@", s.botName(content.Handoff.To, L("a teammate")))
 		}
@@ -1093,6 +1095,16 @@ func (s *Store) DM(botID string) string {
 }
 
 func (s *Store) CreateChat(kind ChatKind, botIDs []string, title string) string {
+	return s.createChat(kind, botIDs, title, "")
+}
+
+// CreateGroup makes a group of `botIDs`, whose first bot owns the work, with a name and what it is
+// for ("" for neither).
+func (s *Store) CreateGroup(botIDs []string, title, description string) string {
+	return s.createChat(ChatGroup, botIDs, title, description)
+}
+
+func (s *Store) createChat(kind ChatKind, botIDs []string, title, description string) string {
 	members := botIDs
 	if kind == ChatDM {
 		members = botIDs[:min(1, len(botIDs))]
@@ -1100,13 +1112,22 @@ func (s *Store) CreateChat(kind ChatKind, botIDs []string, title string) string 
 		members = botIDs[:min(MaxGroupBots, len(botIDs))]
 	}
 	chat := &Chat{ID: ShortID("chat"), Kind: kind, BotIDs: slices.Clone(members), CreatedAt: time.Now()}
+	params := map[string]any{"id": chat.ID, "kind": string(kind), "bot_ids": members, "title": title}
 	if kind == ChatGroup {
 		chat.CustomTitle = title
+		if description = strings.TrimSpace(description); description != "" {
+			chat.GroupDescription = description
+			params["description"] = description
+		}
+		if len(members) > 0 {
+			chat.OwnerBotID = members[0]
+			params["owner_bot_id"] = members[0]
+		}
 	}
 	s.Chats = append([]*Chat{chat}, s.Chats...)
 	s.sortChats()
 	s.emit(Event{Kind: EventChatsChanged})
-	s.perform("chats.create", map[string]any{"id": chat.ID, "kind": string(kind), "bot_ids": members, "title": title})
+	s.perform("chats.create", params)
 	return chat.ID
 }
 

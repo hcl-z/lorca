@@ -14,7 +14,7 @@ import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSequence, with
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { ShimmerView } from "../../modules/lorca-core/ShimmerView";
-import { agentIsOpen, agentIsRunning, agentName, agentPlace, agentStarted, canBeQuoted, isLive, isSentMessage, showsCard, showsSpeakers, type AgentRun, type AskQuestion, type Author, type Body, type Bot, type Chat, type CommandRun, type Message } from "../core/model";
+import { agentIsOpen, agentIsRunning, agentName, agentPlace, agentStarted, assignedTo, canBeQuoted, isLive, isSentMessage, showsCard, showsSpeakers, type AgentRun, type AskQuestion, type Author, type Body, type Bot, type Chat, type CommandRun, type Message } from "../core/model";
 import { engine } from "../core/engine";
 import { canRegenerate, rerunnable } from "../core/rerun";
 import { answerWords, askAnswer, sendsOnPick, togglePick } from "../core/ask";
@@ -38,13 +38,15 @@ const GUTTER = 8;
 /// A bubble stops growing here in a wide pane.
 const BUBBLE_COLUMN_MAX = 620;
 const INSET = 12;
+/// A message that hands nothing to anyone, shared so its row compares equal from build to build.
+const NO_BOTS: Bot[] = [];
 /// A notice's line, and its icon, which centers on the first line as on the Mac.
 const NOTICE_LINE = 17;
 const NOTICE_ICON = 14;
 
 export type Row =
   | { key: string; type: "day"; at: number }
-  | { key: string; type: "message"; message: Message; groupStart: boolean; groupEnd: boolean; showsName: boolean; copyable: boolean; regenerable: boolean; editable: boolean; stackAbove: boolean; stackBelow: boolean }
+  | { key: string; type: "message"; message: Message; groupStart: boolean; groupEnd: boolean; showsName: boolean; copyable: boolean; regenerable: boolean; editable: boolean; stackAbove: boolean; stackBelow: boolean; assigned: Bot[] }
   | { key: string; type: "marker"; text: string; bot: Bot | undefined; tooltip?: string; groupStart: boolean }
   | { key: string; type: "notice"; text: string; groupStart: boolean }
   | { key: string; type: "permission"; message: Message; body: Extract<Body, { kind: "permission" }>; bot: Bot | undefined; groupStart: boolean }
@@ -92,6 +94,7 @@ export function buildRows(chat: Chat, bots: Map<string, Bot>, workingBotIds: str
           copyable: message.id === latestReply && message.body.text.trim().length > 0,
           regenerable: message.id === latestReply && canRegenerate(chat, isWorking, message),
           editable: run?.asked.id === message.id,
+          assigned: chat.kind === "group" ? assignedTo(message, chat.bot_ids, bots) : NO_BOTS,
           stackAbove: output && !groupStart && isOutputCard(shown[i - 1]),
           stackBelow: output && !groupEnd && isOutputCard(next),
         });
@@ -113,10 +116,12 @@ export function buildRows(chat: Chat, bots: Map<string, Bot>, workingBotIds: str
       case "handoff": {
         // From a bot outside the chat, as a DM's request or a handoff's report: a message.
         const incoming = chat.bot_ids.includes(message.body.to) && !chat.bot_ids.includes(message.body.from);
+        // To a bot outside the chat, as the request its bot sent: a message it sent.
+        const outgoing = chat.bot_ids.includes(message.body.from) && !chat.bot_ids.includes(message.body.to);
         rows.push({
           key: message.id,
           type: "marker",
-          text: incoming ? t("Message from") : t("Handed off to"),
+          text: incoming ? t("Message from") : outgoing ? t("Messaged") : t("Handed off to"),
           bot: bots.get(incoming ? message.body.from : message.body.to),
           tooltip: message.body.reason,
           groupStart,
@@ -362,6 +367,17 @@ export const MessageRow = memo(function MessageRow({
         </Animated.View>
         )}
         </GestureDetector>
+        {row.assigned.length > 0 && (
+          <View style={styles.assignedLine} accessible accessibilityLabel={t("Handed to {names}", { names: row.assigned.map((b) => b.name).join(", ") })}>
+            <Symbol name="arrow.right" size={10} color={p.tertiaryLabel} />
+            {row.assigned.map((b) => (
+              <View key={b.id} style={styles.assignedBot}>
+                <BotAvatar bot={b} size={14} />
+                <Text style={[styles.caption, { color: p.secondaryLabel, fontWeight: "600" }]}>{b.name}</Text>
+              </View>
+            ))}
+          </View>
+        )}
         {(row.copyable || row.regenerable || row.editable || message.edited_at) && !held ? (
           <MessageActions row={row} isYou={isYou} text={text} onEdit={onEdit} onRegenerate={onRegenerate} />
         ) : null}
@@ -389,6 +405,8 @@ export const MessageRow = memo(function MessageRow({
   a.row.copyable === b.row.copyable &&
   a.row.regenerable === b.row.regenerable &&
   a.row.editable === b.row.editable &&
+  a.row.assigned.length === b.row.assigned.length &&
+  a.row.assigned.every((bot, i) => bot === b.row.assigned[i]) &&
   a.onEdit === b.onEdit &&
   a.onRegenerate === b.onRegenerate &&
   a.bots === b.bots &&
@@ -1348,6 +1366,8 @@ const styles = StyleSheet.create({
   bubbleFooter: { flexDirection: "row", justifyContent: "flex-end", alignItems: "center" },
   centered: { alignItems: "center", paddingHorizontal: INSET },
   markerLine: { flexDirection: "row", alignItems: "center" },
+  assignedLine: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 5, marginTop: 3, marginHorizontal: 6 },
+  assignedBot: { flexDirection: "row", alignItems: "center", gap: 3 },
   notice: { flexDirection: "row", alignItems: "flex-start", gap: 8, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, maxWidth: 360 },
   // The card takes what the row leaves beside the avatar column, up to `maxWidth`.
   // A card in the transcript, after the reference's: a gray panel as the bot's bubbles are, what it

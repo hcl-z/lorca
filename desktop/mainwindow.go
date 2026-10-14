@@ -1069,7 +1069,9 @@ func (m *mainWindow) newBot() {
 
 // newGroupChat makes a group chat and lands in it.
 func (m *mainWindow) newGroupChat() {
-	m.presentNewGroupChat(func(botIDs []string, title string) { m.open(store.CreateChat(model.ChatGroup, botIDs, title)) })
+	m.presentNewGroupChat(func(botIDs []string, title, description string) {
+		m.open(store.CreateGroup(botIDs, title, description))
+	})
 }
 
 // addBotToChat adds a bot to a chat, from those that can still join it.

@@ -160,7 +160,9 @@ export function preview(chat: Chat, bots: Map<string, Bot>): string {
       body =
         chat.bot_ids.includes(shown.body.to) && !chat.bot_ids.includes(shown.body.from)
           ? t("Message from {name}: {reason}", { name: bots.get(shown.body.from)?.name ?? t("a teammate"), reason: shown.body.reason })
-          : t("Handed off to {name}", { name: bots.get(shown.body.to)?.name ?? t("a teammate") });
+          : chat.bot_ids.includes(shown.body.from) && !chat.bot_ids.includes(shown.body.to)
+            ? t("Messaged {name}: {detail}", { name: bots.get(shown.body.to)?.name ?? t("a teammate"), detail: shown.body.reason })
+            : t("Handed off to {name}", { name: bots.get(shown.body.to)?.name ?? t("a teammate") });
       break;
     case "notice":
       body = shown.body.text;
@@ -271,6 +273,10 @@ function toolActivity(s: WorkState, botId: string, tool: Extract<Body, { kind: "
       return t("Creating a bot…");
     case "edit_bot":
       return t("Updating a bot…");
+    case "create_group":
+      return t("Creating a group…");
+    case "edit_group":
+      return t("Updating a group…");
     case "memory_update":
     case "memory_log":
       return t("Taking a note…");

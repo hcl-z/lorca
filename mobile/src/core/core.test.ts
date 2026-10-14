@@ -9,6 +9,7 @@ import {
   agentPlace,
   agentStarted,
   type AgentRun,
+  assignedTo,
   attachmentSummary,
   connectedProviders,
   contextWindowLabel,
@@ -603,6 +604,23 @@ describe("format", () => {
     // A handoff's report reaches the requesting bot's group from outside it.
     const report = msg({ kind: "bot", bot_id: "b2" }, { kind: "handoff", from: "b2", to: "b1", reason: "done" });
     expect(preview({ ...chat("group", [report]), bot_ids: ["b1", "b3"] }, bots)).toBe("Message from Scout: done");
+    // The request a bot sent from its own chat reads as a message it sent.
+    expect(preview({ ...chat("dm", [handoff]), bot_ids: ["b1"] }, bots)).toBe("Messaged Scout: over to you");
+  });
+
+  test("a group's message that names other members hands them a part", () => {
+    const writer: Bot = { id: "b3", name: "Writer", description: "", symbol_name: "pencil", accent: "orange", runner_id: "r", provider: "deepseek", created_at: 0 };
+    const everyone = new Map([...bots, ["b3", writer]]);
+    const said = (text: string, author = "b1") => msg({ kind: "bot", bot_id: author }, { kind: "text", text });
+    const members = ["b1", "b2", "b3"];
+    // In the order the message names them; the author and mail addresses do not count.
+    expect(assignedTo(said("@Writer drafts it, then @scout checks it. @Chef pulls it together."), members, everyone).map((b) => b.name)).toEqual(["Writer", "Scout"]);
+    expect(assignedTo(said("Write to ops@scout.dev"), members, everyone)).toEqual([]);
+    expect(assignedTo(said("@Scouting is another word"), members, everyone)).toEqual([]);
+    expect(assignedTo(msg({ kind: "you" }, { kind: "text", text: "@Scout look" }), members, everyone)).toEqual([]);
+    // Two bots with one name: the text does not say which.
+    const twin = new Map([...everyone, ["b4", { ...writer, id: "b4" }]]);
+    expect(assignedTo(said("@Writer go"), [...members, "b4"], twin)).toEqual([]);
   });
 
   test("the working row reads what the one bot at work is doing", () => {

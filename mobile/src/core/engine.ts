@@ -728,8 +728,15 @@ class Engine {
     if (file && bot.avatar) markFile(bot.avatar.id, file.uri);
   }
 
-  async createGroup(title: string, botIds: string[]): Promise<Chat> {
-    const { chat } = await core.request<{ chat: Chat }>("chats.create", { kind: "group", title: title.trim() || undefined, bot_ids: botIds });
+  /// The first bot owns the group's work.
+  async createGroup(title: string, botIds: string[], description = ""): Promise<Chat> {
+    const { chat } = await core.request<{ chat: Chat }>("chats.create", {
+      kind: "group",
+      title: title.trim() || undefined,
+      description: description.trim() || undefined,
+      owner_bot_id: botIds[0],
+      bot_ids: botIds,
+    });
     return { ...chat, messages: chat.messages ?? [], unread_count: chat.unread_count ?? 0 };
   }
 

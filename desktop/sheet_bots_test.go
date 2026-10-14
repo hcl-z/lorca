@@ -244,9 +244,9 @@ func TestMemoryGauge(t *testing.T) {
 
 func TestNewGroupChatSheet(t *testing.T) {
 	var picked []string
-	var title string
+	var title, purpose string
 	m, tt := sheetTester(t, func(m *mainWindow) {
-		m.presentNewGroupChat(func(ids []string, name string) { picked, title = ids, name })
+		m.presentNewGroupChat(func(ids []string, name, description string) { picked, title, purpose = ids, name, description })
 	})
 	// The first bot starts picked; a second click on one drops it.
 	for _, row := range []int{1, 2, 3, 4, 3} {
@@ -257,12 +257,16 @@ func TestNewGroupChatSheet(t *testing.T) {
 		t.Fatal(err)
 	}
 	tt.Type("  Ops  ")
+	if err := tt.Click(L("What it is for, which bots read (optional)")); err != nil {
+		t.Fatal(err)
+	}
+	tt.Type(" Ship the release ")
 	renderTo(t, tt, "sheet-newgroup-picked")
 	tt.Key(0, ui.KeyEnter)
 	settle(tt)
 	want := []string{"bot-nova", "bot-patch", "bot-scout", "bot-ember"}
-	if m.hasSheet() || len(picked) != len(want) || title != "Ops" {
-		t.Fatalf("picked %v %q, sheet up %v", picked, title, m.hasSheet())
+	if m.hasSheet() || len(picked) != len(want) || title != "Ops" || purpose != "Ship the release" {
+		t.Fatalf("picked %v %q %q, sheet up %v", picked, title, purpose, m.hasSheet())
 	}
 	for i := range want {
 		if picked[i] != want[i] {

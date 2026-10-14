@@ -291,6 +291,10 @@ func (m *mainWindow) chatRowView(c *ui.Context, chat *model.Chat, row chatRow, s
 			if slices.Contains(chat.BotIDs, h.To) && !slices.Contains(chat.BotIDs, h.From) {
 				mode = handoffMode{kind: handoffIncoming, from: store.Bot(h.From)}
 			}
+			// To a bot outside the chat, as the request its bot sent: a message it sent.
+			if slices.Contains(chat.BotIDs, h.From) && !slices.Contains(chat.BotIDs, h.To) {
+				mode = handoffMode{kind: handoffOutgoing, to: store.Bot(h.To)}
+			}
 			handoffCell(c, mode, h.Reason, row.groupStart)
 		case model.BodyNotice:
 			noticeCell(c, body.Text, row.groupStart)
@@ -446,7 +450,7 @@ func (m *mainWindow) messageCell(c *ui.Context, chat *model.Chat, message *model
 					attachmentTiles(c, chat.ID, message, isUser).Margin(0, 0, below, 0)
 				}
 				if text != "" {
-					markdownView(c, text, markdownOptions{OnUserBubble: isUser, Menu: replyMenu}).Shrink(1)
+					markdownView(c, text, markdownOptions{OnUserBubble: isUser, Menu: replyMenu, Mentionable: mentionable(chat, message)}).Shrink(1)
 				}
 			})
 			if !message.EditedAt.IsZero() {
@@ -483,6 +487,21 @@ func (m *mainWindow) messageCell(c *ui.Context, chat *model.Chat, message *model
 			s.actionsFor = ""
 		}
 	})
+}
+
+// mentionable are the bots whose @Name reads as a chip in a message: the other members of a group,
+// in a bot's message there, which is how its owner hands each member a part.
+func mentionable(chat *model.Chat, message *model.Message) []*model.Bot {
+	if !chat.IsGroup() || message.Author.Kind != model.AuthorBot {
+		return nil
+	}
+	var bots []*model.Bot
+	for _, id := range chat.BotIDs {
+		if bot := store.Bot(id); bot != nil && id != message.Author.BotID {
+			bots = append(bots, bot)
+		}
+	}
+	return bots
 }
 
 // startReply makes the draft a reply to a message, from the bubble's Reply.
@@ -889,6 +908,10 @@ func toolActivity(tool *model.ToolInvocation, targetName, pluginName string) str
 		return L("Creating a bot")
 	case "edit_bot":
 		return L("Updating a bot")
+	case "create_group":
+		return L("Creating a group")
+	case "edit_group":
+		return L("Updating a group")
 	case "memory_update", "memory_log":
 		return L("Taking a note")
 	case "search_plugins":
