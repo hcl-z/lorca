@@ -1,0 +1,27 @@
+Cargo.toml
+  s_d5491d72769557::t_3bc8ac3dfb676a 14-18
+scripts/common.ts
+  s_d5491d72769557::t_3bc8ac3dfb676a 29-63,66
+scripts/clean-rust.ts
+  s_d5491d72769557::t_3bc8ac3dfb676a 1-14
+docs/architecture/development.md
+  s_d5491d72769557::t_3bc8ac3dfb676a 39-40
+package.json
+  s_d5491d72769557::t_3bc8ac3dfb676a 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "17a8a389bd08a1e80e7a71b63c6eb21ea0b4ccb0",
+  "prompts": {},
+  "sessions": {
+    "s_d5491d72769557": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_kq0qnakr61wx",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
