@@ -1,0 +1,115 @@
+mobile/src/ui/format.ts
+  s_32ed21d6a43770::t_1e880d42a796f9 163-165,276-279
+docs/architecture/plugins.md
+  s_32ed21d6a43770::t_1e880d42a796f9 32
+mobile/src/i18n/zh.ts
+  s_32ed21d6a43770::t_1e880d42a796f9 211,274,603
+desktop/model/mentions.go
+  s_32ed21d6a43770::t_1e880d42a796f9 1-107
+desktop/chat.go
+  s_32ed21d6a43770::t_1e880d42a796f9 294-297,453,492-506,911-914
+desktop/sheet_bots_test.go
+  s_32ed21d6a43770::t_1e880d42a796f9 247,249,260-263,268-269
+docs/architecture/handoffs.md
+  s_32ed21d6a43770::t_1e880d42a796f9 9
+crates/cli/src/groups.rs
+  s_32ed21d6a43770::t_1e880d42a796f9 1-241
+desktop/model/markdown.go
+  s_32ed21d6a43770::t_1e880d42a796f9 30-31
+crates/cli/src/api.rs
+  s_32ed21d6a43770::t_1e880d42a796f9 547-549,553,557
+crates/cli/src/feedback/mod.rs
+  s_32ed21d6a43770::t_1e880d42a796f9 845
+docs/architecture/development.md
+  s_32ed21d6a43770::t_1e880d42a796f9 39-40
+crates/cli/src/lib.rs
+  s_32ed21d6a43770::t_1e880d42a796f9 35-36
+docs/architecture/bots.md
+  s_32ed21d6a43770::t_1e880d42a796f9 21-22,32
+scripts/common.ts
+  s_32ed21d6a43770::t_1e880d42a796f9 29-63,66
+desktop/chat_test.go
+  s_32ed21d6a43770::t_1e880d42a796f9 81-121
+mobile/app/new-group.tsx
+  s_32ed21d6a43770::t_1e880d42a796f9 19,28,44-45
+crates/cli/src/handoffs_tests.rs
+  s_32ed21d6a43770::t_1e880d42a796f9 219-237
+crates/cli/marketplace/index.json
+  s_32ed21d6a43770::t_1e880d42a796f9 3,1171-2994
+desktop/marketplace_pages.go
+  s_32ed21d6a43770::t_1e880d42a796f9 101-104,106-116,145-154
+mobile/src/core/rerun.ts
+  s_32ed21d6a43770::t_1e880d42a796f9 27
+mobile/src/core/model.ts
+  s_32ed21d6a43770::t_1e880d42a796f9 707-726
+desktop/marketplace_test.go
+  s_32ed21d6a43770::t_1e880d42a796f9 107-143
+desktop/model/store.go
+  s_32ed21d6a43770::t_1e880d42a796f9 1020-1021,1103-1112,1120,1123-1130,1135
+crates/cli/src/runtime.rs
+  s_32ed21d6a43770::t_1e880d42a796f9 137
+desktop/model/mentions_test.go
+  s_32ed21d6a43770::t_1e880d42a796f9 1-55
+crates/cli/src/local_store.rs
+  s_32ed21d6a43770::t_1e880d42a796f9 880,902
+desktop/marketplace.go
+  s_32ed21d6a43770::t_1e880d42a796f9 817-867
+desktop/pluginmarks_test.go
+  s_32ed21d6a43770::t_1e880d42a796f9 1-15
+crates/cli/src/turns.rs
+  s_32ed21d6a43770::t_1e880d42a796f9 213-214,1950-1952,2455,5679-5731
+desktop/markdown_view.go
+  s_32ed21d6a43770::t_1e880d42a796f9 32-34,97,101-105
+desktop/icons_lucide.go
+  s_32ed21d6a43770::t_1e880d42a796f9 30,281
+crates/cli/src/app.rs
+  s_32ed21d6a43770::t_1e880d42a796f9 1507-1563
+crates/cli/src/workflows.rs
+  s_32ed21d6a43770::t_1e880d42a796f9 1509
+docs/architecture/marketplace.md
+  s_32ed21d6a43770::t_1e880d42a796f9 23
+mobile/src/ui/transcript.tsx
+  s_32ed21d6a43770::t_1e880d42a796f9 17,41-42,49,97,119-120,124,370-380,408-409,1369-1370
+mobile/src/core/engine.ts
+  s_32ed21d6a43770::t_1e880d42a796f9 731-739
+crates/cli/src/plugins/review.rs
+  s_32ed21d6a43770::t_1e880d42a796f9 723-724
+docs/architecture/tools.md
+  s_32ed21d6a43770::t_1e880d42a796f9 7,16
+crates/cli/src/marketplace.rs
+  s_32ed21d6a43770::t_1e880d42a796f9 423-424
+desktop/pluginmarks.go
+  s_32ed21d6a43770::t_1e880d42a796f9 7-78
+mobile/src/core/core.test.ts
+  s_32ed21d6a43770::t_1e880d42a796f9 12,607-623
+desktop/mainwindow.go
+  s_32ed21d6a43770::t_1e880d42a796f9 1074-1076
+crates/cli/src/handoffs.rs
+  s_32ed21d6a43770::t_1e880d42a796f9 578-611,684
+mobile/src/core/rerun.test.ts
+  s_32ed21d6a43770::t_1e880d42a796f9 43-44
+desktop/sheet_picker.go
+  s_32ed21d6a43770::t_1e880d42a796f9 53-55,61,63-66,69,93,101
+scripts/clean-rust.ts
+  s_32ed21d6a43770::t_1e880d42a796f9 1-14
+Cargo.toml
+  s_32ed21d6a43770::t_1e880d42a796f9 14-18
+package.json
+  s_32ed21d6a43770::t_1e880d42a796f9 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "98627c1bb138521003cd8f385214a454be6b8574",
+  "prompts": {},
+  "sessions": {
+    "s_32ed21d6a43770": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_hm7lt2lexsxq",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
