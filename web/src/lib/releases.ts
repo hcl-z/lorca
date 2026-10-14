@@ -78,7 +78,7 @@ export function parseAndroidReleases(releases: GitHubRelease[]): AndroidRelease 
 
 /// Reads the newest desktop and Android releases for the build, with `GITHUB_TOKEN` or `GH_TOKEN` when one is
 /// set (the API allows 60 requests an hour from an address without one). A release build stops
-/// when it can't read the desktop release, rather than ship a page with no Windows or Linux
+/// when it can't read the desktop release, rather than ship a page with no Mac, Windows, or Linux
 /// download; the dev server warns and shows the buttons disabled. No Android release leaves its
 /// card coming soon.
 export async function fetchReleases({ required }: { required: boolean }): Promise<Releases> {
@@ -95,7 +95,7 @@ export async function fetchReleases({ required }: { required: boolean }): Promis
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const releases: GitHubRelease[] = await response.json()
     const desktop = parseDesktopReleases(releases)
-    if (!desktop) throw new Error(`no published ${TAG} release with a Windows installer, install.sh, and both Debian packages`)
+    if (!desktop) throw new Error(`no published ${TAG} release with a disk image, a Windows installer, install.sh, and both Debian packages`)
     const android = parseAndroidReleases(releases)
     if (!android) console.warn(`no published ${ANDROID_TAG} release with its APK: the Android card stays coming soon`)
     return { desktop, android }

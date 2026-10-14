@@ -8,6 +8,12 @@ phone app's.
 
 ## [Unreleased]
 
+- Right-click a brief in Attention and choose Dismiss to take it off the list on every Device; the coordinator's next brief shows again. A brief also leaves once every item it is about is resolved.
+- A bot resolves an Attention item it alone reported as soon as it sees the work is done, such as a run it approved or a pull request that merged, so you no longer clear them by hand.
+- A bot listening on Telegram sees the photos people send it, with a caption or without one, and an album's photos together as one message. The photo shows in the conversation on every Device.
+- Several outputs in a row from one bot, such as the proof files a coding agent saves, show as one list with a line each.
+- Auto-review allows an action by default, and holds only one it can name a rule for. A held action goes back to the bot before it reaches you.
+
 ## [1.0.18]
 
 - Bots delegate. Each bot knows its teammates and their jobs, and sends the part of a request that falls in a teammate's job to that teammate; in a group, the owner splits the work and assigns each part with `@Name`.
