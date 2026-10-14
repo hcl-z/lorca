@@ -27,6 +27,8 @@ type Span struct {
 	Strike bool
 	// Link is where the run goes; empty for none.
 	Link string
+	// Mention is the id of the bot an `@Name` run names (SplitMentions); empty for none.
+	Mention string
 }
 
 func (s Span) sameStyle(o Span) bool {

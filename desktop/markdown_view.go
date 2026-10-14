@@ -29,6 +29,9 @@ type markdownOptions struct {
 	Size float32
 	// Menu adds items above Copy and Select All in the text's context menu, as a message's Reply.
 	Menu func(m *ui.Menu)
+	// Mentionable are the bots whose @Name reads in their color: the other members of a group, in
+	// a member's message.
+	Mentionable []*model.Bot
 }
 
 // openLink opens a link from a message: a web or mail link in the browser, anything else not at all.
@@ -91,9 +94,15 @@ func spansView(c *ui.Context, spans []model.Span, o markdownOptions, bold bool) 
 	var chips []*sourceChip
 	if !o.OnUserBubble {
 		spans = joinLinkSpans(spans)
+		spans = model.SplitMentions(spans, o.Mentionable)
 	}
 	para.Children(func() {
 		for _, span := range spans {
+			// An @Name of a member reads in the member's color, bold, as it does in the composer.
+			if bot := store.Bot(span.Mention); span.Mention != "" && bot != nil {
+				ui.Text(c, span.Text).FontWeight(600).TextColor(p.accentColor(bot.Accent))
+				continue
+			}
 			// A web link is a source chip; in the user's own bubble, which the chip's fill does not
 			// suit, and for any other link, it stays link text.
 			if model.SourceHost(span.Link) != "" && !o.OnUserBubble {

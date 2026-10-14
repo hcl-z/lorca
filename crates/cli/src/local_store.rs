@@ -877,6 +877,7 @@ impl LocalStore {
         let count = connection.query_row(
             "SELECT COUNT(*) FROM messages
              WHERE chat_id = ?1 AND is_complete = 1 AND body_kind IN ('text', 'handoff')
+               AND id NOT LIKE 'sent-%'
                AND NOT (author_kind = 'bot' AND author_bot_id = ?2)",
             params![chat_id, bot_id],
             |row| row.get::<_, i64>(0),
@@ -898,7 +899,7 @@ impl LocalStore {
         let count = connection.query_row(
             "SELECT COUNT(*) FROM messages
              WHERE chat_id = ?1 AND position > ?2 AND is_complete = 1
-               AND body_kind IN ('text', 'handoff')",
+               AND body_kind IN ('text', 'handoff') AND id NOT LIKE 'sent-%'",
             params![chat_id, last.unwrap_or(0)],
             |row| row.get::<_, i64>(0),
         )?;

@@ -16,6 +16,7 @@ export default function NewGroupScreen() {
   const bots = useStore((s) => s.bots);
   const providers = useStore((s) => s.providers);
   const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
 
   function toggle(id: string) {
@@ -24,7 +25,7 @@ export default function NewGroupScreen() {
 
   async function create() {
     try {
-      const chat = await engine.createGroup(title, selected);
+      const chat = await engine.createGroup(title, selected, description);
       router.dismiss();
       router.push(`/chat/${chat.id}`);
     } catch (error) {
@@ -39,6 +40,9 @@ export default function NewGroupScreen() {
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingBottom: 40 }} keyboardDismissMode="on-drag" keyboardShouldPersistTaps="handled">
         <Section title={t("Name")}>
           <FieldRow value={title} onChangeText={setTitle} placeholder={t("Optional")} autoCapitalize="words" returnKeyType="done" />
+        </Section>
+        <Section title={t("Description")} footer={t("What this group is for. Every bot in it reads this.")}>
+          <FieldRow value={description} onChangeText={setDescription} placeholder={t("Optional")} returnKeyType="done" />
         </Section>
         <Section title={t("Members · {count} of {max}", { count: selected.length, max: MAX_GROUP_BOTS })} footer={t("Members take turns after every message; the first one you pick owns the work.")}>
           {bots.map((bot) => (

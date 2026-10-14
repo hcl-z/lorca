@@ -842,7 +842,7 @@ mod tests;
 pub fn changes_controls(tool: &str, args: &Value) -> bool {
     match tool {
         "routines" => !matches!(args["action"].as_str(), Some("list" | "pause")),
-        "edit_bot" | "create_bot" => true,
+        "edit_bot" | "create_bot" | "create_group" | "edit_group" => true,
         _ => false,
     }
 }

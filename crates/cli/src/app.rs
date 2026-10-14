@@ -1504,6 +1504,63 @@ impl App {
         Ok(())
     }
 
+    /// Adds a bot to a group. `Ok(false)` when it is a member already; an error when the chat is
+    /// not a group, the bot is unknown, or the group is full.
+    pub fn add_group_bot(&self, chat_id: &str, bot_id: &str) -> Result<bool, String> {
+        let mut state = self.state.lock().unwrap();
+        if !state.bots.iter().any(|b| b.id == bot_id) {
+            return Err("Unknown bot".into());
+        }
+        let chat = state.chats.iter_mut().find(|c| c.meta.id == chat_id).ok_or("Unknown chat")?;
+        if !chat.meta.is_group() {
+            return Err("Only a group takes more bots".into());
+        }
+        if chat.meta.bot_ids.iter().any(|id| id == bot_id) {
+            return Ok(false);
+        }
+        if chat.meta.bot_ids.len() >= MAX_GROUP_BOTS {
+            return Err(format!("A group holds at most {MAX_GROUP_BOTS} bots"));
+        }
+        chat.meta.bot_ids.push(bot_id.to_string());
+        drop(state);
+        self.roster_changed(true);
+        Ok(true)
+    }
+
+    /// Takes a bot out of a group, which moves its ownership to the first bot left when it held it.
+    pub fn remove_group_bot(&self, chat_id: &str, bot_id: &str) -> Result<(), String> {
+        let mut state = self.state.lock().unwrap();
+        let chat = state.chats.iter_mut().find(|c| c.meta.id == chat_id).ok_or("Unknown chat")?;
+        if !chat.meta.is_group() {
+            return Err("Only a group takes bots out".into());
+        }
+        if !chat.meta.bot_ids.iter().any(|id| id == bot_id) {
+            return Err("That bot is not in this group".into());
+        }
+        if chat.meta.bot_ids.len() == 1 {
+            return Err("A group keeps at least one bot".into());
+        }
+        chat.meta.bot_ids.retain(|id| id != bot_id);
+        if chat.meta.owner_bot_id.as_deref() == Some(bot_id) {
+            chat.meta.owner_bot_id = chat.meta.bot_ids.first().cloned();
+        }
+        drop(state);
+        self.roster_changed(true);
+        Ok(())
+    }
+
+    /// Hands a group's ownership to one of its members.
+    pub fn set_group_owner(&self, chat_id: &str, bot_id: &str) -> Result<(), String> {
+        let chat = self.chat(chat_id).ok_or("Unknown chat")?;
+        if !chat.meta.is_group() {
+            return Err("Only a group has an owner".into());
+        }
+        if !chat.meta.bot_ids.iter().any(|id| id == bot_id) {
+            return Err(format!("{} is not in {}", crate::runtime::name_of(self, bot_id), self.chat_title(&chat.meta)));
+        }
+        self.update_chat_meta(chat_id, |meta| meta.owner_bot_id = Some(bot_id.to_string())).map_err(|e| e.to_string())
+    }
+
     // MARK: - Sidebar
 
     /// Adds a section after the others, with `chat_id` moved into it in the same roster change.

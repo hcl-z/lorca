@@ -542,40 +542,17 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
             let chat_id = string(&params, "chat_id")?;
             let bot_id = string(&params, "bot_id")?;
             let bot = app.bot(&bot_id).ok_or("Unknown bot")?;
-            app.update_chat_meta(&chat_id, |meta| {
-                if meta.is_group() && meta.bot_ids.len() < MAX_GROUP_BOTS && !meta.bot_ids.contains(&bot_id) {
-                    meta.bot_ids.push(bot_id.clone());
-                }
-            })
-            .map_err(|e| e.to_string())?;
-            app.notice(&chat_id, format!("{} joined the chat.", bot.name));
+            if app.add_group_bot(&chat_id, &bot_id)? {
+                app.notice(&chat_id, format!("{} joined the chat.", bot.name));
+            }
             Ok(Value::Null)
         }
         "chats.remove_bot" => {
-            let chat_id = string(&params, "chat_id")?;
-            let bot_id = string(&params, "bot_id")?;
-            app.update_chat_meta(&chat_id, |meta| {
-                if meta.is_group() && meta.bot_ids.len() > 1 {
-                    meta.bot_ids.retain(|id| id != &bot_id);
-                    if meta.owner_bot_id.as_deref() == Some(bot_id.as_str()) {
-                        meta.owner_bot_id = meta.bot_ids.first().cloned();
-                    }
-                }
-            })
-            .map_err(|e| e.to_string())?;
+            app.remove_group_bot(&string(&params, "chat_id")?, &string(&params, "bot_id")?)?;
             Ok(Value::Null)
         }
         "chats.set_owner" => {
-            let chat_id = string(&params, "chat_id")?;
-            let bot_id = string(&params, "bot_id")?;
-            let chat = app.chat(&chat_id).ok_or("Unknown chat")?;
-            if !chat.meta.is_group() {
-                return Err("Only a group has an owner".into());
-            }
-            if !chat.meta.bot_ids.contains(&bot_id) {
-                return Err(format!("{} is not in {}", crate::runtime::name_of(app, &bot_id), app.chat_title(&chat.meta)));
-            }
-            app.update_chat_meta(&chat_id, |meta| meta.owner_bot_id = Some(bot_id.clone())).map_err(|e| e.to_string())?;
+            app.set_group_owner(&string(&params, "chat_id")?, &string(&params, "bot_id")?)?;
             Ok(Value::Null)
         }
         "chats.search" => {

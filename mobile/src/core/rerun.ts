@@ -24,6 +24,7 @@ export function rerunnable(chat: Chat | undefined, responding: boolean): { asked
   for (const later of after) {
     if (later.body.kind === "draft" || later.output) return null;
     if (later.body.kind === "tool" && later.body.target_bot_id) return null;
+    if (later.body.kind === "handoff" && later.id.startsWith("sent-")) return null;
   }
   return { asked, after };
 }

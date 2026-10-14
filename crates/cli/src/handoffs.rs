@@ -575,6 +575,40 @@ fn incoming(app: &App, request: &HandoffRequest) {
     app.upsert_message(marker, true);
 }
 
+/// The requesting chat's own marker for a request it sent: "Messaged ◉ Recipient", written with
+/// the request itself so every path that admits one shows it, a follow-up included, whether or
+/// not the tool call that made it ever finished. It is the requester's own message, so its
+/// turns do not read it back (`turns::transcript_for`).
+fn outgoing(app: &App, request: &HandoffRequest) {
+    let id = sent_marker_id(request);
+    if app.message(&request.source_chat_id, &id).is_some() {
+        return;
+    }
+    let mut marker = Message::new(
+        &request.source_chat_id,
+        Author::Bot {
+            bot_id: request.from_bot_id.clone(),
+        },
+        Body::Handoff {
+            from: request.from_bot_id.clone(),
+            to: request.target_bot_id.clone(),
+            reason: request_text(request),
+        },
+    );
+    marker.id = id;
+    marker.created_at = request.created_at;
+    app.upsert_message(marker, true);
+}
+
+/// The id of the requesting chat's marker for this request. A resumed attempt keeps the
+/// request's trigger message, so it keeps the marker too.
+pub fn sent_marker_id(request: &HandoffRequest) -> String {
+    format!("{SENT_MARKER_PREFIX}{}", request.trigger_message_id)
+}
+
+/// The start of a requesting chat's marker ids (`sent_marker_id`).
+pub const SENT_MARKER_PREFIX: &str = "sent-";
+
 /// The request as its "Message from" marker in the recipient's DM shows it, and as the
 /// recipient reads it: the message, then what was supplied with it.
 pub fn request_text(request: &HandoffRequest) -> String {
@@ -647,6 +681,7 @@ fn admit(app: &Arc<App>, request: HandoffRequest, replaces: Option<&str>) -> Res
         save(app, &record, Some(&update), jobs)?;
         record
     };
+    outgoing(app, &request);
     incoming(app, &request);
     if local {
         crate::runtime::spawn_local_job(app.clone(), request_job(&request), None);

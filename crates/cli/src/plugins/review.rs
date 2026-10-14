@@ -720,6 +720,8 @@ fn transcript_lines(app: &App, messages: &[Message]) -> Vec<String> {
                 // Its question is at the end, so a long message keeps its end.
                 proposal = Some(format!("{}: {}", name(bot_id), tail(text, BOT_CHARS)));
             }
+            // The requester's own marker for a message it sent; the call that sent it is a line already.
+            (_, Body::Handoff { .. }) if message.id.starts_with(crate::handoffs::SENT_MARKER_PREFIX) => {}
             (_, Body::Handoff { from, to, reason }) => {
                 proposal = None;
                 lines.push(format!("[teammate] {} to {}: {}", name(from), name(to), clipped(reason, REQUEST_CHARS)));
