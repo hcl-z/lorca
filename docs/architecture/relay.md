@@ -68,4 +68,4 @@ Protocol 3 adds the opaque task, handoff, review, attention, project-context, an
 
 Shared project context revisions use the `project_context` kind in protocol 3. The relay treats their ciphertext as opaque account blobs with slots and the existing group id, and group deletion removes them together with the group's messages and assets. A Device pulls these revisions with account metadata before its first transcript pages, so an older brief remains available on a newly paired Device. See [Shared project context](project-context.md#storage-and-encrypted-sync).
 
-A user's skills use the `playbook` kind: one latest-only slot per skill, its opaque record grouped under the chat its scope belongs to, so deleting that chat removes it. See [Playbooks](playbooks.md#revisions-and-encrypted-storage).
+A user's skills use the `playbook` kind: one latest-only slot per skill, its opaque skill folder grouped under the chat its scope belongs to, so deleting that chat removes it. See [Skills](skills.md#sync).

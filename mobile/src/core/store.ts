@@ -199,7 +199,6 @@ export function replaceSnapshot(snapshot: {
   tasks?: DurableTask[];
   reviews?: ReviewItem[];
   budgets?: BudgetState[];
-  playbooks?: PlaybookSummary[];
   shared_links?: SharedLink[];
   sections?: Section[];
   auto_review?: AutoReview;
@@ -237,7 +236,7 @@ export function replaceSnapshot(snapshot: {
     tasks: snapshot.tasks ?? [],
     reviews: snapshot.reviews ?? [],
     budgets: snapshot.budgets ?? [],
-    playbooks: snapshot.playbooks ?? [],
+    playbooks: [],
     shared_links: snapshot.shared_links ?? [],
     sections: snapshot.sections ?? [],
     auto_review: snapshot.auto_review ?? { is_enabled: true, rules: [] },
@@ -278,7 +277,7 @@ function seenOf(devices: Device[]): Record<string, number> {
 
 /// `roster.changed`: bots replace, chat metadata merges over kept messages, chats not named
 /// are gone.
-export function applyRoster(roster: { devices: Device[]; bots: Bot[]; chats: (ChatMeta & { unread_count: number; usage?: ChatUsage })[]; routines?: Routine[]; auto_review?: AutoReview; providers?: ProviderStatus[]; models?: ProviderModel[]; playbooks?: PlaybookSummary[]; shared_links?: SharedLink[]; sections?: Section[] }): { removed: string[] } {
+export function applyRoster(roster: { devices: Device[]; bots: Bot[]; chats: (ChatMeta & { unread_count: number; usage?: ChatUsage })[]; routines?: Routine[]; auto_review?: AutoReview; providers?: ProviderStatus[]; models?: ProviderModel[]; shared_links?: SharedLink[]; sections?: Section[] }): { removed: string[] } {
   const removed: string[] = [];
   useStore.setState((s) => {
     const incoming = new Set(roster.chats.map((c) => c.id));
@@ -301,7 +300,6 @@ export function applyRoster(roster: { devices: Device[]; bots: Bot[]; chats: (Ch
       auto_review: same(s.auto_review, roster.auto_review ?? s.auto_review),
       providers: same(s.providers, roster.providers ?? s.providers),
       models: same(s.models, roster.models ?? s.models),
-      playbooks: same(s.playbooks, roster.playbooks ?? s.playbooks),
       shared_links: same(s.shared_links, roster.shared_links ?? s.shared_links),
       sections: same(s.sections, roster.sections ?? s.sections),
     };
@@ -634,16 +632,26 @@ export function useReview(id: string | undefined): ReviewItem | undefined {
   return useStore((s) => s.reviews.find((item) => item.id === id));
 }
 
-/// A bot's or a group's skills: drafts waiting for review first, then the latest changed.
+/// A bot's or a group's skills, the latest changed first.
 export function useSkills(scope: PlaybookScope | undefined): PlaybookSummary[] {
   const playbooks = useStore((s) => s.playbooks);
   return useMemo(
-    () =>
-      scope
-        ? playbooks
-            .filter((skill) => skill.scope.kind === scope.kind && skill.scope.id === scope.id)
-            .sort((a, b) => (a.status === "draft") !== (b.status === "draft") ? (a.status === "draft" ? -1 : 1) : b.updated_at - a.updated_at)
-        : [],
+    () => (scope ? playbooks.filter((skill) => skill.scope.kind === scope.kind && skill.scope.id === scope.id).sort((a, b) => b.updated_at - a.updated_at) : []),
     [playbooks, scope?.kind, scope?.id],
   );
+}
+
+/// The skills every bot on a Runner uses, other than the ones Lorca ships.
+export function useSharedSkills(): PlaybookSummary[] {
+  const playbooks = useStore((s) => s.playbooks);
+  return useMemo(() => playbooks.filter((skill) => skill.scope.kind === "shared" && !skill.builtin).sort((a, b) => b.updated_at - a.updated_at), [playbooks]);
+}
+
+/// The Runner's list of the skills a bot sees in a chat replaces what this phone held for the same
+/// bot, group, and shared folder.
+export function applySkills(rows: PlaybookSummary[], covered: PlaybookScope[]) {
+  useStore.setState((s) => {
+    const kept = s.playbooks.filter((skill) => !covered.some((scope) => scope.kind === skill.scope.kind && scope.id === skill.scope.id));
+    return { playbooks: same(s.playbooks, [...kept, ...rows]) };
+  });
 }

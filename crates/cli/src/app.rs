@@ -184,7 +184,6 @@ pub struct App {
     pub identity: Mutex<Option<IdentityFile>>,
     pub machine: Mutex<Option<MachineFile>>,
     pub credentials: Mutex<Credentials>,
-    pub playbooks: Mutex<crate::playbooks::Library>,
     pub state: Mutex<State>,
     pub store: LocalStore,
     /// Serializes encrypted handoff record merges and admission on this Device.
@@ -327,12 +326,6 @@ impl App {
         crate::catalog::load_cached(&config);
         let identity: Option<IdentityFile> = config::read_json(&config.identity_path());
         let machine: Option<MachineFile> = config::read_json(&config.machine_path());
-        // The library also travels in the roster, so one that cannot be read comes back from
-        // the other Devices.
-        let playbooks = crate::playbooks::Library::load(&config.home, machine.as_ref().and_then(|m| m.dek().ok())).unwrap_or_else(|error| {
-            tracing::warn!(%error, "reading playbooks.enc");
-            crate::playbooks::Library::default()
-        });
         let credentials = Credentials::load(&config);
         let plugins = crate::plugins::Store::load(&config);
         let marketplace = crate::marketplace::Updates::load(&config);
@@ -356,7 +349,6 @@ impl App {
             identity: Mutex::new(identity),
             machine: Mutex::new(machine),
             credentials: Mutex::new(credentials),
-            playbooks: Mutex::new(playbooks),
             state: Mutex::new(state),
             store,
             handoff_lock: Mutex::new(()),
@@ -426,6 +418,7 @@ impl App {
         });
         // Normalize and persist the in-memory view before background work begins.
         app.save_state_now();
+        crate::skills::startup(&app);
         Ok(app)
     }
 
@@ -666,7 +659,6 @@ impl App {
         *self.identity.lock().unwrap() = None;
         *self.machine.lock().unwrap() = None;
         *self.credentials.lock().unwrap() = Credentials::default();
-        *self.playbooks.lock().unwrap() = crate::playbooks::Library::default();
         *self.state.lock().unwrap() = State::default();
         self.store.clear()?;
         self.budgets.clear();
@@ -1175,7 +1167,6 @@ impl App {
             shared_links: state.shared_links.iter().map(crate::templates::links::SharedLink::out).collect(),
             providers: self.credentials.lock().unwrap().statuses(),
             models: models_out(),
-            playbooks: crate::playbooks::summaries(self),
         }
     }
 
@@ -1325,7 +1316,6 @@ impl App {
             tracing::warn!(%error, "forgetting a deleted bot's script values");
         }
         crate::feedback::forget_bot(self, id);
-        crate::playbooks::forget_scopes(self, &[id.to_string()], &removed_chat_ids);
         #[cfg(feature = "runner")]
         crate::secrets::forget_bots(self, &[id.to_string()]);
         #[cfg(feature = "runner")]
@@ -1457,7 +1447,6 @@ impl App {
             tracing::error!(%error, %chat_id, "deleting chat state");
         }
         self.emit(Event::ChatRemoved { chat_id: chat_id.to_string() });
-        crate::playbooks::forget_scopes(self, &[], &[chat_id.to_string()]);
         #[cfg(feature = "runner")]
         self.shell_sessions.close_orphans(self);
         #[cfg(feature = "runner")]
@@ -2273,7 +2262,6 @@ impl App {
             "shared_links": state.shared_links.iter().map(crate::templates::links::SharedLink::out).collect::<Vec<_>>(),
             "providers": self.credentials.lock().unwrap().statuses(),
             "models": models_out(),
-            "playbooks": crate::playbooks::summaries(self),
             "running_chat_ids": self.running_chat_ids(),
             "running_turns": self.running_turns(),
             "attention": crate::attention::view(self).unwrap_or_default(),

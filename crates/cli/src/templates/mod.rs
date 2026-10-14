@@ -5,9 +5,9 @@
 mod files;
 pub mod format;
 pub mod links;
-mod playbooks;
 mod routines;
 mod secrets;
+mod skill_folders;
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
@@ -93,9 +93,8 @@ pub async fn contents(app: &Arc<App>, bot_id: &str) -> Result<Contents, String> 
     let mut bot = app.bot(bot_id).ok_or("Unknown bot")?;
     bot.normalize_description();
     let mut skills = vec![];
-    for item in playbooks::list(app, bot_id) {
-        let id = item["id"].as_str().ok_or("Invalid playbook id")?;
-        skills.push(item_of(id, playbooks::export(app, bot_id, id)?));
+    for name in skill_folders::list(app, bot_id) {
+        skills.push(item_of(&name, skill_folders::export(app, bot_id, &name)?));
     }
     let memories: Vec<Item<String>> = if app.this_device_id().as_deref() == Some(bot.runner_id.as_str()) {
         local_memories(app, bot_id)?
@@ -603,7 +602,7 @@ pub async fn import_text(app: &Arc<App>, text: &str, params: &Value) -> Result<V
     let mut skill_receipts = vec![];
     let result = async {
         for skill in &template.skills {
-            skill_receipts.push(playbooks::save(app, &bot.id, skill)?);
+            skill_receipts.push(skill_folders::save(app, &bot.id, skill)?);
         }
         for routine in &template.routines {
             routines::create_paused(app, &bot.id, routine).await?;
@@ -614,7 +613,7 @@ pub async fn import_text(app: &Arc<App>, text: &str, params: &Value) -> Result<V
     if result.is_err() {
         // A bot with incomplete setup must never be left behind as a successful import.
         for receipt in skill_receipts.iter().rev() {
-            if let Err(error) = playbooks::remove(app, &bot.id, receipt) {
+            if let Err(error) = skill_folders::remove(app, &bot.id, receipt) {
                 tracing::warn!(%error, "removing a skill from a failed template import");
             }
         }
@@ -948,11 +947,11 @@ mod tests {
         params["reviewed"] = json!(true);
         let imported = import_text(&account.app, &text, &params).await.unwrap();
         let bot_id = imported["bot"]["id"].as_str().unwrap();
-        let skills = playbooks::list(&account.app, bot_id);
+        let skills = skill_folders::list(&account.app, bot_id);
         assert_eq!(skills.len(), 1);
-        let content = playbooks::export(&account.app, bot_id, skills[0]["id"].as_str().unwrap()).unwrap();
+        let content = skill_folders::export(&account.app, bot_id, &skills[0]).unwrap();
         assert_eq!(content.name, "review");
-        assert!(playbooks::list(&account.app, &account.bot().id).is_empty());
+        assert!(skill_folders::list(&account.app, &account.bot().id).is_empty());
 
         // The skill comes back out of the bot it went into.
         let contents = contents(&account.app, bot_id).await.unwrap();

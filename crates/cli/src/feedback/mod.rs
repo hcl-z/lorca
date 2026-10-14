@@ -156,12 +156,12 @@ fn check_scope(app: &App, bot_id: &str, scope: &Scope) -> Result<(), String> {
     };
     if allowed { Ok(()) } else { Err("A skill's scope must be this bot or a group containing it".into()) }
 }
-/// A saved skill as `playbooks.get` answers it.
+/// A skill of the bot's or its group's as `skills.get` answers it.
 fn saved_skill(app: &App, bot_id: &str, scope: &Scope, id: &str) -> Result<Value, String> {
     check_scope(app, bot_id, scope)?;
-    let view = crate::playbooks::get(app, scope, id)?;
-    if view["status"] != "saved" {
-        return Err("Only a saved skill can be revised".into());
+    let view = crate::skills::get(app, scope, id)?;
+    if view["builtin"] == true {
+        return Err("A skill Lorca ships cannot be revised".into());
     }
     Ok(view)
 }
@@ -180,9 +180,9 @@ async fn read_target(app: &Arc<App>, bot_id: &str, target: &Target) -> Result<Sn
         Target::Playbook { scope, id } => {
             let view = saved_skill(app, bot_id, scope, id)?;
             Snapshot {
-                content: json!(view["content"]["instructions"].as_str().ok_or("This skill has no instructions")?),
+                content: json!(view["instructions"].as_str().ok_or("This skill has no instructions")?),
                 hash: view["hash"].as_str().ok_or("This skill has no hash")?.into(),
-                revision: view["revision"].as_u64().ok_or("This skill has no revision")?,
+                revision: 0,
             }
         }
     };
@@ -275,7 +275,7 @@ async fn write_target(
     target: &Target,
     before: &Snapshot,
     after: &Value,
-    origins: &[Origin],
+    _origins: &[Origin],
 ) -> Result<(), String> {
     local_bot(app, bot_id)?;
     match target {
@@ -310,13 +310,14 @@ async fn write_target(
         }
         Target::Playbook { scope, id } => {
             let view = saved_skill(app, bot_id, scope, id)?;
-            let mut content: crate::playbooks::PlaybookContent = serde_json::from_value(view["content"].clone()).map_err(|e| e.to_string())?;
-            content.instructions = after.as_str().ok_or("A skill's instructions are text")?.into();
-            // The skill's history names the feedback behind the change, from a chat in its scope.
-            let chat_id = origins.iter().map(|o| &o.chat_id).find(|chat| scope.kind == "bot" || **chat == scope.id).cloned();
-            let message_ids = origins.iter().filter(|o| Some(&o.chat_id) == chat_id.as_ref()).map(|o| o.message_id.clone()).take(20).collect();
-            let provenance = crate::playbooks::Provenance { kind: "workflow_feedback".into(), chat_id, message_ids, note: "A change accepted from workflow feedback".into() };
-            crate::playbooks::save(app, scope, Some(id), content, before.revision, &before.hash, provenance)
+            let files = view["files"].as_array().into_iter().flatten().filter_map(|file| Some(crate::skills::InputFile { path: file["path"].as_str()?.into(), text: file["text"].as_str()?.into() })).collect();
+            let input = crate::skills::Input {
+                name: id.clone(),
+                description: view["description"].as_str().unwrap_or_default().into(),
+                instructions: after.as_str().ok_or("A skill's instructions are text")?.into(),
+                files,
+            };
+            crate::skills::save(app, scope, Some(id), input, &before.hash)
                 .map(|_| ())
                 .map_err(|error| if error.contains("changed since") { "The skill changed; review a fresh proposal".into() } else { error })
         }
@@ -749,13 +750,16 @@ pub(crate) fn recorded(app: &App, bot_id: &str) -> Vec<Feedback> {
 
 /// The saved skills a bot's feedback can revise: its own, then its groups', with their names.
 pub(crate) fn skills(app: &App, bot_id: &str) -> Vec<(Target, String)> {
-    crate::playbooks::summaries(app)
+    let mut scopes = vec![Scope::bot(bot_id)];
+    let groups: Vec<String> = app.state.lock().unwrap().chats.iter().filter(|chat| chat.meta.is_group() && chat.meta.bot_ids.iter().any(|id| id == bot_id)).map(|chat| chat.meta.id.clone()).collect();
+    scopes.extend(groups.iter().map(|id| Scope::project(id)));
+    scopes
         .into_iter()
-        .filter(|s| s["status"] == "saved")
-        .filter_map(|s| {
-            let scope: Scope = serde_json::from_value(s["scope"].clone()).ok()?;
-            check_scope(app, bot_id, &scope).ok()?;
-            Some((Target::Playbook { scope, id: s["id"].as_str()?.into() }, s["name"].as_str()?.into()))
+        .flat_map(|scope| {
+            crate::skills::list_scope(app, &scope)
+                .into_iter()
+                .filter(|skill| !skill.builtin)
+                .map(move |skill| (Target::Playbook { scope: scope.clone(), id: skill.name.clone() }, skill.name))
         })
         .collect()
 }

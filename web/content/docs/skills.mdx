@@ -1,53 +1,67 @@
 ---
 title: Skills
-description: Write down how a job is done once, or save it from a chat, and a bot or a whole group follows it from then on.
+description: Write down how a job is done once, or save it from a chat, and a bot, a group, or every bot follows it from then on.
 icon: NotebookPen
 ---
 
-A **skill** is how a job is done, written down for a bot or a group: when to use it, the steps, an example, and any reference text or scripts it needs. A bot sees the name and description of each of its skills on every turn and reads the whole skill when a task matches, so a long skill costs nothing until it's needed.
+A **skill** is how a job is done, written down: when to use it, the steps, and any reference text, scripts, or other files it needs. A bot sees the name and description of each skill it can use on every turn and reads the whole skill when a task matches, so a long skill costs nothing until it's needed.
+
+Skills use the same format as Claude Code, Codex, and Cursor: a folder with a `SKILL.md` in it. Saving one is writing that folder; the bots use it from their next turn.
 
 ## Where skills live
 
-A bot's skills are in the **Skills** section of its direct chat's inspector, and a group's in the group's inspector (on the phone, in the chat's Details). On the phone the section shows once there is a skill or a draft. A group's skills are for every bot in that group, in that group only.
+Skills are folders on the computer the bot runs on:
 
-Every bot also has one skill built in, `lorca`, which points it at these docs. Ask a bot how to do something in Lorca and it reads the page here before it answers. It doesn't show in the Skills section.
+| For | Folder |
+| --- | --- |
+| Every bot on that computer | `~/.lorca/skills/` |
+| One bot | `~/.lorca/workspaces/<bot id>/skills/` |
+| One group | `~/.lorca/groups/<chat id>/skills/` |
 
-## Write one
+The **Skills** section of a bot's direct chat inspector lists that bot's skills, then the ones every bot uses, marked with a globe; editing or deleting one of those from any bot changes it for every bot; a group's inspector lists the group's (on the phone, in the chat's Details). A bot's own skill wins over a group's or a shared one with the same name. A bot's and a group's skills sync to your other devices, so a bot moved to another computer finds its skills there.
+
+Every bot also has three skills built in: `lorca`, which points it at these docs, `write-skill`, which says how to write a skill, and `save-skill`, which brings in skills you already have in other tools. They are listed with the shared skills and can't be edited.
+
+## Ask a bot
+
+Tell a bot to keep the way it just did something as a skill, or that you keep correcting it on the same point. It writes the folder itself, in its own skills unless you say the group or every bot should have it, and the chat says what it saved and where.
+
+Ask it to bring in your skills from Claude Code, Cursor, or another tool, and it looks in the folders those tools use (`~/.claude/skills`, `~/.agents/skills`, and others), shows you what it found, and asks which to bring in and whether to move them and leave a link, so the other tool keeps working, move them, or copy them.
 
 ## Add one from the Skill Store
 
-On the desktop, click **Add from Skills…** at the foot of a bot's **Skills** section, or choose **Chat › Skill Store…**. The store lists the most downloaded skills on [ClawHub](https://clawhub.ai); type to search it, or paste a link to a skill on ClawHub, skills.sh, or GitHub (`owner/repo`, or `owner/repo@skill` for one skill in a repository). **Add** saves the skill for that bot, or for the group when you open the store from a group, and it is used from the next turn. Skills for other bots are added from those bots' own inspectors.
+On the desktop, click **+** beside a bot's **Skills**, or choose **Chat › Skill Store…**, to add a skill for that bot, or for the group when you open it from a group. For a skill every bot on this computer uses, click **+** at the top of the sidebar and choose **Add a Skill for Every Bot…**.
 
-A skill from the store is written by someone else and works as soon as you add it, so open it from the Skills section and read it first when it matters. Only its instructions and the text files in its `references` and `scripts` folders come across; anything else is left out, and the store says how many files were. Delete it from the Skills section whenever you like. The site is reached from your computer; if ClawHub or GitHub is slow where you are, `LORCA_CLAWHUB_URL` and `LORCA_GITHUB_ARCHIVE_URL` point the CLI at a mirror.
+The store searches [skills.sh](https://skills.sh) as you type (two letters or more), or pick one of the topics it suggests; each skill shows the repository it comes from and how many times it has been installed, and clicking it opens its page. You can also paste a link to a skill on skills.sh, ClawHub, or GitHub (`owner/repo`, or `owner/repo@skill` for one skill in a repository). **Add** copies the skill's whole folder, and it is used from the next turn. **New Blank Skill…** writes one from scratch instead.
+
+A skill from the store is written by someone else and works as soon as you add it, so open it and read it first when it matters. Its scripts run only through the bot's commands, which Auto-review checks like any program from outside. The site is reached from your computer; if skills.sh, ClawHub, or GitHub is slow where you are, `LORCA_SKILLS_SH_URL`, `LORCA_CLAWHUB_URL`, `LORCA_GITHUB_API_URL`, `LORCA_GITHUB_RAW_URL`, and `LORCA_GITHUB_ARCHIVE_URL` point the CLI at a mirror. From GitHub only the skill's own folder is downloaded; a `GITHUB_TOKEN` in the environment lifts GitHub's hourly limit.
 
 ## Write one
 
-Choose **Chat › New Skill…**, or click **+** beside **Skills** (on the phone, **Add Skill › New Skill…**). A skill has:
+Choose **Chat › New Skill…**, or **New Blank Skill…** in the Skill Store (on the phone, **Add Skill › New Skill…**). A skill has:
 
 | Field | What it is |
 | --- | --- |
-| **Name** | A short name, written as a slug, such as `weekly-report`. |
-| **Description** | When to use it. The bot reads this to decide. |
+| **Name** | A short name, written as a slug, such as `weekly-report`. It is the folder's name. |
+| **Description** | What it does and when to use it. The bot reads this to decide. |
 | **Instructions** | The steps. |
-| **Examples** | What good output looks like. |
+| **Examples** | What good output looks like. They are saved as a section of the instructions. |
 | **References** and **Scripts** | Text files the skill carries, such as a style guide or a script the bot runs with its own tools. |
 
-**Save** makes it available from the bot's next turn. Anything that looks like a password or a key is removed as it is saved.
+**Save** writes the folder and the bots use it from their next turn. Anything that looks like a password or a key is removed as it is saved. Other files in the folder, such as images or templates, stay as they are. You can also edit the folder's files yourself.
 
 ## Save one from a chat
 
 When a bot has done something the way you want it done again, right-click its reply and choose **Save as Skill…**. When you have corrected a bot more than once, right-click one of your messages and choose **Save as Standing Instruction…**. On the phone, use **Add Skill › From This Chat…** in Details.
 
-The sheet lists the chat's recent messages: tick the ones that show the work, and in a group choose whether the skill is for the group or for one bot. **Continue** has the bot's provider write a draft from those messages and opens it for you to edit. A bot can also propose a skill itself; the chat then says where to review it.
-
-A draft is never used. Only **Save** turns it on.
+The sheet lists the chat's recent messages: tick the ones that show the work, and in a group choose whether the skill is for the group or for one bot. **Continue** has the bot's provider write it from those messages and opens it for you to edit and save.
 
 You can also teach a bot a website task by doing it once in its browser; see [Record a workflow](/docs/browser#record-a-workflow).
 
-## History and export
+## Delete and export
 
-A saved skill's **History** tab lists every version with the date and the Device: created, drafted from a chat, saved, edited. Pick one to read what it said then. Skills sync to all your devices.
+**Delete…** in a skill's menu moves its folder to `.trash` inside the same skills folder, where it stays for 30 days.
 
-**Export…** in a skill's menu saves it as a file to keep or to give someone (the share sheet on the phone). The file holds the skill's text and files, and nothing about your account. To share a whole bot, skills included, see [Share a bot](/docs/templates).
+**Export…** saves the skill as a zip of its folder, to keep or to give someone (the share sheet on the phone), which any tool that reads skill folders takes. It holds the skill's files and nothing about your account. To share a whole bot, skills included, see [Share a bot](/docs/templates).
 
 A bot's [feedback](/docs/feedback) can suggest changes to a skill's instructions, which you accept or reject.

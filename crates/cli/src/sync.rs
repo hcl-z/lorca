@@ -378,7 +378,6 @@ async fn pull_blobs(app: &Arc<App>, url: &str, token: &str, machine_file: &crate
         if app.state.lock().unwrap().last_seq > 0 {
             if app.store.attention_rows().map_err(local)?.is_empty() { kinds.push("attention"); }
             if !app.store.has_project_entries().map_err(local)? { kinds.push("project_context"); }
-            if app.playbooks.lock().unwrap().records.is_empty() { kinds.push(crate::playbooks::BLOB_KIND); }
         }
         if !kinds.is_empty() {
             let kinds = kinds.join(",");
@@ -881,9 +880,11 @@ fn apply_blob_contents_as(app: &Arc<App>, machine_file: &crate::keys::MachineFil
             Ok(op) => apply_chat_op(app, op),
             Err(error) => tracing::warn!(%error, "chat blob"),
         },
-        crate::playbooks::BLOB_KIND => {
-            if let Err(error) = crate::playbooks::apply_remote(app, &dek, &ciphertext) {
-                tracing::warn!(%error, "playbook blob");
+        // The kind keeps the name the relay knows; its blobs carry a skill folder now.
+        "playbook" => {
+            #[cfg(feature = "cli")]
+            if let Err(error) = crate::skills_sync::apply_remote(app, &dek, &ciphertext) {
+                tracing::warn!(%error, "skill blob");
             }
         }
         "project_context" => match crate::crypto::decrypt_json::<crate::project_context::ProjectBlob>(&dek, "project_context", &ciphertext) {
@@ -1045,7 +1046,8 @@ pub fn account_key_changed(app: &Arc<App>, made_here: bool, keyring_seq: Option<
     if let Err(error) = crate::tasks::push_all(app) {
         tracing::warn!(%error, "requeueing durable tasks");
     }
-    crate::playbooks::push_all(app);
+    #[cfg(feature = "cli")]
+    crate::skills_sync::push_all(app);
     if made_here {
         app.push_roster();
         if let Err(error) = crate::attention::push_history(app) {
@@ -1215,9 +1217,6 @@ fn apply_roster(app: &Arc<App>, mut roster: RosterBlob) {
     if let Err(error) = app.store.retain_codemode_bots(&bot_ids) {
         tracing::warn!(%error, "forgetting deleted bots' script values");
     }
-    // The skills of bots and groups this roster deleted go too; their blobs go with the
-    // deleted chats' groups on the relay.
-    crate::playbooks::forget_scopes(app, &removed_bots, &removed);
     #[cfg(feature = "runner")]
     crate::secrets::forget_bots(app, &removed_bots);
     for chat_id in removed {

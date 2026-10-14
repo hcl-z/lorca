@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -30,37 +31,46 @@ func waitPosts(posts chan func()) {
 	}
 }
 
-// An edit carries the revision and hash it was opened at and says it is an edit, never the
-// draft's source chat, which may be gone; a refusal for a newer version reads as one.
+// An edit names the skill it was opened as and the hash it held, a new skill and a draft from a chat
+// name none, and every text file goes back, the ones the sheet does not show included; a refusal
+// for a newer version reads as one.
 func TestSavePlaybookGuards(t *testing.T) {
 	posts := make(chan func(), 4)
-	transport := &playbookTransport{reply: json.RawMessage(`{"id":"playbook-one","scope":{"kind":"bot","id":"bot-one"},"status":"saved","revision":3,"hash":"h3"}`)}
+	transport := &playbookTransport{reply: json.RawMessage(`{"scope":{"kind":"bot","id":"bot-one"},"name":"weekly-report","description":"For Fridays","instructions":"Compare","hash":"h3","files":[]}`)}
 	s := NewStore(transport, func(fn func()) { posts <- fn }, false)
-	content := PlaybookContent{Name: "weekly-report", Description: "For Fridays", Instructions: "Compare"}
-	over := &PlaybookRecord{ID: "playbook-one", Scope: BotScope("bot-one"), Revision: 2, Hash: "h2"}
+	content := PlaybookContent{Name: "weekly-report", Description: "For Fridays", Instructions: "Compare", Examples: "A good report",
+		Scripts: []PlaybookFile{{Path: "scripts/run.sh", Text: "echo"}}, Other: []PlaybookFile{{Path: "LICENSE.txt", Text: "MIT"}}}
+	over := &PlaybookRecord{ID: "weekly-report", Scope: BotScope("bot-one"), Revision: 1, Hash: "h2"}
 	var saved PlaybookRecord
 	s.SavePlaybook(over.Scope, content, over, func(record PlaybookRecord, err error) { saved = record })
 	waitPosts(posts)
-	if transport.method != "playbooks.save" || transport.params["id"] != "playbook-one" || transport.params["expected_revision"] != 2.0 || transport.params["expected_hash"] != "h2" {
+	if transport.method != "skills.save" || transport.params["current"] != "weekly-report" || transport.params["expected_hash"] != "h2" {
 		t.Fatalf("save params %v", transport.params)
 	}
-	if provenance := transport.params["provenance"].(map[string]any); len(provenance) != 1 || provenance["kind"] != "edit" {
-		t.Errorf("provenance %v", provenance)
+	skill := transport.params["skill"].(map[string]any)
+	if skill["name"] != "weekly-report" || !strings.Contains(skill["instructions"].(string), "## Examples\n\nA good report") {
+		t.Errorf("skill %v", skill)
 	}
-	if references := transport.params["content"].(map[string]any)["references"]; references == nil {
-		t.Error("no references array")
+	if files := skill["files"].([]any); len(files) != 2 {
+		t.Errorf("files %v", files)
 	}
-	if saved.Revision != 3 {
+	if saved.ID != "weekly-report" || saved.Hash != "h3" {
 		t.Errorf("saved %+v", saved)
 	}
 
 	s.SavePlaybook(BotScope("bot-one"), content, nil, func(PlaybookRecord, error) {})
 	waitPosts(posts)
-	if _, ok := transport.params["id"]; ok || transport.params["expected_revision"] != 0.0 || transport.params["expected_hash"] != "" {
+	if transport.params["current"] != "" || transport.params["expected_hash"] != "" {
 		t.Errorf("new skill params %v", transport.params)
 	}
+	draft := &PlaybookRecord{Scope: BotScope("bot-one"), Status: "draft", Content: &content}
+	s.SavePlaybook(draft.Scope, content, draft, func(PlaybookRecord, error) {})
+	waitPosts(posts)
+	if transport.params["current"] != "" {
+		t.Errorf("a draft from a chat has no folder yet: %v", transport.params)
+	}
 
-	transport.err = errors.New("Playbook changed since you opened it; reload before saving")
+	transport.err = errors.New("The skill changed since you opened it; reload before saving")
 	var got error
 	s.SavePlaybook(over.Scope, content, over, func(_ PlaybookRecord, err error) { got = err })
 	waitPosts(posts)
@@ -69,25 +79,40 @@ func TestSavePlaybookGuards(t *testing.T) {
 	}
 }
 
-// The roster lists every skill without its body; a bot's list puts its drafts first, then the
-// latest changed.
-func TestSkillsFromTheRoster(t *testing.T) {
-	s := NewStore(&playbookTransport{}, func(fn func()) { fn() }, false)
-	s.handle("roster.changed", json.RawMessage(`{"devices":[],"bots":[],"chats":[],"playbooks":[
-		{"id":"a","scope":{"kind":"bot","id":"bot-one"},"name":"old","description":"","status":"saved","revision":1,"hash":"","updated_at":10},
-		{"id":"b","scope":{"kind":"bot","id":"bot-one"},"name":"new","description":"","status":"saved","revision":1,"hash":"","updated_at":20},
-		{"id":"c","scope":{"kind":"bot","id":"bot-one"},"name":"draft","description":"","status":"draft","revision":1,"hash":"","updated_at":5},
-		{"id":"d","scope":{"kind":"project","id":"room"},"name":"group","description":"","status":"saved","revision":1,"hash":"","updated_at":30}]}`))
+// The CLI lists the skills of a bot in a chat, the shared ones included, without their bodies; a
+// bot's list puts the latest changed first, and the skills Lorca ships are not the user's to list.
+func TestSkillsListedByTheCLI(t *testing.T) {
+	posts := make(chan func(), 4)
+	transport := &playbookTransport{reply: json.RawMessage(`{"skills":[
+		{"scope":{"kind":"bot","id":"bot-one"},"name":"old","description":"","path":"/p/old","builtin":false,"updated_at":10},
+		{"scope":{"kind":"bot","id":"bot-one"},"name":"new","description":"","path":"/p/new","builtin":false,"updated_at":20},
+		{"scope":{"kind":"project","id":"room"},"name":"group","description":"","path":"/p/group","builtin":false,"updated_at":30},
+		{"scope":{"kind":"shared","id":""},"name":"mine","description":"","path":"/p/mine","builtin":false,"updated_at":5},
+		{"scope":{"kind":"shared","id":""},"name":"lorca","description":"","path":"/p/lorca","builtin":true,"updated_at":1}]}`)}
+	s := NewStore(transport, func(fn func()) { posts <- fn }, false)
+	s.EnsureSkills("bot-one", "room")
+	s.EnsureSkills("bot-one", "room")
+	waitPosts(posts)
+	if transport.method != "skills.list" || transport.params["bot_id"] != "bot-one" || transport.params["chat_id"] != "room" {
+		t.Fatalf("list params %q %v", transport.method, transport.params)
+	}
 	var names []string
 	for _, skill := range s.Skills(BotScope("bot-one")) {
 		names = append(names, skill.Name)
 	}
-	if len(names) != 3 || names[0] != "draft" || names[1] != "new" || names[2] != "old" {
+	if len(names) != 2 || names[0] != "new" || names[1] != "old" {
 		t.Errorf("skills %v", names)
 	}
-	s.handle("roster.changed", json.RawMessage(`{"devices":[],"bots":[],"chats":[]}`))
-	if len(s.Playbooks) != 4 {
-		t.Error("a roster without skills dropped them")
+	if group := s.Skills(GroupScope("room")); len(group) != 1 || group[0].ID != "group" {
+		t.Errorf("group skills %+v", group)
+	}
+	if shared := s.SharedSkills(); len(shared) != 1 || shared[0].Name != "mine" {
+		t.Errorf("shared skills %+v", shared)
+	}
+	select {
+	case <-posts:
+		t.Error("a second ask went out while the list was fresh")
+	default:
 	}
 }
 

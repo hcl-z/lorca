@@ -465,6 +465,12 @@ fn stays_in_lorca(command: &str, workdir: &Path, folders: &[PathBuf], home: Opti
     if !inside(workdir) || dynamic || command.trim().is_empty() {
         return false;
     }
+    // A skill's scripts are somebody's code, perhaps from a community, so a command that names a
+    // skills folder, or runs from one, goes to the review like any program of the user's.
+    let in_skills = |text: &str| text.split(|c: char| c.is_whitespace() || matches!(c, '=' | ':' | ',' | ';' | '|' | '&' | '"' | '\'' | '(' | ')' | '<' | '>')).any(|piece| piece.split(['/', '\\']).any(|part| part == "skills" || part == ".trash"));
+    if workdir.components().any(|part| part.as_os_str() == "skills") || stages.iter().any(|stage| shell_words(stage).iter().any(|word| in_skills(word))) {
+        return false;
+    }
     let moves = stages.iter().any(|stage| command_and_args(stage).is_some_and(|(name, _)| matches!(name.as_str(), "cd" | "pushd" | "popd")));
     stages.iter().all(|stage| {
         if let Some((name, args)) = command_and_args(stage) {
@@ -1396,6 +1402,24 @@ mod tests {
             assert!(!read_only(command), "{command}");
             assert!(!stays_in_lorca(command, workspace, &folders, Some(home)), "it changes the Runner, whatever folder it runs in: {command}");
         }
+    }
+
+    #[test]
+    fn a_skills_folder_is_somebody_elses_code_and_goes_to_the_review() {
+        let home = Path::new("/home/me");
+        let folders = [PathBuf::from("/home/me/.lorca")];
+        let workspace = Path::new("/home/me/.lorca/workspaces/bot-1");
+        for command in [
+            "python3 skills/pdf/scripts/fill.py",
+            "python3 /home/me/.lorca/skills/pdf/scripts/fill.py",
+            "bash ~/.lorca/workspaces/bot-1/skills/ship/scripts/run.sh",
+        ] {
+            assert!(!stays_in_lorca(command, workspace, &folders, Some(home)), "{command}");
+        }
+        let in_skill = Path::new("/home/me/.lorca/skills/pdf");
+        assert!(!stays_in_lorca("python3 scripts/fill.py", in_skill, &folders, Some(home)));
+        assert!(stays_in_lorca("python3 train.py", workspace, &folders, Some(home)));
+        assert!(read_only("cat ~/.lorca/skills/pdf/SKILL.md"), "reading a skill is still free");
     }
 
     #[test]

@@ -19,50 +19,92 @@ func TestReferenceName(t *testing.T) {
 	}
 }
 
-// Add saves the skill at once; reviewing a draft first is the other way.
-func TestImportSkillSaysWhetherToActivate(t *testing.T) {
+// Add copies the skill's folder and saves it at once.
+func TestImportSkillSavesTheFolder(t *testing.T) {
 	posts := make(chan func(), 4)
-	transport := &playbookTransport{reply: json.RawMessage(`{"id":"playbook-one","scope":{"kind":"bot","id":"bot-one"},"status":"saved","revision":1,"hash":"h1","content":{"name":"pdf-tools"},"skipped":["assets/logo.png"]}`)}
+	transport := &playbookTransport{reply: json.RawMessage(`{"scope":{"kind":"bot","id":"bot-one"},"name":"pdf-tools","description":"Fill PDFs","instructions":"Use the scripts.","hash":"h1","files":[],"skipped":["scripts/browser-steps.json"]}`)}
 	s := NewStore(transport, func(fn func()) { posts <- fn }, false)
 	var record PlaybookRecord
 	var skipped []string
-	s.ImportSkill(BotScope("bot-one"), "clawhub:pdf-tools", true, func(r PlaybookRecord, files []string, err error) {
+	s.ImportSkill(BotScope("bot-one"), "", "clawhub:pdf-tools", func(r PlaybookRecord, files []string, err error) {
 		if err != nil {
 			t.Error(err)
 		}
 		record, skipped = r, files
 	})
 	waitPosts(posts)
-	if transport.method != "skills.import" || transport.params["source"] != "clawhub:pdf-tools" || transport.params["activate"] != true {
+	if transport.method != "skills.import" || transport.params["source"] != "clawhub:pdf-tools" {
 		t.Fatalf("import params %q %v", transport.method, transport.params)
 	}
-	if record.ID != "playbook-one" || record.Status != "saved" || len(skipped) != 1 {
-		t.Errorf("record %+v, skipped %v", record, skipped)
+	if _, asked := transport.params["activate"]; asked {
+		t.Errorf("an import is always saved: %v", transport.params)
 	}
-
-	s.ImportSkill(BotScope("bot-one"), "owner/repo", false, func(PlaybookRecord, []string, error) {})
-	waitPosts(posts)
-	if transport.params["activate"] != false {
-		t.Errorf("a draft import params %v", transport.params)
+	if record.ID != "pdf-tools" || record.Status != "saved" || record.Content.Instructions != "Use the scripts." || len(skipped) != 1 {
+		t.Errorf("record %+v, skipped %v", record, skipped)
 	}
 }
 
 func TestSearchSkills(t *testing.T) {
 	posts := make(chan func(), 4)
-	transport := &playbookTransport{reply: json.RawMessage(`{"results":[{"source":"clawhub","reference":"clawhub:gifgrep","name":"GifGrep"}]}`)}
+	transport := &playbookTransport{reply: json.RawMessage(`{"results":[{"source":"skills-sh","reference":"anthropics/skills@pdf","name":"pdf","owner":"anthropics/skills","installs":210224}]}`)}
 	s := NewStore(transport, func(fn func()) { posts <- fn }, false)
 	var hits []SkillHit
-	s.SearchSkills(" gif ", func(found []SkillHit, err error) {
+	s.SearchSkills(" pdf ", func(found []SkillHit, err error) {
 		if err != nil {
 			t.Error(err)
 		}
 		hits = found
 	})
 	waitPosts(posts)
-	if transport.method != "skills.search" || transport.params["query"] != " gif " {
+	if transport.method != "skills.search" || transport.params["query"] != " pdf " {
 		t.Fatalf("search params %q %v", transport.method, transport.params)
 	}
-	if len(hits) != 1 || hits[0].Reference != "clawhub:gifgrep" || hits[0].Name != "GifGrep" {
+	if len(hits) != 1 || hits[0].Reference != "anthropics/skills@pdf" || hits[0].Installs != 210224 {
 		t.Errorf("hits %+v", hits)
+	}
+	if got := InstallsText(hits[0].Installs); got != "210.2K" {
+		t.Errorf("installs %q", got)
+	}
+}
+
+// A listed skill is Added only when the scope's skill came from that very address; another skill
+// of the same name only takes the name.
+func TestHolds(t *testing.T) {
+	skills := []PlaybookSummary{
+		{Name: "github", Source: "clawhub:steipete/github"},
+		{Name: "pdf"},
+	}
+	for reference, want := range map[string]SkillHold{
+		"clawhub:steipete/github": SkillHeld,
+		"clawhub:eohmig/github":   SkillNameTaken,
+		"anthropics/skills@pdf":   SkillNameTaken,
+		"anthropics/skills@docx":  SkillNotHeld,
+	} {
+		if got := Holds(skills, reference); got != want {
+			t.Errorf("Holds(%q) = %v, want %v", reference, got, want)
+		}
+	}
+}
+
+// A shared skill added from the sidebar stays on this computer; one added for a bot's Runner names
+// that bot, which the CLI routes by.
+func TestSharedSkillsNameTheirRunner(t *testing.T) {
+	posts := make(chan func(), 4)
+	transport := &playbookTransport{reply: json.RawMessage(`{"scope":{"kind":"shared","id":""},"name":"pdf","description":"","instructions":"x","hash":"h","files":[]}`)}
+	s := NewStore(transport, func(fn func()) { posts <- fn }, false)
+	s.ImportSkill(SharedScope(), "", "anthropics/skills@pdf", func(PlaybookRecord, []string, error) {})
+	waitPosts(posts)
+	if _, named := transport.params["bot_id"]; named {
+		t.Errorf("this computer's shared skills name no bot: %v", transport.params)
+	}
+	s.ImportSkill(SharedScope(), "bot-one", "anthropics/skills@pdf", func(PlaybookRecord, []string, error) {})
+	waitPosts(posts)
+	if transport.params["bot_id"] != "bot-one" {
+		t.Errorf("a Runner's shared skills name its bot: %v", transport.params)
+	}
+	s.ImportSkill(BotScope("bot-one"), "bot-two", "anthropics/skills@pdf", func(PlaybookRecord, []string, error) {})
+	waitPosts(posts)
+	if _, named := transport.params["bot_id"]; named {
+		t.Errorf("a bot's own skill is routed by its scope: %v", transport.params)
 	}
 }

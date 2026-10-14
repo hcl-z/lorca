@@ -473,7 +473,6 @@ type WireSnapshot struct {
 	SharedLinks         []SharedLink      `json:"shared_links"`
 	Providers           []WireProvider    `json:"providers"`
 	Models              []WireModel       `json:"models"`
-	Playbooks           []PlaybookSummary `json:"playbooks"`
 	RunningChatIDs      []string          `json:"running_chat_ids"`
 	RunningTurns        []WireRunningTurn `json:"running_turns"`
 }
@@ -488,8 +487,7 @@ type WireRosterChanged struct {
 	SharedLinks []SharedLink    `json:"shared_links"`
 	Providers   []WireProvider  `json:"providers"`
 	// Models are the catalog's models again, so a newer catalog the CLI installs reaches the pickers.
-	Models    []WireModel        `json:"models"`
-	Playbooks *[]PlaybookSummary `json:"playbooks"`
+	Models []WireModel `json:"models"`
 }
 
 type WireMessagePage struct {

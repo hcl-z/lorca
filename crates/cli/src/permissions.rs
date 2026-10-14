@@ -6,6 +6,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::app::App;
 use crate::model::Bot;
@@ -165,6 +166,31 @@ pub fn check_tool(app: &Arc<App>, bot: &Bot, tool: &str) -> Result<(), AccessDen
     }
 }
 
+/// Whether a reading call names only a path inside a skills folder the bot uses. A bot with no
+/// file access still reads its skills, which are how it is told to work.
+fn reads_skills(app: &App, bot: &Bot, tool: &str, args: &Value) -> bool {
+    if !matches!(tool, "read" | "grep" | "find" | "ls") {
+        return false;
+    }
+    let Some(path) = args["path"].as_str().filter(|path| !path.is_empty()) else { return false };
+    let path = if path == "~" || path.starts_with("~/") {
+        dirs::home_dir().map(|home| home.join(path.trim_start_matches('~').trim_start_matches('/')))
+    } else {
+        Some(std::path::PathBuf::from(path))
+    };
+    let Some(path) = path.filter(|path| path.is_absolute()).and_then(|path| std::fs::canonicalize(path).ok()) else { return false };
+    crate::skills::readable_roots(app, &bot.id).into_iter().filter_map(|root| std::fs::canonicalize(root).ok()).any(|root| path.starts_with(root))
+}
+
+/// `check_tool` for a call whose arguments are known: reading a skills folder needs no file access.
+pub fn check_tool_call(app: &Arc<App>, bot: &Bot, tool: &str, args: &Value) -> Result<(), AccessDenied> {
+    if reads_skills(app, bot, tool, args) {
+        current(app, bot, tool, None)?;
+        return Ok(());
+    }
+    check_tool(app, bot, tool)
+}
+
 /// A call that reads a Runner file through another tool, as `publish_output` with a `path` does,
 /// needs what `read` needs.
 pub fn check_file_read(app: &Arc<App>, bot: &Bot, tool: &str) -> Result<(), AccessDenied> {
@@ -314,8 +340,8 @@ pub(crate) mod guarded {
     }
 
     impl GuardedTool {
-        fn check(&self) -> Result<(), ToolError> {
-            check_tool(&self.app, &self.bot, self.name()).map_err(|denied| {
+        fn check(&self, args: &Value) -> Result<(), ToolError> {
+            check_tool_call(&self.app, &self.bot, self.name(), args).map_err(|denied| {
                 let result = refuse(&self.app, &self.chat_id, &self.bot, denied);
                 ToolError(result.reason.unwrap_or_default())
             })
@@ -346,7 +372,7 @@ pub(crate) mod guarded {
             self.tool.prepare_arguments(args)
         }
         async fn execute(&self, id: &str, args: Value, cancel: CancellationToken, update: ToolUpdateFn) -> Result<ToolResult, ToolError> {
-            self.check()?;
+            self.check(&args)?;
             self.tool.execute(id, args, cancel, update).await
         }
         async fn execute_with(
@@ -357,7 +383,7 @@ pub(crate) mod guarded {
             update: ToolUpdateFn,
             runner: &dyn ToolRunner,
         ) -> Result<ToolResult, ToolError> {
-            self.check()?;
+            self.check(&args)?;
             self.tool.execute_with(id, args, cancel, update, runner).await
         }
     }

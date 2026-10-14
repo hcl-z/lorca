@@ -263,7 +263,7 @@ fn step(app: &App, redactions: &crate::secrets::Redactions, item: &Value) -> Opt
         Action::Fill => match item["value"].as_str() {
             // What looks like a credential is kept as little as a password is, and a saved
             // secret's value as the placeholder a run fills in again.
-            Some(value) if item["secret"] != true && crate::playbooks::scrub(app, value) == value => {
+            Some(value) if item["secret"] != true && crate::skills::scrub(app, value) == value => {
                 let value: String = value.chars().take(2000).collect();
                 typed_secret = redactions.text(&value).is_some();
                 step.value = Some(redacted(redactions, value));
@@ -365,7 +365,7 @@ pub fn content(app: &App, message_id: &str, reference: &RecordingRef, images: bo
         text.push('\n');
     }
     text.push_str(&format!(
-        "To learn it, call propose_playbook with kind \"recording\" and message_ids [\"{message_id}\"]: a skill whose scripts hold {} with these steps. \
+        "To learn it, save a skill (the write-skill skill says where and how) whose {} holds these steps, as the user's message [\"{message_id}\"] recorded them. \
         Put {{{{name}}}} where a value changes from run to run and list each in \"inputs\" with what it is; add an \"expect\" (url, title, or text) after a step whose result the next page or a screenshot shows; \
         leave out steps that only sign in, since the profile keeps its sign-ins; a step that types a password (secret: true) has no value in the recording, so when the workflow needs one each run, ask the user for it with request_secret (use: browser, its site) and make that step's value {{{{secret:NAME}}}}, as a value the user had saved already reads; you may drop \"element\" from a step or add a \"note\". \
         The instructions say what the workflow is for, when to use it, and to run it with browser_session {{ action: \"run\", skill, inputs }}. \

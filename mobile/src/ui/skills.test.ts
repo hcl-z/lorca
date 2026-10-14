@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { Chat, Message, PlaybookRevision } from "../core/model";
-import { addSkillFile, captureKind, captureSources, fillSkillForm, historyWord, safeFileName, skillFormContent, skillNameProblem, skillSlug, useSkillForm } from "./skills";
+import { skillInputOf, skillRecordOf, type Chat, type Message, type SkillView } from "../core/model";
+import { addSkillFile, captureKind, captureSources, fillSkillForm, safeFileName, skillFormContent, skillNameProblem, skillScopeLine, skillSlug, useSkillForm } from "./skills";
 
 const message = (id: string, author: Message["author"], text = id, at = 1): Message => ({
   id,
@@ -34,14 +34,32 @@ describe("skills", () => {
     expect(captureSources(chat).map((m) => m.id)).toEqual(["ask", "reply"]);
   });
 
-  test("the form keeps files in their folders and says the history in words", () => {
+  test("the form keeps files in their folders", () => {
     fillSkillForm({ name: "report", description: "d", instructions: "i", examples: "", references: [{ path: "references/style.md", text: "s" }], scripts: [] });
     addSkillFile("references");
     addSkillFile("scripts");
     expect(skillFormContent(useSkillForm.getState()).references.map((f) => f.path)).toEqual(["references/style.md", "references/notes.md"]);
     expect(skillFormContent(useSkillForm.getState()).scripts.map((f) => f.path)).toEqual(["scripts/script.sh"]);
-    const step = (revision: number, status: PlaybookRevision["status"], kind: string): PlaybookRevision => ({ id: `r${revision}`, revision, status, content: null, provenance: { kind, message_ids: [] }, device_id: "", created_at: revision });
-    const steps = [step(1, "draft", "workflow"), step(2, "saved", "edit"), step(3, "saved", "edit"), step(4, "deleted", "remove")];
-    expect(steps.map((each) => historyWord(each, steps))).toEqual(["Drafted from a chat", "Saved", "Edited", "Deleted"]);
+  });
+
+  test("a skill from its Runner keeps the files the screens do not show, and a save sends them back", () => {
+    const view: SkillView = {
+      scope: { kind: "bot", id: "chef" }, name: "pdf-tools", description: "Fill PDFs", path: "/skills/pdf-tools", builtin: false, updated_at: 1,
+      instructions: "Use the scripts.", hash: "h1",
+      files: [
+        { path: "references/forms.md", size: 5, text: "forms" },
+        { path: "scripts/fill.py", size: 3, text: "run" },
+        { path: "LICENSE.txt", size: 3, text: "MIT" },
+        { path: "assets/logo.png", size: 900, text: null },
+      ],
+    };
+    const record = skillRecordOf(view);
+    expect(record.id).toBe("pdf-tools");
+    expect(record.content?.references.map((f) => f.path)).toEqual(["references/forms.md"]);
+    expect(record.content?.other?.map((f) => f.path)).toEqual(["LICENSE.txt"]);
+    const input = skillInputOf({ ...record.content!, examples: "A filled form" });
+    expect(input.instructions).toBe("Use the scripts.\n\n## Examples\n\nA filled form");
+    expect(input.files.map((f) => f.path)).toEqual(["references/forms.md", "scripts/fill.py", "LICENSE.txt"]);
+    expect(skillScopeLine({ kind: "shared", id: "" }, false, {})).toBe("Every bot on this Runner can use it.");
   });
 });

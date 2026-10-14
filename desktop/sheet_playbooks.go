@@ -6,7 +6,6 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/egoist/lorca/desktop/model"
 	"github.com/egoist/mygo"
@@ -17,43 +16,57 @@ import (
 // PlaybookViewController, and PlaybookCaptureViewController: the list in the inspector, a sheet per
 // skill, and Save as Skill on a message.
 
-// inspectorSkills are the skills of the bot in a DM, or of the group: past five rows the rest wait
-// behind Show More. A row opens its skill, and its menu exports or deletes it; + adds one, and the
-// last row opens the Skill Store for this bot or group.
+// inspectorSkills are two sections: the skills of the bot in a DM, or of the group, and the ones
+// every bot on that Runner uses. Each section's + opens the Skill Store for its own scope, where a
+// skill is added from skills.sh or written from scratch. Past five rows the rest wait behind Show
+// More. A row opens its skill, and its menu exports or deletes it.
 func (m *mainWindow) inspectorSkills(c *ui.Context, chat *model.Chat, members []*model.Bot) {
 	scope, ok := model.SkillScope(chat, members)
 	if !ok {
 		return
 	}
-	p := colors(c)
-	skills := store.Skills(scope)
+	// The skills are folders on a Runner, so the list is asked for as the section draws.
+	if len(members) > 0 {
+		store.EnsureSkills(members[0].ID, chat.ID)
+	}
+	// The bot's or group's own skills, then the ones every bot uses, which a globe marks. Editing or
+	// deleting one of those here changes it for every bot on the Runner.
+	skills := append(store.Skills(scope), store.SharedSkills()...)
+	empty := L("No skills yet. Click + to add one from the Skill Store or write one, save a chat as a skill, or ask a bot to write one.")
+	m.skillSection(c, "skills", L("Skills"), scope, skills, empty)
+}
+
+// skillSection is the bot's or group's skills with the shared ones; its + opens the Skill Store for
+// the bot or group. The skills every bot uses are added from the sidebar's +.
+func (m *mainWindow) skillSection(c *ui.Context, key, title string, scope model.PlaybookScope, skills []model.PlaybookSummary, empty string) {
 	s := &m.inspector
 	shown := skills
 	if s.skillsShowingAll != scope && len(skills) > 5 {
 		shown = skills[:4]
 	}
-	section(c.Key("skills"), L("Skills"), sectionCaption, func() {
-		if hoverButton(c, hoverButtonOptions{Symbol: "plus", Size: 13, Tooltip: L("New Skill")}).Clicked() {
-			m.presentPlaybook(scope, nil)
+	accessory := func() {
+		if hoverButton(c, hoverButtonOptions{Symbol: "plus", Size: 13, Tooltip: L("Add a Skill")}).Clicked() {
+			m.presentSkillStore(scope)
 		}
-	}, func(k *card) {
+	}
+	section(c.Key(key), title, sectionCaption, accessory, func(k *card) {
 		if len(skills) == 0 {
-			noteRow(c, k, L("No skills yet. Add one from the Skill Store, save a chat as a skill, or ask a bot to write one."), nil)
+			noteRow(c, k, empty, nil)
 		}
 		for _, skill := range shown {
 			var row statusRowResult
-			ui.Box(c.Key(skill.ID)).Children(func() {
-				state := ""
-				if skill.IsDraft() {
-					state = L("Draft")
+			ui.Box(c.Key(skill.Scope.Kind + "/" + skill.ID)).Children(func() {
+				options := statusRowOptions{Symbol: "book.closed", Title: skill.Name, Subtitle: skill.Description, SubtitleLines: 2, Clickable: true}
+				if skill.Scope.IsShared() {
+					options.State, options.StateSymbol = L("Every bot uses this skill"), "globe"
 				}
 				var e ui.Element
-				e, row = statusRow(c, k, statusRowOptions{Symbol: "book.closed", Title: skill.Name, Subtitle: skill.Description, SubtitleLines: 2, State: state, Clickable: true})
+				e, row = statusRow(c, k, options)
 				e.ContextMenu(func(menu *ui.Menu) {
 					if menu.Item(L("Open")).Chosen() {
 						m.openPlaybook(skill)
 					}
-					if menu.Item(L("Export…")).Disabled(skill.IsDraft()).Chosen() {
+					if menu.Item(L("Export…")).Chosen() {
 						m.exportPlaybook(skill)
 					}
 					menu.Separator()
@@ -68,15 +81,12 @@ func (m *mainWindow) inspectorSkills(c *ui.Context, chat *model.Chat, members []
 		}
 		if len(shown) < len(skills) {
 			var more statusRowResult
-			ui.Box(c.Key("skills/more")).Children(func() {
+			ui.Box(c.Key(key + "/more")).Children(func() {
 				_, more = statusRow(c, k, statusRowOptions{Symbol: "ellipsis.circle", Title: L("Show %d More", len(skills)-len(shown)), Clickable: true})
 			})
 			if more.Clicked {
 				s.skillsShowingAll = scope
 			}
-		}
-		if _, result := actionRow(c, k, L("Skill Store"), actionRowOptions{Tint: &p.Label2, Action: L("Add from Skills…")}); result.Action {
-			m.presentSkillStore(scope)
 		}
 	})
 }
@@ -112,8 +122,8 @@ func (w *appWindow) exportPlaybook(skill model.PlaybookSummary) {
 		}
 		parent := w.win
 		go func() {
-			path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{Parent: parent, Title: L("Export…"), DefaultPath: skill.Name + ".json",
-				Filters: []mygo.FileFilter{{Name: "JSON", Extensions: []string{"json"}}}})
+			path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{Parent: parent, Title: L("Export…"), DefaultPath: skill.Name + ".zip",
+				Filters: []mygo.FileFilter{{Name: "Zip", Extensions: []string{"zip"}}}})
 			if err == nil && path != "" {
 				err = os.WriteFile(path, data, 0o600)
 			}
@@ -130,7 +140,7 @@ func (w *appWindow) deletePlaybook(skill model.PlaybookSummary) {
 	fail := func(err error) {
 		w.showAlert(alertOptions{Message: L("Couldn't delete the skill"), Informative: model.ErrorText(err)}, nil)
 	}
-	w.confirmDeletePlaybook(skill.Name, skill.IsDraft(), func() {
+	w.confirmDeletePlaybook(skill.Name, skill.Scope, skill.IsDraft(), func() {
 		store.Playbook(skill.Scope, skill.ID, func(record model.PlaybookRecord, err error) {
 			if err == nil && record.Revision != skill.Revision {
 				err = errors.New(L("This skill changed on another Device. Open it to see what changed."))
@@ -148,10 +158,13 @@ func (w *appWindow) deletePlaybook(skill model.PlaybookSummary) {
 	})
 }
 
-func (w *appWindow) confirmDeletePlaybook(name string, draft bool, confirmed func()) {
-	informative := L("Your bots stop using this skill. This can't be undone.")
-	if draft {
+func (w *appWindow) confirmDeletePlaybook(name string, scope model.PlaybookScope, draft bool, confirmed func()) {
+	informative := L("Your bots stop using this skill. Its folder stays in the skills folder's .trash for 30 days.")
+	switch {
+	case draft:
 		informative = L("The draft is deleted.")
+	case scope.IsShared():
+		informative = L("Every bot on this Runner stops using this skill. Its folder stays in the skills folder's .trash for 30 days.")
 	}
 	w.showAlert(alertOptions{
 		Message: L("Delete “%@”?", name), Informative: informative, Style: alertWarning,
@@ -181,19 +194,24 @@ type playbookSheet struct {
 	w      *appWindow
 	scope  model.PlaybookScope
 	record *model.PlaybookRecord
+	// via is the bot whose Runner keeps a skill for every bot, or "" for this computer.
+	via string
 
 	name, description, instructions, examples string
-	files                                     map[string][]*playbookFile
-	selected                                  map[string]int
-	nextKey                                   int
-	tab, step                                 int
+	// other are the skill's text files outside references and scripts, which the sheet does not
+	// show and a save sends back.
+	other     []model.PlaybookFile
+	files     map[string][]*playbookFile
+	selected  map[string]int
+	nextKey   int
+	tab, step int
 	// nameTaken is the CLI refusing the name: another skill here has it.
 	nameTaken    string
 	busy, closed bool
 }
 
 func (w *appWindow) presentPlaybook(scope model.PlaybookScope, record *model.PlaybookRecord) *playbookSheet {
-	s := &playbookSheet{w: w, scope: scope}
+	s := &playbookSheet{w: w, scope: scope, via: store.SkillsBot()}
 	s.fill(record)
 	w.present(s.view, func() { s.closed = true })
 	return s
@@ -206,6 +224,7 @@ func (s *playbookSheet) fill(record *model.PlaybookRecord) {
 		content = *record.Content
 	}
 	s.name, s.description, s.instructions, s.examples = content.Name, content.Description, content.Instructions, content.Examples
+	s.other = content.Other
 	s.files, s.selected, s.step, s.nameTaken = map[string][]*playbookFile{}, map[string]int{}, 0, ""
 	for folder, files := range map[string][]model.PlaybookFile{"references": content.References, "scripts": content.Scripts} {
 		for _, file := range files {
@@ -222,6 +241,9 @@ func (s *playbookSheet) fill(record *model.PlaybookRecord) {
 // subtitle is who uses the skill, and for a draft, that it waits for a save.
 func (s *playbookSheet) subtitle() string {
 	draft := s.record != nil && s.record.IsDraft()
+	if s.scope.IsShared() {
+		return L("Every bot on this Runner can use it.")
+	}
 	if s.scope.IsGroup() {
 		group := L("Group")
 		if chat := store.Chat(s.scope.ID); chat != nil {
@@ -272,7 +294,7 @@ func (s *playbookSheet) canSave() bool {
 
 func (s *playbookSheet) content() model.PlaybookContent {
 	content := model.PlaybookContent{Name: s.slug(), Description: strings.TrimSpace(s.description), Instructions: s.instructions, Examples: s.examples,
-		References: []model.PlaybookFile{}, Scripts: []model.PlaybookFile{}}
+		References: []model.PlaybookFile{}, Scripts: []model.PlaybookFile{}, Other: s.other}
 	for folder, target := range map[string]*[]model.PlaybookFile{"references": &content.References, "scripts": &content.Scripts} {
 		for _, file := range s.files[folder] {
 			*target = append(*target, model.PlaybookFile{Path: folder + "/" + file.goodName, Text: file.text})
@@ -283,7 +305,7 @@ func (s *playbookSheet) content() model.PlaybookContent {
 
 func (s *playbookSheet) save(sh *sheet, over *model.PlaybookRecord) {
 	s.busy = true
-	store.SavePlaybook(s.scope, s.content(), over, func(_ model.PlaybookRecord, err error) {
+	store.SavePlaybookVia(s.scope, s.via, s.content(), over, func(_ model.PlaybookRecord, err error) {
 		if s.closed {
 			return
 		}
@@ -343,7 +365,7 @@ func (s *playbookSheet) view(c *ui.Context, sh *sheet) {
 		leading = func() {
 			if pushButton(c, L("Delete…"), pushOptions{Kind: buttonDestructive, Disabled: s.busy}).Clicked() {
 				record := *s.record
-				s.w.confirmDeletePlaybook(record.Content.Name, record.IsDraft(), func() {
+				s.w.confirmDeletePlaybook(record.Content.Name, record.Scope, record.IsDraft(), func() {
 					store.RemovePlaybook(record, func(err error) {
 						if err != nil {
 							s.w.showAlert(alertOptions{Message: L("Couldn't delete the skill"), Informative: model.ErrorText(err)}, nil)
@@ -370,9 +392,6 @@ func (s *playbookSheet) view(c *ui.Context, sh *sheet) {
 			})
 		})
 		labels := []string{L("Instructions"), L("Examples"), L("References"), L("Scripts")}
-		if s.record != nil {
-			labels = append(labels, L("History"))
-		}
 		ui.Row(c).Justify(ui.Center).Margin(4, 0, 0, 0).Children(func() {
 			segmented(c.Key("tabs"), &s.tab, L("Skills"), labels...)
 		})
@@ -386,8 +405,6 @@ func (s *playbookSheet) view(c *ui.Context, sh *sheet) {
 				s.filesView(c, "references")
 			case 3:
 				s.filesView(c, "scripts")
-			case 4:
-				s.historyView(c)
 			}
 		})
 	})
@@ -515,75 +532,6 @@ func safeFileName(name string) bool {
 		}
 	}
 	return true
-}
-
-// historyView is how the skill changed, newest first; picking a step shows its instructions then.
-func (s *playbookSheet) historyView(c *ui.Context) {
-	p := colors(c)
-	steps := slices.Clone(s.record.Revisions)
-	slices.SortStableFunc(steps, func(a, b model.PlaybookRevision) int {
-		if a.Revision != b.Revision {
-			return int(b.Revision) - int(a.Revision)
-		}
-		if a.CreatedAt > b.CreatedAt {
-			return -1
-		}
-		return 1
-	})
-	what := func(step model.PlaybookRevision) string {
-		switch {
-		case step.Status == "deleted":
-			return L("Deleted")
-		case step.Status == "draft" && step.Provenance.Kind == "corrections":
-			return L("Drafted from corrections")
-		case step.Status == "draft" && step.Provenance.Kind == "recording":
-			return L("Drafted from a recording")
-		case step.Provenance.Kind == "import":
-			return L("Added from the Skill Store")
-		case step.Status == "draft":
-			return L("Drafted from a chat")
-		case step.Provenance.Kind == "edit" && step.Revision > 1:
-			for _, before := range steps {
-				if before.Revision == step.Revision-1 && before.Status == "draft" {
-					return L("Saved")
-				}
-			}
-			return L("Edited")
-		}
-		return L("Created")
-	}
-	ui.Row(c).Gap(8).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
-		listBox(c, 196).Children(func() {
-			for i, step := range steps {
-				selected := i == s.step
-				when := model.DaySeparator(time.Unix(int64(step.CreatedAt), 0))
-				if device := store.Device(step.DeviceID); device != nil {
-					when += " · " + device.Name
-				}
-				row := listRow(c.Key(step.ID), selected, what(step)).MinHeight(38)
-				row.Children(func() {
-					ui.Column(c).Gap(1).MinWidth(0).Children(func() {
-						ui.Text(c, what(step)).FontSize(12.5).FontWeight(500).SingleLine()
-						detail := ui.Text(c, when).FontSize(textCaption).SingleLine()
-						if !selected {
-							detail.TextColor(p.Label2)
-						}
-					})
-				})
-				if row.Clicked() {
-					s.step = i
-				}
-			}
-		})
-		if s.step >= len(steps) || steps[s.step].Content == nil {
-			ui.Column(c).Grow(1).Justify(ui.Center).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, L("Deleted")).FontSize(12).TextColor(p.Label3)
-			})
-			return
-		}
-		text := steps[s.step].Content.Instructions
-		textArea(c.Key("step-"+steps[s.step].ID), &text, 0, fieldOptions{ReadOnly: true, Label: L("Instructions")}).Grow(1)
-	})
 }
 
 // MARK: - Save as Skill

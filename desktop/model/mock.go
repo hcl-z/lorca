@@ -569,8 +569,8 @@ func devopsThread() []*Message {
 // MockBackupPhrase is the demo's backup phrase, for onboarding without a CLI.
 var MockBackupPhrase = []string{"k4mq", "7rth", "2bnz", "wq5f", "j3xd", "pv82", "ct6m", "9hsa", "e7lw", "4knr", "zb3u", "m5yq"}
 
-// mockPlaybooks are the demo's skills: two of the Developer's and a draft it proposed, and one for
-// the Launch room.
+// mockPlaybooks are the demo's skills: three of the Developer's, one for the Launch room, and one
+// every bot uses.
 func mockPlaybooks() []PlaybookRecord {
 	record := func(id string, scope PlaybookScope, status string, content PlaybookContent, hoursAgo ...float64) PlaybookRecord {
 		r := PlaybookRecord{ID: id, Scope: scope, Status: status, Revision: uint64(len(hoursAgo)), Hash: id + "-hash", Content: &content}
@@ -595,25 +595,29 @@ func mockPlaybooks() []PlaybookRecord {
 		return r
 	}
 	return []PlaybookRecord{
-		record("playbook-release-notes", BotScope("bot-patch"), "saved", PlaybookContent{
+		record("release-notes", BotScope("bot-patch"), "saved", PlaybookContent{
 			Name: "release-notes", Description: "Turn the merged pull requests since the last tag into release notes.",
 			Instructions: "1. List the pull requests merged since the last release tag.\n2. Group them under Added, Changed, and Fixed.\n3. Write one plain line per change, in the user's words where the PR has them.\n4. Leave out internal refactors and dependency bumps.\n5. Show the draft before posting it anywhere.",
 			Examples:     "Fixed: The composer keeps your draft when you switch chats.",
 			References:   []PlaybookFile{{Path: "references/style.md", Text: "Short lines. No ticket numbers. Present tense."}},
 			Scripts:      []PlaybookFile{{Path: "scripts/merged-since-tag.sh", Text: "git log --merges --oneline \"$(git describe --tags --abbrev=0)\"..HEAD"}},
 		}, 80, 26, 3),
-		record("playbook-flaky-tests", BotScope("bot-patch"), "draft", PlaybookContent{
+		record("flaky-tests", BotScope("bot-patch"), "saved", PlaybookContent{
 			Name: "flaky-tests", Description: "Rerun a failing test in isolation before calling it a real failure.",
 			Instructions: "When a test fails in CI, rerun it alone three times. If it passes every time, report it as flaky with the failing seed; otherwise look for the bug.",
 		}, 1),
-		record("playbook-ship-checklist", BotScope("bot-patch"), "saved", PlaybookContent{
+		record("ship-checklist", BotScope("bot-patch"), "saved", PlaybookContent{
 			Name: "ship-checklist", Description: "Check the build, the changelog, and the version before a release.",
 			Instructions: "Run the full test suite, confirm the changelog has a section for the new version, and bump the version in one commit.",
 		}, 200),
-		record("playbook-launch-post", GroupScope("chat-relay"), "saved", PlaybookContent{
+		record("launch-post", GroupScope("chat-relay"), "saved", PlaybookContent{
 			Name: "launch-post", Description: "Write the launch announcement from the checklist and the release notes.",
 			Instructions: "Open with what the user can do now. Keep it under 150 words. Link the release notes last.",
 		}, 50, 5),
+		record("plain-replies", SharedScope(), "saved", PlaybookContent{
+			Name: "plain-replies", Description: "How the user wants every reply written: short, plain, no headings.",
+			Instructions: "Answer in one to three sentences. Use a list only when the answer is a list. No headings, no sign-off.",
+		}, 120),
 	}
 }
 

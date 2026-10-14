@@ -147,11 +147,8 @@ async fn answer(app: &Arc<App>, from: &str, request: &Request) -> Result<Value, 
             crate::routine_events::subscribe_now(app, id).await?;
             Ok(json!({ "routine": app.routine(id).map(|routine| app.routine_out(&routine)) }))
         }
-        #[cfg(feature = "runner")]
-        "playbooks.draft" => {
-            let scope = serde_json::from_value(body["scope"].clone()).map_err(|_| "Explicit playbook scope is required")?;
-            crate::playbook_tools::capture(app, &scope, body).await
-        }
+        // A skill on this Runner, asked for from another Device of the account.
+        verb if verb.starts_with("skills.") => crate::skills::serve(app, verb, body.clone()).await,
         // Regenerate, or edit and send again, asked from another Device of the account.
         "chats.rerun" => {
             let chat_id = body["chat_id"].as_str().ok_or("missing chat_id")?;
