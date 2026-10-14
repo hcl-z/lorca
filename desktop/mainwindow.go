@@ -408,6 +408,8 @@ func (m *mainWindow) run(id string) {
 		}
 	case "newSkill":
 		m.newSkill()
+	case "skillStore":
+		m.skillStore()
 	case "stopResponding":
 		if id := m.selection.ChatID; id != "" {
 			store.StopResponding(id)

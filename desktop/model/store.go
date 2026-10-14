@@ -275,6 +275,11 @@ func (s *Store) later(d time.Duration, fn func()) *time.Timer {
 	return time.AfterFunc(d, func() { s.post(fn) })
 }
 
+// After calls fn on the main thread after d, for the views' own delays. Stopping the timer cancels it.
+func (s *Store) After(d time.Duration, fn func()) *time.Timer {
+	return s.later(d, fn)
+}
+
 // MARK: - Lifecycle
 
 // Start loads the demo, or waits for the CLI: the app calls CLIStateChanged and HandleEvent from

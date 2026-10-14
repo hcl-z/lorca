@@ -210,8 +210,6 @@ func (m *mainWindow) inspectorTab(c *ui.Context, chat *model.Chat, members []*mo
 		m.inspectorSkills(c, chat, members)
 		if single != nil {
 			m.inspectorPlugins(c, single)
-		} else if scope, ok := model.SkillScope(chat, members); !ok || len(store.Skills(scope)) == 0 {
-			inspectorEmpty(c, L("No skills yet. Save a chat as a skill, or ask a bot to write one."))
 		}
 	case tabRoutines:
 		if single != nil {

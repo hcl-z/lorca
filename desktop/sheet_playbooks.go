@@ -17,18 +17,16 @@ import (
 // PlaybookViewController, and PlaybookCaptureViewController: the list in the inspector, a sheet per
 // skill, and Save as Skill on a message.
 
-// inspectorSkills are the skills of the bot in a DM, or of the group, hidden while there are none:
-// past five rows the rest wait behind Show More. A row opens its skill, and its menu exports or
-// deletes it; + adds one.
+// inspectorSkills are the skills of the bot in a DM, or of the group: past five rows the rest wait
+// behind Show More. A row opens its skill, and its menu exports or deletes it; + adds one, and the
+// last row opens the Skill Store for this bot or group.
 func (m *mainWindow) inspectorSkills(c *ui.Context, chat *model.Chat, members []*model.Bot) {
 	scope, ok := model.SkillScope(chat, members)
 	if !ok {
 		return
 	}
+	p := colors(c)
 	skills := store.Skills(scope)
-	if len(skills) == 0 {
-		return
-	}
 	s := &m.inspector
 	shown := skills
 	if s.skillsShowingAll != scope && len(skills) > 5 {
@@ -39,6 +37,9 @@ func (m *mainWindow) inspectorSkills(c *ui.Context, chat *model.Chat, members []
 			m.presentPlaybook(scope, nil)
 		}
 	}, func(k *card) {
+		if len(skills) == 0 {
+			noteRow(c, k, L("No skills yet. Add one from the Skill Store, save a chat as a skill, or ask a bot to write one."), nil)
+		}
 		for _, skill := range shown {
 			var row statusRowResult
 			ui.Box(c.Key(skill.ID)).Children(func() {
@@ -73,6 +74,9 @@ func (m *mainWindow) inspectorSkills(c *ui.Context, chat *model.Chat, members []
 			if more.Clicked {
 				s.skillsShowingAll = scope
 			}
+		}
+		if _, result := actionRow(c, k, L("Skill Store"), actionRowOptions{Tint: &p.Label2, Action: L("Add from Skills…")}); result.Action {
+			m.presentSkillStore(scope)
 		}
 	})
 }
@@ -534,6 +538,8 @@ func (s *playbookSheet) historyView(c *ui.Context) {
 			return L("Drafted from corrections")
 		case step.Status == "draft" && step.Provenance.Kind == "recording":
 			return L("Drafted from a recording")
+		case step.Provenance.Kind == "import":
+			return L("Added from the Skill Store")
 		case step.Status == "draft":
 			return L("Drafted from a chat")
 		case step.Provenance.Kind == "edit" && step.Revision > 1:
