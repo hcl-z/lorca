@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": "2026-10-12T09:00:00Z",
+  "updated": "2026-10-14T07:38:13Z",
   "plugins": [
     {
       "id": "slack",
@@ -1168,6 +1168,1830 @@
         "intercom": { "type": "http", "url": "https://mcp.intercom.com/mcp", "auth": { "type": "oauth" } }
       },
       "tools": { "readonly": ["search", "fetch", "search_*", "get_*", "list_*"] }
+    },
+    {
+      "id": "asana",
+      "name": "Asana",
+      "description": "Tasks, projects, portfolios, and status updates in Asana.",
+      "category": "productivity",
+      "author": "Asana",
+      "version": "1",
+      "icon": "checklist",
+      "homepage": "https://developers.asana.com/docs/integrating-with-asanas-mcp-server",
+      "tags": [
+        "tasks",
+        "projects",
+        "portfolios",
+        "goals",
+        "planning",
+        "任务",
+        "项目管理"
+      ],
+      "servers": {
+        "asana": {
+          "type": "http",
+          "url": "https://mcp.asana.com/v2/mcp",
+          "auth": {
+            "type": "oauth",
+            "client_id_variable": "ASANA_CLIENT_ID",
+            "client_secret_variable": "ASANA_CLIENT_SECRET",
+            "callback_port": 17301
+          }
+        }
+      },
+      "variables": [
+        {
+          "name": "ASANA_CLIENT_ID",
+          "description": "The client ID of an MCP app made in Asana's developer console (My apps), with http://127.0.0.1:17301/callback as its redirect URL and its distribution set to your workspace.",
+          "secret": false,
+          "required": true
+        },
+        {
+          "name": "ASANA_CLIENT_SECRET",
+          "description": "The same MCP app's client secret.",
+          "secret": true,
+          "required": true
+        }
+      ],
+      "tools": {
+        "readonly": [
+          "search_objects",
+          "get_task",
+          "get_tasks",
+          "get_my_tasks",
+          "search_tasks",
+          "get_project",
+          "get_projects",
+          "get_portfolio",
+          "get_portfolios",
+          "get_items_for_portfolio",
+          "get_status_overview",
+          "get_attachments",
+          "get_user",
+          "get_me",
+          "get_users",
+          "get_teams"
+        ]
+      }
+    },
+    {
+      "id": "hubspot",
+      "name": "HubSpot",
+      "description": "Contacts, companies, deals, tickets, campaigns, and conversations in HubSpot CRM.",
+      "category": "sales",
+      "author": "HubSpot",
+      "version": "1",
+      "icon": "person.crop.rectangle.stack",
+      "homepage": "https://developers.hubspot.com/docs/apps/developer-platform/build-apps/integrate-with-the-remote-hubspot-mcp-server",
+      "tags": [
+        "crm",
+        "contacts",
+        "companies",
+        "deals",
+        "tickets",
+        "marketing",
+        "客户管理"
+      ],
+      "servers": {
+        "hubspot": {
+          "type": "http",
+          "url": "https://mcp.hubspot.com/",
+          "auth": {
+            "type": "oauth",
+            "client_id_variable": "HUBSPOT_CLIENT_ID",
+            "client_secret_variable": "HUBSPOT_CLIENT_SECRET",
+            "callback_port": 17302
+          }
+        }
+      },
+      "variables": [
+        {
+          "name": "HUBSPOT_CLIENT_ID",
+          "description": "The client ID of an MCP connector made in HubSpot under Development › MCP Connectors, with http://127.0.0.1:17302/callback as its redirect URL.",
+          "secret": false,
+          "required": true
+        },
+        {
+          "name": "HUBSPOT_CLIENT_SECRET",
+          "description": "The same MCP connector's client secret.",
+          "secret": true,
+          "required": true
+        }
+      ],
+      "tools": {
+        "readonly": [
+          "get_user_details",
+          "get_organization_details",
+          "discover_hubspot_schema",
+          "search_crm_objects",
+          "get_crm_objects",
+          "query_crm_data",
+          "search_properties",
+          "get_properties",
+          "search_owners",
+          "get_campaign_attribution_reports",
+          "read_campaign_data",
+          "search_conversations",
+          "get_conversation_channel_metadata",
+          "search_intent_signals",
+          "get_marketing_email_analytics",
+          "get_content_analytics_report",
+          "get_aeo_metrics",
+          "tool_guidance"
+        ]
+      }
+    },
+    {
+      "id": "calendly",
+      "name": "Calendly",
+      "description": "Availability, meetings, and scheduling links in Calendly.",
+      "category": "productivity",
+      "author": "Calendly",
+      "version": "1",
+      "icon": "calendar",
+      "homepage": "https://developer.calendly.com/calendly-mcp-server",
+      "tags": [
+        "scheduling",
+        "meetings",
+        "calendar",
+        "availability",
+        "booking",
+        "日程",
+        "预约"
+      ],
+      "servers": {
+        "calendly": {
+          "type": "http",
+          "url": "https://mcp.calendly.com",
+          "auth": {
+            "type": "oauth"
+          }
+        }
+      },
+      "tools": {
+        "readonly": [
+          "event_types-list_event_types",
+          "event_types-get_event_type",
+          "event_types-list_event_type_available_times",
+          "event_types-list_event_type_availability_schedule",
+          "locations-list_user_meeting_locations",
+          "meetings-list_events",
+          "meetings-get_event",
+          "meetings-list_event_invitees",
+          "meetings-get_event_invitee",
+          "meetings-get_invitee_no_show",
+          "availability-list_user_availability_schedules",
+          "availability-get_user_availability_schedule",
+          "availability-list_user_busy_times",
+          "routing_forms-list_routing_forms",
+          "routing_forms-get_routing_form",
+          "routing_forms-list_routing_form_submissions",
+          "routing_forms-get_routing_form_submission",
+          "users-get_current_user",
+          "users-get_user",
+          "organizations-get_organization",
+          "organizations-list_organization_memberships",
+          "organizations-get_organization_membership",
+          "organizations-list_organization_invitations"
+        ]
+      }
+    },
+    {
+      "id": "klaviyo",
+      "name": "Klaviyo",
+      "description": "Email and SMS campaigns, flows, profiles, segments, and reports in Klaviyo.",
+      "category": "sales",
+      "author": "Klaviyo",
+      "version": "1",
+      "icon": "envelope",
+      "homepage": "https://developers.klaviyo.com/en/docs/connect_to_the_klaviyo_mcp_server",
+      "tags": [
+        "email",
+        "sms",
+        "marketing",
+        "campaigns",
+        "segments",
+        "ecommerce",
+        "营销"
+      ],
+      "servers": {
+        "klaviyo": {
+          "type": "http",
+          "url": "https://mcp.klaviyo.com/mcp",
+          "auth": {
+            "type": "oauth"
+          }
+        }
+      },
+      "tools": {
+        "readonly": [
+          "get_*",
+          "list_*",
+          "query_*",
+          "render_email_template"
+        ]
+      }
+    },
+    {
+      "id": "wix",
+      "name": "Wix",
+      "description": "Wix sites and business data: products, orders, bookings, and contacts.",
+      "category": "design",
+      "author": "Wix",
+      "version": "1",
+      "icon": "globe",
+      "homepage": "https://dev.wix.com/docs/sdk/articles/use-the-wix-mcp/about-the-wix-mcp",
+      "tags": [
+        "website",
+        "ecommerce",
+        "store",
+        "bookings",
+        "cms",
+        "建站"
+      ],
+      "servers": {
+        "wix": {
+          "type": "http",
+          "url": "https://mcp.wix.com/mcp",
+          "auth": {
+            "type": "oauth"
+          }
+        }
+      }
+    },
+    {
+      "id": "microsoft-learn",
+      "name": "Microsoft Learn",
+      "description": "Official Microsoft and Azure documentation, and code samples, searched and read.",
+      "category": "research",
+      "author": "Microsoft",
+      "version": "1",
+      "icon": "book.pages",
+      "homepage": "https://learn.microsoft.com/training/support/mcp-developer-reference",
+      "tags": [
+        "microsoft",
+        "azure",
+        "docs",
+        "documentation",
+        "code samples",
+        "dotnet",
+        "文档"
+      ],
+      "servers": {
+        "microsoft-learn": {
+          "type": "http",
+          "url": "https://learn.microsoft.com/api/mcp"
+        }
+      },
+      "tools": {
+        "readonly": [
+          "microsoft_docs_search",
+          "microsoft_docs_fetch",
+          "microsoft_code_sample_search"
+        ]
+      }
+    },
+    {
+      "id": "aws-knowledge",
+      "name": "AWS Knowledge",
+      "description": "AWS documentation, blog posts, and what's new, with regional availability of services.",
+      "category": "research",
+      "author": "Amazon Web Services",
+      "version": "1",
+      "icon": "cloud",
+      "homepage": "https://awslabs.github.io/mcp/servers/aws-knowledge-mcp-server",
+      "tags": [
+        "aws",
+        "amazon",
+        "docs",
+        "documentation",
+        "cloud",
+        "regions",
+        "文档"
+      ],
+      "servers": {
+        "aws-knowledge": {
+          "type": "http",
+          "url": "https://knowledge-mcp.global.api.aws"
+        }
+      },
+      "tools": {
+        "readonly": [
+          "search_documentation",
+          "read_documentation",
+          "list_regions",
+          "get_regional_availability",
+          "retrieve_skill"
+        ]
+      }
+    },
+    {
+      "id": "chrome-devtools",
+      "name": "Chrome DevTools",
+      "description": "Inspects pages in a live Chrome: console, network, performance traces, and screenshots.",
+      "category": "code",
+      "author": "Google Chrome",
+      "version": "1",
+      "icon": "chevron.left.forwardslash.chevron.right",
+      "homepage": "https://github.com/ChromeDevTools/chrome-devtools-mcp",
+      "tags": [
+        "chrome",
+        "devtools",
+        "browser",
+        "debugging",
+        "performance",
+        "network",
+        "console"
+      ],
+      "servers": {
+        "chrome-devtools": {
+          "type": "stdio",
+          "command": "npx",
+          "args": [
+            "-y",
+            "chrome-devtools-mcp@1.10.1",
+            "--no-usage-statistics"
+          ]
+        }
+      },
+      "tools": {
+        "readonly": [
+          "list_pages",
+          "take_snapshot",
+          "take_screenshot",
+          "list_console_messages",
+          "get_console_message",
+          "list_network_requests",
+          "get_network_request",
+          "get_css_styles"
+        ]
+      }
+    },
+    {
+      "id": "mongodb",
+      "name": "MongoDB",
+      "description": "Collections, documents, indexes, and Atlas clusters in MongoDB, read-only unless you turn that off.",
+      "category": "data",
+      "author": "MongoDB",
+      "version": "1",
+      "icon": "cylinder",
+      "homepage": "https://www.mongodb.com/docs/mcp-server/",
+      "tags": [
+        "mongodb",
+        "database",
+        "nosql",
+        "atlas",
+        "documents",
+        "query",
+        "数据库"
+      ],
+      "servers": {
+        "mongodb": {
+          "type": "stdio",
+          "command": "npx",
+          "args": [
+            "-y",
+            "mongodb-mcp-server@3.0.5"
+          ],
+          "env": {
+            "MDB_MCP_CONNECTION_STRING": "${MDB_MCP_CONNECTION_STRING}",
+            "MDB_MCP_API_CLIENT_ID": "${MDB_MCP_API_CLIENT_ID}",
+            "MDB_MCP_API_CLIENT_SECRET": "${MDB_MCP_API_CLIENT_SECRET}",
+            "MDB_MCP_READ_ONLY": "${MDB_MCP_READ_ONLY:-true}"
+          }
+        }
+      },
+      "variables": [
+        {
+          "name": "MDB_MCP_CONNECTION_STRING",
+          "description": "The connection string of the cluster, such as the one Atlas shows under Connect. Without it the bot can still list Atlas projects with the service account below.",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "MDB_MCP_API_CLIENT_ID",
+          "description": "Only for Atlas administration: the client ID of an Atlas service account.",
+          "secret": false,
+          "required": false
+        },
+        {
+          "name": "MDB_MCP_API_CLIENT_SECRET",
+          "description": "Only for Atlas administration: that service account's client secret.",
+          "secret": true,
+          "required": false
+        },
+        {
+          "name": "MDB_MCP_READ_ONLY",
+          "description": "true (the default) offers only tools that read; set false to let the bot write to your databases.",
+          "secret": false,
+          "required": false
+        }
+      ],
+      "tools": {
+        "readonly": [
+          "find",
+          "count",
+          "explain",
+          "db-stats",
+          "mongodb-logs",
+          "list-databases",
+          "list-collections",
+          "collection-schema",
+          "collection-indexes",
+          "collection-storage-size",
+          "atlas-list-orgs",
+          "atlas-list-projects",
+          "atlas-list-clusters",
+          "atlas-inspect-cluster",
+          "atlas-list-alerts",
+          "atlas-list-db-users",
+          "atlas-inspect-access-list",
+          "atlas-get-performance-advisor",
+          "atlas-get-regions",
+          "list-knowledge-sources",
+          "search-knowledge"
+        ]
+      }
+    },
+    {
+      "id": "monday",
+      "name": "monday.com",
+      "description": "Boards, items, docs, updates, and sprints in monday.com.",
+      "category": "productivity",
+      "author": "monday.com",
+      "version": "1",
+      "icon": "tablecells",
+      "homepage": "https://developer.monday.com/api-reference/docs/integrate-with-monday-mcp",
+      "tags": [
+        "boards",
+        "work management",
+        "projects",
+        "crm",
+        "sprints",
+        "项目管理"
+      ],
+      "servers": {
+        "monday": {
+          "type": "http",
+          "url": "https://mcp.monday.com/mcp",
+          "headers": {
+            "Authorization": "Bearer ${MONDAY_API_TOKEN}"
+          }
+        }
+      },
+      "variables": [
+        {
+          "name": "MONDAY_API_TOKEN",
+          "description": "A personal API token: your profile picture › Developers › My access tokens in monday.com. An admin can turn MCP off for the account (Admin › Permissions › AI Connectors).",
+          "secret": true,
+          "required": true
+        }
+      ],
+      "tools": {
+        "readonly": [
+          "get_board_info",
+          "get_board_items_page",
+          "get_board_activity",
+          "board_insights",
+          "get_column_type_info",
+          "list_workspaces",
+          "workspace_info",
+          "read_docs",
+          "all_widgets_schema",
+          "get_form",
+          "get_user_context",
+          "list_users_and_teams",
+          "get_updates",
+          "search",
+          "get_assets",
+          "list_automations",
+          "agent_catalog",
+          "get_notetaker_meetings",
+          "get_monday_dev_sprints_boards",
+          "get_sprints_metadata",
+          "get_sprint_summary",
+          "get_graphql_schema",
+          "get_type_details"
+        ]
+      }
+    },
+    {
+      "id": "coda",
+      "name": "Coda",
+      "description": "Docs, pages, and tables in Coda, searched and read, with rows and pages written on request.",
+      "category": "productivity",
+      "author": "Coda",
+      "version": "1",
+      "icon": "doc.richtext",
+      "homepage": "https://help.coda.io/hc/en-us/articles/44722661982989-Connect-to-the-Coda-MCP",
+      "tags": [
+        "docs",
+        "tables",
+        "pages",
+        "knowledge",
+        "wiki",
+        "文档"
+      ],
+      "servers": {
+        "coda": {
+          "type": "http",
+          "url": "https://coda.io/apis/mcp",
+          "headers": {
+            "Authorization": "Bearer ${CODA_API_TOKEN}"
+          }
+        }
+      },
+      "variables": [
+        {
+          "name": "CODA_API_TOKEN",
+          "description": "An API token from your Coda account settings. A token with the Read scope keeps the bot from writing. Coda's MCP is in beta and reading beyond a few requests a week needs a paid plan.",
+          "secret": true,
+          "required": true
+        }
+      ],
+      "tools": {
+        "readonly": [
+          "search",
+          "whoami",
+          "url_convert",
+          "tool_guide",
+          "table_rows_read",
+          "table_columns_read",
+          "page_read"
+        ]
+      }
+    },
+    {
+      "id": "lucid",
+      "name": "Lucid",
+      "description": "Lucidchart and Lucidspark documents and diagrams, searched, read, and created.",
+      "category": "design",
+      "author": "Lucid Software",
+      "version": "1",
+      "icon": "square.on.square.dashed",
+      "homepage": "https://help.lucid.co/hc/en-us/articles/42578801807508-Integrate-Lucid-with-AI-tools-using-the-Lucid-MCP-server",
+      "tags": [
+        "lucidchart",
+        "lucidspark",
+        "diagrams",
+        "whiteboard",
+        "flowchart",
+        "图表"
+      ],
+      "servers": {
+        "lucid": {
+          "type": "http",
+          "url": "https://mcp.lucid.app/mcp",
+          "auth": {
+            "type": "oauth"
+          }
+        }
+      }
+    },
+    {
+      "id": "plain",
+      "name": "Plain",
+      "description": "Support threads, customers, and help center articles in Plain.",
+      "category": "support",
+      "author": "Plain",
+      "version": "1",
+      "icon": "questionmark.bubble",
+      "homepage": "https://help.plain.com/article/mcp-server",
+      "tags": [
+        "support",
+        "threads",
+        "customers",
+        "help center",
+        "b2b",
+        "客服"
+      ],
+      "servers": {
+        "plain": {
+          "type": "http",
+          "url": "https://mcp.plain.com/mcp",
+          "auth": {
+            "type": "oauth"
+          }
+        }
+      }
+    },
+    {
+      "id": "pagerduty",
+      "name": "PagerDuty",
+      "description": "Incidents, alerts, services, schedules, and on-calls in PagerDuty.",
+      "category": "support",
+      "author": "PagerDuty",
+      "version": "1",
+      "icon": "exclamationmark.triangle",
+      "homepage": "https://support.pagerduty.com/main/docs/pagerduty-mcp-server",
+      "tags": [
+        "incidents",
+        "on-call",
+        "alerts",
+        "sre",
+        "schedules",
+        "值班",
+        "告警"
+      ],
+      "servers": {
+        "pagerduty": {
+          "type": "http",
+          "url": "https://${PAGERDUTY_MCP_HOST:-mcp.pagerduty.com}/mcp",
+          "headers": {
+            "Authorization": "Token token=${PAGERDUTY_API_KEY}"
+          }
+        }
+      },
+      "variables": [
+        {
+          "name": "PAGERDUTY_API_KEY",
+          "description": "A PagerDuty user API token (developer.pagerduty.com/docs/authentication). The hosted server needs Advanced Permissions on the account.",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "PAGERDUTY_MCP_HOST",
+          "description": "Only for an account in PagerDuty's EU service region: mcp.eu.pagerduty.com.",
+          "secret": false,
+          "required": false
+        }
+      ],
+      "tools": {
+        "readonly": [
+          "browse_*"
+        ]
+      }
+    },
+    {
+      "id": "tavily",
+      "name": "Tavily",
+      "description": "Real-time web search and page extraction for research.",
+      "category": "research",
+      "author": "Tavily",
+      "version": "1",
+      "icon": "magnifyingglass",
+      "homepage": "https://docs.tavily.com/documentation/mcp",
+      "tags": [
+        "search",
+        "web",
+        "extract",
+        "research",
+        "news",
+        "搜索"
+      ],
+      "servers": {
+        "tavily": {
+          "type": "http",
+          "url": "https://mcp.tavily.com/mcp/",
+          "auth": {
+            "type": "oauth",
+            "token_variable": "TAVILY_API_KEY"
+          }
+        }
+      },
+      "variables": [
+        {
+          "name": "TAVILY_API_KEY",
+          "description": "An API key from app.tavily.com instead of signing in, for a Runner without a browser.",
+          "secret": true,
+          "required": false
+        }
+      ],
+      "tools": {
+        "readonly": [
+          "tavily-search",
+          "tavily-extract"
+        ]
+      }
+    },
+    {
+      "id": "perplexity",
+      "name": "Perplexity",
+      "description": "Web search, grounded answers, reasoning, and deep research with citations from Perplexity.",
+      "category": "research",
+      "author": "Perplexity",
+      "version": "1",
+      "icon": "magnifyingglass",
+      "homepage": "https://docs.perplexity.ai/guides/mcp-server",
+      "tags": [
+        "search",
+        "answers",
+        "research",
+        "citations",
+        "web",
+        "搜索"
+      ],
+      "servers": {
+        "perplexity": {
+          "type": "http",
+          "url": "https://api.perplexity.ai/mcp",
+          "auth": {
+            "type": "oauth",
+            "token_variable": "PERPLEXITY_API_KEY"
+          }
+        }
+      },
+      "variables": [
+        {
+          "name": "PERPLEXITY_API_KEY",
+          "description": "An API key (console.perplexity.ai) instead of signing in, for a Runner without a browser. Calls are billed at Perplexity's API prices.",
+          "secret": true,
+          "required": false
+        }
+      ],
+      "tools": {
+        "readonly": [
+          "perplexity_search",
+          "perplexity_ask",
+          "perplexity_research",
+          "perplexity_reason"
+        ]
+      }
+    },
+    {
+      "id": "parallel-search",
+      "name": "Parallel Search",
+      "description": "Web search and page fetches that return only the lines that answer the query.",
+      "category": "research",
+      "author": "Parallel",
+      "version": "1",
+      "icon": "magnifyingglass",
+      "homepage": "https://docs.parallel.ai/integrations/mcp/search-mcp",
+      "tags": [
+        "search",
+        "web",
+        "fetch",
+        "research",
+        "monitoring",
+        "搜索"
+      ],
+      "servers": {
+        "parallel-search": {
+          "type": "http",
+          "url": "https://search.parallel.ai/mcp"
+        }
+      },
+      "tools": {
+        "readonly": [
+          "web_search",
+          "web_fetch"
+        ]
+      }
+    },
+    {
+      "id": "brave-search",
+      "name": "Brave Search",
+      "description": "Web, news, image, video, and local searches from Brave, with summaries.",
+      "category": "research",
+      "author": "Brave",
+      "version": "1",
+      "icon": "magnifyingglass",
+      "homepage": "https://github.com/brave/brave-search-mcp-server",
+      "tags": [
+        "search",
+        "web",
+        "news",
+        "images",
+        "local",
+        "搜索"
+      ],
+      "servers": {
+        "brave-search": {
+          "type": "stdio",
+          "command": "npx",
+          "args": [
+            "-y",
+            "@brave/brave-search-mcp-server@2.1.4"
+          ],
+          "env": {
+            "BRAVE_API_KEY": "${BRAVE_API_KEY}"
+          }
+        }
+      },
+      "variables": [
+        {
+          "name": "BRAVE_API_KEY",
+          "description": "An API key from api-dashboard.search.brave.com/app/keys.",
+          "secret": true,
+          "required": true
+        }
+      ],
+      "tools": {
+        "readonly": [
+          "*"
+        ]
+      }
+    },
+    {
+      "id": "firecrawl",
+      "name": "Firecrawl",
+      "description": "Web pages searched, scraped, and crawled into clean text and structured data.",
+      "category": "research",
+      "author": "Firecrawl",
+      "version": "1",
+      "icon": "globe",
+      "homepage": "https://docs.firecrawl.dev/mcp-server",
+      "tags": [
+        "scrape",
+        "crawl",
+        "web",
+        "markdown",
+        "extract",
+        "抓取"
+      ],
+      "servers": {
+        "firecrawl": {
+          "type": "http",
+          "url": "https://mcp.firecrawl.dev/v2/mcp-oauth",
+          "auth": {
+            "type": "oauth"
+          }
+        }
+      }
+    },
+    {
+      "id": "semrush",
+      "name": "Semrush",
+      "description": "SEO, keyword, backlink, competitor, and traffic research from Semrush reports.",
+      "category": "research",
+      "author": "Semrush",
+      "version": "1",
+      "icon": "chart.line.uptrend.xyaxis",
+      "homepage": "https://developer.semrush.com/api/basics/semrush-mcp/",
+      "tags": [
+        "seo",
+        "keywords",
+        "backlinks",
+        "competitors",
+        "traffic",
+        "marketing",
+        "营销"
+      ],
+      "servers": {
+        "semrush": {
+          "type": "http",
+          "url": "https://mcp.semrush.com/v2/mcp",
+          "auth": {
+            "type": "oauth"
+          }
+        }
+      },
+      "tools": {
+        "readonly": [
+          "domain_overview",
+          "organic_research",
+          "keyword_research",
+          "competitors_research",
+          "backlinks_research",
+          "audience_research",
+          "traffic_overview",
+          "paid_search_research",
+          "shopping_research",
+          "position_tracking",
+          "site_audit",
+          "projects",
+          "get_report_schema",
+          "execute_report"
+        ]
+      }
+    },
+    {
+      "id": "apify",
+      "name": "Apify",
+      "description": "Apify Actors that scrape websites and social media, and the datasets they produce.",
+      "category": "data",
+      "author": "Apify",
+      "version": "1",
+      "icon": "server.rack",
+      "homepage": "https://docs.apify.com/platform/integrations/mcp",
+      "tags": [
+        "scraping",
+        "actors",
+        "crawler",
+        "datasets",
+        "automation",
+        "social media",
+        "爬虫"
+      ],
+      "servers": {
+        "apify": {
+          "type": "http",
+          "url": "https://mcp.apify.com",
+          "auth": {
+            "type": "oauth",
+            "token_variable": "APIFY_TOKEN"
+          }
+        }
+      },
+      "variables": [
+        {
+          "name": "APIFY_TOKEN",
+          "description": "An API token (Apify Console › Settings › API & Integrations) instead of signing in, for a Runner without a browser.",
+          "secret": true,
+          "required": false
+        }
+      ],
+      "tools": {
+        "readonly": [
+          "search-actors",
+          "fetch-actor-details",
+          "search-apify-docs",
+          "fetch-apify-docs",
+          "get-actor-run",
+          "get-actor-run-list",
+          "get-actor-run-log",
+          "get-dataset",
+          "get-dataset-items",
+          "get-dataset-schema",
+          "get-dataset-list",
+          "get-key-value-store",
+          "get-key-value-store-keys",
+          "get-key-value-store-record",
+          "get-key-value-store-list",
+          "get-actor-task",
+          "get-schedule"
+        ]
+      }
+    },
+    {
+      "id": "fal-ai",
+      "name": "fal.ai",
+      "description": "fal.ai generative models searched, priced, and run for images, video, and audio.",
+      "category": "design",
+      "author": "fal",
+      "version": "1",
+      "icon": "paintpalette",
+      "homepage": "https://fal.ai/docs/model-apis/mcp",
+      "tags": [
+        "image generation",
+        "video",
+        "audio",
+        "models",
+        "ai",
+        "生图",
+        "生成"
+      ],
+      "servers": {
+        "fal-ai": {
+          "type": "http",
+          "url": "https://mcp.fal.ai/mcp-relay",
+          "auth": {
+            "type": "oauth"
+          }
+        }
+      },
+      "tools": {
+        "readonly": [
+          "search_models",
+          "get_model_schema",
+          "get_pricing",
+          "search_docs",
+          "recommend_model",
+          "check_job",
+          "get_job_result"
+        ]
+      }
+    },
+    {
+      "id": "baidu-maps",
+      "name": "百度地图",
+      "description": "Places, addresses, routes, weather, and road traffic in China, from Baidu Maps.",
+      "category": "research",
+      "author": "百度地图",
+      "version": "1",
+      "icon": "map",
+      "homepage": "https://lbsyun.baidu.com/faq/api?title=mcpserver/base",
+      "tags": [
+        "baidu",
+        "maps",
+        "places",
+        "routes",
+        "geocoding",
+        "weather",
+        "traffic",
+        "地图",
+        "百度地图",
+        "导航",
+        "路线"
+      ],
+      "servers": {
+        "baidu-maps": {
+          "type": "http",
+          "url": "https://mcp.map.baidu.com/mcp?ak=${BAIDU_MAP_AK}"
+        }
+      },
+      "variables": [
+        {
+          "name": "BAIDU_MAP_AK",
+          "description": "A server-side (服务端) AK made at lbsyun.baidu.com/apiconsole/key in 百度地图开放平台.",
+          "secret": true,
+          "required": true
+        }
+      ],
+      "tools": {
+        "readonly": [
+          "*"
+        ]
+      }
+    },
+    {
+      "id": "yuque",
+      "name": "语雀",
+      "description": "Books, docs, and notes in Yuque, searched and read, and written on request.",
+      "category": "productivity",
+      "author": "语雀",
+      "version": "1",
+      "icon": "book.closed",
+      "homepage": "https://github.com/yuque/yuque-mcp-server",
+      "tags": [
+        "yuque",
+        "docs",
+        "wiki",
+        "notes",
+        "knowledge base",
+        "语雀",
+        "知识库",
+        "文档"
+      ],
+      "servers": {
+        "yuque": {
+          "type": "stdio",
+          "command": "npx",
+          "args": [
+            "-y",
+            "yuque-mcp@1.0.0"
+          ],
+          "env": {
+            "YUQUE_TOKEN": "${YUQUE_TOKEN}",
+            "YUQUE_HOST": "${YUQUE_HOST:-https://www.yuque.com}"
+          }
+        }
+      },
+      "variables": [
+        {
+          "name": "YUQUE_TOKEN",
+          "description": "A token made at yuque.com/settings/tokens.",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "YUQUE_HOST",
+          "description": "Only for a team space or a private deployment: its address, such as https://your-space.yuque.com.",
+          "secret": false,
+          "required": false
+        }
+      ],
+      "tools": {
+        "readonly": [
+          "yuque_get_user",
+          "yuque_search",
+          "yuque_list_books",
+          "yuque_get_book",
+          "yuque_list_docs",
+          "yuque_get_doc",
+          "yuque_get_toc",
+          "yuque_list_notes",
+          "yuque_get_note",
+          "yuque_get_resource"
+        ]
+      }
+    },
+    {
+      "id": "zhipu-web-search",
+      "name": "智谱 MCP",
+      "description": "Web search, web pages read as text, and open-source repository docs, from Zhipu (BigModel).",
+      "category": "research",
+      "author": "智谱 AI",
+      "version": "1",
+      "icon": "magnifyingglass",
+      "homepage": "https://docs.bigmodel.cn/cn/coding-plan/mcp/search-mcp-server",
+      "tags": [
+        "zhipu",
+        "bigmodel",
+        "glm",
+        "search",
+        "web",
+        "reader",
+        "github",
+        "智谱",
+        "联网搜索",
+        "搜索",
+        "网页读取",
+        "开源仓库"
+      ],
+      "servers": {
+        "search": {
+          "type": "http",
+          "url": "https://open.bigmodel.cn/api/mcp/web_search_prime/mcp",
+          "headers": {
+            "Authorization": "Bearer ${ZHIPU_API_KEY}"
+          }
+        },
+        "reader": {
+          "type": "http",
+          "url": "https://open.bigmodel.cn/api/mcp/web_reader/mcp",
+          "headers": {
+            "Authorization": "Bearer ${ZHIPU_API_KEY}"
+          }
+        },
+        "zread": {
+          "type": "http",
+          "url": "https://open.bigmodel.cn/api/mcp/zread/mcp",
+          "headers": {
+            "Authorization": "Bearer ${ZHIPU_API_KEY}"
+          }
+        }
+      },
+      "variables": [
+        {
+          "name": "ZHIPU_API_KEY",
+          "description": "An API key from your 智谱 GLM Coding Plan (bigmodel.cn › 编程套餐 › 新建 API Key). The plan's quota covers all three servers.",
+          "secret": true,
+          "required": true
+        }
+      ],
+      "tools": {
+        "readonly": [
+          "webSearchPrime",
+          "webReader",
+          "search_doc",
+          "get_repo_structure",
+          "read_file"
+        ]
+      }
+    },
+    {
+      "id": "bailian-web-search",
+      "name": "阿里云百炼联网搜索",
+      "description": "Real-time web search from Alibaba Cloud Model Studio (百炼).",
+      "category": "research",
+      "author": "阿里云百炼",
+      "version": "1",
+      "icon": "magnifyingglass",
+      "homepage": "https://help.aliyun.com/zh/model-studio/web-search-mcp",
+      "tags": [
+        "aliyun",
+        "bailian",
+        "dashscope",
+        "search",
+        "web",
+        "百炼",
+        "阿里云",
+        "联网搜索",
+        "搜索"
+      ],
+      "servers": {
+        "bailian-web-search": {
+          "type": "http",
+          "url": "https://dashscope.aliyuncs.com/api/v1/mcps/WebSearch/mcp",
+          "headers": {
+            "Authorization": "Bearer ${DASHSCOPE_API_KEY}"
+          }
+        }
+      },
+      "variables": [
+        {
+          "name": "DASHSCOPE_API_KEY",
+          "description": "A 百炼 API key, after turning on 联网搜索 under MCP 管理 in the 百炼 console. Searches are metered.",
+          "secret": true,
+          "required": true
+        }
+      ],
+      "tools": {
+        "readonly": [
+          "bailian_web_search"
+        ]
+      }
+    },
+    {
+      "id": "dingtalk",
+      "name": "钉钉",
+      "description": "Contacts, calendar, AI tables, docs, to-dos, and work notifications in DingTalk.",
+      "category": "communication",
+      "author": "钉钉",
+      "version": "1",
+      "icon": "bubble.left.and.bubble.right",
+      "homepage": "https://open.dingtalk.com/document/aipass/install-and-use-the-dingtalk-calendar-mcp",
+      "tags": [
+        "dingtalk",
+        "钉钉",
+        "calendar",
+        "contacts",
+        "ai table",
+        "todo",
+        "日程",
+        "通讯录",
+        "AI表格",
+        "待办"
+      ],
+      "servers": {
+        "dingtalk": {
+          "type": "stdio",
+          "command": "npx",
+          "args": [
+            "-y",
+            "dingtalk-mcp@1.1.21"
+          ],
+          "env": {
+            "DINGTALK_Client_ID": "${DINGTALK_Client_ID}",
+            "DINGTALK_Client_Secret": "${DINGTALK_Client_Secret}",
+            "ACTIVE_PROFILES": "${DINGTALK_ACTIVE_PROFILES:-ALL}"
+          }
+        }
+      },
+      "variables": [
+        {
+          "name": "DINGTALK_Client_ID",
+          "description": "The AppKey (Client ID) of an in-house app made in the DingTalk developer console (open-dev.dingtalk.com) under 应用开发 › 企业内部开发; an organization admin makes it or helps.",
+          "secret": false,
+          "required": true
+        },
+        {
+          "name": "DINGTALK_Client_Secret",
+          "description": "That app's AppSecret (Client Secret), on its 凭证与基础信息 page.",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "DINGTALK_ACTIVE_PROFILES",
+          "description": "Which service modules to turn on. ALL, the default, turns on every one; DingTalk advises naming only those you need.",
+          "secret": false,
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "gitee",
+      "name": "Gitee 码云",
+      "description": "Repositories, issues, and pull requests on Gitee.",
+      "category": "code",
+      "author": "Gitee",
+      "version": "1",
+      "icon": "arrow.triangle.branch",
+      "homepage": "https://gitee.com/oschina/mcp-gitee/blob/master/README_CN.md",
+      "tags": [
+        "gitee",
+        "码云",
+        "git",
+        "repository",
+        "issues",
+        "pull requests",
+        "代码托管"
+      ],
+      "servers": {
+        "gitee": {
+          "type": "http",
+          "url": "https://api.gitee.com/mcp",
+          "headers": {
+            "Authorization": "Bearer ${GITEE_ACCESS_TOKEN}"
+          }
+        }
+      },
+      "variables": [
+        {
+          "name": "GITEE_ACCESS_TOKEN",
+          "description": "A personal access token made at gitee.com/profile/personal_access_tokens, with the repo, issues, and pull_requests scopes.",
+          "secret": true,
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "tapd",
+      "name": "腾讯 TAPD",
+      "description": "Projects, requirements, bugs, iterations, and tasks in TAPD.",
+      "category": "productivity",
+      "author": "腾讯 TAPD",
+      "version": "1",
+      "icon": "checklist",
+      "homepage": "https://cloud.tencent.com/developer/mcp/server/11474",
+      "tags": [
+        "tapd",
+        "腾讯",
+        "requirements",
+        "bugs",
+        "iterations",
+        "tasks",
+        "需求",
+        "缺陷",
+        "迭代",
+        "项目管理"
+      ],
+      "servers": {
+        "tapd": {
+          "type": "stdio",
+          "command": "uvx",
+          "args": [
+            "mcp-server-tapd==8.0.83"
+          ],
+          "env": {
+            "TAPD_ACCESS_TOKEN": "${TAPD_ACCESS_TOKEN}",
+            "TAPD_API_BASE_URL": "${TAPD_API_BASE_URL:-https://api.tapd.cn}",
+            "TAPD_BASE_URL": "${TAPD_BASE_URL:-https://www.tapd.cn}"
+          }
+        }
+      },
+      "variables": [
+        {
+          "name": "TAPD_ACCESS_TOKEN",
+          "description": "A personal access token made in TAPD under 我的设置 › 个人访问令牌; it is shown once.",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "TAPD_API_BASE_URL",
+          "description": "Only for a private TAPD deployment: its API address.",
+          "secret": false,
+          "required": false
+        },
+        {
+          "name": "TAPD_BASE_URL",
+          "description": "Only for a private TAPD deployment: its site address.",
+          "secret": false,
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "tencent-maps",
+      "name": "腾讯地图",
+      "description": "Places, addresses, routes, and directions in China, from Tencent Location Service.",
+      "category": "research",
+      "author": "腾讯位置服务",
+      "version": "1",
+      "icon": "map",
+      "homepage": "https://lbs.qq.com/service/MCPServer/MCPServerGuide/userGuide",
+      "tags": [
+        "tencent",
+        "maps",
+        "places",
+        "routes",
+        "geocoding",
+        "directions",
+        "地图",
+        "腾讯地图",
+        "导航",
+        "路线"
+      ],
+      "servers": {
+        "tencent-maps": {
+          "type": "http",
+          "url": "https://mcp.map.qq.com/mcp?key=${TENCENT_MAP_KEY}&format=0"
+        }
+      },
+      "variables": [
+        {
+          "name": "TENCENT_MAP_KEY",
+          "description": "A key made at lbs.qq.com under 控制台 › 应用管理 › 我的应用, with the WebServiceAPI feature turned on.",
+          "secret": true,
+          "required": true
+        }
+      ],
+      "tools": {
+        "readonly": [
+          "*"
+        ]
+      }
+    },
+    {
+      "id": "modao",
+      "name": "墨刀",
+      "description": "Prototypes, pages, and product requirement documents generated by 墨刀 AI.",
+      "category": "design",
+      "author": "墨刀",
+      "version": "1",
+      "icon": "paintpalette",
+      "homepage": "https://modao.cc/feature/ai-mcp",
+      "tags": [
+        "modao",
+        "墨刀",
+        "prototype",
+        "design",
+        "prd",
+        "ui",
+        "原型",
+        "产品文档"
+      ],
+      "servers": {
+        "modao": {
+          "type": "http",
+          "url": "https://modao.cc/agent-py/ai/mcp",
+          "headers": {
+            "modao-token": "${MODAO_TOKEN}"
+          }
+        }
+      },
+      "variables": [
+        {
+          "name": "MODAO_TOKEN",
+          "description": "A token made in 墨刀AI, under the avatar menu › 令牌设置. Generating spends the account's AI quota.",
+          "secret": true,
+          "required": true
+        }
+      ],
+      "tools": {
+        "readonly": [
+          "get_account_status",
+          "get_task_result"
+        ]
+      }
+    },
+    {
+      "id": "qcc",
+      "name": "企查查",
+      "description": "Company registration, shareholders, risks, intellectual property, operations, and executives from 企查查.",
+      "category": "research",
+      "author": "企查查",
+      "version": "1",
+      "icon": "building.columns",
+      "homepage": "https://agent.qcc.com/guide",
+      "tags": [
+        "qcc",
+        "企查查",
+        "company",
+        "business registry",
+        "due diligence",
+        "risk",
+        "shareholders",
+        "工商",
+        "企业信息",
+        "风险",
+        "尽调"
+      ],
+      "servers": {
+        "company": {
+          "type": "http",
+          "url": "https://agent.qcc.com/mcp/company/stream",
+          "headers": {
+            "Authorization": "Bearer ${QCC_API_KEY}"
+          }
+        },
+        "risk": {
+          "type": "http",
+          "url": "https://agent.qcc.com/mcp/risk/stream",
+          "headers": {
+            "Authorization": "Bearer ${QCC_API_KEY}"
+          }
+        },
+        "ipr": {
+          "type": "http",
+          "url": "https://agent.qcc.com/mcp/ipr/stream",
+          "headers": {
+            "Authorization": "Bearer ${QCC_API_KEY}"
+          }
+        },
+        "operation": {
+          "type": "http",
+          "url": "https://agent.qcc.com/mcp/operation/stream",
+          "headers": {
+            "Authorization": "Bearer ${QCC_API_KEY}"
+          }
+        },
+        "executive": {
+          "type": "http",
+          "url": "https://agent.qcc.com/mcp/executive/stream",
+          "headers": {
+            "Authorization": "Bearer ${QCC_API_KEY}"
+          }
+        }
+      },
+      "variables": [
+        {
+          "name": "QCC_API_KEY",
+          "description": "An API key from agent.qcc.com/profile/api-key (sign up there with a phone number). New accounts get free credits; later calls are paid.",
+          "secret": true,
+          "required": true
+        }
+      ],
+      "tools": {
+        "readonly": [
+          "*"
+        ]
+      }
+    },
+    {
+      "id": "tianyancha",
+      "name": "天眼查",
+      "description": "Company registration, equity, relations, scale, and bids from 天眼查's AI data platform.",
+      "category": "research",
+      "author": "天眼查",
+      "version": "1",
+      "icon": "building.columns",
+      "homepage": "https://www.tianyancha.com/ai/guide.md",
+      "tags": [
+        "tianyancha",
+        "天眼查",
+        "company",
+        "business registry",
+        "equity",
+        "due diligence",
+        "工商",
+        "企业信息",
+        "股权",
+        "尽调"
+      ],
+      "servers": {
+        "tianyancha": {
+          "type": "http",
+          "url": "https://mcp.tianyancha.com/mcp",
+          "headers": {
+            "Authorization": "${TIANYANCHA_API_KEY}"
+          }
+        }
+      },
+      "variables": [
+        {
+          "name": "TIANYANCHA_API_KEY",
+          "description": "An API key from 天眼AI (tianyancha.com/ai). Calls are metered, and the key goes in as it is, without Bearer.",
+          "secret": true,
+          "required": true
+        }
+      ],
+      "tools": {
+        "readonly": [
+          "*"
+        ]
+      }
+    },
+    {
+      "id": "tushare",
+      "name": "Tushare",
+      "description": "China A-share, fund, futures, and macro data from Tushare Pro.",
+      "category": "finance",
+      "author": "Tushare",
+      "version": "1",
+      "icon": "chart.bar.xaxis",
+      "homepage": "https://tushare.pro/document/1?doc_id=463",
+      "tags": [
+        "tushare",
+        "stocks",
+        "a-shares",
+        "market data",
+        "finance",
+        "fund",
+        "futures",
+        "股票",
+        "行情",
+        "财务数据"
+      ],
+      "servers": {
+        "tushare": {
+          "type": "http",
+          "url": "https://api.tushare.pro/mcp/token=${TUSHARE_MCP_KEY}"
+        }
+      },
+      "variables": [
+        {
+          "name": "TUSHARE_MCP_KEY",
+          "description": "The key in the config tushare.pro shows under 个人中心 › MCP Server. Many data sets need Tushare points.",
+          "secret": true,
+          "required": true
+        }
+      ],
+      "tools": {
+        "readonly": [
+          "*"
+        ]
+      }
+    },
+    {
+      "id": "didi",
+      "name": "滴滴",
+      "description": "Ride estimates, orders, driver location, and places on DiDi.",
+      "category": "productivity",
+      "author": "滴滴出行",
+      "version": "1",
+      "icon": "map",
+      "homepage": "https://mcp.didichuxing.com/api",
+      "tags": [
+        "didi",
+        "滴滴",
+        "taxi",
+        "ride",
+        "rides",
+        "maps",
+        "打车",
+        "出行"
+      ],
+      "servers": {
+        "didi": {
+          "type": "http",
+          "url": "https://mcp.didichuxing.com/${DIDI_MCP_PATH:-mcp-servers}?key=${DIDI_MCP_KEY}"
+        }
+      },
+      "variables": [
+        {
+          "name": "DIDI_MCP_KEY",
+          "description": "A personal MCP key made at mcp.didichuxing.com, signed in with your DiDi account (a new phone number registers in the DiDi app first).",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "DIDI_MCP_PATH",
+          "description": "Leave empty to order real rides, which charge your account. Set mcp-servers-sandbox to try it with mock data and no orders.",
+          "secret": false,
+          "required": false
+        }
+      ],
+      "tools": {
+        "readonly": [
+          "taxi_estimate",
+          "taxi_query_order",
+          "taxi_get_driver_location",
+          "maps_textsearch",
+          "maps_regeocode",
+          "maps_place_around",
+          "maps_direction_driving",
+          "maps_direction_transit",
+          "maps_direction_walking",
+          "maps_direction_bicycling"
+        ]
+      }
+    },
+    {
+      "id": "minimax",
+      "name": "MiniMax",
+      "description": "Speech, voices, images, and video generated with MiniMax.",
+      "category": "design",
+      "author": "MiniMax",
+      "version": "1",
+      "icon": "waveform",
+      "homepage": "https://github.com/MiniMax-AI/MiniMax-MCP",
+      "tags": [
+        "minimax",
+        "speech",
+        "tts",
+        "voice clone",
+        "image generation",
+        "video generation",
+        "语音",
+        "配音",
+        "生图",
+        "视频生成"
+      ],
+      "servers": {
+        "minimax": {
+          "type": "stdio",
+          "command": "uvx",
+          "args": [
+            "minimax-mcp==0.0.19"
+          ],
+          "env": {
+            "MINIMAX_API_KEY": "${MINIMAX_API_KEY}",
+            "MINIMAX_API_HOST": "${MINIMAX_API_HOST:-https://api.minimaxi.com}"
+          }
+        }
+      },
+      "variables": [
+        {
+          "name": "MINIMAX_API_KEY",
+          "description": "An API key from platform.minimaxi.com under 账户管理 › 接口密钥. Its region must match the host below, and generating spends credits.",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "MINIMAX_API_HOST",
+          "description": "Only for a key from the international site: https://api.minimax.io.",
+          "secret": false,
+          "required": false
+        }
+      ],
+      "tools": {
+        "readonly": [
+          "list_voices",
+          "query_video_generation"
+        ]
+      }
+    },
+    {
+      "id": "zhipu-vision",
+      "name": "智谱视觉理解",
+      "description": "Images, screenshots, diagrams, charts, and video understood by Zhipu's vision models.",
+      "category": "research",
+      "author": "智谱 AI",
+      "version": "1",
+      "icon": "doc.richtext",
+      "homepage": "https://docs.bigmodel.cn/cn/coding-plan/mcp/vision-mcp-server",
+      "tags": [
+        "zhipu",
+        "glm",
+        "vision",
+        "image",
+        "ocr",
+        "screenshot",
+        "智谱",
+        "图像理解",
+        "识图",
+        "截图"
+      ],
+      "servers": {
+        "zhipu-vision": {
+          "type": "stdio",
+          "command": "npx",
+          "args": [
+            "-y",
+            "@z_ai/mcp-server@0.1.5"
+          ],
+          "env": {
+            "Z_AI_API_KEY": "${ZHIPU_API_KEY}",
+            "Z_AI_MODE": "ZHIPU"
+          }
+        }
+      },
+      "variables": [
+        {
+          "name": "ZHIPU_API_KEY",
+          "description": "An API key from your 智谱 GLM Coding Plan (bigmodel.cn › 编程套餐 › 新建 API Key); it spends the plan's quota.",
+          "secret": true,
+          "required": true
+        }
+      ],
+      "tools": {
+        "readonly": [
+          "image_analysis",
+          "extract_text_from_screenshot",
+          "ui_to_artifact",
+          "diagnose_error_screenshot",
+          "understand_technical_diagram",
+          "analyze_data_visualization",
+          "ui_diff_check",
+          "video_analysis"
+        ]
+      }
+    },
+    {
+      "id": "baidu-ai-search",
+      "name": "百度 AI 搜索",
+      "description": "Web search with an AI answer and sources, from Baidu Qianfan.",
+      "category": "research",
+      "author": "百度智能云",
+      "version": "1",
+      "icon": "magnifyingglass",
+      "homepage": "https://qianfan.cloud.baidu.com/",
+      "tags": [
+        "baidu",
+        "qianfan",
+        "search",
+        "web",
+        "ai search",
+        "百度",
+        "千帆",
+        "搜索",
+        "联网搜索"
+      ],
+      "servers": {
+        "baidu-ai-search": {
+          "type": "http",
+          "url": "https://qianfan.baidubce.com/v2/ai_search/mcp",
+          "headers": {
+            "Authorization": "Bearer ${BAIDU_QIANFAN_API_KEY}"
+          }
+        }
+      },
+      "variables": [
+        {
+          "name": "BAIDU_QIANFAN_API_KEY",
+          "description": "A 千帆 API key from console.bce.baidu.com/iam (API Key page), on a real-name verified 百度智能云 account. Searches are metered.",
+          "secret": true,
+          "required": true
+        }
+      ],
+      "tools": {
+        "readonly": [
+          "AIsearch"
+        ]
+      }
+    },
+    {
+      "id": "cloudbase",
+      "name": "腾讯云开发 CloudBase",
+      "description": "CloudBase environments, cloud functions, databases, storage, and hosting.",
+      "category": "code",
+      "author": "腾讯云",
+      "version": "1",
+      "icon": "cloud",
+      "homepage": "https://docs.cloudbase.net/en/ai/cloudbase-ai-toolkit/getting-started",
+      "tags": [
+        "cloudbase",
+        "tencent cloud",
+        "serverless",
+        "cloud functions",
+        "database",
+        "hosting",
+        "云开发",
+        "腾讯云",
+        "小程序"
+      ],
+      "servers": {
+        "cloudbase": {
+          "type": "stdio",
+          "command": "npx",
+          "args": [
+            "-y",
+            "@cloudbase/cloudbase-mcp@2.35.2"
+          ]
+        }
+      }
     }
   ],
   "bots": [
