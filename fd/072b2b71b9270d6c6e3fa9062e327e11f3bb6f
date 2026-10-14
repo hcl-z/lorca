@@ -1,0 +1,112 @@
+desktop/outputs_test.go
+  s_5dbea2d5f069be::t_5ae6df48734e78 520-521
+  s_5dbea2d5f069be::t_7b1ff5785b70de 353-363,366-374
+  s_5dbea2d5f069be::t_3a10b2c1d7d31d 424-438
+  s_5dbea2d5f069be::t_7aeed48359a0fe 279-352,375-394,403-423,439-444
+  s_5dbea2d5f069be::t_0ede42598b07b5 395-402
+  s_5dbea2d5f069be::t_4568f8d610549f 465
+  s_5dbea2d5f069be::t_e5feef92d79267 528
+  s_5dbea2d5f069be::t_4c37d00a306d60 364-365
+docs/architecture/desktop-app.md
+  s_5dbea2d5f069be::t_faedad6538baf7 9
+desktop/viewer.go
+  s_5dbea2d5f069be::t_e71369422abf81 1-22,29-61,67-82,91-133,135-147,149-171,173,175-179,181-288,290-292,294-315,319,328-375
+  s_5dbea2d5f069be::t_11f45192356022 320
+  s_5dbea2d5f069be::t_869121b6e1695e 172,174
+  s_5dbea2d5f069be::t_d9631dce5fdefa 23-27
+  s_5dbea2d5f069be::t_ddafa0eadc0ad7 134
+  s_5dbea2d5f069be::t_68d39d39f4a7b7 83-90
+  s_5dbea2d5f069be::t_cdb398de7ade93 65-66
+  s_5dbea2d5f069be::t_5c9b8d01b3d3d4 289,293
+  s_5dbea2d5f069be::t_9085b922cd7604 316-318,321-327
+  s_5dbea2d5f069be::t_fa38f55e4f4d0b 148
+  s_5dbea2d5f069be::t_67d953f697e6ba 180
+  s_5dbea2d5f069be::t_097ed3390e01d2 62-64
+  s_5dbea2d5f069be::t_adb71f6d6b9809 28
+desktop/lightbox.go
+  s_5dbea2d5f069be::t_eb929b9d07af68 10
+  s_5dbea2d5f069be::t_a5590d3d6d6144 1-3,6,11-12,14-16,30-38,42-45,51,53-54,69,135-136,166
+  s_5dbea2d5f069be::t_37990113fe2ef0 5,7,13,55-56,58,66-67,70-72,76,79-134,137-165,167-315
+  s_5dbea2d5f069be::t_ceb4cebfae84fc 4,8-9,17-29,39-41,46-50,52,57,59-65,68,73-75,77-78
+desktop/model/store.go
+  s_5dbea2d5f069be::t_fd7c8662bf2813 3312
+desktop/outputs.go
+  s_5dbea2d5f069be::t_2378cc35891319 253
+  s_5dbea2d5f069be::t_637d661844631d 233,236
+  s_5dbea2d5f069be::t_b5f77c88c4d84c 185,191-192
+  s_5dbea2d5f069be::t_408c35b292b257 15-17
+  s_5dbea2d5f069be::t_38e9f7cf94515f 244
+  s_5dbea2d5f069be::t_fd536c5d621daa 230-232,234-235,237
+desktop/markdown_view.go
+  s_5dbea2d5f069be::t_b275ea2bee6606 255-265
+  s_5dbea2d5f069be::t_5920fb8124a347 35-37
+  s_5dbea2d5f069be::t_08fc4cd210a8fc 105-107
+  s_5dbea2d5f069be::t_10a39c95e045bd 337-339
+  s_5dbea2d5f069be::t_ece4a34b50fd61 237-241
+  s_5dbea2d5f069be::t_b60793864d8e7a 232
+  s_5dbea2d5f069be::t_ea6f527f41e660 286-288
+  s_5dbea2d5f069be::t_ad561a6cf20445 79-94,104
+  s_5dbea2d5f069be::t_12d0278dc8dc77 217-221
+  s_5dbea2d5f069be::t_d2d667cac58fc3 198-209
+  s_5dbea2d5f069be::t_ae911a0552e74e 65-67
+desktop/model/mock.go
+  s_5dbea2d5f069be::t_057d6ef349447b 504
+  s_5dbea2d5f069be::t_a24626c03f37ac 512-515
+  s_5dbea2d5f069be::t_7eb9986b099baf 9
+docs/architecture/outputs.md
+  s_5dbea2d5f069be::t_c78fd4007b008d 50
+desktop/model/outputs.go
+  s_5dbea2d5f069be::t_62202a08e6efe0 148-205
+desktop/model/outputs_test.go
+  s_5dbea2d5f069be::t_dc0f54f2f96957 24-49
+  s_5dbea2d5f069be::t_8fa7c45f561323 50-53,56-81
+  s_5dbea2d5f069be::t_cba090163d271f 54-55
+  s_5dbea2d5f069be::t_1965e49b12cd3f 4,7-8
+desktop/chat.go
+  s_5dbea2d5f069be::t_7f902078d7fc81 359-360
+  s_5dbea2d5f069be::t_8780f9d6504a06 590,593-594
+  s_5dbea2d5f069be::t_ce4f2ee1758f6c 575-576
+  s_5dbea2d5f069be::t_f77649e2280ab9 807-808
+  s_5dbea2d5f069be::t_09ebb508a7fc56 154-155,158-159
+  s_5dbea2d5f069be::t_d78380f71cf609 609-611
+  s_5dbea2d5f069be::t_d7cc76a43a3094 546-548
+  s_5dbea2d5f069be::t_bfc0a4f271d784 581-584
+  s_5dbea2d5f069be::t_c2618f8a153492 574,577-579
+  s_5dbea2d5f069be::t_b0d7ef26651f2c 633,641-644,646
+  s_5dbea2d5f069be::t_838d57c35be23b 886-890
+  s_5dbea2d5f069be::t_5b2fd695115159 544-545
+  s_5dbea2d5f069be::t_b441db13d97d6a 791-796,801-802
+  s_5dbea2d5f069be::t_4ccc7449dbbc1c 679-694,696-707,709-718,721-737,740-746
+  s_5dbea2d5f069be::t_ae7aec672b4b5a 121-126
+  s_5dbea2d5f069be::t_a6e9870bdf2fc5 607-608,612-615
+  s_5dbea2d5f069be::t_ae9292283ba185 628-632
+  s_5dbea2d5f069be::t_c4880cd677700b 543
+desktop/l10n/zh.go
+  s_5dbea2d5f069be::t_40f0bd4430510b 998
+  s_5dbea2d5f069be::t_3e44888c6f4913 1022
+  s_5dbea2d5f069be::t_9642f9c4864b7c 513
+  s_5dbea2d5f069be::t_1e355f3f36d109 165
+desktop/model/mockfiles.go
+  s_5dbea2d5f069be::t_1e7bad00d8dc3b 206-241
+  s_5dbea2d5f069be::t_9ec10704be9e17 88
+  s_5dbea2d5f069be::t_0868be1d7d368c 27,29-30
+  s_5dbea2d5f069be::t_45e5a5aecb5b76 1-26,28,31-84,89,103-119,130-205,242-276
+  s_5dbea2d5f069be::t_dd26dbd1ff92d4 120-129
+  s_5dbea2d5f069be::t_5081957b167410 85-87,90-102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "fd072b2b71b9270d6c6e3fa9062e327e11f3bb6f",
+  "prompts": {},
+  "sessions": {
+    "s_5dbea2d5f069be": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_ff870c9uqllq",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
