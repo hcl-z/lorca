@@ -216,6 +216,25 @@ async fn offline_admission_persists_contract_and_encrypted_job_atomically() {
     assert!(
         reason.contains(&request.expected_output) && reason.contains("Include a failing input")
     );
+    // The requesting chat has its own marker for the message it sent, whatever became of the tool call.
+    let sent = f
+        .source
+        .message(&f.source_chat, &sent_marker_id(&request))
+        .unwrap();
+    assert!(
+        sent.author
+            == Author::Bot {
+                bot_id: request.from_bot_id.clone()
+            }
+    );
+    assert!(matches!(
+        sent.body,
+        Body::Handoff { ref from, ref to, ref reason }
+            if from == &request.from_bot_id && to == &request.target_bot_id && reason == &request_text(&request)
+    ));
+    let count = f.source.store.all(&f.source_chat).unwrap().len();
+    outgoing(&f.source, &request);
+    assert_eq!(f.source.store.all(&f.source_chat).unwrap().len(), count);
     let restarted = App::load(Config {
         home: f.homes[0].clone(),
         port: 0,

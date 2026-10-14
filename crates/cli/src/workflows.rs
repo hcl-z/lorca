@@ -1506,7 +1506,7 @@ mod tests {
         let tools = request["tools"].as_array().unwrap();
         assert!(!tools.iter().any(|t| matches!(
             t["function"]["name"].as_str(),
-            Some("routines" | "create_bot" | "edit_bot" | "install_plugin" | "connect_plugin" | "message_bot" | "propose_playbook")
+            Some("routines" | "create_bot" | "edit_bot" | "install_plugin" | "connect_plugin" | "message_bot" | "create_group" | "edit_group" | "propose_playbook")
         )));
         assert!(tools.iter().any(|t| t["function"]["name"] == "read_playbook"));
         handle(

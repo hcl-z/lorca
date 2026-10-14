@@ -78,6 +78,47 @@ func TestTranscriptScrollsSteadilyToEnd(t *testing.T) {
 	}
 }
 
+// A group member's @Name of another member stays in its message, in words of the member's color.
+func TestMentionOfAMemberStaysInTheMessage(t *testing.T) {
+	m := demoWindow(t)
+	m.selectChat("chat-relay")
+	tt := ui.NewTester(m.frame(m.view), 1180, 760)
+	scout := store.Bot("bot-scout").Name
+	store.Append(&model.Message{ID: "msg-hand-out", Author: model.BotAuthor("bot-nova"),
+		Body:      model.Body{Kind: model.BodyText, Text: "Next, @" + scout + " checks the sources."},
+		State:     model.MessageState{Kind: model.StateComplete},
+		CreatedAt: time.Now()}, "chat-relay")
+	settle(tt)
+	found := false
+	for _, text := range tt.Texts() {
+		if strings.Contains(text, "Next, @"+scout+" checks the sources.") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no message naming @%s in %q", scout, tt.Texts())
+	}
+}
+
+// The request a bot sent reads in its own chat as the "Messaged" marker, whatever became of the
+// tool call that made it.
+func TestSentRequestReadsAsMessaged(t *testing.T) {
+	m := demoWindow(t)
+	m.selectChat("chat-nova")
+	tt := ui.NewTester(m.frame(m.view), 1180, 760)
+	store.Append(&model.Message{ID: "sent-msg-1", Author: model.BotAuthor("bot-nova"),
+		Body:      model.Body{Kind: model.BodyHandoff, Handoff: model.Handoff{From: "bot-nova", To: "bot-quill", Reason: "Review the diff"}},
+		State:     model.MessageState{Kind: model.StateComplete},
+		CreatedAt: time.Now()}, "chat-nova")
+	settle(tt)
+	if _, ok := tt.Find(L("Messaged") + " Writer: Review the diff"); !ok {
+		t.Fatalf("no marker for the sent request in %q", tt.Texts())
+	}
+	if tt.HasText(L("%@ handed off to %@", "Project Manager", "Writer")) {
+		t.Fatal("a request sent to a bot outside the chat reads as a handoff between members")
+	}
+}
+
 // A handoff's report comes back to the requesting bot's chat as the "Message from" marker, in its
 // DM and in a group the recipient is not in, and a click shows the whole report.
 func TestHandoffReportReadsAsMessageFrom(t *testing.T) {

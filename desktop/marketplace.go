@@ -814,6 +814,57 @@ func marketStatusLine(c *ui.Context, text string) ui.Element {
 	return ui.Text(c, text).Padding(0, 12).FontSize(13).LineHeight(1.4).TextColor(colors(c).Label2)
 }
 
+// storeView is how the marketplace lists what it has: by category, or all of it at once. The last
+// choice stands until the app quits.
+var storeView int
+
+const (
+	storeViewCategories = iota
+	storeViewAll
+)
+
+// storeViewSwitch is the control that picks the view: two symbols on a small track, a grid for the
+// categories and a list for everything.
+func storeViewSwitch(c *ui.Context) {
+	p := colors(c)
+	label := L("View")
+	tabs := []iconTab{{Symbol: "circle.grid.2x2", Title: L("Categories")}, {Symbol: "list.bullet", Title: L("All")}}
+	parts := ui.SegmentedBase(c, &storeView, len(tabs))
+	parts.Track.Padding(2).Gap(2).Radius(radiusMD).Background(p.Chip).Label(label)
+	parts.Track.Children(func() {
+		for i, tab := range tabs {
+			seg := parts.Segment(i).Width(30).Height(22).Radius(radiusSM).Justify(ui.Center).Shrink(0).TextColor(p.Label2).Label(tab.Title).Tooltip(tab.Title)
+			on := i == storeView
+			switch {
+			case on:
+				seg.TextColor(p.Label)
+			case seg.Hovered():
+				seg.TextColor(p.Label).Background(p.Hover)
+			}
+			seg.Transition(controlFade)
+			seg.Children(func() {
+				if on {
+					selectionThumb(c, thumbMatch{label}, p.ButtonBG, radiusSM)
+				}
+				segmentContent(c).Children(func() { symbol(c, tab.Symbol, 13, 1.9) })
+			})
+		}
+	})
+}
+
+// marketEveryItem is every plugin and bot: the featured plugins and the others, then the featured
+// bots and the others.
+func marketEveryItem(catalog *model.Marketplace) []marketItem {
+	featuredPlugin := func(p *model.MarketplacePlugin) bool { return p.IsFeatured }
+	otherPlugin := func(p *model.MarketplacePlugin) bool { return !p.IsFeatured }
+	featuredBot := func(b *model.BotTemplate) bool { return b.IsFeatured }
+	otherBot := func(b *model.BotTemplate) bool { return !b.IsFeatured }
+	items := marketPluginItems(catalog.Plugins, featuredPlugin)
+	items = append(items, marketPluginItems(catalog.Plugins, otherPlugin)...)
+	items = append(items, marketBotItems(catalog.Bots, featuredBot)...)
+	return append(items, marketBotItems(catalog.Bots, otherBot)...)
+}
+
 // marketKindFilter is All, Plugins, and Bots, when both kinds are there.
 func marketKindFilter(c *ui.Context, kind *int) {
 	segmented(c, kind, L("Filter results"), L("All"), L("Plugins"), L("Bots"))

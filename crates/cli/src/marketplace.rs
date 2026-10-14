@@ -420,7 +420,8 @@ mod tests {
             }
         }
         assert!(index.plugins.iter().any(|p| p.featured) && index.bots.iter().any(|b| b.featured));
-        assert_eq!(search_plugins(&index.plugins, "PULL requests").iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["github"]);
+        // GitHub and Gitee both have pull requests; no other plugin does.
+        assert_eq!(search_plugins(&index.plugins, "PULL requests").iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["github", "gitee"]);
         assert_eq!(search_plugins(&index.plugins, "").len(), index.plugins.len());
         assert!(search_plugins(&index.plugins, "nothing-like-this").is_empty());
         assert!(search_bots(&index.bots, "pull requests").iter().any(|b| b.id == "pr-reviewer"));

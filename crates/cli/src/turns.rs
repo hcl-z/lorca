@@ -210,6 +210,8 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         Arc::new(FinishSetup { app: app.clone(), bot: bot.clone() }),
         Arc::new(RecommendPlugins { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone() }),
         Arc::new(EditBot { app: app.clone(), bot: bot.clone() }),
+        Arc::new(crate::groups::CreateGroup { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone(), unattended }),
+        Arc::new(crate::groups::EditGroup { app: app.clone(), bot: bot.clone(), unattended }),
         Arc::new(Routines { app: app.clone(), bot: bot.clone() }),
         Arc::new(crate::channels::ChannelsTool { app: app.clone(), bot: bot.clone(), user_started: matches!(job.kind.as_str(), "turn" | "room_turn") }),
         Arc::new(crate::feedback::FeedbackTool { app: app.clone(), bot_id: bot.id.clone() }),
@@ -1945,7 +1947,9 @@ fn team_prompt(app: &App, bot: &Bot, chat: &Chat) -> String {
         "When the user asks for a bot, call create_bot at once with what they said as brief, and ask them nothing about it: \
          the new bot works out its job, name, and plugins with them in its own chat. When the right teammate for a request \
          does not exist yet, offer to create one. Keep every bot to one clear job. When the user wants a bot, including you (your id is {}), to behave differently, change its \
-         profile with edit_bot.\n",
+         profile with edit_bot. When the user asks for a group chat, or a job needs several teammates working together where \
+         the user can watch, make one with create_group (a title, what it is for, and the teammates' ids) and tell the user \
+         where it is; change a group you are in with edit_group. One piece of work for one teammate stays a message_bot.\n",
         bot.id
     ));
     prompt
@@ -2448,7 +2452,7 @@ impl Tool for MessageBot {
         let name = name_of(&self.app, &target);
         let result = json!({ "handoff_id": value["handoff_id"], "job_id": value["job_id"], "target_runner_id": value["target_runner_id"], "delivery": value["delivery"] });
         Ok(ToolResult::text(result.to_string())
-            .with_details(json!({ "summary": format!("Messaged {name}"), "bot_id": target, "message": message })))
+            .with_details(json!({ "summary": format!("Handed off to {name}"), "bot_id": target, "message": message })))
     }
 }
 
@@ -5670,6 +5674,61 @@ mod tests {
         let done = app.bot(&made.id).unwrap();
         assert!(!done.setting_up && done.name == "日历" && done.description == "管理用户的日历");
         assert!(finish.execute("call", json!({ "name": "别名", "description": "x" }), CancellationToken::new(), no_updates).await.is_err());
+    }
+
+    /// A bot makes a group by the rules of the + button, is in it as its owner, and the user's chat
+    /// says so; a change that breaks a rule leaves the group as it was.
+    #[tokio::test]
+    async fn create_group_and_edit_group_keep_the_rules_of_a_group() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        crate::identity::create(app, Some("Runner".into())).unwrap();
+        let chef = bot("b1", "Chef");
+        {
+            let mut state = app.state.lock().unwrap();
+            state.bots = vec![chef.clone(), bot("b2", "Scout"), bot("b3", "Writer"), Bot { setting_up: true, ..bot("b4", "Newbie") }];
+            state.chats.push(chat("chat", "dm", None, &["b1"]));
+        }
+        let no_updates: ToolUpdateFn = Arc::new(|_| {});
+        let create = |unattended| crate::groups::CreateGroup { app: app.clone(), chat_id: "chat".into(), bot: chef.clone(), unattended };
+
+        let error = create(false).execute("call", json!({ "title": "Launch", "bot_ids": ["b2", "b4"] }), CancellationToken::new(), no_updates.clone()).await.unwrap_err();
+        assert!(error.0.contains("still setting up"), "{}", error.0);
+        let error = create(false).execute("call", json!({ "title": "Launch", "bot_ids": [] }), CancellationToken::new(), no_updates.clone()).await.unwrap_err();
+        assert!(error.0.contains("at least one teammate"), "{}", error.0);
+        assert!(create(true).execute("call", json!({ "title": "Launch", "bot_ids": ["b2"] }), CancellationToken::new(), no_updates.clone()).await.is_err());
+        assert!(!app.state.lock().unwrap().chats.iter().any(|c| c.meta.is_group()));
+
+        create(false)
+            .execute("call", json!({ "title": " Launch ", "description": "Ship v2", "bot_ids": ["b2", "b3", "b2"] }), CancellationToken::new(), no_updates.clone())
+            .await
+            .unwrap();
+        let group = app.state.lock().unwrap().chats.iter().find(|c| c.meta.is_group()).cloned().unwrap();
+        assert_eq!(group.meta.bot_ids, ["b1", "b2", "b3"]);
+        assert_eq!((group.meta.title.as_deref(), group.meta.owner(), group.meta.purpose()), (Some("Launch"), Some("b1"), Some("Ship v2")));
+        let said: Vec<String> = app.store.all("chat").unwrap().into_iter().filter_map(|m| if let Body::Notice { text, .. } = m.body { Some(text) } else { None }).collect();
+        assert_eq!(said, ["Chef created the group \"Launch\" with Scout, Writer."]);
+
+        let edit = crate::groups::EditGroup { app: app.clone(), bot: chef.clone(), unattended: false };
+        let id = group.meta.id.clone();
+        for (args, wanted) in [
+            (json!({ "chat_id": id, "remove_bot_ids": ["b1"] }), "cannot take yourself"),
+            (json!({ "chat_id": id, "add_bot_ids": ["b4"] }), "still setting up"),
+            (json!({ "chat_id": id, "owner_bot_id": "b4" }), "must be a member"),
+            (json!({ "chat_id": id, "title": "Renamed", "remove_bot_ids": ["b4"] }), "is not in this group"),
+        ] {
+            let error = edit.execute("call", args, CancellationToken::new(), no_updates.clone()).await.unwrap_err();
+            assert!(error.0.contains(wanted), "{}", error.0);
+        }
+        let same = app.chat(&id).unwrap().meta;
+        assert_eq!((same.title.as_deref(), same.bot_ids.len()), (Some("Launch"), 3));
+
+        edit.execute("call", json!({ "chat_id": "launch", "title": "Launch 2", "remove_bot_ids": ["b3"], "owner_bot_id": "b2", "description": "" }), CancellationToken::new(), no_updates)
+            .await
+            .unwrap();
+        let changed = app.chat(&id).unwrap().meta;
+        assert_eq!((changed.title.as_deref(), changed.owner(), changed.purpose()), (Some("Launch 2"), Some("b2"), None));
+        assert_eq!(changed.bot_ids, ["b1", "b2"]);
     }
 
     async fn settle_jobs(app: &App) {

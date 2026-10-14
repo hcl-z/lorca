@@ -50,18 +50,23 @@ func pickerBotRow(c *ui.Context, k *card, bot *model.Bot, selected, enabled bool
 	return clicked
 }
 
-// presentNewGroupChat picks the bots of a new group chat and its name ("" for none).
-func (w *appWindow) presentNewGroupChat(onCreate func(botIDs []string, title string)) {
+// presentNewGroupChat picks the bots of a new group chat, the first of which owns the work, its
+// name, and what it is for ("" for none).
+func (w *appWindow) presentNewGroupChat(onCreate func(botIDs []string, title, description string)) {
 	bots := slices.Clone(store.Bots)
 	var selected []string
 	if len(bots) > 0 {
 		selected = []string{bots[0].ID}
 	}
-	name := ""
+	name, description := "", ""
 	w.present(func(c *ui.Context, s *sheet) {
+		subtitle := L("Pick up to six bots to talk with together. The first one you pick owns the work.")
+		if len(selected) >= model.MaxGroupBots {
+			subtitle = L("A group chat holds up to six bots.")
+		}
 		result := sheetFrame(c, sheetOptions{
 			Title:           L("New Group Chat"),
-			Subtitle:        L("Pick up to six bots to talk with together."),
+			Subtitle:        subtitle,
 			Width:           440,
 			Confirm:         L("Create"),
 			ConfirmDisabled: len(selected) == 0,
@@ -85,6 +90,7 @@ func (w *appWindow) presentNewGroupChat(onCreate func(botIDs []string, title str
 				beep()
 			}
 			textField(c, &name, fieldOptions{Placeholder: L("Group name (optional)"), Label: L("Group name (optional)")})
+			textField(c, &description, fieldOptions{Placeholder: L("What it is for, which bots read (optional)"), Label: L("What it is for, which bots read (optional)")})
 		})
 		switch {
 		case result.Confirmed:
@@ -92,7 +98,7 @@ func (w *appWindow) presentNewGroupChat(onCreate func(botIDs []string, title str
 				return
 			}
 			if onCreate != nil {
-				onCreate(selected, strings.TrimSpace(name))
+				onCreate(selected, strings.TrimSpace(name), strings.TrimSpace(description))
 			}
 			s.dismiss()
 		case result.Cancelled:

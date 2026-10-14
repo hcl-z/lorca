@@ -40,7 +40,8 @@ test("a reply that left a draft, an output, or work with another bot stays", () 
   const draft: Message = { ...reply("msg-draft"), body: { kind: "draft", review_id: "r", version: 1, state: "pending", plugin_id: "gmail", account: "Work", draft: { kind: "email", body: "Hi" } } as any };
   const output: Message = { ...reply("msg-output"), output: { id: "o", name: "a.txt", mime: "text/plain", bot_id: "bot", version: 1 } };
   const handed: Message = { ...reply("msg-handed"), body: { kind: "tool", name: "message_bot", summary: "Messaged Paddock", detail: "", is_running: false, target_bot_id: "other" } };
-  for (const later of [draft, output, handed]) expect(rerunnable(chat([asked(), later, reply()]), false)).toBeNull();
+  const sent: Message = { ...reply("sent-msg-1"), body: { kind: "handoff", from: "bot", to: "other", reason: "Look into it" } };
+  for (const later of [draft, output, handed, sent]) expect(rerunnable(chat([asked(), later, reply()]), false)).toBeNull();
 });
 
 test("an edit sends new words only when they changed", () => {

@@ -407,6 +407,7 @@ var zh = map[string]string{
 	"Create Task":                                 "创建任务",
 	"Created":                                     "已创建",
 	"Creating a bot":                              "正在创建智能体",
+	"Creating a group":                            "正在创建群聊",
 	"Credential":                                  "凭证",
 	"credential connect disconnect sign in model": "凭证 接入 断开 登录 模型 API 密钥 credential connect disconnect sign in model",
 	"Credentials":                                 "凭证",
@@ -807,7 +808,7 @@ var zh = map[string]string{
 	"Pick a symbol and a color, or use an image of your own. Paired Devices see the same look.": "选取一个符号和一种颜色，或使用你自己的图像。已配对的设备会看到相同的外观。",
 	"Pick the corrections it should cover. You review the draft next.":                          "选出它应涵盖的纠正。接下来由你审阅草稿。",
 	"Pick the messages that show how it's done. You review the draft next.":                     "选出展示做法的消息。接下来由你审阅草稿。",
-	"Pick up to six bots to talk with together.":                                                "最多选取六个智能体一起聊天。",
+	"Pick up to six bots to talk with together. The first one you pick owns the work.":          "最多选取六个智能体一起聊天。第一个选中的负责统筹工作。",
 	"Pin":                              "置顶",
 	"Pin Chat":                         "置顶聊天",
 	"Pink":                             "粉色",
@@ -1174,6 +1175,7 @@ var zh = map[string]string{
 	"update upgrade release":       "更新 升级 版本 发布 update upgrade release",
 	"Updates":                      "更新",
 	"Updating a bot":               "正在更新智能体",
+	"Updating a group":             "正在更新群聊",
 	"Urgent":                       "紧急",
 	"Urgent Items":                 "紧急事项",
 	"URL":                          "URL",
@@ -1506,6 +1508,7 @@ var zh = map[string]string{
 	"Cancel editing (esc)":                 "取消编辑 (esc)",
 	"Edit your message…":                   "编辑你的消息…",
 	"This reply can no longer run again.":  "这条回复已无法重新生成。",
+	"Categories":                           "分类",
 
 	// The Skill Store.
 	"Skill Store":      "技能商店",

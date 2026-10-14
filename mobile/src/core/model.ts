@@ -704,6 +704,26 @@ export function isSentMessage(body: Body): body is Extract<Body, { kind: "tool" 
   return body.kind === "tool" && body.name === "message_bot" && !body.is_running && body.summary.startsWith("Messaged ");
 }
 
+/// The other members of a group that a bot's message addresses with @Name, in the order it names
+/// them: how a group's owner hands each member its part. A name two bots share is not counted,
+/// since the text does not say which one.
+export function assignedTo(message: Message, memberIds: string[], bots: Map<string, Bot>): Bot[] {
+  if (message.author.kind !== "bot" || message.body.kind !== "text" || message.state.kind !== "complete") return [];
+  const { text } = message.body;
+  if (!text.includes("@")) return [];
+  const author = message.author.bot_id;
+  const named: { bot: Bot; at: number }[] = [];
+  for (const id of memberIds) {
+    const bot = bots.get(id);
+    if (!bot || id === author) continue;
+    const name = bot.name.toLowerCase();
+    if ([...bots.values()].filter((other) => other.name.toLowerCase() === name).length > 1) continue;
+    const found = new RegExp(`(^|[^\\p{L}\\p{N}])@${bot.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}_])`, "iu").exec(text);
+    if (found) named.push({ bot, at: found.index + found[1].length });
+  }
+  return named.sort((a, b) => a.at - b.at).map((n) => n.bot);
+}
+
 export interface ChatMeta {
   id: string;
   /// `dm` or `group`.

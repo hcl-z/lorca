@@ -134,6 +134,7 @@ pub fn rerun_user_message(app: &Arc<App>, chat_id: &str, message_id: &str, text:
         let keeps = match &later.body {
             Body::Draft { .. } => Some("a draft"),
             Body::Tool { target_bot_id: Some(_), .. } => Some("work handed to another bot"),
+            Body::Handoff { .. } if later.id.starts_with(crate::handoffs::SENT_MARKER_PREFIX) => Some("work handed to another bot"),
             _ if later.output.is_some() => Some("a published output"),
             _ => None,
         };
