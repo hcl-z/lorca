@@ -1,0 +1,27 @@
+docs/architecture/plugins.md
+  s_d5491d72769557::t_ca19bc987c849d 32
+crates/cli/src/marketplace.rs
+  s_d5491d72769557::t_ca19bc987c849d 423-424
+crates/cli/marketplace/index.json
+  s_d5491d72769557::t_ca19bc987c849d 3,1171-2994
+desktop/pluginmarks.go
+  s_d5491d72769557::t_ca19bc987c849d 7-78
+desktop/pluginmarks_test.go
+  s_d5491d72769557::t_ca19bc987c849d 1-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "b5a449c18c19b6cdf38ec4c0a9329d4117d2c168",
+  "prompts": {},
+  "sessions": {
+    "s_d5491d72769557": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_kq0qnakr61wx",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
