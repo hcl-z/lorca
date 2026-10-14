@@ -1,0 +1,331 @@
+mobile/src/core/engine.ts
+  s_2dc65cea10de1d::t_2b6702f95bb72a 489-496,498,503-504,506-507,509-511,513-514,516,521,523,526-527,529-531,536-537,539-552
+  s_2dc65cea10de1d::t_1035b1ffe46d56 15
+  s_2dc65cea10de1d::t_d6a6e6fabd5a41 24
+docs/architecture/templates.md
+  s_2dc65cea10de1d::t_13bab5b9d1d3c4 10,15,19,35
+crates/cli/src/templates/skill_folders.rs
+  s_2dc65cea10de1d::t_291cdf861b95a7 1-3,5,7,9-11,15-34,37-46,49-50
+desktop/model/skills.go
+  s_2dc65cea10de1d::t_18ff5e6364f4bd 145,148-152,158,161-163
+  s_2dc65cea10de1d::t_bdccec7fa13d5d 146-147,153-157,159-160
+  s_2dc65cea10de1d::t_188df95d001d9d 23,29
+  s_2dc65cea10de1d::t_9c36ea95ad6fec 1-22,24-28,30-68,70-144
+  s_2dc65cea10de1d::t_0553f3654f6a50 69
+crates/cli/skills/write-skill/SKILL.md
+  s_2dc65cea10de1d::t_4afb28ff068327 1-42
+desktop/model/mock.go
+  s_2dc65cea10de1d::t_dc8adb76da1eb1 609
+  s_2dc65cea10de1d::t_c2529cd145e490 572-573
+  s_2dc65cea10de1d::t_e593a145973e36 613,617-620
+  s_2dc65cea10de1d::t_196095b9f3d267 605
+  s_2dc65cea10de1d::t_c7e27560eedd63 598
+desktop/commands.go
+  s_2dc65cea10de1d::t_622c428f089178 139
+crates/cli/src/turns.rs
+  s_2dc65cea10de1d::t_00b75df8f67ca4 191
+  s_2dc65cea10de1d::t_83e4e7f1c2a34f 499-503
+  s_2dc65cea10de1d::t_e76ec66e620e07 782
+  s_2dc65cea10de1d::t_a46a3eb7989b03 1840
+mobile/src/core/store.ts
+  s_2dc65cea10de1d::t_04abe0f3cedaea 280
+  s_2dc65cea10de1d::t_730f8cc068dcdc 239
+  s_2dc65cea10de1d::t_e67fc52acfb879 635,639,643-656
+crates/cli/src/local_review.rs
+  s_2dc65cea10de1d::t_95e0c7d024f521 468-473
+  s_2dc65cea10de1d::t_6161e63984d27d 1408-1424
+crates/cli/src/feedback/tests.rs
+  s_2dc65cea10de1d::t_1183c10eaf619b 402-405,409
+  s_2dc65cea10de1d::t_f098630919b458 389,392-394
+  s_2dc65cea10de1d::t_6ee31ff7f62710 418
+  s_2dc65cea10de1d::t_1b184babd97edd 414
+docs/architecture/bots.md
+  s_2dc65cea10de1d::t_13bab5b9d1d3c4 66
+desktop/sheet_playbooks.go
+  s_2dc65cea10de1d::t_470796d695bb35 19-22,35,37-38,54,69,84
+  s_2dc65cea10de1d::t_87deffaa51a957 32-34,36,39-41,47-49,59-61,64
+  s_2dc65cea10de1d::t_fa68220343be6e 161,163-164,166-167
+  s_2dc65cea10de1d::t_5cecd92beab646 227
+  s_2dc65cea10de1d::t_982dfc9c70f6d8 28-31
+  s_2dc65cea10de1d::t_5f9fc41f257712 143
+  s_2dc65cea10de1d::t_edaa08e26a0518 201-202
+  s_2dc65cea10de1d::t_44d58797a29286 244-246
+  s_2dc65cea10de1d::t_efe1a0be54de0b 162
+  s_2dc65cea10de1d::t_b26d783ba7e03e 125-126
+  s_2dc65cea10de1d::t_aff2c600fb4efd 203-207
+  s_2dc65cea10de1d::t_13a2fe6439e926 58
+  s_2dc65cea10de1d::t_144871477e530b 297
+  s_2dc65cea10de1d::t_469091750306b5 368
+mobile/src/ui/skills.ts
+  s_2dc65cea10de1d::t_9df15318586548 30
+  s_2dc65cea10de1d::t_3d9a0d27819134 6
+docs/architecture/browser-sessions.md
+  s_2dc65cea10de1d::t_13bab5b9d1d3c4 35
+crates/cli/src/templates/mod.rs
+  s_2dc65cea10de1d::t_0e3b4ecb40036d 950,952,954
+  s_2dc65cea10de1d::t_8017a6b88c06ef 616
+  s_2dc65cea10de1d::t_a58a3f8d35f1e9 10
+  s_2dc65cea10de1d::t_632f6cc44b25f6 96-97
+  s_2dc65cea10de1d::t_1e4a931f813127 605
+web/content/docs/skills.mdx
+  s_2dc65cea10de1d::t_f485f3c736ff79 21
+  s_2dc65cea10de1d::t_6d332cbeea25cb 33,35,41
+  s_2dc65cea10de1d::t_fdc5716b6daa84 37
+  s_2dc65cea10de1d::t_75bc56591ba87b 3,7-9,13,15-19,23-29,45-46,48,51,57,61,63,65
+desktop/mainwindow.go
+  s_2dc65cea10de1d::t_d1f897fc1007c2 413-414
+  s_2dc65cea10de1d::t_11e8daf9cbcb47 863-865
+crates/cli/src/skills.rs
+  s_2dc65cea10de1d::t_9bd4a807e1f9c2 976-977
+  s_2dc65cea10de1d::t_7d21e8c1a01c34 608-612
+  s_2dc65cea10de1d::t_fc91e1c5029ada 483-497,499-500,502-503,505,507-554
+  s_2dc65cea10de1d::t_06f0f03351bd12 1-4,6-7,15,17-30,35,39-45,47-49,51,54,59,62,66-73,77-83,85
+  s_2dc65cea10de1d::t_93805c1449bdb7 302-311,314-315
+  s_2dc65cea10de1d::t_49a0340960501c 145-153,155,158-167,170-183,185-194,197,199-206,208-209
+  s_2dc65cea10de1d::t_8d3dc37dd550a0 326
+  s_2dc65cea10de1d::t_3e102dd2060f92 615-620,622-627
+  s_2dc65cea10de1d::t_514da45e53b736 340-347,350-354,357-358,363-371,373-376,378-379,386-395,398-402,404,407-418,420-422
+  s_2dc65cea10de1d::t_b117ec5f99d514 790
+  s_2dc65cea10de1d::t_9006bf91876029 676-686,688,691-709,712-717,719-738,740-746,748-754
+  s_2dc65cea10de1d::t_1d776414fee891 317
+  s_2dc65cea10de1d::t_767c7baeea51b8 348-349
+  s_2dc65cea10de1d::t_8405597d191a70 957
+  s_2dc65cea10de1d::t_f45c251b8cee19 87-97,99,102-108,110,115,121,130,135
+  s_2dc65cea10de1d::t_587632d1eee257 643-662,664-667,669-670,672-673
+  s_2dc65cea10de1d::t_dfaa34d622a983 425
+  s_2dc65cea10de1d::t_ad1f636ce61e9e 265
+  s_2dc65cea10de1d::t_084be458215308 837-838
+  s_2dc65cea10de1d::t_212addfd1f7e0c 257,261-264,266-281,283-286,289-299,318-325,327-334,336-338
+  s_2dc65cea10de1d::t_1fec27a2f42182 258-260
+  s_2dc65cea10de1d::t_efbdacf24a44c3 212-222,225-245,248-254
+  s_2dc65cea10de1d::t_3adb4e27035b3a 755-789,791-796,800-813,815-819,821-823,825-828,831-836,839-846
+  s_2dc65cea10de1d::t_b755e8195eacce 857,859,861,864-866,868-875,881,887-889,891-893,898,900-920,924,926-941
+  s_2dc65cea10de1d::t_71db3ff3006d5d 359
+  s_2dc65cea10de1d::t_dc0ed67dc40a14 427-450,453-456,459-467,470-473,476-480
+  s_2dc65cea10de1d::t_4b8c3ebe099833 555-563,565-584,587,590-604,607,630-639
+  s_2dc65cea10de1d::t_90f53f7b87c08c 380-385
+  s_2dc65cea10de1d::t_ebdb65066f2f3a 945,947-948,950-953,955-956,961,963-975,978-980,984-992,996,998-1012
+crates/cli/skills/save-skill/references/locations.md
+  s_2dc65cea10de1d::t_40a4345a16e535 1-38
+mobile/src/core/model.ts
+  s_2dc65cea10de1d::t_e6b8f9eb59bed2 1496-1498,1501,1511-1513
+  s_2dc65cea10de1d::t_aaf44d98d2cc64 1479
+  s_2dc65cea10de1d::t_de55929f4ed2d2 1536-1582
+crates/cli/src/docs.rs
+  s_2dc65cea10de1d::t_dc4c3924a16e8e 88-117
+  s_2dc65cea10de1d::t_91e5a41b1d6f01 72-73
+  s_2dc65cea10de1d::t_a0103979c1ba37 1-4,6,8,10-11,13-16,19-47,50-58,61-71,74-79
+web/content/docs/skills.zh.mdx
+  s_2dc65cea10de1d::t_6d332cbeea25cb 33,35,41
+  s_2dc65cea10de1d::t_fdc5716b6daa84 37
+  s_2dc65cea10de1d::t_00b78d6f325428 3,7-9,13,15-19,23-29,45-46,48,51,57,61,63,65
+  s_2dc65cea10de1d::t_f485f3c736ff79 21
+mobile/src/ui/skills.test.ts
+  s_2dc65cea10de1d::t_c092b7cc3fa138 37,43-63
+  s_2dc65cea10de1d::t_130cd21fe08480 2-3
+docs/architecture/desktop-app.md
+  s_2dc65cea10de1d::t_13bab5b9d1d3c4 16
+docs/architecture/website.md
+  s_2dc65cea10de1d::t_13bab5b9d1d3c4 1
+mobile/src/i18n/zh.ts
+  s_2dc65cea10de1d::t_b666b21c3ffc39 674
+  s_2dc65cea10de1d::t_08873bf37fb3d4 672-673,675
+docs/architecture/plugins.md
+  s_2dc65cea10de1d::t_13bab5b9d1d3c4 14
+crates/cli/src/skills_sync.rs
+  s_2dc65cea10de1d::t_32a7e1b3f39a4d 75-163
+  s_2dc65cea10de1d::t_abdbe64aaa30a4 164-188,190,194-249
+  s_2dc65cea10de1d::t_bb6ecdf5f37668 1-74
+  s_2dc65cea10de1d::t_1950bb375d6ac7 189,191-193
+crates/cli/src/sync.rs
+  s_2dc65cea10de1d::t_7d4eec533fab6a 1049-1050
+  s_2dc65cea10de1d::t_92466aae808357 883-887
+desktop/l10n/zh.go
+  s_2dc65cea10de1d::t_4b12edd423bc85 1533,1535-1544,1548-1549
+  s_2dc65cea10de1d::t_aff2c600fb4efd 1258
+  s_2dc65cea10de1d::t_b7c2cd6b88b6cd 1545-1547
+  s_2dc65cea10de1d::t_f485f3c736ff79 1523-1532,1534,1550
+crates/cli/src/requests.rs
+  s_2dc65cea10de1d::t_8e174fcb12cad4 150-151
+crates/cli/src/feedback/mod.rs
+  s_2dc65cea10de1d::t_76dab7d14c923d 159
+  s_2dc65cea10de1d::t_02d185eb5477b9 278
+  s_2dc65cea10de1d::t_8e8ff3eafcae2b 313-320
+  s_2dc65cea10de1d::t_34a6568f6f748a 183,185
+  s_2dc65cea10de1d::t_d64b155fcbce7a 753-756,758-762
+  s_2dc65cea10de1d::t_a41f705039eaa7 162-164
+desktop/model/wire.go
+  s_2dc65cea10de1d::t_87c5ed6455322d 490
+desktop/sheet_skill_store.go
+  s_2dc65cea10de1d::t_678441339434af 159
+  s_2dc65cea10de1d::t_8328ca3bfa6c31 11-17,24,27-29,52-53,57-59,99-101,104,111-117,119,121,125,132,137,157,168,183,202-208,210-213,215,222,225,229-230,232,234-235,237-243,251-257,260-263,265-275,277
+  s_2dc65cea10de1d::t_4b6dc528154c2b 83-87,89
+  s_2dc65cea10de1d::t_2fe14027fa9c43 258-259,264
+  s_2dc65cea10de1d::t_4cfb48978430ad 164-167,171,174,179-181,188-193,195-199
+  s_2dc65cea10de1d::t_051b33f1743735 22-23,39-45,47-51,143,231,233
+  s_2dc65cea10de1d::t_9a1e88fe826829 209
+docs/architecture/relay.md
+  s_2dc65cea10de1d::t_13bab5b9d1d3c4 71
+desktop/model/skillhub_test.go
+  s_2dc65cea10de1d::t_5420034482edc9 29
+  s_2dc65cea10de1d::t_1cfd4bb1bee857 70-88
+  s_2dc65cea10de1d::t_0c60189c81b026 22-23,25,36,39-40,42-43
+  s_2dc65cea10de1d::t_38f0142568bf23 49,52,59,62,65-69,89-108
+crates/cli/src/browser/recording.rs
+  s_2dc65cea10de1d::t_c8fa7010e90956 368
+  s_2dc65cea10de1d::t_dddd096adac56d 266
+desktop/model/feedback.go
+  s_2dc65cea10de1d::t_d4bbcc99734508 497
+crates/cli/src/permissions.rs
+  s_2dc65cea10de1d::t_a822dfd984e289 343-344
+  s_2dc65cea10de1d::t_33cab7be9cff5f 386
+  s_2dc65cea10de1d::t_7363d25eca9982 169-193
+  s_2dc65cea10de1d::t_ffa9a769360f20 375
+  s_2dc65cea10de1d::t_b8023d3c513e88 9
+ARCHITECTURE.md
+  s_2dc65cea10de1d::t_730b53d9ef874a 110
+desktop/model/store.go
+  s_2dc65cea10de1d::t_4f7416dd59ee09 160-161,163-167
+crates/cli/skills/lorca/SKILL.md
+  s_2dc65cea10de1d::t_a5fd8a873e6c60 1-15
+desktop/model/skillhub.go
+  s_2dc65cea10de1d::t_d0020fdf429c15 111
+  s_2dc65cea10de1d::t_84a7c9a5ad6367 24-25,28-51
+  s_2dc65cea10de1d::t_6a0f1554879008 87-89,113,117-120
+  s_2dc65cea10de1d::t_ccd09e8b71f428 90-91
+  s_2dc65cea10de1d::t_b0814f7dcb535c 6
+  s_2dc65cea10de1d::t_89cabf01147062 11-12,14-15,22,53-55
+  s_2dc65cea10de1d::t_4507f150424b57 95-97,99-104,106-107
+  s_2dc65cea10de1d::t_1b554ab84ec43d 125-127,129-145,147
+  s_2dc65cea10de1d::t_b265339dee3330 66-67,73
+docs/architecture/phone-app.md
+  s_2dc65cea10de1d::t_13bab5b9d1d3c4 11
+docs/architecture/skills.md
+  s_2dc65cea10de1d::t_9b0a883cd7ed43 1,3,5,7,9-13,15,17,19,21,23-25,27,29,31,33,35,37,39,41,47,49,54-58,60,62,64,68,70
+  s_2dc65cea10de1d::t_dba0da9912e7be 43,45,53,59,66
+crates/cli/src/skills_turn.rs
+  s_2dc65cea10de1d::t_267ce3e28c293d 149,151-154,157-159,163-164,166,169-171,174-181,183-184,189,192-203
+  s_2dc65cea10de1d::t_076e7e9da987a8 100-116,118-119,121-122,124-133,135-146
+  s_2dc65cea10de1d::t_ade410a78fdb23 1-2,4,8,13-14,16-21,24-62,65-72,75,78-87,90-92,95-99
+docs/architecture/feedback.md
+  s_2dc65cea10de1d::t_13bab5b9d1d3c4 24,30
+crates/cli/src/skill_hub.rs
+  s_2dc65cea10de1d::t_cdc75e3786aa20 265-272,274
+  s_2dc65cea10de1d::t_c3468dee2a86d7 461-471,473-475,477
+  s_2dc65cea10de1d::t_4dfa2a03108b5f 557-558
+  s_2dc65cea10de1d::t_cfc921643f8d93 560
+  s_2dc65cea10de1d::t_c98dbd217e6a35 541
+  s_2dc65cea10de1d::t_93ce1607378fc9 368-369,371-378,385-389,392-394,397-427,429-460,478
+  s_2dc65cea10de1d::t_67ed1a63da6813 29-31
+  s_2dc65cea10de1d::t_74f1826e25d817 633-634
+  s_2dc65cea10de1d::t_f62c5e7d10d578 297,301-304
+  s_2dc65cea10de1d::t_88ec0cf2bebd3a 226,229-238,243-245,247-249,253-258,261
+  s_2dc65cea10de1d::t_de916f043d9402 629-632,635-643
+  s_2dc65cea10de1d::t_2d9c806e77d92e 204-212
+  s_2dc65cea10de1d::t_b82adabc1a7d4b 647-653,655,665-666,669,671-678
+  s_2dc65cea10de1d::t_25af014214569a 680
+  s_2dc65cea10de1d::t_94e4e34ad31efc 178-182
+  s_2dc65cea10de1d::t_caca73e2fa97f5 259-260
+  s_2dc65cea10de1d::t_43480e8b48cc77 28,32-33,40-42
+  s_2dc65cea10de1d::t_6ba8a478617626 2-5,8
+  s_2dc65cea10de1d::t_f08bede9b2b24c 20-21,23-27
+  s_2dc65cea10de1d::t_c8752d11249f80 492
+  s_2dc65cea10de1d::t_f3bf7870bb2c44 506-508,511-540,542-551,555,559,561-562,569,571
+  s_2dc65cea10de1d::t_e68e39cef11f67 351-358,360-362,364-365,370,382,481
+  s_2dc65cea10de1d::t_b4a65e3ae0566a 703-705
+  s_2dc65cea10de1d::t_8c5ec716323cb4 668,670
+  s_2dc65cea10de1d::t_bc83046934ab66 509-510
+  s_2dc65cea10de1d::t_1952870d31592c 16
+crates/cli/src/lib.rs
+  s_2dc65cea10de1d::t_611745eff5bb94 75-76
+  s_2dc65cea10de1d::t_d0efb836931881 74,77-78
+crates/cli/src/feedback/store.rs
+  s_2dc65cea10de1d::t_7fbfbc75cc5524 52
+crates/cli/src/api.rs
+  s_2dc65cea10de1d::t_f26ad1312a28cb 78
+mobile/app/chat-info/[id].tsx
+  s_2dc65cea10de1d::t_513aebcd34ea91 8
+  s_2dc65cea10de1d::t_1879489adce765 371
+  s_2dc65cea10de1d::t_0ccd8ca5501e75 2
+  s_2dc65cea10de1d::t_11df40ec688c86 65-67,69-78
+  s_2dc65cea10de1d::t_b57386bc3e6ffe 376
+desktop/model/playbooks_test.go
+  s_2dc65cea10de1d::t_d1a430ad51e441 6
+  s_2dc65cea10de1d::t_f67cfb36f91455 34-36,39,41-43,47,50-52,54-55,57,63,66-71,73
+  s_2dc65cea10de1d::t_0e0821202c28d6 82-98,103,106-115
+desktop/model/playbooks.go
+  s_2dc65cea10de1d::t_42065e546b8bb7 230
+  s_2dc65cea10de1d::t_b994c1684334b8 193
+  s_2dc65cea10de1d::t_697c716fd84db6 275-276
+  s_2dc65cea10de1d::t_4707df7c637471 26-30
+  s_2dc65cea10de1d::t_014272bc1b0de5 77,86-88
+  s_2dc65cea10de1d::t_a92412d9ce7bbe 212,214-215,218-225
+  s_2dc65cea10de1d::t_2761b7ec0eb9c5 298
+  s_2dc65cea10de1d::t_7b3d7259013d45 59-61
+  s_2dc65cea10de1d::t_d9d83ca93bbac7 179
+  s_2dc65cea10de1d::t_f3f12450315387 306-307,309-315
+  s_2dc65cea10de1d::t_e6cb8ea8f677ca 194
+  s_2dc65cea10de1d::t_9e3ea7f346e888 294,296-297,302
+  s_2dc65cea10de1d::t_4ca785d7217bd4 89-90
+  s_2dc65cea10de1d::t_983119e1713892 120,123
+  s_2dc65cea10de1d::t_db9f2e94b30318 129
+  s_2dc65cea10de1d::t_c24fdcb0754cc2 119,121-122
+  s_2dc65cea10de1d::t_6ddf285b440789 237,239-244
+  s_2dc65cea10de1d::t_658321287290ed 263-272
+  s_2dc65cea10de1d::t_1943523b79d196 198-199,201-206,213
+  s_2dc65cea10de1d::t_898cf2ec5b4ebd 235
+docs/architecture/protocols.md
+  s_2dc65cea10de1d::t_13bab5b9d1d3c4 31
+docs/architecture/runtime.md
+  s_2dc65cea10de1d::t_13bab5b9d1d3c4 3
+docs/architecture/workflows.md
+  s_2dc65cea10de1d::t_13bab5b9d1d3c4 25
+crates/cli/src/app.rs
+  s_2dc65cea10de1d::t_7e8539578c00e1 421
+crates/cli/skills/write-skill/references/format.md
+  s_2dc65cea10de1d::t_00a8e404c1a154 1-32
+crates/cli/src/browser/tests.rs
+  s_2dc65cea10de1d::t_a7b168f474ba5a 498-500,502
+  s_2dc65cea10de1d::t_9a18833dc2ee78 460
+  s_2dc65cea10de1d::t_cf718e0f7d6263 471,476-480,482-486
+crates/cli/src/browser/replay.rs
+  s_2dc65cea10de1d::t_7a67eefd115c97 37-38,40-41
+crates/cli/src/events.rs
+  s_2dc65cea10de1d::t_355423ad264a00 22
+desktop/palette.go
+  s_2dc65cea10de1d::t_ab93027373e16e 65
+mobile/app/chat-info/skill/[id].tsx
+  s_2dc65cea10de1d::t_c8e02f4139053b 20
+  s_2dc65cea10de1d::t_e8091cb551aeb9 112
+  s_2dc65cea10de1d::t_76e65a72668bfe 170-172,174
+  s_2dc65cea10de1d::t_63219f77ca8180 101-104
+crates/cli/skills/save-skill/SKILL.md
+  s_2dc65cea10de1d::t_69adf05efe8701 1-19
+crates/cli/src/workflows.rs
+  s_2dc65cea10de1d::t_2f934ec4fbd2cb 1509,1511
+desktop/sheet_playbooks_test.go
+  s_2dc65cea10de1d::t_03ed1ddfbb07bf 198-199,201
+  s_2dc65cea10de1d::t_f485f3c736ff79 19-22
+  s_2dc65cea10de1d::t_f4e462e48306e8 27-32
+  s_2dc65cea10de1d::t_b283e90ae33a7f 192
+  s_2dc65cea10de1d::t_588f43d084c5b6 46-49,51-52
+  s_2dc65cea10de1d::t_8233104fa24beb 152-154,165,169-174,177-178,187,190,195-197,203,209-235
+  s_2dc65cea10de1d::t_9cb3b0e51acffe 11-12
+  s_2dc65cea10de1d::t_0c4488c230f75b 116-117,123-125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "13f4ba0e1c303837410efdfc7a01c88cfbe3029d",
+  "prompts": {},
+  "sessions": {
+    "s_2dc65cea10de1d": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_ho5timc5q80a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
