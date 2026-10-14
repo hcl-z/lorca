@@ -1509,4 +1509,5 @@ var zh = map[string]string{
 	"Cancel editing (esc)":                 "取消编辑 (esc)",
 	"Edit your message…":                   "编辑你的消息…",
 	"This reply can no longer run again.":  "这条回复已无法重新生成。",
+	"Categories":                           "分类",
 }

@@ -104,6 +104,43 @@ func TestRenderMarketplace(t *testing.T) {
 	wantText(t, tt, L("No results match “%@”", "linearzzz"))
 }
 
+// The home page lists by category or everything at once, and keeps the choice; a search lists its
+// results either way.
+func TestMarketplaceViews(t *testing.T) {
+	storeView = storeViewCategories
+	t.Cleanup(func() { storeView = storeViewCategories })
+	_, tt := marketplaceTester(t, true)
+	wantText(t, tt, L("Featured Plugins"), L("Productivity"), L("Categories"))
+
+	marketClick(t, tt, L("All"))
+	if tt.HasText(L("Featured Plugins")) || tt.HasText(L("Productivity")) {
+		t.Errorf("the All view still has sections: %q", tt.Texts())
+	}
+	// Every plugin and bot is in the grid, with no heading or filter over it.
+	wantText(t, tt, "Granola", issueTriager)
+	if n := countLines(tt, L("All")); n != 1 {
+		t.Errorf("the All view has a filter besides the view switch (%d): %q", n, tt.Texts())
+	}
+	renderBoth(t, tt, "market-all")
+
+	marketClick(t, tt, L("Search plugins and bots"))
+	tt.Type("linear")
+	tt.Frame()
+	wantText(t, tt, L("Results"))
+	if tt.HasText(L("Categories")) {
+		t.Errorf("a search shows the view switch: %q", tt.Texts())
+	}
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Key(0, ui.KeyBackspace)
+	tt.Frame()
+	if storeView != storeViewAll || tt.HasText(L("Featured Plugins")) {
+		t.Errorf("the choice was not kept; texts %q", tt.Texts())
+	}
+
+	marketClick(t, tt, L("Categories"))
+	wantText(t, tt, L("Featured Plugins"), L("Productivity"))
+}
+
 // issueTriager is the Issue Triager bot's row: its line about it.
 const issueTriager = "Sorts new Linear issues, fills in missing details, and flags what needs you"
 

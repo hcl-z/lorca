@@ -98,16 +98,22 @@ func (mk *marketplace) homePage(c *ui.Context, page *marketPage) {
 	on := mk.runner()
 	ui.Row(c).Height(30).Gap(12).Padding(0, 4, 0, 12).Margin(0, 0, -10, 0).Justify(ui.SpaceBetween).Children(func() {
 		ui.Text(c, L("Marketplace")).FontSize(20).FontWeight(600).SingleLine().Shrink(1)
-		if on != nil {
-			installed := hoverButton(c, hoverButtonOptions{
-				Title:    L("%d installed", len(mk.installedPlugins())),
-				Trailing: "chevron.right",
-				Tooltip:  L("Plugins on %@", on.Name),
-			})
-			if installed.Clicked() {
-				mk.show(&marketPage{kind: marketInstalledPage})
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			// A search lists its results the same way in either view.
+			if strings.TrimSpace(page.query) == "" {
+				storeViewSwitch(c)
 			}
-		}
+			if on != nil {
+				installed := hoverButton(c, hoverButtonOptions{
+					Title:    L("%d installed", len(mk.installedPlugins())),
+					Trailing: "chevron.right",
+					Tooltip:  L("Plugins on %@", on.Name),
+				})
+				if installed.Clicked() {
+					mk.show(&marketPage{kind: marketInstalledPage})
+				}
+			}
+		})
 	})
 	search := marketSearchField(c, &page.query, L("Search plugins and bots"))
 	if page.focusSearch {
@@ -135,6 +141,17 @@ func (mk *marketplace) homePage(c *ui.Context, page *marketPage) {
 		packs := workflowMatchingPacks(mk.catalog.Packs, query)
 		if len(packs) > 0 {
 			mk.workflowSection(c, packs)
+		}
+		if query == "" && storeView == storeViewAll {
+			// Every plugin and bot in one grid, the featured ones first.
+			items := marketEveryItem(&mk.catalog)
+			if len(items) == 0 && len(packs) == 0 {
+				marketStatusLine(c, L("Nothing in the marketplace yet."))
+			}
+			if len(items) > 0 {
+				mk.grid(c, items)
+			}
+			return
 		}
 		if query == "" {
 			sections := mk.homeSections()
