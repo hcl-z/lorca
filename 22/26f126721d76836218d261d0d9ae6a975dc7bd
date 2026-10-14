@@ -1,0 +1,53 @@
+crates/cli/src/skill_hub.rs
+  s_d5491d72769557::t_ade5dd12ec0161 1-736
+desktop/model/skillhub.go
+  s_d5491d72769557::t_ade5dd12ec0161 1-92
+web/content/docs/skills.mdx
+  s_d5491d72769557::t_ade5dd12ec0161 11,17-25
+desktop/model/skillhub_test.go
+  s_d5491d72769557::t_ade5dd12ec0161 1-68
+crates/cli/src/playbooks.rs
+  s_d5491d72769557::t_ade5dd12ec0161 157
+docs/architecture/playbooks.md
+  s_d5491d72769557::t_ade5dd12ec0161 17,41,56-57,61-67
+web/content/docs/skills.zh.mdx
+  s_d5491d72769557::t_ade5dd12ec0161 11,17-25
+desktop/commands.go
+  s_d5491d72769557::t_ade5dd12ec0161 131-138,371
+desktop/sheet_playbooks.go
+  s_d5491d72769557::t_ade5dd12ec0161 20-22,28,40-42,78-80,541-542
+desktop/palette.go
+  s_d5491d72769557::t_ade5dd12ec0161 64
+desktop/l10n/zh.go
+  s_d5491d72769557::t_ade5dd12ec0161 1138-1140,1509-1522
+desktop/sheet_playbooks_test.go
+  s_d5491d72769557::t_ade5dd12ec0161 11-12,24-25,139-195
+desktop/mainwindow.go
+  s_d5491d72769557::t_ade5dd12ec0161 411-412
+crates/cli/src/lib.rs
+  s_d5491d72769557::t_ade5dd12ec0161 73-74
+desktop/sheet_skill_store.go
+  s_d5491d72769557::t_ade5dd12ec0161 1-226
+desktop/model/store.go
+  s_d5491d72769557::t_ade5dd12ec0161 278-282
+crates/cli/src/api.rs
+  s_d5491d72769557::t_ade5dd12ec0161 79-80
+crates/cli/Cargo.toml
+  s_d5491d72769557::t_ade5dd12ec0161 82-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "2226f126721d76836218d261d0d9ae6a975dc7bd",
+  "prompts": {},
+  "sessions": {
+    "s_d5491d72769557": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_kq0qnakr61wx",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
