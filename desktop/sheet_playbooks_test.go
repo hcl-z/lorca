@@ -8,8 +8,8 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// A DM shows its bot's skills and a group its own, drafts first; a chat with none shows no section.
-// A row opens the skill's sheet, which says who can use it.
+// A DM shows its bot's skills and a group its own, drafts first; a chat with none shows the section
+// with a note and the Skill Store. A row opens the skill's sheet, which says who can use it.
 func TestInspectorSkills(t *testing.T) {
 	m := demoWindow(t)
 	m.selectChat("chat-patch")
@@ -21,10 +21,8 @@ func TestInspectorSkills(t *testing.T) {
 
 	m.selectChat("chat-scout")
 	settle(tt)
-	// The Skills tab's own label is the one "Skills" left once the section is out.
-	if n := countLines(tt, L("Skills")); n != 1 {
-		t.Errorf("a bot without skills shows the section: %q", tt.Texts())
-	}
+	wantText(t, tt, L("No skills yet. Add one from the Skill Store, save a chat as a skill, or ask a bot to write one."), L("Add from Skills…"))
+	renderBoth(t, tt, "skills-inspector-empty")
 	m.selectChat("chat-relay")
 	settle(tt)
 	wantText(t, tt, "launch-post")
@@ -137,4 +135,62 @@ func TestSaveAsSkill(t *testing.T) {
 		t.Error("two corrections are not enough")
 	}
 	renderBoth(t, tt, "skills-corrections")
+}
+
+// The Skill Store lists ClawHub's skills, searches as the field is typed, takes an address, and Add
+// saves a skill for the bot at once.
+func TestSkillStore(t *testing.T) {
+	m := demoWindow(t)
+	m.selectChat("chat-scout")
+	m.inspector.tab = tabSkills
+	tt := ui.NewTester(m.frame(m.view), 1180, 900)
+	settle(tt)
+	chat := store.Chat("chat-scout")
+	scope, _ := model.SkillScope(chat, store.BotsIn(chat))
+	bot := store.Bot(scope.ID)
+
+	if err := tt.Click(L("Add from Skills…")); err != nil {
+		t.Fatal(err)
+	}
+	settleTransitions(tt)
+	wantText(t, tt, L("Skill Store"))
+	time.Sleep(450 * time.Millisecond)
+	settle(tt)
+	wantText(t, tt, L("Popular on ClawHub"), "PDF Tools", "Code Review", "Weekly Report", "GifGrep")
+	if tt.HasText(L("Categories")) {
+		t.Errorf("the store has a view switch: %q", tt.Texts())
+	}
+	renderBoth(t, tt, "skill-store")
+
+	if err := tt.Click(L("Add")); err != nil {
+		t.Fatal(err)
+	}
+	settle(tt)
+	time.Sleep(750 * time.Millisecond)
+	settle(tt)
+	skills := store.Skills(scope)
+	if len(skills) != 1 || skills[0].IsDraft() {
+		t.Fatalf("Add saves one skill at once: %+v", skills)
+	}
+	wantText(t, tt, L("Added"), L("Added “%@”. %@ uses it from now on.", skills[0].Name, bot.Name))
+	renderBoth(t, tt, "skill-store-added")
+
+	if err := tt.Click(L("Search skills or paste a link")); err != nil {
+		t.Fatal(err)
+	}
+	tt.Type("gif")
+	time.Sleep(450 * time.Millisecond)
+	settle(tt)
+	time.Sleep(450 * time.Millisecond)
+	settle(tt)
+	wantText(t, tt, L("Results"), "GifGrep")
+	if tt.HasText("Weekly Report") {
+		t.Errorf("a search lists only what matches: %q", tt.Texts())
+	}
+
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Key(0, ui.KeyBackspace)
+	tt.Type("anthropics/skills@pdf")
+	settle(tt)
+	wantText(t, tt, "anthropics/skills@pdf", L("A skill at this address"))
 }

@@ -128,6 +128,14 @@ var commandTable = []command{
 		_, ok := model.SkillScope(chat, store.BotsIn(chat))
 		return ok
 	}},
+	{id: "skillStore", title: func() string { return L("Skill Store…") }, enabled: func() bool {
+		if !chatSelected() {
+			return false
+		}
+		chat := store.Chat(app.main.selection.ChatID)
+		_, ok := model.SkillScope(chat, store.BotsIn(chat))
+		return ok
+	}},
 	{id: "stopResponding", title: func() string { return L("Stop Responding") }, accelerator: "CmdOrCtrl+.", enabled: chatSelected},
 	{
 		// The Mac's ⌃B has no counterpart here: Ctrl+B toggles the sidebar.
@@ -360,7 +368,7 @@ func windowMenuBar(kind windowKind) *mygo.Menu {
 			at("find"),
 		),
 		submenu(L("View"), at("palette"), at("attention"), sep(), at("toggleSidebar"), at("toggleInspector"), sep(), at("scrollToLatest"), sep(), at("toggleAppearance"), at("fullScreen")),
-		submenu(L("Chat"), at("addBot"), at("renameChat"), at("pinChat"), muteMenu(at), at("unmuteChat"), sectionMenu(kind), at("hideChat"), at("newSkill"), sep(), at("stopResponding"), at("runInBackground"), sep(), at("deleteChat")),
+		submenu(L("Chat"), at("addBot"), at("renameChat"), at("pinChat"), muteMenu(at), at("unmuteChat"), sectionMenu(kind), at("hideChat"), at("newSkill"), at("skillStore"), sep(), at("stopResponding"), at("runInBackground"), sep(), at("deleteChat")),
 		submenu(L("Window"), &mygo.MenuItem{Role: mygo.RoleMinimize, Label: L("Minimize")}, &mygo.MenuItem{Role: mygo.RoleZoom, Label: L("Zoom")}),
 		submenu("Debug", at("simulateOffline"), at("replayMock"), sep(), at("showOnboarding")),
 		submenu(L("Help"), help...),

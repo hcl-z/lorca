@@ -61,6 +61,7 @@ var paletteCommands = []struct{ id, symbol, keywords string }{
 	{"hideChat", "eye.slash", "archive sidebar show"},
 	{"newSection", "folder.badge.plus", "group folder organize"},
 	{"newSkill", "book.closed", "playbook instructions workflow"},
+	{"skillStore", "book.closed", "community clawhub github skills.sh download install import marketplace"},
 	{"stopResponding", "stop.circle", "cancel interrupt"},
 	{"runInBackground", "terminal", "detach server task"},
 	{"scrollToLatest", "arrow.down.to.line", "bottom newest jump"},

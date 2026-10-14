@@ -8,13 +8,21 @@ A **skill** is how a job is done, written down for a bot or a group: when to use
 
 ## Where skills live
 
-A bot's skills are in the **Skills** section of its direct chat's inspector, and a group's in the group's inspector (on the phone, in the chat's Details). The section shows once there is a skill or a draft. A group's skills are for every bot in that group, in that group only.
+A bot's skills are in the **Skills** section of its direct chat's inspector, and a group's in the group's inspector (on the phone, in the chat's Details). On the phone the section shows once there is a skill or a draft. A group's skills are for every bot in that group, in that group only.
 
 Every bot also has one skill built in, `lorca`, which points it at these docs. Ask a bot how to do something in Lorca and it reads the page here before it answers. It doesn't show in the Skills section.
 
 ## Write one
 
-Choose **Chat › New Skill…**, or click **+** beside **Skills** once the section shows (on the phone, **Add Skill › New Skill…**). A skill has:
+## Add one from the Skill Store
+
+On the desktop, click **Add from Skills…** at the foot of a bot's **Skills** section, or choose **Chat › Skill Store…**. The store lists the most downloaded skills on [ClawHub](https://clawhub.ai); type to search it, or paste a link to a skill on ClawHub, skills.sh, or GitHub (`owner/repo`, or `owner/repo@skill` for one skill in a repository). **Add** saves the skill for that bot, or for the group when you open the store from a group, and it is used from the next turn. Skills for other bots are added from those bots' own inspectors.
+
+A skill from the store is written by someone else and works as soon as you add it, so open it from the Skills section and read it first when it matters. Only its instructions and the text files in its `references` and `scripts` folders come across; anything else is left out, and the store says how many files were. Delete it from the Skills section whenever you like. The site is reached from your computer; if ClawHub or GitHub is slow where you are, `LORCA_CLAWHUB_URL` and `LORCA_GITHUB_ARCHIVE_URL` point the CLI at a mirror.
+
+## Write one
+
+Choose **Chat › New Skill…**, or click **+** beside **Skills** (on the phone, **Add Skill › New Skill…**). A skill has:
 
 | Field | What it is |
 | --- | --- |

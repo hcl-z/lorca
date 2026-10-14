@@ -70,6 +70,8 @@ pub mod scripts;
 pub mod served;
 #[cfg(feature = "cli")]
 pub mod service;
+#[cfg(feature = "cli")]
+pub mod skill_hub;
 #[cfg(feature = "runner")]
 pub mod shell;
 pub mod sync;

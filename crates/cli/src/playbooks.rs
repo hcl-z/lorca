@@ -154,7 +154,7 @@ impl PlaybookContent {
     }
 }
 
-fn safe_resource_path(path: &str, kind: &str) -> bool {
+pub(crate) fn safe_resource_path(path: &str, kind: &str) -> bool {
     path.len() <= 160
         && path.starts_with(&format!("{kind}/"))
         && path.split('/').all(|part| {
