@@ -1797,6 +1797,10 @@ enum ToolKind {
     ReadResource,
 }
 
+/// How a script learns of the resource tools, which the listing leaves out.
+pub const RESOURCE_TOOLS_GUIDANCE: &str = "A plugin whose server offers resources also has `<plugin>__list_mcp_resources`, \
+`<plugin>__list_mcp_resource_templates`, and `<plugin>__read_mcp_resource({ uri })`; `describeTool()` gives their declarations.";
+
 /// The tools a server that offers resources lists and reads them with, named as Codex and pi
 /// name them. Reading a resource changes nothing, so they never ask.
 fn resource_tools(plugin_name: &str) -> Vec<(rmcp::model::Tool, ToolKind)> {
@@ -2002,8 +2006,15 @@ impl PluginCatalog {
         self.state.lock().unwrap().tools.get(tool_name).map(|tool| tool.plugin_name.clone())
     }
 
+    /// A plugin tool as codemode presents it. The three resource tools are the same for every
+    /// server that offers resources, so one line of the script guidance names them
+    /// (`RESOURCE_TOOLS_GUIDANCE`) and the listing's budget goes to each plugin's own tools.
     fn entry(tool: &CatalogTool) -> Entry {
-        Entry::new(tool.tool.clone(), Exposure::Listed).in_namespace(tool.plugin_id.clone())
+        let exposure = match tool.tool.kind {
+            ToolKind::Call => Exposure::Listed,
+            ToolKind::ListResources | ToolKind::ListResourceTemplates | ToolKind::ReadResource => Exposure::Deferred,
+        };
+        Entry::new(tool.tool.clone(), exposure).in_namespace(tool.plugin_id.clone())
     }
 
     /// A catalog tool by its name or its identifier.
@@ -3565,6 +3576,8 @@ for line in sys.stdin:
         let catalog = turn_catalog(app, Vec::new());
         let names: Vec<String> = codemode::Catalog::entries(catalog.as_ref()).iter().map(|entry| entry.tool.name().to_string()).collect();
         assert_eq!(names, ["docs__list_mcp_resource_templates", "docs__list_mcp_resources", "docs__read_mcp_resource", "docs__search", "plain__search"]);
+        let exposures: Vec<(String, codemode::Exposure)> = codemode::Catalog::entries(catalog.as_ref()).iter().map(|entry| (entry.tool.name().to_string(), entry.exposure)).collect();
+        assert!(exposures.iter().all(|(name, exposure)| (*exposure == codemode::Exposure::Deferred) == name.contains("_mcp_resource")), "the listing names each plugin's own tools, the guidance the resource ones: {exposures:?}");
         let read = catalog.plugin_tool("docs__read_mcp_resource").unwrap();
         assert!(read.read_only && read.kind == ToolKind::ReadResource, "reading a resource never asks");
         assert_eq!(read.parameters()["required"], json!(["uri"]));

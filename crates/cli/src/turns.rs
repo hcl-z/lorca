@@ -273,7 +273,8 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         crate::scripts::ModelsAsk::new(app, &chat.meta.id, &bot.provider).map(|ask| Arc::new(ask) as Arc<dyn HostFunction>).into_iter().collect();
     // A routine's script has nobody to press Stop, so it gets less time.
     let timeout = std::time::Duration::from_secs(if unattended { 10 * 60 } else { 30 * 60 });
-    let options = CodemodeOptions { mcp_types: !plugin_briefs.is_empty(), timeout, guidance: Some(SCRIPT_GUIDANCE.into()), ..CodemodeOptions::default() };
+    let guidance = if plugin_briefs.is_empty() { SCRIPT_GUIDANCE.to_string() } else { format!("{SCRIPT_GUIDANCE}\n{}", crate::plugins::mcp::RESOURCE_TOOLS_GUIDANCE) };
+    let options = CodemodeOptions { mcp_types: !plugin_briefs.is_empty(), timeout, guidance: Some(guidance), ..CodemodeOptions::default() };
     // Codemode itself also rechecks after any asynchronous review; its children have guards.
     tools.extend(crate::permissions::guarded::tools(app, &bot, &chat.meta.id, vec![Arc::new(CodemodeTool::new(plugin_tools.clone(), options).with_store(script_store).with_functions(functions))]));
     if bot.setting_up {
