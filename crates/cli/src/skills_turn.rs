@@ -43,7 +43,12 @@ pub fn prompt(app: &App, bot: &Bot, chat_id: &str) -> String {
         block = format_skills_for_system_prompt(&all[..shown]);
     }
     let mut prompt = String::from("\nSkills are folders, each with a SKILL.md. ");
-    prompt.push_str(&format!("Yours are in {}", folder("bot").unwrap_or_default()));
+    // The working directory is named once, with the Runner's tools.
+    let own = scopes.iter().find(|scope| scope.kind == "bot").and_then(|scope| scope.root(app).ok());
+    match own {
+        Some(root) if root == bot.working_directory(&app.config.home).join("skills") => prompt.push_str("Yours are in skills/ in your working directory"),
+        _ => prompt.push_str(&format!("Yours are in {}", folder("bot").unwrap_or_default())),
+    }
     if let Some(group) = folder("project") {
         prompt.push_str(&format!(", this group's in {group} (every bot in the group uses them)"));
     }
