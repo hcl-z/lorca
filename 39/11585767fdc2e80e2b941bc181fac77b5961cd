@@ -1,0 +1,41 @@
+crates/cli/src/traces.rs
+  s_251ad203da4cfc::t_467d8edba90cb0 269-274
+  s_251ad203da4cfc::t_cbdd80ea2c7962 588-592
+crates/cli/src/turns.rs
+  s_251ad203da4cfc::t_0a28cf0aae5387 1029-1030
+  s_251ad203da4cfc::t_26e7b0db0a163d 190-195
+  s_251ad203da4cfc::t_51613215b2fa4d 3504-3506
+  s_251ad203da4cfc::t_3969081749843f 628-633,637-657
+  s_251ad203da4cfc::t_c9adc1c89e3e07 3313-3315
+  s_251ad203da4cfc::t_b39f970a1b1563 3520-3521
+  s_251ad203da4cfc::t_b62fea770ec7b1 3583-3584
+  s_251ad203da4cfc::t_2858be4b3421b0 417-419
+  s_251ad203da4cfc::t_4c8c84c24a082e 952-981
+  s_251ad203da4cfc::t_3d53f17f28a1d8 3607-3618
+  s_251ad203da4cfc::t_a65d9c6bd93f50 4237-4305
+  s_251ad203da4cfc::t_73222b97355c26 282-283
+docs/architecture/bots.md
+  s_251ad203da4cfc::t_06b3ab047f06f8 40
+docs/architecture/runtime.md
+  s_251ad203da4cfc::t_06b3ab047f06f8 77
+docs/architecture/tools.md
+  s_251ad203da4cfc::t_06b3ab047f06f8 18
+docs/architecture/traces.md
+  s_251ad203da4cfc::t_06b3ab047f06f8 25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "3911585767fdc2e80e2b941bc181fac77b5961cd",
+  "prompts": {},
+  "sessions": {
+    "s_251ad203da4cfc": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_ctuwzmzl63h0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
