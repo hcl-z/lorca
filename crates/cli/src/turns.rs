@@ -962,6 +962,12 @@ impl TurnHooks {
             return false;
         }
         bot.workdir = self.bot.workdir.clone();
+        // The transcript this turn started from has the bot's earlier words about itself and no
+        // notice of the change: the next step reads one, as later turns read the chat's.
+        let old = Bot { name: before.name.clone(), description: before.description.clone(), setting_up: before.setting_up, ..bot.clone() };
+        if let Some(notice) = profile_notice(&old, &bot) {
+            context.messages.push(AgentMessage::User(UserMessage::text(profile_note(&notice, &bot, true))));
+        }
         let inputs = &self.prompt_inputs;
         let chat = self.app.chat(&self.chat_id).unwrap_or_else(|| inputs.chat.clone());
         context.system_prompt = system_prompt(&self.app, &chat, &bot, &inputs.job, &inputs.store, self.unattended, &inputs.plugin_briefs);
@@ -1325,6 +1331,36 @@ fn turn_brief(app: &App, job: &Job, routine: Option<&Routine>, event: Option<&cr
 
 /// How the turn's brief opens.
 const TURN_BRIEF_MARKER: &str = "[This turn, from Lorca:";
+
+/// Most of a description a profile note repeats; the system prompt has it whole.
+const PROFILE_NOTE_DESCRIPTION_CHARS: usize = 2_000;
+
+/// What the bot reads where a profile notice is (`model::profile_notice`). The latest gives the
+/// profile as it stands, so the bot's own earlier words about its name or job, still in the
+/// transcript, do not win over the system prompt; an earlier one only marks a change.
+fn profile_note(notice: &str, bot: &Bot, latest: bool) -> String {
+    if !latest {
+        return format!("[From Lorca: {} A later note gives your profile as it stands.]", notice.trim());
+    }
+    let mut description: String = bot.description.trim().chars().take(PROFILE_NOTE_DESCRIPTION_CHARS).collect();
+    if bot.description.trim().chars().count() > PROFILE_NOTE_DESCRIPTION_CHARS {
+        description.push_str("… (your system prompt has the rest)");
+    }
+    if notice.starts_with("Set up as ") {
+        format!(
+            "[From Lorca: your setup finished here. You are {name} now, and this is your job, as your system prompt has it:\n{description}\nThe setup \
+             questions and the placeholder name before this are done with: work as {name} from here.]",
+            name = bot.name
+        )
+    } else {
+        format!(
+            "[From Lorca: the user changed your profile here ({}). You are {} now, and your description reads:\n{description}\nWhat this chat said about \
+             your name or job before this is out of date: follow this description, which your system prompt has too.]",
+            notice.trim().trim_end_matches('.'),
+            bot.name
+        )
+    }
+}
 
 /// The rebuilt transcript followed by the turn's notes, and the transcript's cache points.
 fn with_turn_notes(mut messages: Vec<AgentMessage>, notes: &TurnNotes) -> (Vec<AgentMessage>, Vec<usize>) {
@@ -2453,6 +2489,8 @@ fn transcript_bounded(app: &App, chat: &Chat, bot: &Bot, workdir: &std::path::Pa
     }
     // A recording's screenshots go to the model while it is the user's latest word.
     let latest_from_user = messages.iter().rposition(|message| message.author == Author::You);
+    // The latest profile notice gives the profile as it stands; earlier ones say where it changed.
+    let latest_profile_notice = messages.iter().rposition(|message| message.id.starts_with(PROFILE_NOTICE_PREFIX));
     for (index, message) in messages.iter().enumerate() {
         if !message.is_complete() {
             if let MessageState::Failed { .. } = message.state {
@@ -2553,6 +2591,10 @@ fn transcript_bounded(app: &App, chat: &Chat, bot: &Bot, workdir: &std::path::Pa
                 }));
             }
             // A routine's marker carries the task into the turn it opened, and into later ones.
+            // The bot's profile changed here: what the chat said about it before is out of date.
+            (Author::System, Body::Notice { text, routine_id: None }) if message.id.starts_with(PROFILE_NOTICE_PREFIX) => {
+                out.push(user(&profile_note(text, bot, latest_profile_notice == Some(index)), timestamp));
+            }
             (Author::System, Body::Notice { text, routine_id: Some(routine_id) }) => {
                 let task = match app.routine(routine_id) {
                     Some(routine) => format!("[Routine \"{}\" ran on its schedule. Task: {}]", routine.name, routine.prompt.trim()),
@@ -4282,6 +4324,8 @@ mod tests {
         app.update_bot("b1", |bot| bot.description = "Plans dinners. Never orders takeout.".into()).unwrap();
         assert!(hooks.refresh_profile(&mut context));
         assert!(context.system_prompt.contains("Never orders takeout.") && !context.system_prompt.contains("/elsewhere"), "{}", context.system_prompt);
+        let note = context.messages.last().and_then(|m| match m { AgentMessage::User(user) => user.content[0].as_text().map(str::to_string), _ => None }).unwrap();
+        assert!(note.starts_with("[From Lorca: the user changed your profile here (Chef's description changed)") && note.contains("Never orders takeout.") && note.contains("out of date"), "{note}");
         assert!(!hooks.refresh_profile(&mut context), "once");
 
         // A new bot that finishes its setup goes on as itself, with its usual tools.
@@ -4301,6 +4345,50 @@ mod tests {
         assert!(hooks.refresh_profile(&mut context));
         assert!(context.system_prompt.starts_with("You are Sous, a bot in Lorca.") && context.system_prompt.contains("Preps the week's meals."), "{}", context.system_prompt);
         assert_eq!(context.tools.iter().map(|tool| tool.name().to_string()).collect::<Vec<_>>(), usual.iter().map(|tool| tool.name().to_string()).collect::<Vec<_>>());
+        let note = format!("{:?}", context.messages.last().unwrap());
+        assert!(note.contains("your setup finished here. You are Sous now") && note.contains("work as Sous from here"), "{note}");
+    }
+
+    /// A new name or description, or a finished setup, leaves a notice in the bot's direct chat;
+    /// a later turn reads the latest as the profile as it stands, after the bot's own earlier
+    /// words about itself, and the earlier ones as marks. Other changes leave none.
+    #[test]
+    fn a_profile_change_leaves_a_notice_the_next_turns_read() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        let sentry = Bot { setting_up: true, ..bot("b1", crate::model::NEW_BOT_NAME) };
+        let dm = chat("dm", "dm", None, &["b1"]);
+        app.state.lock().unwrap().bots.push(sentry.clone());
+        app.state.lock().unwrap().chats.push(dm.clone());
+        let notices = || app.messages("dm").into_iter().filter_map(|m| match m.body { Body::Notice { text, .. } if m.id.starts_with(PROFILE_NOTICE_PREFIX) => Some(text), _ => None }).collect::<Vec<_>>();
+
+        app.update_bot("b1", |bot| bot.accent = "teal".into()).unwrap();
+        assert!(notices().is_empty(), "a new look says nothing");
+        app.update_bot("b1", |bot| { bot.name = "价格哨兵".into(); bot.description = "盯价格。".into(); bot.setting_up = false; }).unwrap();
+        app.upsert_message(said("dm", Author::Bot { bot_id: "b1".into() }, "我叫价格哨兵，我盯价格。", now_secs()), true);
+        app.update_bot("b1", |bot| bot.description = "遵从用户提示。盯价格。".into()).unwrap();
+        app.update_bot("b1", |bot| bot.name = "价格哨兵ddd".into()).unwrap();
+        app.update_bot("b1", |bot| bot.model = Some("other".into())).unwrap();
+        assert_eq!(notices(), [
+            "Set up as 价格哨兵. Its job is saved; from here on it works as 价格哨兵.",
+            "价格哨兵's description changed.",
+            "价格哨兵 was renamed 价格哨兵ddd.",
+        ]);
+
+        let bot = app.bot("b1").unwrap();
+        let words: Vec<String> = transcript_for(app, &app.chat("dm").unwrap(), &bot, &scratch.1)
+            .iter()
+            .map(|m| match m {
+                AgentMessage::User(user) => user.content.iter().filter_map(ContentPart::as_text).collect::<String>(),
+                AgentMessage::Assistant(reply) => reply.text(),
+                _ => String::new(),
+            })
+            .collect();
+        assert_eq!(words[0], "[From Lorca: Set up as 价格哨兵. Its job is saved; from here on it works as 价格哨兵. A later note gives your profile as it stands.]");
+        assert_eq!(words[1], "我叫价格哨兵，我盯价格。");
+        assert!(words[2].starts_with("[From Lorca: 价格哨兵's description changed."), "{}", words[2]);
+        let latest = words.last().unwrap();
+        assert!(latest.contains("(价格哨兵 was renamed 价格哨兵ddd)") && latest.contains("You are 价格哨兵ddd now") && latest.contains("遵从用户提示。盯价格。"), "{latest}");
     }
 
     /// Each request of a turn is traced with what it added, each reply and tool call after it,

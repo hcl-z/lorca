@@ -1239,22 +1239,32 @@ impl App {
         Ok((bot, chat))
     }
 
-    /// Applies a change to a bot's profile and publishes the roster. The next turn of that bot
-    /// reads the new profile.
+    /// Applies a change to a bot's profile and publishes the roster. The bot's turns read the
+    /// new profile from their next step. A new name or description, or a finished setup, also
+    /// leaves a notice in the bot's direct chat (`profile_notice`), where its later turns read
+    /// that what the chat said about it before is out of date.
     pub fn update_bot(&self, id: &str, update: impl FnOnce(&mut Bot)) -> anyhow::Result<Bot> {
-        let bot = {
+        let (before, bot, dm) = {
             let mut state = self.state.lock().unwrap();
             let bot = state.bots.iter_mut().find(|b| b.id == id).ok_or_else(|| anyhow::anyhow!("Unknown bot"))?;
             let old_avatar = bot.avatar.as_ref().map(|avatar| avatar.id.clone());
+            let mut before = bot.clone();
+            before.normalize_description();
             update(bot);
             bot.normalize_description();
             let bot = bot.clone();
             if let Some(old) = old_avatar.filter(|old| bot.avatar.as_ref().map(|avatar| &avatar.id) != Some(old)) {
                 self.drop_avatar(&mut state, &old);
             }
-            bot
+            let dm = state.chats.iter().find(|c| c.meta.kind == "dm" && c.meta.channel.is_none() && c.meta.bot_ids == [bot.id.clone()]).map(|c| c.meta.id.clone());
+            (before, bot, dm)
         };
         self.roster_changed(true);
+        if let (Some(text), Some(dm)) = (profile_notice(&before, &bot), dm) {
+            let mut notice = Message::new(&dm, Author::System, Body::Notice { text, routine_id: None });
+            notice.id = format!("{PROFILE_NOTICE_PREFIX}{}", uuid::Uuid::new_v4());
+            self.upsert_message(notice, true);
+        }
         Ok(bot)
     }
 

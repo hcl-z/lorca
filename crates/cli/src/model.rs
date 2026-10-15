@@ -206,6 +206,27 @@ impl AutoReview {
     }
 }
 
+/// How a profile notice's message id starts, so a turn finds it among the chat's notices.
+pub const PROFILE_NOTICE_PREFIX: &str = "profile-";
+
+/// What a bot's direct chat says when its profile changed from `before` to `after`: a finished
+/// setup, or a new name or description. `None` for any other change (its look, its Access, its
+/// model), which the bot does not speak for.
+pub fn profile_notice(before: &Bot, after: &Bot) -> Option<String> {
+    if before.setting_up && !after.setting_up {
+        return Some(format!("Set up as {}. Its job is saved; from here on it works as {}.", after.name, after.name));
+    }
+    if after.setting_up {
+        return None;
+    }
+    match (before.name != after.name, before.description != after.description) {
+        (true, true) => Some(format!("{} was renamed {} and its description changed.", before.name, after.name)),
+        (true, false) => Some(format!("{} was renamed {}.", before.name, after.name)),
+        (false, true) => Some(format!("{}'s description changed.", after.name)),
+        (false, false) => None,
+    }
+}
+
 impl Bot {
     /// Folds the old Instructions field into Description once. Existing paired Devices may
     /// still send the old field during a rolling upgrade, so an empty compatibility value is
