@@ -68,6 +68,9 @@ func invalidateWindows() {
 	for _, w := range windows() {
 		w.invalidate()
 	}
+	if app.main != nil && app.main.attention.flyout != nil {
+		app.main.attention.flyout.Invalidate()
+	}
 }
 
 // posts are the functions waiting for the main thread, in the order they came: the CLI's events

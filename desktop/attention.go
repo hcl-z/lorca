@@ -2,28 +2,64 @@ package main
 
 import (
 	"fmt"
+	"math"
+	"runtime"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/egoist/lorca/desktop/model"
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
-// The account's attention, after the macOS app's AttentionViewController: a popover under the
+// The account's attention, after the macOS app's AttentionViewController: a flyout under the
 // header's Attention button with each coordinator's latest brief, then what waits on the user,
 // urgent first. A row opens its chat, and an item waiting on a review the inspector lists opens
-// that review's sheet over it; its menu opens another source chat or marks it resolved, and a
-// brief's dismisses it. The ⋯ menu holds the notification switches and the coordinator. Bots keep the list; the CLI sends
-// it whole (attention.changed), and the popover follows it while it shows.
+// that review's sheet over it; its buttons open another source chat or mark it resolved, and a
+// brief's dismisses it. The ⋯ menu holds the notification switches and the coordinator. Bots keep
+// the list; the CLI sends it whole (attention.changed), and the flyout follows it while it shows.
 
-// attentionWidth is the popover's, as the Mac's.
+// attentionWidth is the flyout's, as the Mac's popover.
 const attentionWidth = 380
 
 type attentionState struct {
-	open bool
+	// open is the flyout showing, or asked for before the button had a place to anchor it.
+	open   bool
+	flyout flyoutWindow
+	// height is the flyout's, fitted to its content.
+	height int
 }
 
-// attentionButton is shown while anything waits on the user, or while its popover is open, with
+// flyoutWindow is what the attention flyout needs of a mygo flyout; tests stand one in.
+type flyoutWindow interface {
+	Close()
+	Invalidate()
+	SetContentSize(width, height int)
+}
+
+// openFlyout opens a flyout of native UI under `anchor`, in `parent`'s content area, that
+// takes the keyboard and closes as the user clicks elsewhere or presses Escape; `closed` runs once
+// it has. On macOS it is a system popover, with its material and an arrow at the anchor's middle
+// (AppKit places it, so Placement's alignment and Gap apply only elsewhere).
+var openFlyout = func(parent *mygo.Window, anchor ui.Rect, width, height int, view func(c *ui.Context), closed func()) flyoutWindow {
+	w := mygo.NewFlyout(mygo.FlyoutOptions{
+		Parent:    parent,
+		Anchor:    mygo.Rectangle{X: int(anchor.X), Y: int(anchor.Y), Width: int(anchor.W), Height: int(anchor.H)},
+		Placement: mygo.PlacementBottomEnd,
+		Gap:       6,
+		Width:     width,
+		Height:    height,
+		Focusable: true,
+		Shadow:    true,
+		Popover:   true,
+		Content:   ui.View(view),
+	})
+	w.OnClosed(closed)
+	return w
+}
+
+// attentionButton is shown while anything waits on the user, or while its flyout is open, with
 // how many as its badge.
 func (m *mainWindow) attentionButton(c *ui.Context) {
 	p := colors(c)
@@ -43,22 +79,96 @@ func (m *mainWindow) attentionButton(c *ui.Context) {
 		}
 	})
 	if button.Clicked() {
-		s.open = !s.open
+		if s.open {
+			m.closeAttention()
+		} else {
+			s.open = true
+		}
 	}
-	ui.PopoverBase(c, button, &s.open, func(panel ui.Element) {
-		popoverPanel(c, panel).Width(attentionWidth)
-		m.attentionList(c)
-	})
+	// The button is placed a frame after it first shows: the flyout opens under it then.
+	if s.open && s.flyout == nil {
+		if anchor := button.Bounds(); anchor.W > 0 {
+			m.openAttention(anchor)
+		} else {
+			c.Invalidate()
+		}
+	}
 }
 
-// toggleAttention is View › Attention: the popover opens over the button, which shows for it even
+func (m *mainWindow) openAttention(anchor ui.Rect) {
+	s := &m.attention
+	s.height = m.attentionHeight()
+	var flyout flyoutWindow
+	flyout = openFlyout(m.win, anchor, attentionWidth, s.height, m.attentionFlyout, func() {
+		if s.flyout == flyout {
+			s.flyout, s.open = nil, false
+			m.invalidate()
+		}
+	})
+	s.flyout = flyout
+}
+
+func (m *mainWindow) closeAttention() {
+	s := &m.attention
+	flyout := s.flyout
+	s.flyout, s.open = nil, false
+	if flyout != nil {
+		flyout.Close()
+	}
+	m.invalidate()
+}
+
+// toggleAttention is View › Attention: the flyout opens under the button, which shows for it even
 // with nothing to list.
 func (m *mainWindow) toggleAttention() {
 	if m.isSettings() {
 		return
 	}
-	m.attention.open = !m.attention.open
+	if m.attention.open {
+		m.closeAttention()
+		return
+	}
+	m.attention.open = true
 	m.invalidate()
+}
+
+// attentionHeight is the panel's height, laid out offscreen, for the flyout to open at: a window
+// sized after it opens jumps.
+func (m *mainWindow) attentionHeight() int {
+	var height float32
+	// An element's bounds are its last layout's: the second pass reads the first's.
+	tt := ui.NewTester(func(c *ui.Context) { height = m.attentionPanel(c).Bounds().H }, attentionWidth, 1000)
+	tt.Frame()
+	return max(int(math.Ceil(float64(height))), 1)
+}
+
+// attentionFlyout is the flyout's content: the panel, which the flyout follows as the list
+// changes while it shows.
+func (m *mainWindow) attentionFlyout(c *ui.Context) {
+	panel := m.attentionPanel(c)
+	s := &m.attention
+	if h := int(math.Ceil(float64(panel.Bounds().H))); h > 0 && h != s.height && s.flyout != nil {
+		s.height = h
+		s.flyout.SetContentSize(attentionWidth, h)
+	}
+}
+
+// attentionPanel is what the flyout draws. On macOS it is a system popover, whose material shows
+// through; elsewhere the window draws nothing, and the panel its own background.
+func (m *mainWindow) attentionPanel(c *ui.Context) ui.Element {
+	applyTheme(c)
+	p := colors(c)
+	c.Root().Background(ui.Transparent)
+	panel := ui.Column(c).Width(attentionWidth).Shrink(0)
+	switch {
+	case c.Vibrancy():
+	case runtime.GOOS == "windows":
+		panel.Background(p.Popover)
+	default:
+		panel.Background(p.Popover).Radius(10).Border(0.5, p.ShadowEdge)
+	}
+	panel.Children(func() { m.attentionList(c) })
+	return panel
 }
 
 func (m *mainWindow) attentionList(c *ui.Context) {
@@ -95,9 +205,10 @@ func (m *mainWindow) attentionList(c *ui.Context) {
 	})
 }
 
-// attentionRow is a row lit under the pointer, as a menu item is, that opens `chatID`, then
+// attentionRow is a row lit under the pointer, as a menu item is, that opens `chatID` on
+// `messageID` when there is one, then
 // `review`'s sheet when there is one.
-func (m *mainWindow) attentionRow(c *ui.Context, chatID string, review *model.ReviewItem, label string, children func()) ui.Element {
+func (m *mainWindow) attentionRow(c *ui.Context, chatID, messageID string, review *model.ReviewItem, label string, children func()) ui.Element {
 	p := colors(c)
 	outer := ui.Box(c).Padding(1, 6)
 	var row ui.Element
@@ -109,8 +220,7 @@ func (m *mainWindow) attentionRow(c *ui.Context, chatID string, review *model.Re
 		row.Children(children)
 	})
 	if row.Clicked() && store.Chat(chatID) != nil {
-		m.attention.open = false
-		m.selectChat(chatID)
+		m.showAttentionChat(chatID, messageID)
 		if review != nil && !m.hasSheet() {
 			m.presentReview(*review)
 		}
@@ -143,7 +253,7 @@ func (m *mainWindow) attentionBrief(c *ui.Context, brief model.AttentionBrief) u
 		keys = append(keys, l.key)
 	}
 	keyWidth := mcpFormLabelWidth(c, keys...)
-	row := m.attentionRow(c, brief.ChatID, nil, strings.Join(spoken, "\n"), func() {
+	row := m.attentionRow(c, brief.ChatID, "", nil, strings.Join(spoken, "\n"), func() {
 		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(8).Children(func() {
 			ui.Row(c).Gap(6).Children(func() {
 				avatar(c, botAvatarOrSystem(bot), 18, false)
@@ -158,12 +268,12 @@ func (m *mainWindow) attentionBrief(c *ui.Context, brief model.AttentionBrief) u
 					})
 				}
 			})
+			attentionActions(c, func() {
+				if pushButton(c.Key("dismiss"), L("Dismiss"), pushOptions{Small: true}).Clicked() {
+					store.DismissBrief(brief.CoordinatorBotID, brief.Revision, m.attentionFailed)
+				}
+			})
 		})
-	})
-	row.ContextMenu(func(menu *ui.Menu) {
-		if menu.Item(L("Dismiss")).Chosen() {
-			store.DismissBrief(brief.CoordinatorBotID, brief.Revision, m.attentionFailed)
-		}
 	})
 	return row
 }
@@ -186,10 +296,12 @@ func (m *mainWindow) attentionItem(c *ui.Context, item model.AttentionItem) ui.E
 		first = chats[0].ID
 	}
 	review := attentionReview(item)
+	message := attentionMessage(item, first)
 	if review != nil {
 		first = review.Origin.ChatID
+		message = review.Origin.MessageID
 	}
-	row := m.attentionRow(c, first, review, strings.Join([]string{status, item.Title, item.NextAction, item.Summary}, ". "), func() {
+	row := m.attentionRow(c, first, message, review, strings.Join([]string{status, item.Title, item.NextAction, item.Summary}, ". "), func() {
 		ui.Row(c).Width(18).Padding(1, 0, 0, 0).Justify(ui.Center).TextColor(tint).Children(func() { symbol(c, symbolName, 15, 1.9) })
 		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(3).Children(func() {
 			ui.Text(c, item.Title).FontSize(12.5).FontWeight(600).LineHeight(1.3).MaxLines(2)
@@ -200,24 +312,27 @@ func (m *mainWindow) attentionItem(c *ui.Context, item model.AttentionItem) ui.E
 					ui.Text(c, " · "+strings.Join(titles, ", ")).Shrink(1).MinWidth(0).FontSize(11).TextColor(p.Label2).SingleLine()
 				}
 			})
+			attentionActions(c, func() {
+				if pushButton(c.Key("resolve"), L("Mark as Resolved"), pushOptions{Small: true}).Clicked() {
+					m.resolveAttention(item)
+				}
+				// The row opens the first chat; another source chat has its own button.
+				if len(chats) > 1 {
+					for _, chat := range chats {
+						if pushButton(c.Key("open-"+chat.ID), L("Open “%@”", store.Title(chat)), pushOptions{Small: true}).Clicked() {
+							m.showAttentionChat(chat.ID, attentionMessage(item, chat.ID))
+						}
+					}
+				}
+			})
 		})
 	})
-	row.Tooltip(item.Summary)
-	row.ContextMenu(func(menu *ui.Menu) {
-		for _, chat := range chats {
-			if menu.Item(L("Open “%@”", store.Title(chat))).Chosen() {
-				m.attention.open = false
-				m.selectChat(chat.ID)
-			}
-		}
-		if len(chats) > 0 {
-			menu.Separator()
-		}
-		if menu.Item(L("Mark as Resolved")).Chosen() {
-			m.resolveAttention(item)
-		}
-	})
 	return row
+}
+
+// attentionActions is a row's buttons, under its text, wrapping onto more lines as they need.
+func attentionActions(c *ui.Context, buttons func()) {
+	ui.Row(c).Wrap().Gap(6).Margin(4, 0, 0, 0).Children(buttons)
 }
 
 func attentionCategory(category string) (title, symbol string) {
@@ -230,6 +345,64 @@ func attentionCategory(category string) (title, symbol string) {
 		return L("Commitment"), "calendar"
 	}
 	return L("Change"), "arrow.triangle.2.circlepath"
+}
+
+// attentionMessage is the message in `chatID` the item cites first, or "".
+func attentionMessage(item model.AttentionItem, chatID string) string {
+	for _, source := range item.Sources {
+		if source.ChatID == chatID && source.MessageID != "" {
+			return source.MessageID
+		}
+	}
+	return ""
+}
+
+// showAttentionChat closes the flyout and opens `chatID`, then brings `messageID` into view and
+// pulses it, as a quote does, loading older pages until it is there. One that is gone leaves the
+// chat at its end.
+func (m *mainWindow) showAttentionChat(chatID, messageID string) {
+	m.closeAttention()
+	m.selectChat(chatID)
+	if messageID == "" {
+		return
+	}
+	store.LoadMessage(chatID, messageID, func(err error) {
+		if err != nil || m.selection.ChatID != chatID {
+			return
+		}
+		chat := m.chatStateFor(chatID)
+		chat.rows = buildRows(store.Chat(chatID), store.WorkingBots(chatID), chat.stoppedNotice)
+		m.revealMessage(chat, shownMessage(chat.rows, store.Chat(chatID), messageID))
+	})
+}
+
+// shownMessage is `messageID`, or, for a message the transcript draws no row for (a tool call
+// that needs nobody), the nearest one before it that has a row, else the nearest after it.
+func shownMessage(rows []chatRow, chat *model.Chat, messageID string) string {
+	shown := map[string]bool{}
+	for _, row := range rows {
+		if row.kind == rowMessage {
+			shown[row.message.ID] = true
+		}
+	}
+	if shown[messageID] || chat == nil {
+		return messageID
+	}
+	at := slices.IndexFunc(chat.Messages, func(m *model.Message) bool { return m.ID == messageID })
+	if at < 0 {
+		return messageID
+	}
+	for i := at - 1; i >= 0; i-- {
+		if shown[chat.Messages[i].ID] {
+			return chat.Messages[i].ID
+		}
+	}
+	for _, m := range chat.Messages[at+1:] {
+		if shown[m.ID] {
+			return m.ID
+		}
+	}
+	return messageID
 }
 
 // attentionChats are the chats an item came from, once each, that still exist.
