@@ -1,0 +1,38 @@
+docs/architecture/tools.md
+  s_251ad203da4cfc::t_8fdecbf40361d5 18
+crates/cli/src/turns.rs
+  s_251ad203da4cfc::t_2957997239b574 541-542
+  s_251ad203da4cfc::t_29e86e46418bd6 4458-4460
+  s_251ad203da4cfc::t_cbb9b96a3fe7ab 4431
+  s_251ad203da4cfc::t_19d5034a92c3d5 934,937
+  s_251ad203da4cfc::t_8484042bd222f0 696,698-699,702-708,710-711,722-723,729-730
+  s_251ad203da4cfc::t_77de19bb0910c1 4472-4474
+crates/cli/src/traces.rs
+  s_251ad203da4cfc::t_58a8a88be02eda 655,657-675
+  s_251ad203da4cfc::t_075c51d927c0eb 316-318,323,326
+  s_251ad203da4cfc::t_3dde7453901b89 176
+  s_251ad203da4cfc::t_8db1388938c33a 49-54
+  s_251ad203da4cfc::t_e2cea1860469ed 55-74,78-80
+  s_251ad203da4cfc::t_f762d32e5c7054 263-270,272
+  s_251ad203da4cfc::t_2e99a039fd5272 287-289,291-296
+crates/cli/src/secrets/mod.rs
+  s_251ad203da4cfc::t_0d00bb7fab1eba 387-392
+docs/architecture/traces.md
+  s_251ad203da4cfc::t_34b46cc9e8ed2b 9,21-22,29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "8d07e7e181f0a22ecc8e2439e9578792c63ae9cf",
+  "prompts": {},
+  "sessions": {
+    "s_251ad203da4cfc": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_ctuwzmzl63h0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
