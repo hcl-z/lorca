@@ -67,7 +67,7 @@ A bot made from one Device runs on its Runner, which can be offline: [A bot on a
 
 ## Subjects
 
-One doc per subject under `docs/architecture/`, each short enough to read in one pass. `bun run check:docs` holds this file to 16 KiB and each subject to 24 KiB, and checks that every subject is listed here and that links and their anchors resolve.
+One doc per subject under `docs/architecture/`, each read in one pass: `bun run check:docs` holds this file to 16 KiB and each subject to 24 KiB, and checks that every subject is listed and every link and anchor resolves.
 
 | Doc | Read it for |
 | --- | --- |
@@ -75,7 +75,7 @@ One doc per subject under `docs/architecture/`, each short enough to read in one
 | [Relay](docs/architecture/relay.md) | `crates/relay`: storage on SQLite or Postgres, files, housekeeping, quotas, metrics, rate limits, auth, tables and migrations, the blob, sync socket, and push APIs, deploys |
 | [Relay trust](docs/architecture/relay-trust.md) | What a Device takes from the relay and how it checks it: Device records and unpaired keys, signed envelopes, the challenge nonce, the pairing reply key, the account key's generations and their rotation on unpair |
 | [Protocols](docs/architecture/protocols.md) | The app ↔ CLI websocket and the CLI ↔ relay requests and blobs |
-| [CLI (runtime)](docs/architecture/runtime.md) | The `lorca` binary and its data directory, installing it, its signed self-updates and `lorca service`, the agent loop and a turn on a Runner |
+| [CLI (runtime)](docs/architecture/runtime.md) | The `lorca` binary and its data directory, installing it, its signed self-updates and `lorca service`, the agent loop, a turn on a Runner and [its trace](docs/architecture/traces.md) |
 | [Notifications](docs/architecture/notifications.md) | Phone pushes for replies, failures, and questions, the desktop app's own notifications, reads on another Device, the chat on screen |
 | [Bot permissions](docs/architecture/bot-permissions.md) | A bot's Access to plugins, tools, files, and shell; where the CLI checks it; access requests |
 | [Tools](docs/architecture/tools.md) | Team, memory, and coding tools |
@@ -99,7 +99,7 @@ One doc per subject under `docs/architecture/`, each short enough to read in one
 | [MCP servers](docs/architecture/mcp-servers.md) | The user's own MCP servers in a Runner's `mcp.json`: the file and other apps' spellings, sign-in when a server asks, the `mcp.*` methods and `lorca mcp`, the apps' MCP Servers section and server sheet |
 | [Bots and Memory](docs/architecture/bots.md) | The lead bot, DMs and groups, who answers, handoffs between bots, a bot's memory |
 | [Routines](docs/architecture/routines.md) | A bot's scheduled tasks: schedules and their timezones, runs and read-only checks, missed runs, health and recovery, and the apps' routine sheet and service row |
-| [One-time routines, routines on events, and calendar events](docs/architecture/routine-triggers.md) | Routines that run once at a date and time, run for each event about one subject (a pull request until it merges or closes, a webhook's requests), or run around a Calendar account's events |
+| [One-time routines, routines on events, and calendar events](docs/architecture/routine-triggers.md) | Routines that run once at a date and time, for each event about one subject (a pull request until it merges or closes, a webhook's requests), or around a Calendar account's events |
 | [Event triggers](docs/architecture/event-triggers.md) | Runner event subscriptions, the gateways users run to sign and seal a service's events, the encrypted inbox, ordering and recovery |
 | [Hosted receivers](docs/architecture/receivers.md) | The relay's receivers for routines on events: the Lorca GitHub App and its install and bind, routine webhooks with their URL and key, what the relay sees, setup |
 | [Channels](docs/architecture/channels.md) | A bot listening on Telegram and Slack: the accounts and their builtin servers, filters, the chats the user allows and the ones asking, conversations and what people write there, replies, the feedback collector |

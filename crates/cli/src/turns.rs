@@ -155,6 +155,9 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         }
     };
     let Some(chat) = app.chat(&job.chat_id) else { return TurnOutcome::Skipped };
+    // Every request of the turn, its housekeeping's included, goes into its trace.
+    let trace = crate::traces::Trace::start(app, job, &bot, &chat, provider.as_ref(), routine.is_some() || event.is_some());
+    let provider = crate::traces::TracedProvider::wrap(provider, trace.as_ref());
     // A channel's message: its chat sees the bot typing until the reply goes out or the turn ends.
     let _typing = event.as_ref().filter(|event| event.message_id.is_some()).and_then(|_| crate::channels::typing(app, &chat, &job.id, &cancel));
 
@@ -294,14 +297,23 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
     };
     let too_many = settings.enabled && uncovered_count(app, &chat, &bot) > MAX_CONTEXT_MESSAGES;
     if too_long || too_many {
+        if let Some(trace) = &trace {
+            trace.phase("compaction");
+        }
         let compacted = if too_many {
             compact_chat(app, &chat, &bot, &provider, &settings, &cancel).await
         } else {
             let turn = TurnRequest { system_prompt: system_prompt.clone(), tools: tools.clone(), cache_points: transcript_cache_points(&messages) };
             compact_messages(app, &chat.meta.id, &bot, &provider, &messages, &settings, Some(&turn), &cancel).await.map(|result| result.map(|(_, tokens_before)| tokens_before))
         };
+        if let Some(trace) = &trace {
+            trace.phase("loop");
+        }
         match compacted {
             Ok(Some(tokens_before)) => {
+                if let Some(trace) = &trace {
+                    trace.compaction(tokens_before, "before the turn");
+                }
                 tracing::info!(bot = %bot.name, chat = %chat.meta.id, tokens_before, "compacted before the turn");
                 chat = app.chat(&job.chat_id).unwrap_or(chat);
                 messages = transcript_for(app, &chat, &bot, &workdir);
@@ -378,7 +390,7 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         attention_handled: attention_handled.clone(),
         shown_len: 0,
         last_flush: std::time::Instant::now(),
-    })));
+    }), trace.clone()));
     let steering = (!chat.meta.is_group()).then(|| AgentMessageQueue::new(QueueMode::All));
     // Send now cuts the step short for a message the queue holds.
     let interrupt = steering.is_some().then(lorca_agent::StepInterrupt::new);
@@ -396,6 +408,7 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         steering: steering.clone(),
         follow_up: (!chat.meta.is_group() && chat.meta.channel.is_none()).then(FollowUp::default),
         brief,
+        trace: trace.clone(),
         cancel: cancel.clone(),
     });
     let config = AgentLoopConfig {
@@ -516,6 +529,9 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
     } else {
         TurnOutcome::Pass
     };
+    if let Some(trace) = &trace {
+        trace.finish(&format!("{outcome:?}").to_lowercase(), cancel.is_cancelled());
+    }
     // A terminal error takes priority over anything the bot said before it failed.
     // Context recovery above finishes before we choose the notification.
     if let Some(error) = state.last_error.as_deref().filter(|_| state.failed && !attention_handled.load(std::sync::atomic::Ordering::Relaxed)) {
@@ -558,7 +574,7 @@ fn turn_log_line(said: Option<&str>, tools_used: &[String], failed: bool) -> Opt
 }
 
 /// The first `max` characters of `text` on one line, with an ellipsis when cut.
-fn excerpt(text: &str, max: usize) -> String {
+pub(crate) fn excerpt(text: &str, max: usize) -> String {
     let one_line: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if one_line.chars().count() > max {
         format!("{}…", one_line.chars().take(max).collect::<String>().trim_end())
@@ -600,6 +616,7 @@ struct TurnHooks {
     follow_up: Option<FollowUp>,
     /// `turn_brief`, closing every request.
     brief: Option<String>,
+    trace: Option<Arc<crate::traces::Trace>>,
     cancel: CancellationToken,
 }
 
@@ -628,13 +645,13 @@ impl FollowUp {
         *self.reply.lock().unwrap() = ended_on_words.then(|| message.text());
     }
 
-    /// The note, when the turn would end on a reply that announced work.
-    fn note(&self) -> Option<AgentMessage> {
+    /// The note and the reply it answers, when the turn would end on a reply that announced work.
+    fn note(&self) -> Option<(String, AgentMessage)> {
         let reply = self.reply.lock().unwrap().take()?;
         if !announces_work(&reply) || self.asked.swap(true, std::sync::atomic::Ordering::Relaxed) {
             return None;
         }
-        Some(AgentMessage::User(UserMessage::text(FOLLOW_UP_NOTE)))
+        Some((reply, AgentMessage::User(UserMessage::text(FOLLOW_UP_NOTE))))
     }
 }
 
@@ -707,7 +724,7 @@ fn steering_message(
     Some(AgentMessage::User(UserMessage { content, timestamp }))
 }
 
-const STEERING_MESSAGE_KIND: &str = "lorca_steering";
+pub(crate) const STEERING_MESSAGE_KIND: &str = "lorca_steering";
 
 /// Send now: the direct chat's turn reads the messages it holds at once. The commands it runs go
 /// to the background and run on, its reply in progress stops where it got to, its other tools are
@@ -860,33 +877,66 @@ impl LoopHooks for TurnHooks {
         if self.cancel.is_cancelled() {
             return Vec::new();
         }
-        self.follow_up.as_ref().and_then(FollowUp::note).into_iter().collect()
+        let Some((reply, note)) = self.follow_up.as_ref().and_then(FollowUp::note) else { return Vec::new() };
+        if let Some(trace) = &self.trace {
+            trace.follow_up(&reply);
+        }
+        vec![note]
     }
 
     async fn before_tool_call(&self, ctx: BeforeToolCallContext<'_>) -> Option<BeforeToolCallResult> {
+        let call = ctx.tool_call;
+        let (by, decision) = self.check_tool_call(ctx).await?;
+        if let (Some(trace), true) = (&self.trace, decision.block) {
+            trace.hold(call, by, decision.reason.as_deref(), decision.terminate);
+        }
+        Some(decision)
+    }
+
+    /// What a tool returns reaches the model, the chat, and a script only with this Runner's
+    /// saved secrets taken out.
+    async fn after_tool_call(&self, ctx: AfterToolCallContext<'_>) -> Option<AfterToolCallResult> {
+        crate::secrets::scrub_result(&self.app, ctx.result)
+    }
+
+    async fn prepare_next_turn(&self, ctx: PrepareNextTurnContext<'_>) -> Option<TurnUpdate> {
+        if let Some(trace) = &self.trace {
+            trace.phase("compaction");
+        }
+        let update = self.next_turn(ctx).await;
+        if let Some(trace) = &self.trace {
+            trace.phase("loop");
+        }
+        update
+    }
+}
+
+impl TurnHooks {
+    /// The checks before a call runs, in order, with the name of the one that decided it.
+    async fn check_tool_call(&self, ctx: BeforeToolCallContext<'_>) -> Option<(&'static str, BeforeToolCallResult)> {
         if let Some(refused) = over_limits() {
-            return Some(refused);
+            return Some(("limits", refused));
         }
         if self.unattended && self.trigger.routine.as_ref().is_some_and(|r| r.feedback_authorization_prompt.is_some())
             && crate::feedback::changes_controls(&ctx.tool_call.name, &ctx.tool_call.arguments) {
-            return Some(BeforeToolCallResult { block: true, reason: Some("Workflow feedback cannot authorize routine or bot changes. Stage a proposal or ask the user in chat.".into()), args: None, terminate: false });
+            return Some(("feedback", BeforeToolCallResult { block: true, reason: Some("Workflow feedback cannot authorize routine or bot changes. Stage a proposal or ask the user in chat.".into()), args: None, terminate: false }));
         }
         if !self.plugin_tools.is_plugin_tool(&ctx.tool_call.name) {
             if let Err(denied) = crate::permissions::check_tool_call(&self.app, &self.bot, &ctx.tool_call.name, &ctx.tool_call.arguments) {
-                return Some(crate::permissions::refuse(&self.app, &self.chat_id, &self.bot, denied));
+                return Some(("access", crate::permissions::refuse(&self.app, &self.chat_id, &self.bot, denied)));
             }
         }
         if let Some(refused) = crate::browser::review_call(&self.app, &self.bot, &self.chat_id, &self.trigger, self.unattended, &ctx).await {
-            return Some(refused);
+            return Some(("browser_review", refused));
         }
         if let Some(refused) = crate::coding::review_start(&self.app, &self.bot, &self.chat_id, &self.trigger, self.unattended, &ctx).await {
-            return Some(refused);
+            return Some(("coding_review", refused));
         }
         if let Some(refused) = crate::plugins::mcp::review_call(&self.app, &self.plugin_tools, &self.chat_id, &self.trigger, &self.bot, self.unattended, &ctx).await {
-            return Some(refused);
+            return Some(("plugin_review", refused));
         }
         if let Some(refused) = over_limits() {
-            return Some(refused);
+            return Some(("limits", refused));
         }
         let decision = crate::local_review::before_tool_call(
             &self.app,
@@ -899,18 +949,14 @@ impl LoopHooks for TurnHooks {
         )
         .await;
         if let Some(refused) = over_limits() {
-            return Some(refused);
+            return Some(("limits", refused));
         }
-        decision
+        decision.map(|decision| ("auto_review", decision))
     }
 
-    /// What a tool returns reaches the model, the chat, and a script only with this Runner's
-    /// saved secrets taken out.
-    async fn after_tool_call(&self, ctx: AfterToolCallContext<'_>) -> Option<AfterToolCallResult> {
-        crate::secrets::scrub_result(&self.app, ctx.result)
-    }
-
-    async fn prepare_next_turn(&self, ctx: PrepareNextTurnContext<'_>) -> Option<TurnUpdate> {
+    /// Between steps: the steering messages the context reads, and a compaction once it
+    /// outgrows the window.
+    async fn next_turn(&self, ctx: PrepareNextTurnContext<'_>) -> Option<TurnUpdate> {
         let mut context = ctx.context.clone();
         context.messages = materialize_steering_messages(&self.app, &self.bot, &self.workdir, context.messages).await;
         let context_changed = context.messages != ctx.context.messages;
@@ -922,6 +968,9 @@ impl LoopHooks for TurnHooks {
                 let turn = TurnRequest { system_prompt: context.system_prompt.clone(), tools: context.tools.clone(), cache_points: context.cache_points.clone() };
                 match compact_messages(&self.app, &self.chat_id, &self.bot, &self.provider, &context.messages, &self.settings, Some(&turn), &cancel).await {
                     Ok(Some((messages, tokens_before))) => {
+                        if let Some(trace) = &self.trace {
+                            trace.compaction(tokens_before, "mid-turn");
+                        }
                         tracing::info!(bot = %self.bot.name, chat = %self.chat_id, tokens_before, "compacted mid-turn");
                         context.messages = messages;
                         // The summary moved every message the points named.
@@ -1339,17 +1388,27 @@ fn text_parts(assistant: &AssistantMessage) -> Vec<&str> {
 }
 
 /// `PASS`, alone, is how a member stays silent on its turn.
-fn is_pass(text: &str) -> bool {
+pub(crate) fn is_pass(text: &str) -> bool {
     let cleaned: String = text.chars().filter(|c| c.is_alphanumeric()).collect();
     cleaned.eq_ignore_ascii_case("pass")
 }
 
-struct TurnSink(std::sync::Mutex<TurnState>);
+/// The turn's state from its events, and its trace.
+struct TurnSink(std::sync::Mutex<TurnState>, Option<Arc<crate::traces::Trace>>);
 
 #[async_trait]
 impl EventSink for TurnSink {
     async fn on_event(&self, event: &AgentEvent) {
-        self.0.lock().unwrap().handle(event.clone());
+        if let Some(trace) = &self.1 {
+            trace.event(event);
+        }
+        let mut state = self.0.lock().unwrap();
+        if let (Some(trace), AgentEvent::ToolExecutionEnd { tool_name, .. }) = (&self.1, event) {
+            if tool_name == "request_secret" {
+                trace.reload_secrets(&state.app);
+            }
+        }
+        state.handle(event.clone());
     }
 }
 
@@ -4095,6 +4154,53 @@ mod tests {
         assert_eq!(std::fs::read_to_string(materialized).unwrap(), "all tests passed");
     }
 
+    /// Each request of a turn is traced with what it added, each reply and tool call after it,
+    /// and the turn's end says why it ended; the CLI's readers find it.
+    #[tokio::test]
+    async fn a_turn_leaves_a_trace_of_each_step() {
+        struct Sink(Arc<crate::traces::Trace>);
+        #[async_trait]
+        impl EventSink for Sink {
+            async fn on_event(&self, event: &AgentEvent) {
+                self.0.event(event);
+            }
+        }
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        let chef = bot("b1", "Chef");
+        let dm = chat("dm", "dm", None, &["b1"]);
+        app.state.lock().unwrap().bots.push(chef.clone());
+        app.state.lock().unwrap().chats.push(dm.clone());
+        let job = Job { id: "job-trace".into(), kind: "turn".into(), ..room_job("dm", "b1") };
+        let work = scratch.1.join("work");
+        std::fs::create_dir_all(&work).unwrap();
+        let scripted = Arc::new(Scripted { replies: std::sync::Mutex::new(vec![r#"ls {"path":"."}"#, "Done."]), requests: Default::default() });
+        let trace = crate::traces::Trace::start(app, &job, &chef, &dm, scripted.as_ref(), false).expect("traces are on");
+        let provider = crate::traces::TracedProvider::wrap(scripted.clone(), Some(&trace));
+        let config = AgentLoopConfig::new(provider).with_sink(Arc::new(Sink(trace.clone())));
+        let context = AgentContext { system_prompt: "You are Chef, a bot in Lorca.".into(), messages: vec![AgentMessage::user("List the files")], tools: lorca_agent::tools::coding_tools(work), cache_points: Vec::new() };
+        let (tx, rx) = mpsc::channel(1);
+        drop(rx);
+        run_agent_loop_continue(context, &config, &tx, CancellationToken::new()).await.unwrap();
+        trace.finish("sent", false);
+
+        let path = crate::traces::find(&app.config.home, "job-trace").expect("the trace file");
+        let records: Vec<Value> = std::fs::read_to_string(&path).unwrap().lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+        let kinds: Vec<&str> = records.iter().map(|r| r["type"].as_str().unwrap()).collect();
+        assert_eq!(kinds, ["job_start", "request", "call_end", "response", "tool", "request", "call_end", "response", "job_end"]);
+        let requests: Vec<&Value> = records.iter().filter(|r| r["type"] == "request").collect();
+        assert_eq!((requests[1]["same_as_before"].as_u64(), requests[1]["added"].as_array().map(Vec::len)), (Some(1), Some(2)), "the second adds the call and its result");
+        assert_eq!(records[4]["name"], "ls");
+        let end = records.last().unwrap();
+        assert_eq!((end["end_reason"].as_str(), end["steps"].as_u64()), (Some("no_tool_call"), Some(2)));
+        let system = requests[0]["system"].as_str().unwrap();
+        assert_eq!(std::fs::read_to_string(path.parent().unwrap().join("blobs").join(format!("{system}.txt"))).unwrap(), "You are Chef, a bot in Lorca.");
+        assert!(crate::traces::markdown(&path, true).contains("### Tool result · ls"));
+        let listed = crate::traces::list(&app.config.home, Some("b1"), 1);
+        assert_eq!(listed.len(), 1);
+        assert!(crate::traces::stats_text(&listed).contains("no_tool_call"));
+    }
+
     #[test]
     fn a_reply_that_announces_work_is_told_from_one_that_reports_it() {
         for announced in [
@@ -4135,7 +4241,7 @@ mod tests {
                 false
             }
             async fn follow_up_messages(&self) -> Vec<AgentMessage> {
-                self.0.note().into_iter().collect()
+                self.0.note().map(|(_, note)| note).into_iter().collect()
             }
         }
         let run = |replies: Vec<&'static str>| async move {
