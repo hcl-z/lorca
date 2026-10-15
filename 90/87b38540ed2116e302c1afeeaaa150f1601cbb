@@ -1,0 +1,78 @@
+crates/cli/src/skills_turn.rs
+  s_251ad203da4cfc::t_9b1d4d516cbc77 46-51
+docs/architecture/channels.md
+  s_251ad203da4cfc::t_9e5be1bc8d6aca 52
+docs/architecture/handoffs.md
+  s_251ad203da4cfc::t_132173f6724361 9,19,23,27
+docs/architecture/routine-triggers.md
+  s_251ad203da4cfc::t_132173f6724361 22
+crates/cli/src/turns.rs
+  s_251ad203da4cfc::t_1c932da76df833 2530-2532
+  s_251ad203da4cfc::t_eb86f87ba133a5 659-660
+  s_251ad203da4cfc::t_69c14f921c5d48 826-829
+  s_251ad203da4cfc::t_efbabfc56999dd 397
+  s_251ad203da4cfc::t_a38d9284d18f52 193-194
+  s_251ad203da4cfc::t_5969fb53ae1d59 1946-1952,1954,1958-1960,1964
+  s_251ad203da4cfc::t_f7f59dd8bf0b4c 11
+  s_251ad203da4cfc::t_1f818403b3969a 1977-1982
+  s_251ad203da4cfc::t_0399c1df5c7693 2513-2514
+  s_251ad203da4cfc::t_d866f6b1927933 4344,4350-4351,4377,4383,4401,4405,5908,5911
+  s_251ad203da4cfc::t_232823cf8addcb 643-644
+  s_251ad203da4cfc::t_47e2a43fdd9409 2112-2116
+  s_251ad203da4cfc::t_f4b833764d681b 1873-1876
+  s_251ad203da4cfc::t_4c435fbf49b652 1159-1211
+  s_251ad203da4cfc::t_cedbeb0442160b 1957,1961-1962,1966
+  s_251ad203da4cfc::t_7e8781127a9a55 4409-4434
+  s_251ad203da4cfc::t_c5cd32bf3db787 661-666
+  s_251ad203da4cfc::t_7c822ac2e9dbde 4354-4358
+  s_251ad203da4cfc::t_0d6d5fc6672ba3 601-602
+  s_251ad203da4cfc::t_8961a401c09c11 4378-4379,4381,4386-4393
+  s_251ad203da4cfc::t_536f25e31604e3 398
+  s_251ad203da4cfc::t_ceaab41ecdd798 2125-2126,2128
+  s_251ad203da4cfc::t_873a85518f8b65 852-865
+  s_251ad203da4cfc::t_2565f4c54c6e75 1892-1894
+  s_251ad203da4cfc::t_7cf07ea80f7c54 1970
+  s_251ad203da4cfc::t_2af78bf1ac0c68 2110-2111,2117
+  s_251ad203da4cfc::t_57639b296a8e3e 4099-4159
+  s_251ad203da4cfc::t_0f357e02d5d186 225-229
+  s_251ad203da4cfc::t_789e92807c462b 598-600,606-642,645-658,667
+  s_251ad203da4cfc::t_645dc65fc8dcc6 2202-2205
+  s_251ad203da4cfc::t_a9edf279d8a02e 835-840
+  s_251ad203da4cfc::t_934eff749fd541 3109-3110
+  s_251ad203da4cfc::t_4ef4929793f68d 2040-2060,2072,2075,2078-2083,2092,2095-2096
+  s_251ad203da4cfc::t_825846b75c7015 4394-4398
+  s_251ad203da4cfc::t_6bc71fdb479eda 4384-4385
+docs/architecture/attention.md
+  s_251ad203da4cfc::t_132173f6724361 9
+docs/architecture/bots.md
+  s_251ad203da4cfc::t_132173f6724361 17
+crates/cli/src/attention.rs
+  s_251ad203da4cfc::t_c07be857287930 961-982
+  s_251ad203da4cfc::t_6f0ef8d04b6bac 1242,1245-1247
+docs/architecture/event-triggers.md
+  s_251ad203da4cfc::t_132173f6724361 92
+docs/architecture/runtime.md
+  s_251ad203da4cfc::t_c93acf953a3e92 75-76,78
+  s_251ad203da4cfc::t_06e91c2a587b94 77
+  s_251ad203da4cfc::t_fdb7a0e52c7841 73-74
+docs/architecture/routines.md
+  s_251ad203da4cfc::t_132173f6724361 3,7,9
+docs/architecture/tools.md
+  s_251ad203da4cfc::t_132173f6724361 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "9087b38540ed2116e302c1afeeaaa150f1601cbb",
+  "prompts": {},
+  "sessions": {
+    "s_251ad203da4cfc": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_ctuwzmzl63h0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
