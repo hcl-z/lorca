@@ -8,6 +8,13 @@ phone app's.
 
 ## [Unreleased]
 
+## [1.0.22]
+
+- A bot that says what it is about to do and then stops is asked once more, so a morning routine no longer ends on "Fetching all sources now." with nothing fetched: the bot does the work, or stays quiet when it is done. Bots are also told to keep messages short but not the work, to say they did something only when it shows, and to answer in your language.
+- A bot's new name or description, and a new bot's finished setup, apply from its next step, even in a conversation under way, and its chat notes each change, so the bot follows what you wrote instead of repeating what it said about itself before.
+- Every bot turn leaves a trace on the computer that runs it: each request, reply, and tool call, what held a call back, and why the turn ended. `lorca traces list`, `show`, `export`, and `stats` read them. Traces stay on that computer, leave out the secrets you saved, and are kept for two weeks; `LORCA_TRACES=0` turns them off.
+- Bots' instructions are steadier and shorter. What started a turn (a routine, an event, a teammate's message) comes with that turn instead of changing the instructions every time, so more of each conversation is read from the provider's cache, and a scheduled run leaves out what only your requests need.
+
 ## [1.0.21]
 
 - A file viewer on the desktop, and an image lightbox. A file in a chat, or an output in the inspector, opens in a sheet that draws it as it is: an image fitted or at its own size, Markdown as a page, an HTML page or a PDF in a web view, and other text as it is, with Preview and Source for Markdown and HTML and a Copy button for text. A published picture shows in the transcript as the picture itself and opens in a lightbox: the picture alone on a dark ground, pinch to zoom, a drag to move it, and Save As… on its bar.
