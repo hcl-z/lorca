@@ -1,0 +1,25 @@
+crates/cli/src/turns.rs
+  s_251ad203da4cfc::t_ff59505c5dcd4d 276-277
+crates/cli/src/plugins/mcp.rs
+  s_251ad203da4cfc::t_d7823dd707298b 1800-1803
+  s_251ad203da4cfc::t_6f0fcd1591df52 2009-2011,2013-2017
+  s_251ad203da4cfc::t_53e2d8bb88c875 3579-3580
+docs/architecture/plugins.md
+  s_251ad203da4cfc::t_8edda92d6f024e 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.49-trip",
+  "base_commit_sha": "e74c7dced71b97bd6ffafdd7da19a50a1fcf4791",
+  "prompts": {},
+  "sessions": {
+    "s_251ad203da4cfc": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_ctuwzmzl63h0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
