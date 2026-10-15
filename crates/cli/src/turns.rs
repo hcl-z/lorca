@@ -187,10 +187,12 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
     let store = MemoryStore::for_bot(&app.config.home, &bot);
     // The prompt names the installed plugins the bot's Access lets it use; their tools are in the
     // codemode tool's description, and their servers stay dormant until a script calls them.
-    let plugin_briefs: Vec<_> = crate::plugins::mcp::plugin_briefs(app)
-        .into_iter()
-        .filter(|brief| bot.permissions.as_ref().is_none_or(|policy| policy.allows_connection(&brief.id)))
-        .collect();
+    let plugin_briefs: Arc<Vec<_>> = Arc::new(
+        crate::plugins::mcp::plugin_briefs(app)
+            .into_iter()
+            .filter(|brief| bot.permissions.as_ref().is_none_or(|policy| policy.allows_connection(&brief.id)))
+            .collect(),
+    );
     let skills_before = crate::skills_turn::fingerprint(app, &bot.id, &chat.meta.id);
     let unattended = routine.is_some() || event.is_some();
     let system_prompt = system_prompt(app, &chat, &bot, job, &store, unattended, &plugin_briefs);
@@ -277,6 +279,8 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
     let options = CodemodeOptions { mcp_types: !plugin_briefs.is_empty(), timeout, guidance: Some(guidance), ..CodemodeOptions::default() };
     // Codemode itself also rechecks after any asynchronous review; its children have guards.
     tools.extend(crate::permissions::guarded::tools(app, &bot, &chat.meta.id, vec![Arc::new(CodemodeTool::new(plugin_tools.clone(), options).with_store(script_store).with_functions(functions))]));
+    // The bot's usual tools, which a turn that finishes the bot's setup goes on with.
+    let full_tools: Option<Vec<Arc<dyn Tool>>> = bot.setting_up.then(|| tools.iter().filter(|tool| tool.name() != "finish_setup").cloned().collect());
     if bot.setting_up {
         // A new bot works out its job with the user, settles its profile, and lists its plugins
         // before it does anything else.
@@ -410,6 +414,9 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         follow_up: (!chat.meta.is_group() && chat.meta.channel.is_none()).then(FollowUp::default),
         brief,
         trace: trace.clone(),
+        prompt_inputs: PromptInputs { chat: chat.clone(), job: job.clone(), store: store.clone(), plugin_briefs: plugin_briefs.clone() },
+        profile: std::sync::Mutex::new(Profile::of(&bot)),
+        full_tools,
         cancel: cancel.clone(),
     });
     let config = AgentLoopConfig {
@@ -618,7 +625,36 @@ struct TurnHooks {
     /// `turn_brief`, closing every request.
     brief: Option<String>,
     trace: Option<Arc<crate::traces::Trace>>,
+    /// What the system prompt is made of besides the bot, to make it again mid-turn.
+    prompt_inputs: PromptInputs,
+    /// The bot's profile as the turn's system prompt has it.
+    profile: std::sync::Mutex<Profile>,
+    /// The usual tools, for a turn that starts in setup and finishes it.
+    full_tools: Option<Vec<Arc<dyn Tool>>>,
     cancel: CancellationToken,
+}
+
+struct PromptInputs {
+    chat: Chat,
+    job: Job,
+    store: MemoryStore,
+    plugin_briefs: Arc<Vec<crate::plugins::mcp::PluginBrief>>,
+}
+
+/// The part of a bot's profile its system prompt is made from and that applies mid-turn. Its
+/// provider, model, thinking, and working directory apply from its next turn: its tools and its
+/// provider are made with them when the turn starts.
+#[derive(Debug, Clone, PartialEq)]
+struct Profile {
+    name: String,
+    description: String,
+    setting_up: bool,
+}
+
+impl Profile {
+    fn of(bot: &Bot) -> Profile {
+        Profile { name: bot.name.clone(), description: bot.description.clone(), setting_up: bot.setting_up }
+    }
 }
 
 /// What a turn adds, unseen in the chat, when the bot's reply announced work and made no call.
@@ -913,6 +949,36 @@ impl LoopHooks for TurnHooks {
 }
 
 impl TurnHooks {
+    /// The system prompt made again when the bot's profile changed since it was made: by the
+    /// user in its details, by `edit_bot` or `finish_setup`, or on another Device. The next step
+    /// reads it, and a turn that finished the bot's setup goes on with its usual tools. Its tools
+    /// keep the working directory they were made with until the next turn. False when nothing
+    /// changed.
+    fn refresh_profile(&self, context: &mut AgentContext) -> bool {
+        let Some(mut bot) = self.app.bot(&self.bot.id) else { return false };
+        let now = Profile::of(&bot);
+        let before = std::mem::replace(&mut *self.profile.lock().unwrap(), now.clone());
+        if before == now {
+            return false;
+        }
+        bot.workdir = self.bot.workdir.clone();
+        let inputs = &self.prompt_inputs;
+        let chat = self.app.chat(&self.chat_id).unwrap_or_else(|| inputs.chat.clone());
+        context.system_prompt = system_prompt(&self.app, &chat, &bot, &inputs.job, &inputs.store, self.unattended, &inputs.plugin_briefs);
+        let finished_setup = before.setting_up && !now.setting_up;
+        if let (true, Some(tools)) = (finished_setup, &self.full_tools) {
+            context.tools = tools.clone();
+        }
+        if let Some(trace) = &self.trace {
+            let changed: Vec<&str> = [("name", before.name != now.name), ("description", before.description != now.description), ("setup", before.setting_up != now.setting_up)]
+                .into_iter()
+                .filter_map(|(field, changed)| changed.then_some(field))
+                .collect();
+            trace.prompt_refresh(&changed, context.system_prompt.chars().count(), finished_setup);
+        }
+        true
+    }
+
     /// The checks before a call runs, in order, with the name of the one that decided it.
     async fn check_tool_call(&self, ctx: BeforeToolCallContext<'_>) -> Option<(&'static str, BeforeToolCallResult)> {
         if let Some(refused) = over_limits() {
@@ -960,7 +1026,8 @@ impl TurnHooks {
     async fn next_turn(&self, ctx: PrepareNextTurnContext<'_>) -> Option<TurnUpdate> {
         let mut context = ctx.context.clone();
         context.messages = materialize_steering_messages(&self.app, &self.bot, &self.workdir, context.messages).await;
-        let context_changed = context.messages != ctx.context.messages;
+        let refreshed = self.refresh_profile(&mut context);
+        let context_changed = refreshed || context.messages != ctx.context.messages;
 
         if self.window > 0 && self.settings.enabled {
             let size = estimate_context_tokens(&context.messages).tokens + estimate_text_tokens(&context.system_prompt);
@@ -3243,8 +3310,9 @@ impl Tool for FinishSetup {
             })
             .map_err(|e| ToolError(e.to_string()))?;
         Ok(ToolResult::text(format!(
-            "You are {name} now. Next, in this turn: search_plugins with a few words from your job, then recommend_plugins once \
-             with the ones that fit, and tell the user which cards to tap and that you are ready."
+            "You are {name} now: from your next step you have your job's system prompt and your usual tools. Next, in this \
+             turn: search_plugins with a few words from your job, then recommend_plugins once with the ones that fit, and tell \
+             the user which cards to tap and that you are ready."
         ))
         .with_details(json!({ "summary": format!("Set up as {name}") })))
     }
@@ -3433,7 +3501,9 @@ async fn resolve_connectors(app: &Arc<App>, wanted: &[String], bot: &Bot) -> Vec
     connectors
 }
 
-/// Changes a teammate's profile (or the caller's own). The new profile applies from that bot's next turn.
+/// Changes a teammate's profile (or the caller's own). A new name or description applies from
+/// that bot's next step, in a turn under way too (`TurnHooks::refresh_profile`); provider,
+/// model, thinking, and working directory from its next turn.
 struct EditBot {
     app: Arc<App>,
     bot: Bot,
@@ -3447,7 +3517,8 @@ impl Tool for EditBot {
     fn description(&self) -> &str {
         "Change a teammate's profile: name, description, provider, model, thinking, or working directory. Only the \
          fields you pass change. Description is the complete account of what the bot does and how it works. You can \
-         edit yourself. Changes apply from that bot's next turn. Edit only when the user asks or agrees."
+         edit yourself. A new name or description applies from that bot's next step, even in a turn under way; provider, \
+         model, thinking, and working directory from its next turn. Edit only when the user asks or agrees."
     }
     fn parameters(&self) -> Value {
         json!({
@@ -3509,6 +3580,8 @@ impl Tool for EditBot {
         }
         let runtime = provider.is_some() || model.is_some() || thinking.is_some();
         let runs_with = runtime.then(|| runs.describe(&self.app));
+        let (renamed, described, moved) = (new_name.is_some(), description.is_some(), workdir.is_some());
+        let profile = renamed || described;
 
         let updated = self
             .app
@@ -3531,12 +3604,18 @@ impl Tool for EditBot {
             .map_err(|e| ToolError(e.to_string()))?;
 
         let what = changed.join(", ");
-        let text = match (target.id == self.bot.id, runs_with) {
-            (true, Some(runs)) => format!("Updated your own profile ({what}). From your next turn you run {runs}; finish this one as you are."),
-            (true, None) => format!("Updated your own profile ({what}). The new profile applies from your next turn; finish this one as you are."),
-            (false, Some(runs)) => format!("Updated {} ({what}). From their next turn they run {runs}.", updated.name),
-            (false, None) => format!("Updated {} ({what}). The new profile applies from their next turn.", updated.name),
-        };
+        let yours = target.id == self.bot.id;
+        let (they, their) = if yours { ("you", "your") } else { ("they", "their") };
+        let mut text = if yours { format!("Updated your own profile ({what}).") } else { format!("Updated {} ({what}).", updated.name) };
+        if profile {
+            text.push_str(&format!(" The new {} applies from {their} next step, in this turn too.", if renamed && described { "name and description" } else if renamed { "name" } else { "description" }));
+        }
+        if let Some(runs) = runs_with {
+            text.push_str(&format!(" From {their} next turn {they} run {runs}."));
+        }
+        if moved {
+            text.push_str(&format!(" {} tools work in the new directory from {their} next turn.", if yours { "Your" } else { "Their" }));
+        }
         Ok(ToolResult::text(text).with_details(json!({ "summary": format!("Updated {}", updated.name), "bot_id": updated.id, "changed": changed })))
     }
 }
@@ -4153,6 +4232,75 @@ mod tests {
         let Body::Text { attachments, .. } = &output.body else { panic!() };
         let materialized = crate::files::materialize(app, &attachments[0], &workdir).unwrap();
         assert_eq!(std::fs::read_to_string(materialized).unwrap(), "all tests passed");
+    }
+
+    /// The hooks of a direct chat's turn of `bot`, as `run_budgeted_job` makes them, starting
+    /// from `tools` (the usual ones as `full`, when the bot is setting up).
+    fn turn_hooks(app: &Arc<App>, bot: &Bot, chat: &Chat, full: Option<Vec<Arc<dyn Tool>>>) -> TurnHooks {
+        let provider: Arc<dyn Provider> = Arc::new(Scripted { replies: Default::default(), requests: Default::default() });
+        TurnHooks {
+            app: app.clone(),
+            chat_id: chat.meta.id.clone(),
+            trigger: Trigger { message_id: String::new(), routine: None, event: None },
+            bot: bot.clone(),
+            provider,
+            window: 0,
+            settings: CompactionSettings::default(),
+            workdir: bot.working_directory(&app.config.home),
+            unattended: false,
+            plugin_tools: crate::plugins::mcp::bot_catalog(app, bot, &chat.meta.id, Vec::new()),
+            steering: None,
+            follow_up: None,
+            brief: None,
+            trace: None,
+            prompt_inputs: PromptInputs { chat: chat.clone(), job: room_job(&chat.meta.id, &bot.id), store: MemoryStore::for_bot(&app.config.home, bot), plugin_briefs: Arc::new(Vec::new()) },
+            profile: std::sync::Mutex::new(Profile::of(bot)),
+            full_tools: full,
+            cancel: CancellationToken::new(),
+        }
+    }
+
+    /// A profile changed mid-turn, in the bot's details or by finish_setup, reaches the next
+    /// step's system prompt, and a finished setup brings the usual tools; a working directory
+    /// waits for the next turn, as the tools made with it do.
+    #[test]
+    fn a_profile_changed_mid_turn_applies_from_the_next_step() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        let chef = Bot { description: "Plans dinners.".into(), ..bot("b1", "Chef") };
+        let dm = chat("dm", "dm", None, &["b1"]);
+        app.state.lock().unwrap().bots.push(chef.clone());
+        app.state.lock().unwrap().chats.push(dm.clone());
+        let hooks = turn_hooks(app, &chef, &dm, None);
+        let prompt = system_prompt(app, &dm, &chef, &room_job("dm", "b1"), &MemoryStore::for_bot(&app.config.home, &chef), false, &[]);
+        let mut context = AgentContext { system_prompt: prompt.clone(), messages: Vec::new(), tools: Vec::new(), cache_points: Vec::new() };
+        assert!(!hooks.refresh_profile(&mut context), "nothing changed");
+
+        app.update_bot("b1", |bot| bot.workdir = Some("/elsewhere".into())).unwrap();
+        assert!(!hooks.refresh_profile(&mut context) && context.system_prompt == prompt, "a working directory waits for the next turn");
+
+        app.update_bot("b1", |bot| bot.description = "Plans dinners. Never orders takeout.".into()).unwrap();
+        assert!(hooks.refresh_profile(&mut context));
+        assert!(context.system_prompt.contains("Never orders takeout.") && !context.system_prompt.contains("/elsewhere"), "{}", context.system_prompt);
+        assert!(!hooks.refresh_profile(&mut context), "once");
+
+        // A new bot that finishes its setup goes on as itself, with its usual tools.
+        let newbie = Bot { setting_up: true, ..bot("b2", crate::model::NEW_BOT_NAME) };
+        let dm2 = chat("dm2", "dm", None, &["b2"]);
+        app.state.lock().unwrap().bots.push(newbie.clone());
+        app.state.lock().unwrap().chats.push(dm2.clone());
+        let usual = lorca_agent::tools::coding_tools(scratch.1.join("work"));
+        let hooks = turn_hooks(app, &newbie, &dm2, Some(usual.clone()));
+        let setup = system_prompt(app, &dm2, &newbie, &room_job("dm2", "b2"), &MemoryStore::for_bot(&app.config.home, &newbie), false, &[]);
+        assert!(setup.contains("You are a new bot in Lorca"));
+        let mut context = AgentContext { system_prompt: setup, messages: Vec::new(), tools: Vec::new(), cache_points: Vec::new() };
+        let finish = FinishSetup { app: app.clone(), bot: newbie.clone() };
+        let no_updates: ToolUpdateFn = Arc::new(|_| {});
+        let said = futures::executor::block_on(finish.execute("c", json!({ "name": "Sous", "description": "Preps the week's meals." }), CancellationToken::new(), no_updates)).unwrap();
+        assert!(said.content[0].as_text().unwrap().contains("from your next step you have your job's system prompt"));
+        assert!(hooks.refresh_profile(&mut context));
+        assert!(context.system_prompt.starts_with("You are Sous, a bot in Lorca.") && context.system_prompt.contains("Preps the week's meals."), "{}", context.system_prompt);
+        assert_eq!(context.tools.iter().map(|tool| tool.name().to_string()).collect::<Vec<_>>(), usual.iter().map(|tool| tool.name().to_string()).collect::<Vec<_>>());
     }
 
     /// Each request of a turn is traced with what it added, each reply and tool call after it,

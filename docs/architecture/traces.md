@@ -22,6 +22,7 @@ Every record has `v` (the format, 1), `type`, `job_id`, `seq`, `step` (the loop'
 | `hold` | a call `before_tool_call` refused, and which check refused it: `limits`, `feedback`, `access`, `browser_review`, `coding_review`, `plugin_review`, or `auto_review` |
 | `steering` | a message the user sent while the turn ran, as the loop read it |
 | `follow_up` | the reply the turn asked about once more ([Agent loop](runtime.md#agent-loop)) |
+| `prompt_refresh` | the bot's profile changed mid-turn (`changed`: name, description, setup), the new system prompt's size, and whether a finished setup brought the usual tools |
 | `retry`, `compaction` | a model call tried again, a compaction before the turn or mid-turn and the size before it |
 | `job_end` | the outcome (`sent`, `pass`, `skipped`), the steps, whether the turn followed up, the last reply's text, and `end_reason` |
 

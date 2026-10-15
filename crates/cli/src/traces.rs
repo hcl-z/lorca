@@ -266,6 +266,12 @@ impl Trace {
         self.write(&mut state, "follow_up", json!({ "reply": reply }));
     }
 
+    /// The bot's profile changed mid-turn, so the next step has a new system prompt, and its
+    /// usual tools when the change finished its setup.
+    pub fn prompt_refresh(&self, changed: &[&str], system_chars: usize, tools: bool) {
+        self.record("prompt_refresh", json!({ "changed": changed, "system_chars": system_chars, "tools_replaced": tools }));
+    }
+
     pub fn compaction(&self, tokens_before: u64, when: &str) {
         self.record("compaction", json!({ "tokens_before": tokens_before, "when": when }));
     }
@@ -579,6 +585,11 @@ pub fn markdown(path: &Path, with_prompts: bool) -> String {
             "hold" => out.push_str(&format!("### Held · {} by {}\n\n{}\n\n", r["name"].as_str().unwrap_or(""), r["by"].as_str().unwrap_or(""), r["reason"].as_str().unwrap_or(""))),
             "steering" => out.push_str(&format!("### The user wrote meanwhile\n\n{}\n\n", r["text"].as_str().unwrap_or(""))),
             "follow_up" => out.push_str("### Follow-up: the reply announced work and made no call\n\n"),
+            "prompt_refresh" => out.push_str(&format!(
+                "### The profile changed ({}): a new system prompt{}\n\n",
+                r["changed"].as_array().into_iter().flatten().filter_map(Value::as_str).collect::<Vec<_>>().join(", "),
+                if r["tools_replaced"] == true { " and the usual tools" } else { "" },
+            )),
             "retry" => out.push_str(&format!("_Retry {} of {} in {} ms: {}_\n\n", r["attempt"], r["max_attempts"], r["delay_ms"], r["error"].as_str().unwrap_or(""))),
             "compaction" => out.push_str(&format!("### Compacted ({}), {} tokens before\n\n", r["when"].as_str().unwrap_or(""), r["tokens_before"])),
             "job_end" => out.push_str(&format!(
