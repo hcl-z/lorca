@@ -67,15 +67,17 @@ A bot made from one Device runs on its Runner, which can be offline: [A bot on a
 
 ## Subjects
 
-One doc per subject under `docs/architecture/`, each short enough to read in one pass. `bun run check:docs` holds this file to 16 KiB and each subject to 24 KiB, and checks that every subject is listed here and that links and their anchors resolve.
+One doc per subject under `docs/architecture/`, each read in one pass: `bun run check:docs` holds this file to 16 KiB and each subject to 24 KiB, and checks that every subject is listed and every link and anchor resolves.
 
 | Doc | Read it for |
 | --- | --- |
 | [Identity](docs/architecture/identity.md) | Key pairs and the identity device, pairing and unpairing, Devices and Runners, what the relay sees, the account's provider credentials |
 | [Relay](docs/architecture/relay.md) | `crates/relay`: storage on SQLite or Postgres, files, housekeeping, quotas, metrics, rate limits, auth, tables and migrations, the blob, sync socket, and push APIs, deploys |
-| [Relay trust](docs/architecture/relay-trust.md) | What a Device takes from the relay and how it checks it: Device records and unpaired keys, signed envelopes, the challenge nonce, the pairing reply key, the account key's generations and their rotation on unpair |
+| [Relay trust](docs/architecture/relay-trust.md) | What a Device takes from the relay and how it checks it: Device records, unpaired keys, signed envelopes, the challenge nonce, the pairing reply key, account key generations and rotation on unpair |
 | [Protocols](docs/architecture/protocols.md) | The app ↔ CLI websocket and the CLI ↔ relay requests and blobs |
 | [CLI (runtime)](docs/architecture/runtime.md) | The `lorca` binary and its data directory, installing it, its signed self-updates and `lorca service`, the agent loop and a turn on a Runner |
+| [Turn context](docs/architecture/turn-context.md) | A turn's system prompt, brief and notes, and the follow-up on announced work |
+| [Turn traces](docs/architecture/traces.md) | A turn's steps and end reason, `lorca traces` |
 | [Notifications](docs/architecture/notifications.md) | Phone pushes for replies, failures, and questions, the desktop app's own notifications, reads on another Device, the chat on screen |
 | [Bot permissions](docs/architecture/bot-permissions.md) | A bot's Access to plugins, tools, files, and shell; where the CLI checks it; access requests |
 | [Tools](docs/architecture/tools.md) | Team, memory, and coding tools |
@@ -87,22 +89,22 @@ One doc per subject under `docs/architecture/`, each short enough to read in one
 | [Stop](docs/architecture/stopping.md) | What Stop ends: the turn's model call and tool calls, a call that never returns, commands and browser calls, the work it handed off on any Runner; what keeps running |
 | [Web links in messages](docs/architecture/links.md) | Source chips for http(s) links in the desktop app, and the CLI's `links.favicon` that fetches a site's icon |
 | [Terminal sessions](docs/architecture/terminal-sessions.md) | A bot's commands in terminals of their own: when a call returns, background commands, the command's card, answering and stopping, Running tasks |
-| [Coding agents](docs/architecture/coding-agents.md) | Claude Code or Codex a bot runs on its Runner and supervises: worktrees, panes or Lorca running it, its saved secrets, review of its commands and its pane's questions, transcripts and follow-ups, outputs and wake-ups, the card |
+| [Coding agents](docs/architecture/coding-agents.md) | Claude Code or Codex a bot runs and supervises on its Runner: worktrees, panes, its secrets, review of its commands and questions, transcripts, follow-ups, outputs, wake-ups, the card |
 | [Questions](docs/architecture/questions.md) | A bot asking the user to choose: `ask_user`, the card and its answer, each app |
-| [Secret requests](docs/architecture/secrets.md) | A password, key, or code a bot asks for on a card: sealed to its Runner, kept there, filled into Browser on its site or a command's environment by name, kept out of results and chats; managing a Runner's secrets |
-| [Browser sessions](docs/architecture/browser-sessions.md) | A bot's browser profiles on its Runner: their sign-ins, opening one in a window, taking the browser over and handing it back, recording a workflow and running it as a skill's steps, screenshots in the chat, the Profiles section |
+| [Secret requests](docs/architecture/secrets.md) | A password, key, or code a bot asks for on a card: sealed to and kept on its Runner, filled by name into Browser on its site or a command's environment, kept out of results and chats; managing them |
+| [Browser sessions](docs/architecture/browser-sessions.md) | A bot's browser profiles on its Runner: sign-ins, a profile in a window, taking the browser over and back, a recorded workflow run as a skill's steps, screenshots, the Profiles section |
 | [Codemode and Plugins](docs/architecture/plugins.md) | Scripts that call plugin tools, MCP plugins and their installs, sign-in, plugin calls at turn time |
 | [Integrations and named accounts](docs/architecture/integrations.md) | Slack, Gmail, Calendar, and Drive; stable account instances, OAuth on the Runner, account selection, access recovery, and source links |
 | [Marketplace](docs/architecture/marketplace.md) | The index of plugins and bot templates and how lorca.app keeps it current on every Device, bots added from a template, the marketplace sheet |
 | [Workflow onboarding](docs/architecture/workflows.md) | Workflows from the marketplace: packs, a setup on a Runner and its accounts, the sample before the schedule, how setups sync, the workflow page in each app |
 | [Bot templates](docs/architecture/templates.md) | A bot shared as a link or a file and a new bot made from one: what a template holds, redaction and flags, encrypted links and their keys, the Runner's own connections, the apps' sheets |
-| [MCP servers](docs/architecture/mcp-servers.md) | The user's own MCP servers in a Runner's `mcp.json`: the file and other apps' spellings, sign-in when a server asks, the `mcp.*` methods and `lorca mcp`, the apps' MCP Servers section and server sheet |
+| [MCP servers](docs/architecture/mcp-servers.md) | The user's own MCP servers in a Runner's `mcp.json`: the file and other apps' spellings, sign-in when a server asks, `mcp.*` and `lorca mcp`, the apps' MCP Servers section and sheet |
 | [Bots and Memory](docs/architecture/bots.md) | The lead bot, DMs and groups, who answers, handoffs between bots, a bot's memory |
 | [Routines](docs/architecture/routines.md) | A bot's scheduled tasks: schedules and their timezones, runs and read-only checks, missed runs, health and recovery, and the apps' routine sheet and service row |
-| [One-time routines, routines on events, and calendar events](docs/architecture/routine-triggers.md) | Routines that run once at a date and time, run for each event about one subject (a pull request until it merges or closes, a webhook's requests), or run around a Calendar account's events |
+| [One-time routines, routines on events, and calendar events](docs/architecture/routine-triggers.md) | Routines run once at a time, on each event about one subject (a pull request until it merges or closes, a webhook's requests), or around a Calendar's events |
 | [Event triggers](docs/architecture/event-triggers.md) | Runner event subscriptions, the gateways users run to sign and seal a service's events, the encrypted inbox, ordering and recovery |
 | [Hosted receivers](docs/architecture/receivers.md) | The relay's receivers for routines on events: the Lorca GitHub App and its install and bind, routine webhooks with their URL and key, what the relay sees, setup |
-| [Channels](docs/architecture/channels.md) | A bot listening on Telegram and Slack: the accounts and their builtin servers, filters, the chats the user allows and the ones asking, conversations and what people write there, replies, the feedback collector |
+| [Channels](docs/architecture/channels.md) | A bot listening on Telegram and Slack: accounts and their builtin servers, filters, chats the user allows and ones asking, conversations and what people write, replies, the feedback collector |
 | [Channel readers](docs/architecture/channel-readers.md) | How the Runner reads Telegram and Slack, what it takes, Telegram's photos and albums |
 | [Durable tasks](docs/architecture/tasks.md) | Work that spans turns: owner, revisions, runs and recovery, evidence, the apps' Tasks section |
 | [Coordinator attention](docs/architecture/attention.md) | Consolidated reviews, blockers, commitments and changes, coordinator briefs, deduplication, encrypted records and notification preferences |
@@ -115,7 +117,7 @@ One doc per subject under `docs/architecture/`, each short enough to read in one
 | [Desktop app](docs/architecture/desktop-app.md) | The MyGo app for macOS, Windows, and Linux: its model, host, and native views, launching the CLI, windows and onboarding, settings, title bar, commands, motion |
 | [Desktop updates and builds](docs/architecture/desktop-builds.md) | The desktop app's updater and its releases, the development loop and its tests, builds for each platform and their signing |
 | [Phone app](docs/architecture/phone-app.md) | The Expo app over the Rust core: the native module, pairing, relay status, attachments, dictation, notifications, turns |
-| [Phone app look and layout](docs/architecture/phone-ui.md) | The phone's monochrome palette and round-button bars, the chat list and its search, the composer and Stop, forms and sheets, the transcript, its cards and message actions, a tablet's two panes |
+| [Phone app look and layout](docs/architecture/phone-ui.md) | The phone's monochrome palette, round-button bars, chat list and search, composer and Stop, forms and sheets, transcript, cards and message actions, a tablet's two panes |
 | [Phone releases and updates](docs/architecture/phone-updates.md) | TestFlight builds, Android APK releases, and the Android app's self-update: the daily check and offer, the progress dialog, the package installer |
 | [Website](docs/architecture/website.md) | `web/`: the site, its docs, and the install scripts it serves |
 | [Languages](docs/architecture/languages.md) | English and Simplified Chinese in each app, and what the CLI words |

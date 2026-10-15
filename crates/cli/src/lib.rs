@@ -83,6 +83,8 @@ pub mod tasks;
 pub mod templates;
 pub mod local_store;
 #[cfg(feature = "runner")]
+pub mod traces;
+#[cfg(feature = "runner")]
 pub mod turns;
 #[cfg(feature = "cli")]
 pub mod update;

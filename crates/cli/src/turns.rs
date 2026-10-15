@@ -32,6 +32,14 @@ use crate::model::*;
 use crate::plugins::review::Trigger;
 use crate::providers;
 use crate::runtime::{chat_source, name_of, TurnOutcome};
+use crate::traces::Check;
+
+mod follow_up;
+mod profile;
+use follow_up::FollowUp;
+#[cfg(test)]
+use follow_up::{announces_work, FOLLOW_UP_NOTE};
+use profile::{profile_note, PromptInputs};
 
 /// The most chat messages a turn rebuilds as they are. Past this a chat is compacted by count,
 /// so nothing is dropped without a summary; with compaction off, older rows are left out.
@@ -155,6 +163,9 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         }
     };
     let Some(chat) = app.chat(&job.chat_id) else { return TurnOutcome::Skipped };
+    // Every request of the turn, its housekeeping's included, goes into its trace.
+    let trace = crate::traces::Trace::start(app, job, &bot, &chat, provider.as_ref(), routine.is_some() || event.is_some());
+    let provider = crate::traces::TracedProvider::wrap(provider, trace.as_ref());
     // A channel's message: its chat sees the bot typing until the reply goes out or the turn ends.
     let _typing = event.as_ref().filter(|event| event.message_id.is_some()).and_then(|_| crate::channels::typing(app, &chat, &job.id, &cancel));
 
@@ -184,10 +195,12 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
     let store = MemoryStore::for_bot(&app.config.home, &bot);
     // The prompt names the installed plugins the bot's Access lets it use; their tools are in the
     // codemode tool's description, and their servers stay dormant until a script calls them.
-    let plugin_briefs: Vec<_> = crate::plugins::mcp::plugin_briefs(app)
-        .into_iter()
-        .filter(|brief| bot.permissions.as_ref().is_none_or(|policy| policy.allows_connection(&brief.id)))
-        .collect();
+    let plugin_briefs: Arc<Vec<_>> = Arc::new(
+        crate::plugins::mcp::plugin_briefs(app)
+            .into_iter()
+            .filter(|brief| bot.permissions.as_ref().is_none_or(|policy| policy.allows_connection(&brief.id)))
+            .collect(),
+    );
     let skills_before = crate::skills_turn::fingerprint(app, &bot.id, &chat.meta.id);
     let unattended = routine.is_some() || event.is_some();
     let system_prompt = system_prompt(app, &chat, &bot, job, &store, unattended, &plugin_briefs);
@@ -270,9 +283,12 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         crate::scripts::ModelsAsk::new(app, &chat.meta.id, &bot.provider).map(|ask| Arc::new(ask) as Arc<dyn HostFunction>).into_iter().collect();
     // A routine's script has nobody to press Stop, so it gets less time.
     let timeout = std::time::Duration::from_secs(if unattended { 10 * 60 } else { 30 * 60 });
-    let options = CodemodeOptions { mcp_types: !plugin_briefs.is_empty(), timeout, guidance: Some(SCRIPT_GUIDANCE.into()), ..CodemodeOptions::default() };
+    let guidance = if plugin_briefs.is_empty() { SCRIPT_GUIDANCE.to_string() } else { format!("{SCRIPT_GUIDANCE}\n{}", crate::plugins::mcp::RESOURCE_TOOLS_GUIDANCE) };
+    let options = CodemodeOptions { mcp_types: !plugin_briefs.is_empty(), timeout, guidance: Some(guidance), ..CodemodeOptions::default() };
     // Codemode itself also rechecks after any asynchronous review; its children have guards.
     tools.extend(crate::permissions::guarded::tools(app, &bot, &chat.meta.id, vec![Arc::new(CodemodeTool::new(plugin_tools.clone(), options).with_store(script_store).with_functions(functions))]));
+    // The bot's usual tools, which a turn that finishes the bot's setup goes on with.
+    let full_tools: Option<Vec<Arc<dyn Tool>>> = bot.setting_up.then(|| tools.iter().filter(|tool| tool.name() != "finish_setup").cloned().collect());
     if bot.setting_up {
         // A new bot works out its job with the user, settles its profile, and lists its plugins
         // before it does anything else.
@@ -294,14 +310,23 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
     };
     let too_many = settings.enabled && uncovered_count(app, &chat, &bot) > MAX_CONTEXT_MESSAGES;
     if too_long || too_many {
+        if let Some(trace) = &trace {
+            trace.phase(crate::traces::Phase::Compaction);
+        }
         let compacted = if too_many {
             compact_chat(app, &chat, &bot, &provider, &settings, &cancel).await
         } else {
             let turn = TurnRequest { system_prompt: system_prompt.clone(), tools: tools.clone(), cache_points: transcript_cache_points(&messages) };
             compact_messages(app, &chat.meta.id, &bot, &provider, &messages, &settings, Some(&turn), &cancel).await.map(|result| result.map(|(_, tokens_before)| tokens_before))
         };
+        if let Some(trace) = &trace {
+            trace.phase(crate::traces::Phase::Loop);
+        }
         match compacted {
             Ok(Some(tokens_before)) => {
+                if let Some(trace) = &trace {
+                    trace.compaction(tokens_before, "before the turn");
+                }
                 tracing::info!(bot = %bot.name, chat = %chat.meta.id, tokens_before, "compacted before the turn");
                 chat = app.chat(&job.chat_id).unwrap_or(chat);
                 messages = transcript_for(app, &chat, &bot, &workdir);
@@ -378,7 +403,7 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         attention_handled: attention_handled.clone(),
         shown_len: 0,
         last_flush: std::time::Instant::now(),
-    })));
+    }), trace.clone()));
     let steering = (!chat.meta.is_group()).then(|| AgentMessageQueue::new(QueueMode::All));
     // Send now cuts the step short for a message the queue holds.
     let interrupt = steering.is_some().then(lorca_agent::StepInterrupt::new);
@@ -396,6 +421,10 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         steering: steering.clone(),
         follow_up: (!chat.meta.is_group() && chat.meta.channel.is_none()).then(FollowUp::default),
         brief,
+        trace: trace.clone(),
+        prompt_inputs: PromptInputs { chat: chat.clone(), job: job.clone(), store: store.clone(), plugin_briefs: plugin_briefs.clone() },
+        profile: std::sync::Mutex::new(Profile::of(&bot)),
+        full_tools,
         cancel: cancel.clone(),
     });
     let config = AgentLoopConfig {
@@ -516,6 +545,10 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
     } else {
         TurnOutcome::Pass
     };
+    if let Some(trace) = &trace {
+        let over_budget = crate::budgets::current().is_some_and(|budget| budget.check().is_err());
+        trace.finish(outcome.as_str(), cancel.is_cancelled(), over_budget);
+    }
     // A terminal error takes priority over anything the bot said before it failed.
     // Context recovery above finishes before we choose the notification.
     if let Some(error) = state.last_error.as_deref().filter(|_| state.failed && !attention_handled.load(std::sync::atomic::Ordering::Relaxed)) {
@@ -558,7 +591,7 @@ fn turn_log_line(said: Option<&str>, tools_used: &[String], failed: bool) -> Opt
 }
 
 /// The first `max` characters of `text` on one line, with an ellipsis when cut.
-fn excerpt(text: &str, max: usize) -> String {
+pub(crate) fn excerpt(text: &str, max: usize) -> String {
     let one_line: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if one_line.chars().count() > max {
         format!("{}…", one_line.chars().take(max).collect::<String>().trim_end())
@@ -600,71 +633,14 @@ struct TurnHooks {
     follow_up: Option<FollowUp>,
     /// `turn_brief`, closing every request.
     brief: Option<String>,
+    trace: Option<Arc<crate::traces::Trace>>,
+    /// What the system prompt is made of besides the bot, to make it again mid-turn.
+    prompt_inputs: PromptInputs,
+    /// The bot's profile as the turn's system prompt has it.
+    profile: std::sync::Mutex<Profile>,
+    /// The usual tools, for a turn that starts in setup and finishes it.
+    full_tools: Option<Vec<Arc<dyn Tool>>>,
     cancel: CancellationToken,
-}
-
-/// What a turn adds, unseen in the chat, when the bot's reply announced work and made no call.
-const FOLLOW_UP_NOTE: &str = "[Your last message says what you are about to do, but it made no tool call, so nothing ran \
-     and your turn would end here. If work is left that you can do now, do it with your tools without announcing it again. \
-     If the work is done, or it waits on the user or on something already running, answer with exactly PASS.]";
-
-/// Asks once per turn for the work a reply announced and never started ("Fetching all sources
-/// now."): a reply without a tool call ends the loop, and in a routine nobody is there to ask.
-#[derive(Default)]
-struct FollowUp {
-    /// The text of the last step's reply, when the step ended on it with no tool call.
-    reply: std::sync::Mutex<Option<String>>,
-    asked: std::sync::atomic::AtomicBool,
-}
-
-impl FollowUp {
-    /// A step starts: the reply before it no longer ends the turn.
-    fn step(&self) {
-        *self.reply.lock().unwrap() = None;
-    }
-
-    fn turn_ended(&self, message: &AssistantMessage) {
-        let ended_on_words = message.stop_reason == StopReason::Stop && message.tool_calls().is_empty();
-        *self.reply.lock().unwrap() = ended_on_words.then(|| message.text());
-    }
-
-    /// The note, when the turn would end on a reply that announced work.
-    fn note(&self) -> Option<AgentMessage> {
-        let reply = self.reply.lock().unwrap().take()?;
-        if !announces_work(&reply) || self.asked.swap(true, std::sync::atomic::Ordering::Relaxed) {
-            return None;
-        }
-        Some(AgentMessage::User(UserMessage::text(FOLLOW_UP_NOTE)))
-    }
-}
-
-/// Words that, at the end of a reply, promise a step rather than report one.
-const ANNOUNCING: &[&str] = &[
-    " let me ", " i'll ", " i’ll ", " i will ", " i'm going to ", " i’m going to ", " i am going to ", " i'm about to ",
-    " next, i ", " on it", " stand by", " one moment", "我来", "我先", "我这就", "我马上", "马上", "这就去", "接下来我", "下一步我", "现在开始", "现在就去",
-    "现在去", "现在重新", "正在", "稍等", "让我", "我去", "我会",
-];
-
-/// Whether a reply's last line says what the bot is about to do: a phrase that promises a step,
-/// "Fetching all sources now.", or a colon with nothing after it. A question waits on the user.
-fn announces_work(reply: &str) -> bool {
-    let Some(line) = reply.lines().map(str::trim).filter(|line| !line.is_empty()).last() else { return false };
-    if is_pass(line) || line.ends_with(['?', '？']) {
-        return false;
-    }
-    if line.ends_with([':', '：', '…']) || line.ends_with("...") {
-        return true;
-    }
-    let lower = line.to_lowercase();
-    // A space in front, so an English phrase starts at a word.
-    let tail: String = std::iter::once(' ').chain(lower.chars().rev().take(120).collect::<Vec<_>>().into_iter().rev()).collect();
-    let last_sentence = lower.split(['.', '!', '。', '！']).map(str::trim).filter(|sentence| !sentence.is_empty()).last().unwrap_or("");
-    let doing_now = last_sentence.ends_with(" now")
-        && last_sentence
-            .split_whitespace()
-            .next()
-            .is_some_and(|word| word.ends_with("ing") && !["nothing", "everything", "something", "anything"].contains(&word));
-    doing_now || ANNOUNCING.iter().any(|phrase| tail.contains(phrase))
 }
 
 /// How the model sees a transcript that may open with a compaction summary.
@@ -707,7 +683,7 @@ fn steering_message(
     Some(AgentMessage::User(UserMessage { content, timestamp }))
 }
 
-const STEERING_MESSAGE_KIND: &str = "lorca_steering";
+pub(crate) const STEERING_MESSAGE_KIND: &str = "lorca_steering";
 
 /// Send now: the direct chat's turn reads the messages it holds at once. The commands it runs go
 /// to the background and run on, its reply in progress stops where it got to, its other tools are
@@ -860,33 +836,68 @@ impl LoopHooks for TurnHooks {
         if self.cancel.is_cancelled() {
             return Vec::new();
         }
-        self.follow_up.as_ref().and_then(FollowUp::note).into_iter().collect()
+        let Some((reply, note)) = self.follow_up.as_ref().and_then(FollowUp::note) else { return Vec::new() };
+        if let Some(trace) = &self.trace {
+            trace.follow_up(&reply);
+        }
+        vec![note]
     }
 
     async fn before_tool_call(&self, ctx: BeforeToolCallContext<'_>) -> Option<BeforeToolCallResult> {
+        let (call, parent) = (ctx.tool_call, ctx.parent);
+        let (by, decision) = self.check_tool_call(ctx).await?;
+        if let (Some(trace), true) = (&self.trace, decision.block) {
+            trace.hold(call, parent, by, decision.reason.as_deref(), decision.terminate);
+        }
+        Some(decision)
+    }
+
+    /// What a tool returns reaches the model, the chat, and a script only with this Runner's
+    /// saved secrets taken out.
+    async fn after_tool_call(&self, ctx: AfterToolCallContext<'_>) -> Option<AfterToolCallResult> {
+        crate::secrets::scrub_result(&self.app, ctx.result)
+    }
+
+    /// The requests `next_turn` makes (a compaction, its memory flush) are traced as the turn's
+    /// housekeeping, whichever way it returns.
+    async fn prepare_next_turn(&self, ctx: PrepareNextTurnContext<'_>) -> Option<TurnUpdate> {
+        if let Some(trace) = &self.trace {
+            trace.phase(crate::traces::Phase::Compaction);
+        }
+        let update = self.next_turn(ctx).await;
+        if let Some(trace) = &self.trace {
+            trace.phase(crate::traces::Phase::Loop);
+        }
+        update
+    }
+}
+
+impl TurnHooks {
+    /// The checks before a call runs, in order, with the name of the one that decided it.
+    async fn check_tool_call(&self, ctx: BeforeToolCallContext<'_>) -> Option<(Check, BeforeToolCallResult)> {
         if let Some(refused) = over_limits() {
-            return Some(refused);
+            return Some((Check::Limits, refused));
         }
         if self.unattended && self.trigger.routine.as_ref().is_some_and(|r| r.feedback_authorization_prompt.is_some())
             && crate::feedback::changes_controls(&ctx.tool_call.name, &ctx.tool_call.arguments) {
-            return Some(BeforeToolCallResult { block: true, reason: Some("Workflow feedback cannot authorize routine or bot changes. Stage a proposal or ask the user in chat.".into()), args: None, terminate: false });
+            return Some((Check::Feedback, BeforeToolCallResult { block: true, reason: Some("Workflow feedback cannot authorize routine or bot changes. Stage a proposal or ask the user in chat.".into()), args: None, terminate: false }));
         }
         if !self.plugin_tools.is_plugin_tool(&ctx.tool_call.name) {
             if let Err(denied) = crate::permissions::check_tool_call(&self.app, &self.bot, &ctx.tool_call.name, &ctx.tool_call.arguments) {
-                return Some(crate::permissions::refuse(&self.app, &self.chat_id, &self.bot, denied));
+                return Some((Check::Access, crate::permissions::refuse(&self.app, &self.chat_id, &self.bot, denied)));
             }
         }
         if let Some(refused) = crate::browser::review_call(&self.app, &self.bot, &self.chat_id, &self.trigger, self.unattended, &ctx).await {
-            return Some(refused);
+            return Some((Check::BrowserReview, refused));
         }
         if let Some(refused) = crate::coding::review_start(&self.app, &self.bot, &self.chat_id, &self.trigger, self.unattended, &ctx).await {
-            return Some(refused);
+            return Some((Check::CodingReview, refused));
         }
         if let Some(refused) = crate::plugins::mcp::review_call(&self.app, &self.plugin_tools, &self.chat_id, &self.trigger, &self.bot, self.unattended, &ctx).await {
-            return Some(refused);
+            return Some((Check::PluginReview, refused));
         }
         if let Some(refused) = over_limits() {
-            return Some(refused);
+            return Some((Check::Limits, refused));
         }
         let decision = crate::local_review::before_tool_call(
             &self.app,
@@ -899,21 +910,18 @@ impl LoopHooks for TurnHooks {
         )
         .await;
         if let Some(refused) = over_limits() {
-            return Some(refused);
+            return Some((Check::Limits, refused));
         }
-        decision
+        decision.map(|decision| (Check::AutoReview, decision))
     }
 
-    /// What a tool returns reaches the model, the chat, and a script only with this Runner's
-    /// saved secrets taken out.
-    async fn after_tool_call(&self, ctx: AfterToolCallContext<'_>) -> Option<AfterToolCallResult> {
-        crate::secrets::scrub_result(&self.app, ctx.result)
-    }
-
-    async fn prepare_next_turn(&self, ctx: PrepareNextTurnContext<'_>) -> Option<TurnUpdate> {
+    /// Between steps: the steering messages the context reads, and a compaction once it
+    /// outgrows the window.
+    async fn next_turn(&self, ctx: PrepareNextTurnContext<'_>) -> Option<TurnUpdate> {
         let mut context = ctx.context.clone();
         context.messages = materialize_steering_messages(&self.app, &self.bot, &self.workdir, context.messages).await;
-        let context_changed = context.messages != ctx.context.messages;
+        let refreshed = self.refresh_profile(&mut context);
+        let context_changed = refreshed || context.messages != ctx.context.messages;
 
         if self.window > 0 && self.settings.enabled {
             let size = estimate_context_tokens(&context.messages).tokens + estimate_text_tokens(&context.system_prompt);
@@ -922,6 +930,9 @@ impl LoopHooks for TurnHooks {
                 let turn = TurnRequest { system_prompt: context.system_prompt.clone(), tools: context.tools.clone(), cache_points: context.cache_points.clone() };
                 match compact_messages(&self.app, &self.chat_id, &self.bot, &self.provider, &context.messages, &self.settings, Some(&turn), &cancel).await {
                     Ok(Some((messages, tokens_before))) => {
+                        if let Some(trace) = &self.trace {
+                            trace.compaction(tokens_before, "mid-turn");
+                        }
                         tracing::info!(bot = %self.bot.name, chat = %self.chat_id, tokens_before, "compacted mid-turn");
                         context.messages = messages;
                         // The summary moved every message the points named.
@@ -1339,17 +1350,27 @@ fn text_parts(assistant: &AssistantMessage) -> Vec<&str> {
 }
 
 /// `PASS`, alone, is how a member stays silent on its turn.
-fn is_pass(text: &str) -> bool {
+pub(crate) fn is_pass(text: &str) -> bool {
     let cleaned: String = text.chars().filter(|c| c.is_alphanumeric()).collect();
     cleaned.eq_ignore_ascii_case("pass")
 }
 
-struct TurnSink(std::sync::Mutex<TurnState>);
+/// The turn's state from its events, and its trace.
+struct TurnSink(std::sync::Mutex<TurnState>, Option<Arc<crate::traces::Trace>>);
 
 #[async_trait]
 impl EventSink for TurnSink {
     async fn on_event(&self, event: &AgentEvent) {
-        self.0.lock().unwrap().handle(event.clone());
+        if let Some(trace) = &self.1 {
+            trace.event(event);
+        }
+        let mut state = self.0.lock().unwrap();
+        if let (Some(trace), AgentEvent::ToolExecutionEnd { tool_name, .. }) = (&self.1, event) {
+            if tool_name == "request_secret" {
+                trace.reload_secrets(&state.app);
+            }
+        }
+        state.handle(event.clone());
     }
 }
 
@@ -2326,6 +2347,8 @@ fn transcript_bounded(app: &App, chat: &Chat, bot: &Bot, workdir: &std::path::Pa
     }
     // A recording's screenshots go to the model while it is the user's latest word.
     let latest_from_user = messages.iter().rposition(|message| message.author == Author::You);
+    // The latest profile notice gives the profile as it stands; earlier ones say where it changed.
+    let latest_profile_notice = messages.iter().rposition(|message| ProfileNotice::of_id(&message.id).is_some());
     for (index, message) in messages.iter().enumerate() {
         if !message.is_complete() {
             if let MessageState::Failed { .. } = message.state {
@@ -2334,6 +2357,7 @@ fn transcript_bounded(app: &App, chat: &Chat, bot: &Bot, workdir: &std::path::Pa
             continue;
         }
         let timestamp = (message.promoted_at.unwrap_or(message.created_at) * 1000.0) as u64;
+        let profile_notice = ProfileNotice::of_id(&message.id);
         match (&message.author, &message.body) {
             (Author::Bot { bot_id }, Body::Text { text, attachments, .. }) if message.output.is_some() => {
                 let output = message.output.as_ref().unwrap();
@@ -2424,6 +2448,11 @@ fn transcript_bounded(app: &App, chat: &Chat, bot: &Bot, workdir: &std::path::Pa
                     is_error: *is_error,
                     timestamp,
                 }));
+            }
+            // The bot's profile changed here: what the chat said about it before is out of date.
+            (Author::System, Body::Notice { text, routine_id: None }) if profile_notice.is_some() => {
+                let kind = profile_notice.unwrap_or(ProfileNotice::Changed);
+                out.push(user(&profile_note(kind, text, bot, latest_profile_notice == Some(index)), timestamp));
             }
             // A routine's marker carries the task into the turn it opened, and into later ones.
             (Author::System, Body::Notice { text, routine_id: Some(routine_id) }) => {
@@ -3183,8 +3212,9 @@ impl Tool for FinishSetup {
             })
             .map_err(|e| ToolError(e.to_string()))?;
         Ok(ToolResult::text(format!(
-            "You are {name} now. Next, in this turn: search_plugins with a few words from your job, then recommend_plugins once \
-             with the ones that fit, and tell the user which cards to tap and that you are ready."
+            "You are {name} now: from your next step you have your job's system prompt and your usual tools. Next, in this \
+             turn: search_plugins with a few words from your job, then recommend_plugins once with the ones that fit, and tell \
+             the user which cards to tap and that you are ready."
         ))
         .with_details(json!({ "summary": format!("Set up as {name}") })))
     }
@@ -3373,7 +3403,9 @@ async fn resolve_connectors(app: &Arc<App>, wanted: &[String], bot: &Bot) -> Vec
     connectors
 }
 
-/// Changes a teammate's profile (or the caller's own). The new profile applies from that bot's next turn.
+/// Changes a teammate's profile (or the caller's own). A new name or description applies from
+/// that bot's next step, in a turn under way too (`TurnHooks::refresh_profile`); provider,
+/// model, thinking, and working directory from its next turn.
 struct EditBot {
     app: Arc<App>,
     bot: Bot,
@@ -3387,7 +3419,8 @@ impl Tool for EditBot {
     fn description(&self) -> &str {
         "Change a teammate's profile: name, description, provider, model, thinking, or working directory. Only the \
          fields you pass change. Description is the complete account of what the bot does and how it works. You can \
-         edit yourself. Changes apply from that bot's next turn. Edit only when the user asks or agrees."
+         edit yourself. A new name or description applies from that bot's next step, even in a turn under way; provider, \
+         model, thinking, and working directory from its next turn. Edit only when the user asks or agrees."
     }
     fn parameters(&self) -> Value {
         json!({
@@ -3449,6 +3482,8 @@ impl Tool for EditBot {
         }
         let runtime = provider.is_some() || model.is_some() || thinking.is_some();
         let runs_with = runtime.then(|| runs.describe(&self.app));
+        let (renamed, described, moved) = (new_name.is_some(), description.is_some(), workdir.is_some());
+        let profile = renamed || described;
 
         let updated = self
             .app
@@ -3471,12 +3506,18 @@ impl Tool for EditBot {
             .map_err(|e| ToolError(e.to_string()))?;
 
         let what = changed.join(", ");
-        let text = match (target.id == self.bot.id, runs_with) {
-            (true, Some(runs)) => format!("Updated your own profile ({what}). From your next turn you run {runs}; finish this one as you are."),
-            (true, None) => format!("Updated your own profile ({what}). The new profile applies from your next turn; finish this one as you are."),
-            (false, Some(runs)) => format!("Updated {} ({what}). From their next turn they run {runs}.", updated.name),
-            (false, None) => format!("Updated {} ({what}). The new profile applies from their next turn.", updated.name),
-        };
+        let yours = target.id == self.bot.id;
+        let (they, their) = if yours { ("you", "your") } else { ("they", "their") };
+        let mut text = if yours { format!("Updated your own profile ({what}).") } else { format!("Updated {} ({what}).", updated.name) };
+        if profile {
+            text.push_str(&format!(" The new {} applies from {their} next step, in this turn too.", if renamed && described { "name and description" } else if renamed { "name" } else { "description" }));
+        }
+        if let Some(runs) = runs_with {
+            text.push_str(&format!(" From {their} next turn {they} run {runs}."));
+        }
+        if moved {
+            text.push_str(&format!(" {} tools work in the new directory from {their} next turn.", if yours { "Your" } else { "Their" }));
+        }
         Ok(ToolResult::text(text).with_details(json!({ "summary": format!("Updated {}", updated.name), "bot_id": updated.id, "changed": changed })))
     }
 }
@@ -4095,6 +4136,169 @@ mod tests {
         assert_eq!(std::fs::read_to_string(materialized).unwrap(), "all tests passed");
     }
 
+    /// The hooks of a direct chat's turn of `bot`, as `run_budgeted_job` makes them, starting
+    /// from `tools` (the usual ones as `full`, when the bot is setting up).
+    fn turn_hooks(app: &Arc<App>, bot: &Bot, chat: &Chat, full: Option<Vec<Arc<dyn Tool>>>) -> TurnHooks {
+        let provider: Arc<dyn Provider> = Arc::new(Scripted { replies: Default::default(), requests: Default::default() });
+        TurnHooks {
+            app: app.clone(),
+            chat_id: chat.meta.id.clone(),
+            trigger: Trigger { message_id: String::new(), routine: None, event: None },
+            bot: bot.clone(),
+            provider,
+            window: 0,
+            settings: CompactionSettings::default(),
+            workdir: bot.working_directory(&app.config.home),
+            unattended: false,
+            plugin_tools: crate::plugins::mcp::bot_catalog(app, bot, &chat.meta.id, Vec::new()),
+            steering: None,
+            follow_up: None,
+            brief: None,
+            trace: None,
+            prompt_inputs: PromptInputs { chat: chat.clone(), job: room_job(&chat.meta.id, &bot.id), store: MemoryStore::for_bot(&app.config.home, bot), plugin_briefs: Arc::new(Vec::new()) },
+            profile: std::sync::Mutex::new(Profile::of(bot)),
+            full_tools: full,
+            cancel: CancellationToken::new(),
+        }
+    }
+
+    /// A profile changed mid-turn, in the bot's details or by finish_setup, reaches the next
+    /// step's system prompt, and a finished setup brings the usual tools; a working directory
+    /// waits for the next turn, as the tools made with it do.
+    #[test]
+    fn a_profile_changed_mid_turn_applies_from_the_next_step() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        let chef = Bot { description: "Plans dinners.".into(), ..bot("b1", "Chef") };
+        let dm = chat("dm", "dm", None, &["b1"]);
+        app.state.lock().unwrap().bots.push(chef.clone());
+        app.state.lock().unwrap().chats.push(dm.clone());
+        let hooks = turn_hooks(app, &chef, &dm, None);
+        let prompt = system_prompt(app, &dm, &chef, &room_job("dm", "b1"), &MemoryStore::for_bot(&app.config.home, &chef), false, &[]);
+        let mut context = AgentContext { system_prompt: prompt.clone(), messages: Vec::new(), tools: Vec::new(), cache_points: Vec::new() };
+        assert!(!hooks.refresh_profile(&mut context), "nothing changed");
+
+        app.update_bot("b1", |bot| bot.workdir = Some("/elsewhere".into())).unwrap();
+        assert!(!hooks.refresh_profile(&mut context) && context.system_prompt == prompt, "a working directory waits for the next turn");
+
+        app.update_bot("b1", |bot| bot.description = "Plans dinners. Never orders takeout.".into()).unwrap();
+        assert!(hooks.refresh_profile(&mut context));
+        assert!(context.system_prompt.contains("Never orders takeout.") && !context.system_prompt.contains("/elsewhere"), "{}", context.system_prompt);
+        let note = context.messages.last().and_then(|m| match m { AgentMessage::User(user) => user.content[0].as_text().map(str::to_string), _ => None }).unwrap();
+        assert!(note.starts_with("[From Lorca: the user changed your profile here (Chef's description changed)") && note.contains("Never orders takeout.") && note.contains("out of date"), "{note}");
+        assert!(!hooks.refresh_profile(&mut context), "once");
+
+        // A new bot that finishes its setup goes on as itself, with its usual tools.
+        let newbie = Bot { setting_up: true, ..bot("b2", crate::model::NEW_BOT_NAME) };
+        let dm2 = chat("dm2", "dm", None, &["b2"]);
+        app.state.lock().unwrap().bots.push(newbie.clone());
+        app.state.lock().unwrap().chats.push(dm2.clone());
+        let usual = lorca_agent::tools::coding_tools(scratch.1.join("work"));
+        let hooks = turn_hooks(app, &newbie, &dm2, Some(usual.clone()));
+        let setup = system_prompt(app, &dm2, &newbie, &room_job("dm2", "b2"), &MemoryStore::for_bot(&app.config.home, &newbie), false, &[]);
+        assert!(setup.contains("You are a new bot in Lorca"));
+        let mut context = AgentContext { system_prompt: setup, messages: Vec::new(), tools: Vec::new(), cache_points: Vec::new() };
+        let finish = FinishSetup { app: app.clone(), bot: newbie.clone() };
+        let no_updates: ToolUpdateFn = Arc::new(|_| {});
+        let said = futures::executor::block_on(finish.execute("c", json!({ "name": "Sous", "description": "Preps the week's meals." }), CancellationToken::new(), no_updates)).unwrap();
+        assert!(said.content[0].as_text().unwrap().contains("from your next step you have your job's system prompt"));
+        assert!(hooks.refresh_profile(&mut context));
+        assert!(context.system_prompt.starts_with("You are Sous, a bot in Lorca.") && context.system_prompt.contains("Preps the week's meals."), "{}", context.system_prompt);
+        assert_eq!(context.tools.iter().map(|tool| tool.name().to_string()).collect::<Vec<_>>(), usual.iter().map(|tool| tool.name().to_string()).collect::<Vec<_>>());
+        let note = format!("{:?}", context.messages.last().unwrap());
+        assert!(note.contains("your setup finished here. You are Sous now") && note.contains("work as Sous from here"), "{note}");
+    }
+
+    /// A new name or description, or a finished setup, leaves a notice in the bot's direct chat;
+    /// a later turn reads the latest as the profile as it stands, after the bot's own earlier
+    /// words about itself, and the earlier ones as marks. Other changes leave none.
+    #[test]
+    fn a_profile_change_leaves_a_notice_the_next_turns_read() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        let sentry = Bot { setting_up: true, ..bot("b1", crate::model::NEW_BOT_NAME) };
+        let dm = chat("dm", "dm", None, &["b1"]);
+        app.state.lock().unwrap().bots.push(sentry.clone());
+        app.state.lock().unwrap().chats.push(dm.clone());
+        let notices = || app.messages("dm").into_iter().filter_map(|m| match m.body { Body::Notice { text, .. } if ProfileNotice::of_id(&m.id).is_some() => Some(text), _ => None }).collect::<Vec<_>>();
+
+        app.update_bot("b1", |bot| bot.accent = "teal".into()).unwrap();
+        assert!(notices().is_empty(), "a new look says nothing");
+        app.update_bot("b1", |bot| { bot.name = "价格哨兵".into(); bot.description = "盯价格。".into(); bot.setting_up = false; }).unwrap();
+        app.upsert_message(said("dm", Author::Bot { bot_id: "b1".into() }, "我叫价格哨兵，我盯价格。", now_secs()), true);
+        app.update_bot("b1", |bot| bot.description = "遵从用户提示。盯价格。".into()).unwrap();
+        app.update_bot("b1", |bot| bot.name = "价格哨兵ddd".into()).unwrap();
+        app.update_bot("b1", |bot| bot.model = Some("other".into())).unwrap();
+        assert_eq!(notices(), [
+            "Set up as 价格哨兵. Its job is saved; from here on it works as 价格哨兵.",
+            "价格哨兵's description changed.",
+            "价格哨兵 was renamed 价格哨兵ddd.",
+        ]);
+
+        let bot = app.bot("b1").unwrap();
+        let words: Vec<String> = transcript_for(app, &app.chat("dm").unwrap(), &bot, &scratch.1)
+            .iter()
+            .map(|m| match m {
+                AgentMessage::User(user) => user.content.iter().filter_map(ContentPart::as_text).collect::<String>(),
+                AgentMessage::Assistant(reply) => reply.text(),
+                _ => String::new(),
+            })
+            .collect();
+        assert_eq!(words[0], "[From Lorca: Set up as 价格哨兵. Its job is saved; from here on it works as 价格哨兵. A later note gives your profile as it stands.]");
+        assert_eq!(words[1], "我叫价格哨兵，我盯价格。");
+        assert!(words[2].starts_with("[From Lorca: 价格哨兵's description changed."), "{}", words[2]);
+        let latest = words.last().unwrap();
+        assert!(latest.contains("(价格哨兵 was renamed 价格哨兵ddd)") && latest.contains("You are 价格哨兵ddd now") && latest.contains("遵从用户提示。盯价格。"), "{latest}");
+    }
+
+    /// Each request of a turn is traced with what it added, each reply and tool call after it,
+    /// and the turn's end says why it ended; the CLI's readers find it.
+    #[tokio::test]
+    async fn a_turn_leaves_a_trace_of_each_step() {
+        struct Sink(Arc<crate::traces::Trace>);
+        #[async_trait]
+        impl EventSink for Sink {
+            async fn on_event(&self, event: &AgentEvent) {
+                self.0.event(event);
+            }
+        }
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        let chef = bot("b1", "Chef");
+        let dm = chat("dm", "dm", None, &["b1"]);
+        app.state.lock().unwrap().bots.push(chef.clone());
+        app.state.lock().unwrap().chats.push(dm.clone());
+        let job = Job { id: "job-trace".into(), kind: "turn".into(), ..room_job("dm", "b1") };
+        let work = scratch.1.join("work");
+        std::fs::create_dir_all(&work).unwrap();
+        let scripted = Arc::new(Scripted { replies: std::sync::Mutex::new(vec![r#"ls {"path":"."}"#, "Done."]), requests: Default::default() });
+        let trace = crate::traces::Trace::start(app, &job, &chef, &dm, scripted.as_ref(), false).expect("traces are on");
+        let provider = crate::traces::TracedProvider::wrap(scripted.clone(), Some(&trace));
+        let config = AgentLoopConfig::new(provider).with_sink(Arc::new(Sink(trace.clone())));
+        let context = AgentContext { system_prompt: "You are Chef, a bot in Lorca.".into(), messages: vec![AgentMessage::user("List the files")], tools: lorca_agent::tools::coding_tools(work), cache_points: Vec::new() };
+        let (tx, rx) = mpsc::channel(1);
+        drop(rx);
+        run_agent_loop_continue(context, &config, &tx, CancellationToken::new()).await.unwrap();
+        trace.finish("sent", false, false);
+
+        let path = crate::traces::find(&app.config.home, "job-trace").expect("the trace file");
+        let records: Vec<Value> = std::fs::read_to_string(&path).unwrap().lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+        let kinds: Vec<&str> = records.iter().map(|r| r["type"].as_str().unwrap()).collect();
+        assert_eq!(kinds, ["job_start", "request", "call_end", "response", "tool", "request", "call_end", "response", "job_end"]);
+        let requests: Vec<&Value> = records.iter().filter(|r| r["type"] == "request").collect();
+        assert_eq!((requests[1]["same_as_before"].as_u64(), requests[1]["added"].as_array().map(Vec::len)), (Some(1), Some(2)), "the second adds the call and its result");
+        assert_eq!(records[4]["name"], "ls");
+        let end = records.last().unwrap();
+        assert_eq!((end["end_reason"].as_str(), end["steps"].as_u64()), (Some("no_tool_call"), Some(2)));
+        let system = requests[0]["system"].as_str().unwrap();
+        assert_eq!(std::fs::read_to_string(path.parent().unwrap().join("blobs").join(format!("{system}.txt"))).unwrap(), "You are Chef, a bot in Lorca.");
+        assert!(crate::traces::markdown(&path, true).contains("### Tool result · ls"));
+        let listed = crate::traces::list(&app.config.home, Some("b1"), 1);
+        assert_eq!(listed.len(), 1);
+        let stats = crate::traces::stats_text(&listed);
+        assert!(stats.contains("no_tool_call") && stats.contains("system prompt 58 ("), "{stats}");
+    }
+
     #[test]
     fn a_reply_that_announces_work_is_told_from_one_that_reports_it() {
         for announced in [
@@ -4103,6 +4307,9 @@ mod tests {
             "先给你几条重点：\n- A\n我这就把完整流程跑完，出来直接发这里。",
             "马上跑，不废话了。",
             "Here is what I found:",
+            "好，让我看看日志。",
+            "Let me check the logs.",
+            "On it.",
         ] {
             assert!(announces_work(announced), "{announced}");
         }
@@ -4114,6 +4321,9 @@ mod tests {
             "Should I go on?",
             "PASS",
             "",
+            "如果需要，我会再提醒你。",
+            "有问题随时让我知道。",
+            "The build passed; I left a note on it.",
         ] {
             assert!(!announces_work(reported), "{reported}");
         }
@@ -4135,7 +4345,7 @@ mod tests {
                 false
             }
             async fn follow_up_messages(&self) -> Vec<AgentMessage> {
-                self.0.note().into_iter().collect()
+                self.0.note().map(|(_, note)| note).into_iter().collect()
             }
         }
         let run = |replies: Vec<&'static str>| async move {

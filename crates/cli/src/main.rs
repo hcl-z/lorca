@@ -115,6 +115,50 @@ enum Command {
         #[usage(subcommand)]
         command: CodingCommand,
     },
+    /// The traces of bots' turns on this Runner: every request, reply, tool call, and how each
+    /// turn ended. Off with LORCA_TRACES=0.
+    Traces {
+        #[usage(subcommand)]
+        command: TracesCommand,
+    },
+}
+
+#[derive(Subcommands, Debug)]
+enum TracesCommand {
+    /// One line per turn, newest first.
+    List {
+        /// Only this bot's turns.
+        #[usage(long)]
+        bot: Option<String>,
+        /// How many days back (default 1).
+        #[usage(long)]
+        days: Option<i64>,
+        /// Only turns that ended this way: no_tool_call, follow_up_pass, tool_terminate, budget, length, error, stopped, no_reply.
+        #[usage(long)]
+        end_reason: Option<String>,
+    },
+    /// A turn step by step, as Markdown.
+    Show {
+        job_id: String,
+        /// Include the system prompt each request sent.
+        #[usage(long)]
+        prompts: bool,
+    },
+    /// A turn as a Markdown file, with its system prompts.
+    Export {
+        job_id: String,
+        /// Where to write it (default <job id>.md here).
+        #[usage(long)]
+        out: Option<PathBuf>,
+    },
+    /// How turns ended, follow-ups, requests per turn, and tokens.
+    Stats {
+        #[usage(long)]
+        bot: Option<String>,
+        /// How many days back (default 7).
+        #[usage(long)]
+        days: Option<i64>,
+    },
 }
 
 #[derive(Subcommands, Debug)]
@@ -337,7 +381,7 @@ async fn main() -> anyhow::Result<()> {
     };
     // `lorca mcp` and `lorca chats` say how each step went in their own words; the log keeps to
     // warnings.
-    let quiet = matches!(command, Command::Mcp { .. } | Command::Marketplace { .. } | Command::Models { .. } | Command::Chats { .. } | Command::Tasks { .. });
+    let quiet = matches!(command, Command::Mcp { .. } | Command::Marketplace { .. } | Command::Models { .. } | Command::Chats { .. } | Command::Tasks { .. } | Command::Traces { .. });
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| if quiet { "lorca=warn,lorca_agent=warn".into() } else { "lorca=info,lorca_agent=info".into() }))
         .with_target(false)
@@ -351,6 +395,8 @@ async fn main() -> anyhow::Result<()> {
     let command = match command {
         Command::Service { command } => return service(&config, command).await,
         Command::Coding { command: CodingCommand::Hook { agent } } => return coding_hook(&config, &agent).await,
+        // Traces are files on this Runner; reading them needs no account.
+        Command::Traces { command } => return traces(&config, command),
         command => command,
     };
     let app = App::load(config)?;
@@ -465,7 +511,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Chats { command } => chats(&app, command).await,
         Command::Tasks { command } => tasks(&app, command).await,
         Command::Update { check, auto } => update(&app, check, auto).await,
-        Command::Service { .. } | Command::Coding { .. } => unreachable!(),
+        Command::Service { .. } | Command::Coding { .. } | Command::Traces { .. } => unreachable!(),
         Command::Status => {
             let snapshot = app.snapshot();
             println!("{}", serde_json::to_string_pretty(&snapshot)?);
@@ -476,6 +522,34 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
     }
+}
+
+fn traces(config: &Config, command: TracesCommand) -> anyhow::Result<()> {
+    use lorca::traces;
+    let home = &config.home;
+    match command {
+        TracesCommand::List { bot, days, end_reason } => {
+            let reasons: Vec<&str> = traces::EndReason::ALL.iter().map(|reason| reason.as_str()).collect();
+            if let Some(reason) = end_reason.as_deref().filter(|reason| !reasons.contains(reason)) {
+                anyhow::bail!("No end reason {reason}. Use one of: {}", reasons.join(", "));
+            }
+            let summaries = traces::list(home, bot.as_deref(), days.unwrap_or(1));
+            let text = traces::list_text(&summaries, end_reason.as_deref());
+            print!("{}", if text.is_empty() { "No traces.\n".to_string() } else { text });
+        }
+        TracesCommand::Show { job_id, prompts } => {
+            let path = traces::find(home, &job_id).ok_or_else(|| anyhow::anyhow!("No trace of job {job_id} on this Runner"))?;
+            print!("{}", traces::markdown(&path, prompts));
+        }
+        TracesCommand::Export { job_id, out } => {
+            let path = traces::find(home, &job_id).ok_or_else(|| anyhow::anyhow!("No trace of job {job_id} on this Runner"))?;
+            let out = out.unwrap_or_else(|| PathBuf::from(format!("{job_id}.md")));
+            std::fs::write(&out, traces::markdown(&path, true))?;
+            println!("Wrote {}", out.display());
+        }
+        TracesCommand::Stats { bot, days } => print!("{}", traces::stats_text(&traces::list(home, bot.as_deref(), days.unwrap_or(7)))),
+    }
+    Ok(())
 }
 
 /// Runs a provider command in the running `lorca serve` when there is one, so the app sees the

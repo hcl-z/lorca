@@ -384,6 +384,12 @@ impl Redactions {
         self.0.is_empty()
     }
 
+    /// Redactions of these (value, placeholder) pairs, for a test that saves no secret.
+    #[cfg(test)]
+    pub fn of(pairs: &[(&str, &str)]) -> Redactions {
+        Redactions(pairs.iter().map(|(value, placeholder)| (value.to_string(), placeholder.to_string())).collect())
+    }
+
     /// `text` with each value replaced, or None when it held none.
     pub fn text(&self, text: &str) -> Option<String> {
         if !self.0.iter().any(|(value, _)| text.contains(value.as_str())) {

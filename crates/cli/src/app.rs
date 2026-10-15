@@ -1239,22 +1239,31 @@ impl App {
         Ok((bot, chat))
     }
 
-    /// Applies a change to a bot's profile and publishes the roster. The next turn of that bot
-    /// reads the new profile.
+    /// Applies a change to a bot's profile and publishes the roster. The bot's turns read the
+    /// new profile from their next step. A finished setup, or a new name or description, also
+    /// leaves a notice in the bot's DM (`ProfileChange`), which its later turns read.
     pub fn update_bot(&self, id: &str, update: impl FnOnce(&mut Bot)) -> anyhow::Result<Bot> {
-        let bot = {
+        let (before, bot) = {
             let mut state = self.state.lock().unwrap();
             let bot = state.bots.iter_mut().find(|b| b.id == id).ok_or_else(|| anyhow::anyhow!("Unknown bot"))?;
             let old_avatar = bot.avatar.as_ref().map(|avatar| avatar.id.clone());
+            let mut before = bot.clone();
+            before.normalize_description();
             update(bot);
             bot.normalize_description();
             let bot = bot.clone();
             if let Some(old) = old_avatar.filter(|old| bot.avatar.as_ref().map(|avatar| &avatar.id) != Some(old)) {
                 self.drop_avatar(&mut state, &old);
             }
-            bot
+            (Profile::of(&before), bot)
         };
         self.roster_changed(true);
+        let after = Profile::of(&bot);
+        if let (Some(change), Some(dm)) = (ProfileChange::between(&before, &after), self.dm_id_of(&bot.id)) {
+            let mut notice = Message::new(&dm, Author::System, Body::Notice { text: change.notice(&before, &after), routine_id: None });
+            notice.id = change.notice_id();
+            self.upsert_message(notice, true);
+        }
         Ok(bot)
     }
 
@@ -1402,17 +1411,14 @@ impl App {
         Ok(chat)
     }
 
+    /// The id of the bot's DM, without making one.
+    pub fn dm_id_of(&self, bot_id: &str) -> Option<String> {
+        self.state.lock().unwrap().chats.iter().find(|c| c.meta.is_dm_of(bot_id)).map(|c| c.meta.id.clone())
+    }
+
     /// The one DM per bot.
     pub fn dm_with(&self, bot_id: &str, preferred_id: Option<String>) -> anyhow::Result<Chat> {
-        if let Some(existing) = self
-            .state
-            .lock()
-            .unwrap()
-            .chats
-            .iter()
-            .find(|c| c.meta.kind == "dm" && c.meta.channel.is_none() && c.meta.bot_ids == vec![bot_id.to_string()])
-            .cloned()
-        {
+        if let Some(existing) = self.state.lock().unwrap().chats.iter().find(|c| c.meta.is_dm_of(bot_id)).cloned() {
             return Ok(existing);
         }
         self.create_chat(ChatMeta {

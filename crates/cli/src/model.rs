@@ -206,6 +206,90 @@ impl AutoReview {
     }
 }
 
+/// The part of a bot's profile its system prompt is made from and that applies mid-turn. Its
+/// provider, model, thinking, and working directory apply from its next turn: a turn's tools and
+/// provider are made with them when it starts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Profile {
+    pub name: String,
+    pub description: String,
+    pub setting_up: bool,
+}
+
+impl Profile {
+    pub fn of(bot: &Bot) -> Profile {
+        Profile { name: bot.name.clone(), description: bot.description.clone(), setting_up: bot.setting_up }
+    }
+}
+
+/// A change to a bot's profile that its direct chat notes: a finished setup, or a new name or
+/// description. A new look, Access, or model is not one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfileChange {
+    SetUp,
+    Renamed,
+    Described,
+    RenamedAndDescribed,
+}
+
+/// What a profile notice in a chat marks, read back from its message id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfileNotice {
+    SetUp,
+    Changed,
+}
+
+/// How every profile notice's message id starts; the kind follows it.
+const PROFILE_NOTICE_PREFIX: &str = "profile-";
+const PROFILE_NOTICE_SETUP: &str = "setup-";
+
+impl ProfileChange {
+    pub fn between(before: &Profile, after: &Profile) -> Option<ProfileChange> {
+        if before.setting_up && !after.setting_up {
+            return Some(ProfileChange::SetUp);
+        }
+        if after.setting_up {
+            return None;
+        }
+        match (before.name != after.name, before.description != after.description) {
+            (true, true) => Some(ProfileChange::RenamedAndDescribed),
+            (true, false) => Some(ProfileChange::Renamed),
+            (false, true) => Some(ProfileChange::Described),
+            (false, false) => None,
+        }
+    }
+
+    /// The notice's words, as every Device shows them.
+    pub fn notice(self, before: &Profile, after: &Profile) -> String {
+        match self {
+            ProfileChange::SetUp => format!("Set up as {}. Its job is saved; from here on it works as {}.", after.name, after.name),
+            ProfileChange::RenamedAndDescribed => format!("{} was renamed {} and its description changed.", before.name, after.name),
+            ProfileChange::Renamed => format!("{} was renamed {}.", before.name, after.name),
+            ProfileChange::Described => format!("{}'s description changed.", after.name),
+        }
+    }
+
+    /// A new notice's message id, which carries what it marks.
+    pub fn notice_id(self) -> String {
+        let kind = if self == ProfileChange::SetUp { PROFILE_NOTICE_SETUP } else { "" };
+        format!("{PROFILE_NOTICE_PREFIX}{kind}{}", uuid::Uuid::new_v4())
+    }
+}
+
+impl ProfileNotice {
+    /// What the profile notice with this message id marks; `None` for any other message.
+    pub fn of_id(id: &str) -> Option<ProfileNotice> {
+        let rest = id.strip_prefix(PROFILE_NOTICE_PREFIX)?;
+        Some(if rest.starts_with(PROFILE_NOTICE_SETUP) { ProfileNotice::SetUp } else { ProfileNotice::Changed })
+    }
+}
+
+impl From<ProfileChange> for ProfileNotice {
+    fn from(change: ProfileChange) -> ProfileNotice {
+        if change == ProfileChange::SetUp { ProfileNotice::SetUp } else { ProfileNotice::Changed }
+    }
+}
+
 impl Bot {
     /// Folds the old Instructions field into Description once. Existing paired Devices may
     /// still send the old field during a rolling upgrade, so an empty compatibility value is
@@ -910,6 +994,11 @@ pub struct Section {
 impl ChatMeta {
     pub fn is_group(&self) -> bool {
         self.kind == "group"
+    }
+
+    /// Whether this is `bot_id`'s one direct chat with the user (not a channel's conversation).
+    pub fn is_dm_of(&self, bot_id: &str) -> bool {
+        self.kind == "dm" && self.channel.is_none() && self.bot_ids.len() == 1 && self.bot_ids[0] == bot_id
     }
 
     /// Whether the chat's alerts are off at `now` (unix seconds).
