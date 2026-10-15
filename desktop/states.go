@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -81,7 +83,14 @@ func showArchitecture(w *appWindow) {
 	w.showNote(L("Three processes"), L("The app talks only to the local CLI over a localhost websocket. The CLI holds the keys, runs the agent loop, and syncs ciphertext with the relay. The relay stores public keys and opaque blobs.\n\nFull notes live in ARCHITECTURE.md."))
 }
 
+// showAbout is AppKit's standard about panel on a Mac, with the app's icon, name, and version,
+// and an alert with the version elsewhere.
 func showAbout(w *appWindow) {
+	if runtime.GOOS == "darwin" {
+		// The same build version hides the parenthesized one AppKit adds from Info.plist.
+		mygo.App.ShowAboutPanel(mygo.AboutPanelOptions{ApplicationName: appName(), ApplicationVersion: appVersion(), Version: appVersion()})
+		return
+	}
 	if w == nil {
 		return
 	}
