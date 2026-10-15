@@ -538,7 +538,8 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         TurnOutcome::Pass
     };
     if let Some(trace) = &trace {
-        trace.finish(&format!("{outcome:?}").to_lowercase(), cancel.is_cancelled());
+        let over_budget = crate::budgets::current().is_some_and(|budget| budget.check().is_err());
+        trace.finish(&format!("{outcome:?}").to_lowercase(), cancel.is_cancelled(), over_budget);
     }
     // A terminal error takes priority over anything the bot said before it failed.
     // Context recovery above finishes before we choose the notification.
@@ -692,15 +693,22 @@ impl FollowUp {
     }
 }
 
-/// Words that, at the end of a reply, promise a step rather than report one.
+/// Words that, anywhere in a reply's last sentence, promise a step rather than report one.
 const ANNOUNCING: &[&str] = &[
-    " let me ", " i'll ", " i’ll ", " i will ", " i'm going to ", " i’m going to ", " i am going to ", " i'm about to ",
-    " next, i ", " on it", " stand by", " one moment", "我来", "我先", "我这就", "我马上", "马上", "这就去", "接下来我", "下一步我", "现在开始", "现在就去",
-    "现在去", "现在重新", "正在", "稍等", "让我", "我去", "我会",
+    " i'll ", " i’ll ", " i will ", " i'm going to ", " i’m going to ", " i am going to ", " i'm about to ", " next, i ",
+    "我这就", "我马上", "马上", "这就去", "接下来我", "下一步我", "现在开始", "现在就去", "现在去", "现在重新", "正在", "稍等",
 ];
 
+/// Words that promise a step only at the start of a clause: "Let me check", "好，让我看看", but
+/// not "…让我知道" or "当我来看时".
+const ANNOUNCING_CLAUSE: &[&str] = &["let me ", "我来", "我先", "让我", "我去"];
+
+/// A whole last sentence that promises a step.
+const ANNOUNCING_SENTENCE: &[&str] = &["on it", "stand by", "one moment", "one sec"];
+
 /// Whether a reply's last line says what the bot is about to do: a phrase that promises a step,
-/// "Fetching all sources now.", or a colon with nothing after it. A question waits on the user.
+/// "Fetching all sources now.", or a colon or ellipsis with nothing after it. A question waits on
+/// the user, and a promise for later ("如果需要，我会再提醒你") is not work left now.
 fn announces_work(reply: &str) -> bool {
     let Some(line) = reply.lines().map(str::trim).filter(|line| !line.is_empty()).last() else { return false };
     if is_pass(line) || line.ends_with(['?', '？']) {
@@ -710,15 +718,16 @@ fn announces_work(reply: &str) -> bool {
         return true;
     }
     let lower = line.to_lowercase();
-    // A space in front, so an English phrase starts at a word.
-    let tail: String = std::iter::once(' ').chain(lower.chars().rev().take(120).collect::<Vec<_>>().into_iter().rev()).collect();
     let last_sentence = lower.split(['.', '!', '。', '！']).map(str::trim).filter(|sentence| !sentence.is_empty()).last().unwrap_or("");
+    // A space in front, so an English phrase starts at a word.
+    let spaced = format!(" {last_sentence} ");
     let doing_now = last_sentence.ends_with(" now")
         && last_sentence
             .split_whitespace()
             .next()
             .is_some_and(|word| word.ends_with("ing") && !["nothing", "everything", "something", "anything"].contains(&word));
-    doing_now || ANNOUNCING.iter().any(|phrase| tail.contains(phrase))
+    let clause_starts = last_sentence.split([',', '，', ';', '；']).map(str::trim).any(|clause| ANNOUNCING_CLAUSE.iter().any(|phrase| clause.starts_with(phrase)));
+    doing_now || clause_starts || ANNOUNCING_SENTENCE.contains(&last_sentence) || ANNOUNCING.iter().any(|phrase| spaced.contains(phrase))
 }
 
 /// How the model sees a transcript that may open with a compaction summary.
@@ -922,10 +931,10 @@ impl LoopHooks for TurnHooks {
     }
 
     async fn before_tool_call(&self, ctx: BeforeToolCallContext<'_>) -> Option<BeforeToolCallResult> {
-        let call = ctx.tool_call;
+        let (call, parent) = (ctx.tool_call, ctx.parent);
         let (by, decision) = self.check_tool_call(ctx).await?;
         if let (Some(trace), true) = (&self.trace, decision.block) {
-            trace.hold(call, by, decision.reason.as_deref(), decision.terminate);
+            trace.hold(call, parent, by, decision.reason.as_deref(), decision.terminate);
         }
         Some(decision)
     }
@@ -4419,7 +4428,7 @@ mod tests {
         let (tx, rx) = mpsc::channel(1);
         drop(rx);
         run_agent_loop_continue(context, &config, &tx, CancellationToken::new()).await.unwrap();
-        trace.finish("sent", false);
+        trace.finish("sent", false, false);
 
         let path = crate::traces::find(&app.config.home, "job-trace").expect("the trace file");
         let records: Vec<Value> = std::fs::read_to_string(&path).unwrap().lines().map(|line| serde_json::from_str(line).unwrap()).collect();
@@ -4446,6 +4455,9 @@ mod tests {
             "先给你几条重点：\n- A\n我这就把完整流程跑完，出来直接发这里。",
             "马上跑，不废话了。",
             "Here is what I found:",
+            "好，让我看看日志。",
+            "Let me check the logs.",
+            "On it.",
         ] {
             assert!(announces_work(announced), "{announced}");
         }
@@ -4457,6 +4469,9 @@ mod tests {
             "Should I go on?",
             "PASS",
             "",
+            "如果需要，我会再提醒你。",
+            "有问题随时让我知道。",
+            "The build passed; I left a note on it.",
         ] {
             assert!(!announces_work(reported), "{reported}");
         }

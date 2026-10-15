@@ -46,13 +46,38 @@ fn hash(text: &str) -> String {
     Sha256::digest(text.as_bytes()).iter().take(12).map(|byte| format!("{byte:02x}")).collect()
 }
 
-/// Strings past `MAX_TEXT` keep their head and tail, and an image keeps its size, not its bytes.
+/// A record as it is written: saved secrets replaced first, then long strings clipped.
+fn clean(redactions: &crate::secrets::Redactions, value: &mut Value) {
+    redactions.json(value);
+    clip(value);
+}
+
+/// The largest char boundary of `text` at or before `at`.
+fn boundary_before(text: &str, mut at: usize) -> usize {
+    at = at.min(text.len());
+    while !text.is_char_boundary(at) {
+        at -= 1;
+    }
+    at
+}
+
+/// The smallest char boundary of `text` at or after `at`.
+fn boundary_after(text: &str, mut at: usize) -> usize {
+    while at < text.len() && !text.is_char_boundary(at) {
+        at += 1;
+    }
+    at
+}
+
+/// Strings past `MAX_TEXT` bytes keep their first half and last quarter of it, cut at char
+/// boundaries, and an image keeps its size, not its bytes. Runs after scrubbing, so a cut never
+/// splits a saved secret out of the scrubber's reach.
 fn clip(value: &mut Value) {
     match value {
         Value::String(text) if text.len() > MAX_TEXT => {
-            let head: String = text.chars().take(MAX_TEXT / 2).collect();
-            let tail: String = text.chars().rev().take(MAX_TEXT / 4).collect::<Vec<_>>().into_iter().rev().collect();
-            *text = format!("{head}\n[… {} bytes cut …]\n{tail}", text.len());
+            let head = boundary_before(text, MAX_TEXT / 2);
+            let tail = boundary_after(text, text.len() - MAX_TEXT / 4);
+            *text = format!("{}\n[… {} bytes cut …]\n{}", &text[..head], tail - head, &text[tail..]);
         }
         Value::Array(items) => items.iter_mut().for_each(clip),
         Value::Object(map) => {
@@ -148,8 +173,7 @@ impl Trace {
 
     fn write(&self, state: &mut State, kind: &str, mut fields: Value) {
         state.seq += 1;
-        clip(&mut fields);
-        state.redactions.json(&mut fields);
+        clean(&state.redactions, &mut fields);
         let mut line = json!({ "v": VERSION, "type": kind, "job_id": self.job_id, "seq": state.seq, "step": state.step, "ts": crate::config::now_secs() });
         if let (Value::Object(line), Value::Object(fields)) = (&mut line, fields) {
             line.extend(fields);
@@ -236,8 +260,16 @@ impl Trace {
                 let (started, args) = state.tool_starts.remove(tool_call_id).unwrap_or((Instant::now(), Value::Null));
                 state.step_terminated.push(result.terminate);
                 let text: Vec<&str> = result.content.iter().filter_map(lorca_agent::ContentPart::as_text).collect();
+                let images: Vec<Value> = result
+                    .content
+                    .iter()
+                    .filter_map(|part| match part {
+                        lorca_agent::ContentPart::Image { data, mime_type } => Some(json!({ "mime_type": mime_type, "base64_bytes": data.len() })),
+                        _ => None,
+                    })
+                    .collect();
                 let fields = json!({
-                    "call_id": tool_call_id, "name": tool_name, "args": args, "result": text.join("\n"), "details": result.details,
+                    "call_id": tool_call_id, "name": tool_name, "args": args, "result": text.join("\n"), "images": images, "details": result.details,
                     "is_error": is_error, "terminate": result.terminate, "ms": started.elapsed().as_millis() as u64,
                 });
                 self.write(&mut state, "tool", fields);
@@ -252,11 +284,16 @@ impl Trace {
         }
     }
 
-    /// A call `before_tool_call` refused, and which check refused it.
-    pub fn hold(&self, call: &ToolCall, by: &str, reason: Option<&str>, terminate: bool) {
+    /// A call `before_tool_call` refused, which check refused it, and for a call a codemode
+    /// script made, the script's call.
+    pub fn hold(&self, call: &ToolCall, parent: Option<&ToolCall>, by: &str, reason: Option<&str>, terminate: bool) {
         let mut state = self.state.lock().unwrap();
-        state.last_hold = Some(by.to_string());
-        self.write(&mut state, "hold", json!({ "call_id": call.id, "name": call.name, "by": by, "reason": reason, "terminate": terminate }));
+        // Only the model's own calls end its step; a script's refused call is the script's.
+        if parent.is_none() {
+            state.last_hold = Some(by.to_string());
+        }
+        let parent = parent.map(|parent| parent.id.clone());
+        self.write(&mut state, "hold", json!({ "call_id": call.id, "name": call.name, "parent": parent, "by": by, "reason": reason, "terminate": terminate }));
     }
 
     /// The turn asked the bot once more for the work its reply announced.
@@ -276,14 +313,17 @@ impl Trace {
         self.record("compaction", json!({ "tokens_before": tokens_before, "when": when }));
     }
 
-    /// Why the turn ended, and how.
-    pub fn finish(&self, outcome: &str, cancelled: bool) {
+    /// Why the turn ended, and how. `over_budget` is a limit of the turn's used up, which also
+    /// refuses a model call before it is sent, ending the turn on an error.
+    pub fn finish(&self, outcome: &str, cancelled: bool, over_budget: bool) {
         let mut state = self.state.lock().unwrap();
         let reply = state.last_reply.clone();
         let end_reason = match &reply {
             _ if cancelled => "stopped",
+            None if over_budget => "budget",
             None => "no_reply",
             Some(reply) => match reply.stop_reason {
+                StopReason::Error if over_budget => "budget",
                 StopReason::Error => "error",
                 StopReason::Aborted => "stopped",
                 StopReason::Length if reply.tool_calls().is_empty() => "length",
@@ -612,8 +652,27 @@ mod tests {
         let mut value = json!({ "result": long, "content": [{ "type": "image", "data": "QUJD", "mime_type": "image/png" }] });
         clip(&mut value);
         let result = value["result"].as_str().unwrap();
-        assert!(result.len() < MAX_TEXT && result.contains(&format!("[… {} bytes cut …]", MAX_TEXT * 2)), "{}", result.len());
+        assert!(result.len() < MAX_TEXT && result.contains(&format!("[… {} bytes cut …]", MAX_TEXT * 2 - MAX_TEXT / 2 - MAX_TEXT / 4)), "{}", result.len());
         assert_eq!(value["content"][0]["data"], "[image, 4 bytes of base64]");
+
+        // Clipped by bytes at char boundaries: Chinese text fits the budget too.
+        let mut chinese = json!("中".repeat(MAX_TEXT));
+        clip(&mut chinese);
+        let chinese = chinese.as_str().unwrap();
+        assert!(chinese.len() < MAX_TEXT && chinese.starts_with('中') && chinese.ends_with('中'), "{}", chinese.len());
+    }
+
+    /// A saved secret is replaced before the clip, so a cut through it leaves nothing of it.
+    #[test]
+    fn a_secret_across_the_clip_is_scrubbed_whole() {
+        let secret = "s3cr3t-token-value-0123456789";
+        let mut text = "a".repeat(MAX_TEXT / 2 - 10);
+        text.push_str(secret);
+        text.push_str(&"b".repeat(MAX_TEXT * 2));
+        let mut value = json!({ "result": text });
+        clean(&crate::secrets::Redactions::of(&[(secret, "{{secret:api_token}}")]), &mut value);
+        let result = value["result"].as_str().unwrap();
+        assert!(!result.contains("s3cr3t") && !result.contains("0123456789"), "no part of the secret is kept");
     }
 
     #[test]
