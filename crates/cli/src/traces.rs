@@ -93,12 +93,73 @@ fn clip(value: &mut Value) {
     }
 }
 
+/// What part of a turn a model request belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Phase {
+    /// The loop's own steps.
+    Loop,
+    /// The turn's housekeeping between steps or before them: a compaction and its memory flush.
+    Compaction,
+}
+
+/// The check before a tool call that refused it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Check {
+    Limits,
+    Feedback,
+    Access,
+    BrowserReview,
+    CodingReview,
+    PluginReview,
+    AutoReview,
+}
+
+/// Why a turn's loop stopped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EndReason {
+    /// The last reply made no tool call.
+    NoToolCall,
+    /// The bot answered PASS to the follow-up.
+    FollowUpPass,
+    /// Every result of the last step ended the turn: a dismissed question, a refused install.
+    ToolTerminate,
+    /// A limit refused the last calls, or the model call before it was sent.
+    Budget,
+    Length,
+    Error,
+    Stopped,
+    /// The turn ended before any reply.
+    NoReply,
+}
+
+impl EndReason {
+    pub const ALL: [EndReason; 8] = [
+        EndReason::NoToolCall, EndReason::FollowUpPass, EndReason::ToolTerminate, EndReason::Budget,
+        EndReason::Length, EndReason::Error, EndReason::Stopped, EndReason::NoReply,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            EndReason::NoToolCall => "no_tool_call",
+            EndReason::FollowUpPass => "follow_up_pass",
+            EndReason::ToolTerminate => "tool_terminate",
+            EndReason::Budget => "budget",
+            EndReason::Length => "length",
+            EndReason::Error => "error",
+            EndReason::Stopped => "stopped",
+            EndReason::NoReply => "no_reply",
+        }
+    }
+}
+
 struct State {
     file: Option<std::fs::File>,
     seq: u64,
     step: u64,
-    /// `loop`, or the housekeeping a request belongs to (`compaction`).
-    phase: &'static str,
+    phase: Phase,
     /// The messages of the loop's last request, as JSON, to record only what each adds.
     sent: Vec<String>,
     blobs: std::collections::HashSet<String>,
@@ -107,7 +168,7 @@ struct State {
     /// The last step: its reply, and whether every tool result asked to stop.
     last_reply: Option<AssistantMessage>,
     step_terminated: Vec<bool>,
-    last_hold: Option<String>,
+    last_hold: Option<Check>,
     followed_up: bool,
 }
 
@@ -144,7 +205,7 @@ impl Trace {
                 file: Some(file),
                 seq: 0,
                 step: 0,
-                phase: "loop",
+                phase: Phase::Loop,
                 sent: Vec::new(),
                 blobs: Default::default(),
                 redactions: crate::secrets::Redactions::load(app),
@@ -185,8 +246,8 @@ impl Trace {
         }
     }
 
-    /// Requests from here on belong to `phase` (`loop` again when it is done).
-    pub fn phase(&self, phase: &'static str) {
+    /// Requests from here on belong to `phase`.
+    pub fn phase(&self, phase: Phase) {
         self.state.lock().unwrap().phase = phase;
     }
 
@@ -214,7 +275,7 @@ impl Trace {
         let same = state.sent.iter().zip(&messages).take_while(|(a, b)| a == b).count();
         let added: Vec<Value> = messages[same..].iter().filter_map(|message| serde_json::from_str(message).ok()).collect();
         let phase = state.phase;
-        if phase == "loop" {
+        if phase == Phase::Loop {
             state.sent = messages.clone();
         }
         self.write(&mut state, "request", json!({
@@ -224,7 +285,7 @@ impl Trace {
         }));
     }
 
-    fn call_end(&self, phase: &'static str, started: Instant, first: Option<std::time::Duration>, event: &AssistantEvent) {
+    fn call_end(&self, phase: Phase, started: Instant, first: Option<std::time::Duration>, event: &AssistantEvent) {
         let (stop_reason, usage, error) = match event {
             AssistantEvent::Done { stop_reason, usage } => (json!(stop_reason), json!(usage), Value::Null),
             AssistantEvent::Error { message, aborted } => (json!(if *aborted { "aborted" } else { "error" }), Value::Null, json!(message)),
@@ -286,11 +347,11 @@ impl Trace {
 
     /// A call `before_tool_call` refused, which check refused it, and for a call a codemode
     /// script made, the script's call.
-    pub fn hold(&self, call: &ToolCall, parent: Option<&ToolCall>, by: &str, reason: Option<&str>, terminate: bool) {
+    pub fn hold(&self, call: &ToolCall, parent: Option<&ToolCall>, by: Check, reason: Option<&str>, terminate: bool) {
         let mut state = self.state.lock().unwrap();
         // Only the model's own calls end its step; a script's refused call is the script's.
         if parent.is_none() {
-            state.last_hold = Some(by.to_string());
+            state.last_hold = Some(by);
         }
         let parent = parent.map(|parent| parent.id.clone());
         self.write(&mut state, "hold", json!({ "call_id": call.id, "name": call.name, "parent": parent, "by": by, "reason": reason, "terminate": terminate }));
@@ -319,23 +380,23 @@ impl Trace {
         let mut state = self.state.lock().unwrap();
         let reply = state.last_reply.clone();
         let end_reason = match &reply {
-            _ if cancelled => "stopped",
-            None if over_budget => "budget",
-            None => "no_reply",
+            _ if cancelled => EndReason::Stopped,
+            None if over_budget => EndReason::Budget,
+            None => EndReason::NoReply,
             Some(reply) => match reply.stop_reason {
-                StopReason::Error if over_budget => "budget",
-                StopReason::Error => "error",
-                StopReason::Aborted => "stopped",
-                StopReason::Length if reply.tool_calls().is_empty() => "length",
-                _ if !reply.tool_calls().is_empty() && state.last_hold.as_deref() == Some("limits") => "budget",
-                _ if !state.step_terminated.is_empty() && state.step_terminated.iter().all(|t| *t) => "tool_terminate",
-                _ if state.followed_up && crate::turns::is_pass(&reply.text()) => "follow_up_pass",
-                _ => "no_tool_call",
+                StopReason::Error if over_budget => EndReason::Budget,
+                StopReason::Error => EndReason::Error,
+                StopReason::Aborted => EndReason::Stopped,
+                StopReason::Length if reply.tool_calls().is_empty() => EndReason::Length,
+                _ if !reply.tool_calls().is_empty() && state.last_hold == Some(Check::Limits) => EndReason::Budget,
+                _ if !state.step_terminated.is_empty() && state.step_terminated.iter().all(|t| *t) => EndReason::ToolTerminate,
+                _ if state.followed_up && crate::turns::is_pass(&reply.text()) => EndReason::FollowUpPass,
+                _ => EndReason::NoToolCall,
             },
         };
         let last_text = reply.as_ref().map(|reply| reply.text()).unwrap_or_default();
         let (steps, followed_up) = (state.step, state.followed_up);
-        self.write(&mut state, "job_end", json!({ "outcome": outcome, "end_reason": end_reason, "steps": steps, "followed_up": followed_up, "last_text": last_text }));
+        self.write(&mut state, "job_end", json!({ "outcome": outcome, "end_reason": end_reason.as_str(), "steps": steps, "followed_up": followed_up, "last_text": last_text }));
         if let Some(file) = state.file.as_mut() {
             let _ = file.flush();
         }
@@ -357,19 +418,30 @@ fn open(dir: &Path, name: &str) -> std::io::Result<std::fs::File> {
     options.open(dir.join(name))
 }
 
+/// Every day folder under `root`, of one bot or all: its UTC day and its path.
+fn day_dirs(root: &Path, bot_id: Option<&str>) -> Vec<(String, PathBuf)> {
+    let mut days = Vec::new();
+    for bot in std::fs::read_dir(root).into_iter().flatten().flatten() {
+        if bot_id.is_some_and(|id| bot.file_name().to_string_lossy() != id) {
+            continue;
+        }
+        for entry in std::fs::read_dir(bot.path()).into_iter().flatten().flatten() {
+            days.push((entry.file_name().to_string_lossy().to_string(), entry.path()));
+        }
+    }
+    days
+}
+
 /// Removes the days past `KEEP_DAYS`, then the oldest until what is left fits `KEEP_BYTES`.
 pub fn prune(root: &Path, now: f64) {
     let oldest = day(now - (KEEP_DAYS * 86_400) as f64);
     let mut days: Vec<(String, PathBuf, u64)> = Vec::new();
-    for bot in std::fs::read_dir(root).into_iter().flatten().flatten() {
-        for entry in std::fs::read_dir(bot.path()).into_iter().flatten().flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            let path = entry.path();
-            if name < oldest {
-                let _ = std::fs::remove_dir_all(&path);
-            } else {
-                days.push((name, path.clone(), size(&path)));
-            }
+    for (name, path) in day_dirs(root, None) {
+        if name < oldest {
+            let _ = std::fs::remove_dir_all(&path);
+        } else {
+            let bytes = size(&path);
+            days.push((name, path, bytes));
         }
     }
     days.sort();
@@ -471,32 +543,24 @@ fn lines(path: &Path) -> Vec<Value> {
 pub fn list(home: &Path, bot_id: Option<&str>, days: i64) -> Vec<Summary> {
     let since = day(crate::config::now_secs() - (days.max(1) - 1) as f64 * 86_400.0);
     let mut out = Vec::new();
-    for bot in std::fs::read_dir(root(home)).into_iter().flatten().flatten() {
-        if bot_id.is_some_and(|id| bot.file_name().to_string_lossy() != id) {
-            continue;
-        }
-        for day_dir in std::fs::read_dir(bot.path()).into_iter().flatten().flatten() {
-            if day_dir.file_name().to_string_lossy().to_string() < since {
+    for (_, dir) in day_dirs(&root(home), bot_id).into_iter().filter(|(day, _)| *day >= since) {
+        for file in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+            let path = file.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
                 continue;
             }
-            for file in std::fs::read_dir(day_dir.path()).into_iter().flatten().flatten() {
-                let path = file.path();
-                if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
-                    continue;
-                }
-                let records = lines(&path);
-                let Some(start) = records.iter().find(|r| r["type"] == "job_start").cloned() else { continue };
-                let end = records.iter().rev().find(|r| r["type"] == "job_end").cloned();
-                let mut usage = (0, 0, 0);
-                for r in records.iter().filter(|r| r["type"] == "response") {
-                    usage.0 += r["usage"]["input"].as_u64().unwrap_or(0);
-                    usage.1 += r["usage"]["output"].as_u64().unwrap_or(0);
-                    usage.2 += r["usage"]["cache_read"].as_u64().unwrap_or(0);
-                }
-                let requests = records.iter().filter(|r| r["type"] == "request").count();
-                let tools = records.iter().filter(|r| r["type"] == "tool").count();
-                out.push(Summary { path, start, end, requests, tools, usage });
+            let records = lines(&path);
+            let Some(start) = records.iter().find(|r| r["type"] == "job_start").cloned() else { continue };
+            let end = records.iter().rev().find(|r| r["type"] == "job_end").cloned();
+            let mut usage = (0, 0, 0);
+            for r in records.iter().filter(|r| r["type"] == "response") {
+                usage.0 += r["usage"]["input"].as_u64().unwrap_or(0);
+                usage.1 += r["usage"]["output"].as_u64().unwrap_or(0);
+                usage.2 += r["usage"]["cache_read"].as_u64().unwrap_or(0);
             }
+            let requests = records.iter().filter(|r| r["type"] == "request").count();
+            let tools = records.iter().filter(|r| r["type"] == "tool").count();
+            out.push(Summary { path, start, end, requests, tools, usage });
         }
     }
     out.sort_by(|a, b| b.start["ts"].as_f64().unwrap_or(0.0).total_cmp(&a.start["ts"].as_f64().unwrap_or(0.0)));
@@ -506,15 +570,7 @@ pub fn list(home: &Path, bot_id: Option<&str>, days: i64) -> Vec<Summary> {
 /// The trace file of `job_id`.
 pub fn find(home: &Path, job_id: &str) -> Option<PathBuf> {
     let name = format!("{job_id}.jsonl");
-    for bot in std::fs::read_dir(root(home)).ok()?.flatten() {
-        for day_dir in std::fs::read_dir(bot.path()).into_iter().flatten().flatten() {
-            let path = day_dir.path().join(&name);
-            if path.is_file() {
-                return Some(path);
-            }
-        }
-    }
-    None
+    day_dirs(&root(home), None).into_iter().map(|(_, dir)| dir.join(&name)).find(|path| path.is_file())
 }
 
 fn when(record: &Value) -> String {
@@ -530,7 +586,7 @@ pub fn list_text(summaries: &[Summary], end_reason: Option<&str>) -> String {
             continue;
         }
         out.push_str(&format!(
-            "{}  {}  {:<10} {:<8} {:<16} steps {:<3} tools {:<3} in {} out {} cached {}  {}\n",
+            "{}  {}  {:<10} {:<8} {:<16} requests {:<3} tools {:<3} in {} out {} cached {}  {}\n",
             when(&s.start), s.start["job_id"].as_str().unwrap_or(""), s.start["kind"].as_str().unwrap_or(""),
             s.start["bot"].as_str().unwrap_or(""), reason, s.requests, s.tools, s.usage.0, s.usage.1, s.usage.2,
             s.end.as_ref().and_then(|e| e["last_text"].as_str()).map(|t| crate::turns::excerpt(t, 60)).unwrap_or_default(),
@@ -543,15 +599,15 @@ pub fn list_text(summaries: &[Summary], end_reason: Option<&str>) -> String {
 pub fn stats_text(summaries: &[Summary]) -> String {
     let mut reasons: std::collections::BTreeMap<String, usize> = Default::default();
     let (mut followed, mut followed_pass) = (0, 0);
-    let (mut steps, mut input, mut output, mut cached) = (0, 0, 0, 0);
+    let (mut requests, mut input, mut output, mut cached) = (0, 0, 0, 0);
     for s in summaries {
         let reason = s.end.as_ref().and_then(|e| e["end_reason"].as_str()).unwrap_or("unfinished").to_string();
         if s.end.as_ref().is_some_and(|e| e["followed_up"] == true) {
             followed += 1;
-            followed_pass += usize::from(reason == "follow_up_pass");
+            followed_pass += usize::from(reason == EndReason::FollowUpPass.as_str());
         }
         *reasons.entry(reason).or_default() += 1;
-        steps += s.requests;
+        requests += s.requests;
         input += s.usage.0;
         output += s.usage.1;
         cached += s.usage.2;
@@ -564,7 +620,7 @@ pub fn stats_text(summaries: &[Summary]) -> String {
     out.push_str(&format!(
         "\nFollow-ups: {followed} (answered PASS: {followed_pass}, went on: {})\nRequests per turn: {:.1}\nTokens: {input} in ({cached} from cache, {:.0}%), {output} out\n",
         followed - followed_pass,
-        steps as f64 / n as f64,
+        requests as f64 / n as f64,
         if input + cached > 0 { cached as f64 * 100.0 / (input + cached) as f64 } else { 0.0 },
     ));
     out

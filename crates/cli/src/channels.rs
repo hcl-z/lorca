@@ -635,7 +635,7 @@ mod runner {
         }
         // The conversation is filed where the bot's own direct chat is, and is as quiet as it.
         let (section_id, mute) = app.state.lock().unwrap().chats.iter()
-            .find(|chat| chat.meta.kind == "dm" && chat.meta.channel.is_none() && chat.meta.bot_ids == [config.bot_id.clone()])
+            .find(|chat| chat.meta.is_dm_of(&config.bot_id))
             .map(|dm| (dm.meta.section_id.clone(), dm.meta.mute.clone()))
             .unwrap_or_default();
         let title = match &incoming.thread_id {

@@ -32,6 +32,14 @@ use crate::model::*;
 use crate::plugins::review::Trigger;
 use crate::providers;
 use crate::runtime::{chat_source, name_of, TurnOutcome};
+use crate::traces::Check;
+
+mod follow_up;
+mod profile;
+use follow_up::FollowUp;
+#[cfg(test)]
+use follow_up::{announces_work, FOLLOW_UP_NOTE};
+use profile::{profile_note, PromptInputs};
 
 /// The most chat messages a turn rebuilds as they are. Past this a chat is compacted by count,
 /// so nothing is dropped without a summary; with compaction off, older rows are left out.
@@ -303,7 +311,7 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
     let too_many = settings.enabled && uncovered_count(app, &chat, &bot) > MAX_CONTEXT_MESSAGES;
     if too_long || too_many {
         if let Some(trace) = &trace {
-            trace.phase("compaction");
+            trace.phase(crate::traces::Phase::Compaction);
         }
         let compacted = if too_many {
             compact_chat(app, &chat, &bot, &provider, &settings, &cancel).await
@@ -312,7 +320,7 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
             compact_messages(app, &chat.meta.id, &bot, &provider, &messages, &settings, Some(&turn), &cancel).await.map(|result| result.map(|(_, tokens_before)| tokens_before))
         };
         if let Some(trace) = &trace {
-            trace.phase("loop");
+            trace.phase(crate::traces::Phase::Loop);
         }
         match compacted {
             Ok(Some(tokens_before)) => {
@@ -539,7 +547,7 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
     };
     if let Some(trace) = &trace {
         let over_budget = crate::budgets::current().is_some_and(|budget| budget.check().is_err());
-        trace.finish(&format!("{outcome:?}").to_lowercase(), cancel.is_cancelled(), over_budget);
+        trace.finish(outcome.as_str(), cancel.is_cancelled(), over_budget);
     }
     // A terminal error takes priority over anything the bot said before it failed.
     // Context recovery above finishes before we choose the notification.
@@ -633,101 +641,6 @@ struct TurnHooks {
     /// The usual tools, for a turn that starts in setup and finishes it.
     full_tools: Option<Vec<Arc<dyn Tool>>>,
     cancel: CancellationToken,
-}
-
-struct PromptInputs {
-    chat: Chat,
-    job: Job,
-    store: MemoryStore,
-    plugin_briefs: Arc<Vec<crate::plugins::mcp::PluginBrief>>,
-}
-
-/// The part of a bot's profile its system prompt is made from and that applies mid-turn. Its
-/// provider, model, thinking, and working directory apply from its next turn: its tools and its
-/// provider are made with them when the turn starts.
-#[derive(Debug, Clone, PartialEq)]
-struct Profile {
-    name: String,
-    description: String,
-    setting_up: bool,
-}
-
-impl Profile {
-    fn of(bot: &Bot) -> Profile {
-        Profile { name: bot.name.clone(), description: bot.description.clone(), setting_up: bot.setting_up }
-    }
-}
-
-/// What a turn adds, unseen in the chat, when the bot's reply announced work and made no call.
-const FOLLOW_UP_NOTE: &str = "[Your last message says what you are about to do, but it made no tool call, so nothing ran \
-     and your turn would end here. If work is left that you can do now, do it with your tools without announcing it again. \
-     If the work is done, or it waits on the user or on something already running, answer with exactly PASS.]";
-
-/// Asks once per turn for the work a reply announced and never started ("Fetching all sources
-/// now."): a reply without a tool call ends the loop, and in a routine nobody is there to ask.
-#[derive(Default)]
-struct FollowUp {
-    /// The text of the last step's reply, when the step ended on it with no tool call.
-    reply: std::sync::Mutex<Option<String>>,
-    asked: std::sync::atomic::AtomicBool,
-}
-
-impl FollowUp {
-    /// A step starts: the reply before it no longer ends the turn.
-    fn step(&self) {
-        *self.reply.lock().unwrap() = None;
-    }
-
-    fn turn_ended(&self, message: &AssistantMessage) {
-        let ended_on_words = message.stop_reason == StopReason::Stop && message.tool_calls().is_empty();
-        *self.reply.lock().unwrap() = ended_on_words.then(|| message.text());
-    }
-
-    /// The note and the reply it answers, when the turn would end on a reply that announced work.
-    fn note(&self) -> Option<(String, AgentMessage)> {
-        let reply = self.reply.lock().unwrap().take()?;
-        if !announces_work(&reply) || self.asked.swap(true, std::sync::atomic::Ordering::Relaxed) {
-            return None;
-        }
-        Some((reply, AgentMessage::User(UserMessage::text(FOLLOW_UP_NOTE))))
-    }
-}
-
-/// Words that, anywhere in a reply's last sentence, promise a step rather than report one.
-const ANNOUNCING: &[&str] = &[
-    " i'll ", " i’ll ", " i will ", " i'm going to ", " i’m going to ", " i am going to ", " i'm about to ", " next, i ",
-    "我这就", "我马上", "马上", "这就去", "接下来我", "下一步我", "现在开始", "现在就去", "现在去", "现在重新", "正在", "稍等",
-];
-
-/// Words that promise a step only at the start of a clause: "Let me check", "好，让我看看", but
-/// not "…让我知道" or "当我来看时".
-const ANNOUNCING_CLAUSE: &[&str] = &["let me ", "我来", "我先", "让我", "我去"];
-
-/// A whole last sentence that promises a step.
-const ANNOUNCING_SENTENCE: &[&str] = &["on it", "stand by", "one moment", "one sec"];
-
-/// Whether a reply's last line says what the bot is about to do: a phrase that promises a step,
-/// "Fetching all sources now.", or a colon or ellipsis with nothing after it. A question waits on
-/// the user, and a promise for later ("如果需要，我会再提醒你") is not work left now.
-fn announces_work(reply: &str) -> bool {
-    let Some(line) = reply.lines().map(str::trim).filter(|line| !line.is_empty()).last() else { return false };
-    if is_pass(line) || line.ends_with(['?', '？']) {
-        return false;
-    }
-    if line.ends_with([':', '：', '…']) || line.ends_with("...") {
-        return true;
-    }
-    let lower = line.to_lowercase();
-    let last_sentence = lower.split(['.', '!', '。', '！']).map(str::trim).filter(|sentence| !sentence.is_empty()).last().unwrap_or("");
-    // A space in front, so an English phrase starts at a word.
-    let spaced = format!(" {last_sentence} ");
-    let doing_now = last_sentence.ends_with(" now")
-        && last_sentence
-            .split_whitespace()
-            .next()
-            .is_some_and(|word| word.ends_with("ing") && !["nothing", "everything", "something", "anything"].contains(&word));
-    let clause_starts = last_sentence.split([',', '，', ';', '；']).map(str::trim).any(|clause| ANNOUNCING_CLAUSE.iter().any(|phrase| clause.starts_with(phrase)));
-    doing_now || clause_starts || ANNOUNCING_SENTENCE.contains(&last_sentence) || ANNOUNCING.iter().any(|phrase| spaced.contains(phrase))
 }
 
 /// How the model sees a transcript that may open with a compaction summary.
@@ -945,80 +858,46 @@ impl LoopHooks for TurnHooks {
         crate::secrets::scrub_result(&self.app, ctx.result)
     }
 
+    /// The requests `next_turn` makes (a compaction, its memory flush) are traced as the turn's
+    /// housekeeping, whichever way it returns.
     async fn prepare_next_turn(&self, ctx: PrepareNextTurnContext<'_>) -> Option<TurnUpdate> {
         if let Some(trace) = &self.trace {
-            trace.phase("compaction");
+            trace.phase(crate::traces::Phase::Compaction);
         }
         let update = self.next_turn(ctx).await;
         if let Some(trace) = &self.trace {
-            trace.phase("loop");
+            trace.phase(crate::traces::Phase::Loop);
         }
         update
     }
 }
 
 impl TurnHooks {
-    /// The system prompt made again when the bot's profile changed since it was made: by the
-    /// user in its details, by `edit_bot` or `finish_setup`, or on another Device. The next step
-    /// reads it, and a turn that finished the bot's setup goes on with its usual tools. Its tools
-    /// keep the working directory they were made with until the next turn. False when nothing
-    /// changed.
-    fn refresh_profile(&self, context: &mut AgentContext) -> bool {
-        let Some(mut bot) = self.app.bot(&self.bot.id) else { return false };
-        let now = Profile::of(&bot);
-        let before = std::mem::replace(&mut *self.profile.lock().unwrap(), now.clone());
-        if before == now {
-            return false;
-        }
-        bot.workdir = self.bot.workdir.clone();
-        // The transcript this turn started from has the bot's earlier words about itself and no
-        // notice of the change: the next step reads one, as later turns read the chat's.
-        let old = Bot { name: before.name.clone(), description: before.description.clone(), setting_up: before.setting_up, ..bot.clone() };
-        if let Some(notice) = profile_notice(&old, &bot) {
-            context.messages.push(AgentMessage::User(UserMessage::text(profile_note(&notice, &bot, true))));
-        }
-        let inputs = &self.prompt_inputs;
-        let chat = self.app.chat(&self.chat_id).unwrap_or_else(|| inputs.chat.clone());
-        context.system_prompt = system_prompt(&self.app, &chat, &bot, &inputs.job, &inputs.store, self.unattended, &inputs.plugin_briefs);
-        let finished_setup = before.setting_up && !now.setting_up;
-        if let (true, Some(tools)) = (finished_setup, &self.full_tools) {
-            context.tools = tools.clone();
-        }
-        if let Some(trace) = &self.trace {
-            let changed: Vec<&str> = [("name", before.name != now.name), ("description", before.description != now.description), ("setup", before.setting_up != now.setting_up)]
-                .into_iter()
-                .filter_map(|(field, changed)| changed.then_some(field))
-                .collect();
-            trace.prompt_refresh(&changed, context.system_prompt.chars().count(), finished_setup);
-        }
-        true
-    }
-
     /// The checks before a call runs, in order, with the name of the one that decided it.
-    async fn check_tool_call(&self, ctx: BeforeToolCallContext<'_>) -> Option<(&'static str, BeforeToolCallResult)> {
+    async fn check_tool_call(&self, ctx: BeforeToolCallContext<'_>) -> Option<(Check, BeforeToolCallResult)> {
         if let Some(refused) = over_limits() {
-            return Some(("limits", refused));
+            return Some((Check::Limits, refused));
         }
         if self.unattended && self.trigger.routine.as_ref().is_some_and(|r| r.feedback_authorization_prompt.is_some())
             && crate::feedback::changes_controls(&ctx.tool_call.name, &ctx.tool_call.arguments) {
-            return Some(("feedback", BeforeToolCallResult { block: true, reason: Some("Workflow feedback cannot authorize routine or bot changes. Stage a proposal or ask the user in chat.".into()), args: None, terminate: false }));
+            return Some((Check::Feedback, BeforeToolCallResult { block: true, reason: Some("Workflow feedback cannot authorize routine or bot changes. Stage a proposal or ask the user in chat.".into()), args: None, terminate: false }));
         }
         if !self.plugin_tools.is_plugin_tool(&ctx.tool_call.name) {
             if let Err(denied) = crate::permissions::check_tool_call(&self.app, &self.bot, &ctx.tool_call.name, &ctx.tool_call.arguments) {
-                return Some(("access", crate::permissions::refuse(&self.app, &self.chat_id, &self.bot, denied)));
+                return Some((Check::Access, crate::permissions::refuse(&self.app, &self.chat_id, &self.bot, denied)));
             }
         }
         if let Some(refused) = crate::browser::review_call(&self.app, &self.bot, &self.chat_id, &self.trigger, self.unattended, &ctx).await {
-            return Some(("browser_review", refused));
+            return Some((Check::BrowserReview, refused));
         }
         if let Some(refused) = crate::coding::review_start(&self.app, &self.bot, &self.chat_id, &self.trigger, self.unattended, &ctx).await {
-            return Some(("coding_review", refused));
+            return Some((Check::CodingReview, refused));
         }
         if let Some(refused) = crate::plugins::mcp::review_call(&self.app, &self.plugin_tools, &self.chat_id, &self.trigger, &self.bot, self.unattended, &ctx).await {
-            return Some(("plugin_review", refused));
+            return Some((Check::PluginReview, refused));
         }
         if let Some(refused) = over_limits() {
-            return Some(("limits", refused));
+            return Some((Check::Limits, refused));
         }
         let decision = crate::local_review::before_tool_call(
             &self.app,
@@ -1031,9 +910,9 @@ impl TurnHooks {
         )
         .await;
         if let Some(refused) = over_limits() {
-            return Some(("limits", refused));
+            return Some((Check::Limits, refused));
         }
-        decision.map(|decision| ("auto_review", decision))
+        decision.map(|decision| (Check::AutoReview, decision))
     }
 
     /// Between steps: the steering messages the context reads, and a compaction once it
@@ -1340,36 +1219,6 @@ fn turn_brief(app: &App, job: &Job, routine: Option<&Routine>, event: Option<&cr
 
 /// How the turn's brief opens.
 const TURN_BRIEF_MARKER: &str = "[This turn, from Lorca:";
-
-/// Most of a description a profile note repeats; the system prompt has it whole.
-const PROFILE_NOTE_DESCRIPTION_CHARS: usize = 2_000;
-
-/// What the bot reads where a profile notice is (`model::profile_notice`). The latest gives the
-/// profile as it stands, so the bot's own earlier words about its name or job, still in the
-/// transcript, do not win over the system prompt; an earlier one only marks a change.
-fn profile_note(notice: &str, bot: &Bot, latest: bool) -> String {
-    if !latest {
-        return format!("[From Lorca: {} A later note gives your profile as it stands.]", notice.trim());
-    }
-    let mut description: String = bot.description.trim().chars().take(PROFILE_NOTE_DESCRIPTION_CHARS).collect();
-    if bot.description.trim().chars().count() > PROFILE_NOTE_DESCRIPTION_CHARS {
-        description.push_str("… (your system prompt has the rest)");
-    }
-    if notice.starts_with("Set up as ") {
-        format!(
-            "[From Lorca: your setup finished here. You are {name} now, and this is your job, as your system prompt has it:\n{description}\nThe setup \
-             questions and the placeholder name before this are done with: work as {name} from here.]",
-            name = bot.name
-        )
-    } else {
-        format!(
-            "[From Lorca: the user changed your profile here ({}). You are {} now, and your description reads:\n{description}\nWhat this chat said about \
-             your name or job before this is out of date: follow this description, which your system prompt has too.]",
-            notice.trim().trim_end_matches('.'),
-            bot.name
-        )
-    }
-}
 
 /// The rebuilt transcript followed by the turn's notes, and the transcript's cache points.
 fn with_turn_notes(mut messages: Vec<AgentMessage>, notes: &TurnNotes) -> (Vec<AgentMessage>, Vec<usize>) {
@@ -2499,7 +2348,7 @@ fn transcript_bounded(app: &App, chat: &Chat, bot: &Bot, workdir: &std::path::Pa
     // A recording's screenshots go to the model while it is the user's latest word.
     let latest_from_user = messages.iter().rposition(|message| message.author == Author::You);
     // The latest profile notice gives the profile as it stands; earlier ones say where it changed.
-    let latest_profile_notice = messages.iter().rposition(|message| message.id.starts_with(PROFILE_NOTICE_PREFIX));
+    let latest_profile_notice = messages.iter().rposition(|message| ProfileNotice::of_id(&message.id).is_some());
     for (index, message) in messages.iter().enumerate() {
         if !message.is_complete() {
             if let MessageState::Failed { .. } = message.state {
@@ -2508,6 +2357,7 @@ fn transcript_bounded(app: &App, chat: &Chat, bot: &Bot, workdir: &std::path::Pa
             continue;
         }
         let timestamp = (message.promoted_at.unwrap_or(message.created_at) * 1000.0) as u64;
+        let profile_notice = ProfileNotice::of_id(&message.id);
         match (&message.author, &message.body) {
             (Author::Bot { bot_id }, Body::Text { text, attachments, .. }) if message.output.is_some() => {
                 let output = message.output.as_ref().unwrap();
@@ -2599,11 +2449,12 @@ fn transcript_bounded(app: &App, chat: &Chat, bot: &Bot, workdir: &std::path::Pa
                     timestamp,
                 }));
             }
-            // A routine's marker carries the task into the turn it opened, and into later ones.
             // The bot's profile changed here: what the chat said about it before is out of date.
-            (Author::System, Body::Notice { text, routine_id: None }) if message.id.starts_with(PROFILE_NOTICE_PREFIX) => {
-                out.push(user(&profile_note(text, bot, latest_profile_notice == Some(index)), timestamp));
+            (Author::System, Body::Notice { text, routine_id: None }) if profile_notice.is_some() => {
+                let kind = profile_notice.unwrap_or(ProfileNotice::Changed);
+                out.push(user(&profile_note(kind, text, bot, latest_profile_notice == Some(index)), timestamp));
             }
+            // A routine's marker carries the task into the turn it opened, and into later ones.
             (Author::System, Body::Notice { text, routine_id: Some(routine_id) }) => {
                 let task = match app.routine(routine_id) {
                     Some(routine) => format!("[Routine \"{}\" ran on its schedule. Task: {}]", routine.name, routine.prompt.trim()),
@@ -4369,7 +4220,7 @@ mod tests {
         let dm = chat("dm", "dm", None, &["b1"]);
         app.state.lock().unwrap().bots.push(sentry.clone());
         app.state.lock().unwrap().chats.push(dm.clone());
-        let notices = || app.messages("dm").into_iter().filter_map(|m| match m.body { Body::Notice { text, .. } if m.id.starts_with(PROFILE_NOTICE_PREFIX) => Some(text), _ => None }).collect::<Vec<_>>();
+        let notices = || app.messages("dm").into_iter().filter_map(|m| match m.body { Body::Notice { text, .. } if ProfileNotice::of_id(&m.id).is_some() => Some(text), _ => None }).collect::<Vec<_>>();
 
         app.update_bot("b1", |bot| bot.accent = "teal".into()).unwrap();
         assert!(notices().is_empty(), "a new look says nothing");

@@ -133,7 +133,7 @@ enum TracesCommand {
         /// How many days back (default 1).
         #[usage(long)]
         days: Option<i64>,
-        /// Only turns that ended this way: no_tool_call, follow_up_pass, tool_terminate, stopped, error, length, budget.
+        /// Only turns that ended this way: no_tool_call, follow_up_pass, tool_terminate, budget, length, error, stopped, no_reply.
         #[usage(long)]
         end_reason: Option<String>,
     },
@@ -529,6 +529,10 @@ fn traces(config: &Config, command: TracesCommand) -> anyhow::Result<()> {
     let home = &config.home;
     match command {
         TracesCommand::List { bot, days, end_reason } => {
+            let reasons: Vec<&str> = traces::EndReason::ALL.iter().map(|reason| reason.as_str()).collect();
+            if let Some(reason) = end_reason.as_deref().filter(|reason| !reasons.contains(reason)) {
+                anyhow::bail!("No end reason {reason}. Use one of: {}", reasons.join(", "));
+            }
             let summaries = traces::list(home, bot.as_deref(), days.unwrap_or(1));
             let text = traces::list_text(&summaries, end_reason.as_deref());
             print!("{}", if text.is_empty() { "No traces.\n".to_string() } else { text });

@@ -24,7 +24,7 @@ Every record has `v` (the format, 1), `type`, `job_id`, `seq`, `step` (the loop'
 | `follow_up` | the reply the turn asked about once more ([Agent loop](runtime.md#agent-loop)) |
 | `prompt_refresh` | the bot's profile changed mid-turn (`changed`: name, description, setup), the new system prompt's size, and whether a finished setup brought the usual tools |
 | `retry`, `compaction` | a model call tried again, a compaction before the turn or mid-turn and the size before it |
-| `job_end` | the outcome (`sent`, `pass`, `skipped`), the steps, whether the turn followed up, the last reply's text, and `end_reason` |
+| `job_end` | the outcome (`sent`, `pass`, `error`, as in a `job_result`), the steps, whether the turn followed up, the last reply's text, and `end_reason` |
 
 `end_reason` says why the loop stopped, from its last reply and the step's tool results: `no_tool_call` (a reply without a call), `follow_up_pass` (the bot answered PASS to the follow-up), `tool_terminate` (every result of the last step ended the turn: a dismissed question, a refused install), `budget` (a limit refused the last calls, or the model call itself before it was sent), `length`, `error`, `stopped`, or `no_reply`.
 
