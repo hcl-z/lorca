@@ -958,27 +958,28 @@ impl lorca_agent::Tool for AttentionTool {
     }
 }
 
-/// The attention part of a turn's system prompt. `reported` is a coordinator's turn that an
-/// attention report started.
-pub fn prompt(app: &App, bot_id: &str, chat_id: &str, reported: bool) -> String {
-    let mut prompt = format!("\nAttention: when work needs the user (a review, a blocker, a commitment, or an important change), record it with the attention tool's report under a stable topic key, with the next action. This chat's id is {chat_id}. A report goes to the coordinating bot, which tells the user; mark it urgent only when it cannot wait, which also alerts the user directly, and quiet for a check that found nothing new. A coordinating bot keeps one brief of decisions and changes, without repeating transcripts, links the items it is about in item_ids so it leaves the list once they are resolved. The items below are yours to resolve: when this turn's work or what it read shows one is done (the run was approved, the pull request merged, the user answered), resolve it in this turn, so the user does not have to.\n");
-    if reported {
-        prompt.push_str("This turn was started by an attention report. Read the attention list, publish a brief when the user needs to know something, resolve what is finished, and answer with exactly PASS when nothing needs the user.\n");
-    }
-    if let Ok(view) = view(app) {
-        for item in view
-            .items
-            .iter()
-            .filter(|item| may_resolve(item, bot_id))
-            .take(20)
-        {
-            prompt.push_str(&format!(
-                "- Attention {} ({}): {} · next: {} · source chat {}\n",
-                item.id, item.category.word(), item.title, item.next_action, item.sources[0].chat_id
-            ));
-        }
-    }
-    prompt
+/// The attention part of a turn's system prompt, the same on every turn in the chat. The items
+/// themselves are in `items_note`.
+pub fn prompt(chat_id: &str) -> String {
+    format!("\nAttention: when work needs the user (a review, a blocker, a commitment, or an important change), record it with the attention tool's report under a stable topic key, with the next action. This chat's id is {chat_id}. A report goes to the coordinating bot, which tells the user; mark it urgent only when it cannot wait, which also alerts the user directly, and quiet for a check that found nothing new. A coordinating bot keeps one brief of decisions and changes, without repeating transcripts, links the items it is about in item_ids so it leaves the list once they are resolved. The attention items in the note after the transcript are yours to resolve: when this turn's work or what it read shows one is done (the run was approved, the pull request merged, the user answered), resolve it in this turn, so the user does not have to.\n")
+}
+
+/// What a coordinator's turn that an attention report started is for, in the turn's note.
+pub const REPORT_TURN: &str = "This turn was started by an attention report. Read the attention list, publish a brief when the user needs to know something, resolve what is finished, and answer with exactly PASS when nothing needs the user.";
+
+/// The active items the bot may resolve, reloaded for every provider request as the tasks note
+/// is, so a resolved item leaves the next request and the system prompt stays as it was. `None`
+/// when there are none.
+pub fn items_note(app: &App, bot_id: &str) -> Option<String> {
+    let view = view(app).ok()?;
+    let lines: Vec<String> = view
+        .items
+        .iter()
+        .filter(|item| may_resolve(item, bot_id))
+        .take(20)
+        .map(|item| format!("- Attention {} ({}): {} · next: {} · source chat {}", item.id, item.category.word(), item.title, item.next_action, item.sources[0].chat_id))
+        .collect();
+    (!lines.is_empty()).then(|| format!("[Attention items yours to resolve:\n{}]", lines.join("\n")))
 }
 
 #[cfg(test)]
@@ -1238,11 +1239,12 @@ mod tests {
     }
 
     #[test]
-    fn the_bot_that_alone_reported_an_item_resolves_it_and_sees_it_in_its_prompt() {
+    fn the_bot_that_alone_reported_an_item_resolves_it_and_sees_it_in_its_note() {
         let account = Account::new();
         let item = report(&account.app, account.report(), Some(&account.scout.id), 0).unwrap();
-        let prompt = prompt(&account.app, &account.scout.id, &account.scout_chat, false);
-        assert!(prompt.contains(&item.id), "{prompt}");
+        let note = items_note(&account.app, &account.scout.id).unwrap();
+        assert!(note.contains(&item.id), "{note}");
+        assert!(!prompt(&account.scout_chat).contains(&item.id), "the system prompt stays as it was");
         let mut lone = account.report();
         lone.key = "chef-alone".into();
         let other = report(&account.app, lone, Some(&account.chef.id), 0).unwrap();
