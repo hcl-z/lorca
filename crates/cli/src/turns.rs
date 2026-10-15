@@ -4295,7 +4295,8 @@ mod tests {
         assert!(crate::traces::markdown(&path, true).contains("### Tool result · ls"));
         let listed = crate::traces::list(&app.config.home, Some("b1"), 1);
         assert_eq!(listed.len(), 1);
-        assert!(crate::traces::stats_text(&listed).contains("no_tool_call"));
+        let stats = crate::traces::stats_text(&listed);
+        assert!(stats.contains("no_tool_call") && stats.contains("system prompt 58 ("), "{stats}");
     }
 
     #[test]

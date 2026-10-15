@@ -43,7 +43,7 @@ fn day(secs: f64) -> String {
 }
 
 fn hash(text: &str) -> String {
-    Sha256::digest(text.as_bytes()).iter().take(12).map(|byte| format!("{byte:02x}")).collect()
+    Sha256::digest(text.as_bytes()).iter().take(16).map(|byte| format!("{byte:02x}")).collect()
 }
 
 /// A record as it is written: saved secrets replaced first, then long strings clipped.
@@ -270,8 +270,10 @@ impl Trace {
     fn request(&self, request: &ModelRequest) {
         let mut state = self.state.lock().unwrap();
         let system = self.blob(&mut state, &request.system_prompt);
+        let tools_json = serde_json::to_string(&request.tools).unwrap_or_default();
         let tools = self.blob(&mut state, &serde_json::to_string_pretty(&request.tools).unwrap_or_default());
         let messages: Vec<String> = request.messages.iter().map(|message| serde_json::to_string(message).unwrap_or_default()).collect();
+        let messages_chars: usize = messages.iter().map(|message| message.chars().count()).sum();
         let same = state.sent.iter().zip(&messages).take_while(|(a, b)| a == b).count();
         let added: Vec<Value> = messages[same..].iter().filter_map(|message| serde_json::from_str(message).ok()).collect();
         let phase = state.phase;
@@ -280,7 +282,8 @@ impl Trace {
         }
         self.write(&mut state, "request", json!({
             "phase": phase, "system": system, "system_chars": request.system_prompt.chars().count(),
-            "tools": tools, "tool_count": request.tools.len(), "messages": messages.len(), "same_as_before": same,
+            "tools": tools, "tool_count": request.tools.len(), "tools_chars": tools_json.chars().count(),
+            "messages": messages.len(), "messages_chars": messages_chars, "same_as_before": same,
             "added": added, "cache_points": request.cache_points, "max_tokens": request.max_tokens,
         }));
     }
@@ -528,6 +531,8 @@ pub struct Summary {
     pub requests: usize,
     pub tools: usize,
     pub usage: (u64, u64, u64),
+    /// What the loop's requests sent, in characters: system prompt, tool list, messages.
+    pub sent: (u64, u64, u64),
 }
 
 fn lines(path: &Path) -> Vec<Value> {
@@ -560,7 +565,13 @@ pub fn list(home: &Path, bot_id: Option<&str>, days: i64) -> Vec<Summary> {
             }
             let requests = records.iter().filter(|r| r["type"] == "request").count();
             let tools = records.iter().filter(|r| r["type"] == "tool").count();
-            out.push(Summary { path, start, end, requests, tools, usage });
+            let mut sent = (0, 0, 0);
+            for r in records.iter().filter(|r| r["type"] == "request" && r["phase"] == "loop") {
+                sent.0 += r["system_chars"].as_u64().unwrap_or(0);
+                sent.1 += r["tools_chars"].as_u64().unwrap_or(0);
+                sent.2 += r["messages_chars"].as_u64().unwrap_or(0);
+            }
+            out.push(Summary { path, start, end, requests, tools, usage, sent });
         }
     }
     out.sort_by(|a, b| b.start["ts"].as_f64().unwrap_or(0.0).total_cmp(&a.start["ts"].as_f64().unwrap_or(0.0)));
@@ -600,6 +611,7 @@ pub fn stats_text(summaries: &[Summary]) -> String {
     let mut reasons: std::collections::BTreeMap<String, usize> = Default::default();
     let (mut followed, mut followed_pass) = (0, 0);
     let (mut requests, mut input, mut output, mut cached) = (0, 0, 0, 0);
+    let (mut system, mut tools, mut messages) = (0u64, 0u64, 0u64);
     for s in summaries {
         let reason = s.end.as_ref().and_then(|e| e["end_reason"].as_str()).unwrap_or("unfinished").to_string();
         if s.end.as_ref().is_some_and(|e| e["followed_up"] == true) {
@@ -611,6 +623,9 @@ pub fn stats_text(summaries: &[Summary]) -> String {
         input += s.usage.0;
         output += s.usage.1;
         cached += s.usage.2;
+        system += s.sent.0;
+        tools += s.sent.1;
+        messages += s.sent.2;
     }
     let n = summaries.len().max(1);
     let mut out = format!("{} turns\n\nHow they ended:\n", summaries.len());
@@ -622,6 +637,13 @@ pub fn stats_text(summaries: &[Summary]) -> String {
         followed - followed_pass,
         requests as f64 / n as f64,
         if input + cached > 0 { cached as f64 * 100.0 / (input + cached) as f64 } else { 0.0 },
+    ));
+    let total = (system + tools + messages).max(1) as f64;
+    out.push_str(&format!(
+        "What the loop's requests sent, in characters: system prompt {system} ({:.0}%), tools {tools} ({:.0}%), messages {messages} ({:.0}%)\n",
+        system as f64 * 100.0 / total,
+        tools as f64 * 100.0 / total,
+        messages as f64 * 100.0 / total,
     ));
     out
 }

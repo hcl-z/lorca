@@ -4,7 +4,7 @@ Every bot turn on a Runner leaves a trace (`crates/cli/src/traces.rs`): each mod
 
 ## Files
 
-A turn's trace is `traces/<bot id>/<UTC day>/<job id>.jsonl` in Lorca's folder, one JSON object per line, readable only by the user (0600). A request names its system prompt and its tool list by a hash of their text; each is written once a day to `blobs/<hash>.txt` beside the traces, so a turn's twenty requests keep one copy. A day past fourteen days goes, and past 500 MB the oldest days go first; the Runner prunes once a day, when the first trace of the day opens.
+A turn's trace is `traces/<bot id>/<UTC day>/<job id>.jsonl` in Lorca's folder, one JSON object per line, readable only by the user (0600). A request names its system prompt and its tool list by a hash of their text (the first 16 bytes of its SHA-256); each is written once to the day's `blobs/<hash>.txt` beside that bot's traces, so a turn's twenty requests keep one copy and a pruned day takes its blobs with it. A day past fourteen days goes, and past 500 MB the oldest days go first; the Runner prunes once a day, when the first trace of the day opens.
 
 Before a line is written, every string in it has this Runner's saved [secrets](secrets.md) replaced by their placeholders, as a tool result does, and only then is a string longer than 64 KB clipped to its first 32 KB and last 16 KB, at character boundaries, with how many bytes were cut, so a cut never leaves part of a secret. An image keeps its size, not its bytes.
 
@@ -15,13 +15,13 @@ Every record has `v` (the format, 1), `type`, `job_id`, `seq`, `step` (the loop'
 | `type` | What it holds |
 | --- | --- |
 | `job_start` | the bot, the chat and its kind, the job's kind, trigger, routine, requesting bot, and task, whether it is unattended, the provider, model, and thinking, Lorca's version |
-| `request` | its `phase` (`loop`, or `compaction` for the turn's housekeeping: a compaction and its memory flush), the system prompt's and tool list's hashes and sizes, how many messages it sends and how many are the loop's previous request's, the messages it adds, its cache points, and its reply cap |
+| `request` | its `phase` (`loop`, or `compaction` for the turn's housekeeping: a compaction and its memory flush), the system prompt's and tool list's hashes and sizes, the size of its messages, how many messages it sends and how many are the loop's previous request's, the messages it adds, its cache points, and its reply cap |
 | `call_end` | how long the call took and when its first event came, its stop reason, usage, and error |
 | `response` | the reply as the loop keeps it: text, thinking, tool calls, stop reason, error, usage |
 | `tool` | a call's id, name, arguments, result text, the type and base64 size of each image it returned, details, whether it failed or asked the turn to end, and how long it ran |
 | `hold` | a call `before_tool_call` refused, the codemode call whose script made it (`parent`, empty for the model's own), and which check refused it: `limits`, `feedback`, `access`, `browser_review`, `coding_review`, `plugin_review`, or `auto_review` |
 | `steering` | a message the user sent while the turn ran, as the loop read it |
-| `follow_up` | the reply the turn asked about once more ([Agent loop](runtime.md#agent-loop)) |
+| `follow_up` | the reply the turn asked about once more ([Turn context](turn-context.md#asking-once-more-for-announced-work)) |
 | `prompt_refresh` | the bot's profile changed mid-turn (`changed`: name, description, setup), the new system prompt's size, and whether a finished setup brought the usual tools |
 | `retry`, `compaction` | a model call tried again, a compaction before the turn or mid-turn and the size before it |
 | `job_end` | the outcome (`sent`, `pass`, `error`, as in a `job_result`), the steps, whether the turn followed up, the last reply's text, and `end_reason` |
@@ -37,4 +37,4 @@ The turn's provider is wrapped (`traces::TracedProvider`) so the request record 
 - `lorca traces list [--bot <id>] [--days N] [--end-reason <reason>]`: one line per turn, newest first, with its kind, bot, end reason, requests, tools, and tokens.
 - `lorca traces show <job id> [--prompts]`: the turn step by step as Markdown, with each request's added messages, the replies, tool results, and holds; `--prompts` adds the system prompt where it changes.
 - `lorca traces export <job id> [--out file.md]`: the same with the system prompts, as a file.
-- `lorca traces stats [--bot <id>] [--days N]`: how turns ended, follow-ups and whether the bot went on, requests per turn, and tokens with the share read from the cache.
+- `lorca traces stats [--bot <id>] [--days N]`: how turns ended, follow-ups and whether the bot went on, requests per turn, tokens with the share read from the cache, and how much of what the loop's requests sent was system prompt, tools, and messages.
