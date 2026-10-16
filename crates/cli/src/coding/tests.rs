@@ -387,6 +387,23 @@ async fn claude_code_works_in_a_worktree_asks_on_its_card_and_its_bot_hears_how_
     assert!(agent.record().news.is_none());
 }
 
+/// An agent a routine's run or an event started has nobody to answer: what its review would
+/// ask goes back to it at once, instead of waiting on a card.
+#[tokio::test]
+async fn an_unattended_agent_is_told_at_once_instead_of_asking_nobody() {
+    let scratch = setup().await;
+    let app = &scratch.app;
+    let mut auto_review = app.auto_review();
+    auto_review.is_enabled = false;
+    app.set_auto_review(auto_review);
+    let mut record = record(scratch.repo.clone());
+    record.unattended = true;
+    let agent = Agent::new(record);
+    let told = approve(app, &agent, driver::Approval::Command { command: "git push origin main".into() }).await;
+    assert!(told.unwrap_err().contains("nobody is watching the run that started you"));
+    assert!(app.pending_permissions.lock().unwrap().is_empty());
+}
+
 #[tokio::test]
 async fn a_restart_keeps_the_handle_and_a_follow_up_resumes_the_session() {
     let scratch = setup().await;
