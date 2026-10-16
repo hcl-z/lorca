@@ -156,7 +156,7 @@ func (st *skillStoreState) add(reference string) {
 		}
 		st.notice = L("Added “%@” for %@. It's used from the next turn.", name, st.owner)
 		if len(skipped) > 0 {
-			st.notice += " " + L("%d files weren't copied: a browser recording is made by you, not imported.", len(skipped))
+			st.notice += " " + L("%d files weren't copied.", len(skipped))
 		}
 	})
 }

@@ -42,9 +42,10 @@ test("no policy is full access, and levels take in the ones below them", () => {
 
 test("narrowing one plugin lists every plugin, and opening it all again lists none", () => {
   const narrowed = access.withPlugin(undefined, plugins, "github", "draft", undefined);
-  expect(narrowed.connections).toEqual({ github: { capabilities: ["read", "draft"] }, linear: { capabilities: ["read", "draft", "write"] } });
+  const everything = ["read", "draft", "write"];
+  expect(narrowed.connections).toEqual({ github: { capabilities: ["read", "draft"] }, linear: { capabilities: everything }, playwright: { capabilities: everything } });
   const off = access.withPlugin(narrowed, plugins, "linear", "none", undefined);
-  expect(off.connections).toEqual({ github: { capabilities: ["read", "draft"] } });
+  expect(off.connections).toEqual({ github: { capabilities: ["read", "draft"] }, playwright: { capabilities: everything } });
   expect(access.pluginLevel(off, "linear")).toBe("none");
   const open = access.withPlugin(access.withPlugin(off, plugins, "linear", "write", undefined), plugins, "github", "write", undefined);
   expect(open.connections).toBeUndefined();
@@ -81,4 +82,16 @@ test("a save shows at once, goes to the core, and a failed one puts the old Acce
   failNext = true;
   await access.loadAccessCatalog("b");
   expect(Array.isArray(access.useAccessStore.getState().byBot.b)).toBe(true);
+});
+
+test("Browser is one switch that the listed plugins keep their hands off", () => {
+  expect(access.browserOn(undefined)).toBe(true);
+  const off = access.withBrowser(undefined, plugins, false);
+  expect(access.browserOn(off)).toBe(false);
+  expect(off.connections).toEqual({ github: { capabilities: ["read", "draft", "write"] }, linear: { capabilities: ["read", "draft", "write"] } });
+  const narrowed = access.withPlugin(off, plugins, "github", "read", undefined);
+  expect(access.browserOn(narrowed), "narrowing a plugin leaves Browser off").toBe(false);
+  const on = access.withBrowser(access.withPlugin(narrowed, plugins, "github", "write", undefined), plugins, true);
+  expect(on.connections, "everything open again is no list at all").toBeUndefined();
+  expect(access.browserOn(on)).toBe(true);
 });

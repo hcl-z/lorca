@@ -237,9 +237,15 @@ async fn requests_say_where_a_secret_goes_and_check_access() {
     let field = json!([{ "name": "password", "label": "Password" }]);
     assert_eq!(request(json!({ "use": "browser", "why": "x", "site": "github.com", "secrets": field })), "Browser is not installed on your Runner.");
     browser(app);
+    // Which browser a Runner uses depends on what is installed on it; these asks are for the plugin.
+    app.settings.lock().unwrap().browser_engine = crate::config::BrowserEngine::Playwright;
     assert_eq!(request(json!({ "use": "browser", "why": "x", "secrets": field })), "site is required for browser: the site whose sign-in page gets it");
     let ok = tool(app, &bot, &chat_id).request(&json!({ "use": "browser", "why": "To sign in.", "site": "https://www.github.com/login", "secrets": field })).unwrap();
     assert_eq!((ok.ask.site.as_deref(), ok.plugin_name.as_str()), (Some("github.com"), "Browser"));
+    // With ego as the browser there is no {{secret:NAME}} filling, so a bot is sent to a command's secrets.
+    app.settings.lock().unwrap().browser_engine = crate::config::BrowserEngine::Ego;
+    assert!(request(json!({ "use": "browser", "why": "x", "site": "github.com", "secrets": field })).contains("use: \"command\""));
+    app.settings.lock().unwrap().browser_engine = crate::config::BrowserEngine::Playwright;
     assert_eq!(request(json!({ "use": "command", "why": "x", "secrets": [{ "name": "PATH", "label": "Path" }] })), "PATH is a variable the shell runs by; name the secret something else.");
     assert_eq!(request(json!({ "use": "command", "why": "x", "secrets": [{ "name": "A", "label": "A" }, { "name": "A", "label": "B" }] })), "Each secret needs a name of its own.");
     assert_eq!(request(json!({ "use": "command", "why": " ", "secrets": field })), "why is required: say why you need it");

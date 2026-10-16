@@ -25,7 +25,7 @@ func (s settingsPane) plugins(c *ui.Context, m *mainWindow) {
 				// Its mcp.json's servers are listed in their own section.
 				shown := 0
 				for _, plugin := range device.Plugins {
-					if plugin.IsMcpServer() {
+					if plugin.IsMcpServer() || plugin.IsBrowser() {
 						continue
 					}
 					shown++
@@ -48,6 +48,9 @@ func (s settingsPane) plugins(c *ui.Context, m *mainWindow) {
 			})
 		})
 		s.footnote(c, L("Plugins are installed on a Runner, and the bots assigned to it use them. An action that changes something goes through Auto-review first."))
+		if device != nil && device.IsThisDevice && device.IsRunner() {
+			s.browser(c)
+		}
 		if device != nil && device.IsRunner() {
 			s.mcpServers(c, device)
 			s.footnote(c, L("Servers you add yourself live in mcp.json on %@, in the format Claude Desktop and Cursor use. Edit them here or with the lorca mcp command; after editing the file itself, click Reload.", device.Name))
@@ -311,4 +314,76 @@ func settingsMcpRow(c *ui.Context, k *card, server model.McpServer, change func(
 		}
 	})
 	return r, clicked
+}
+
+// MARK: - Browser
+
+// settingsBrowserState is this computer's browser setting as its CLI last answered.
+type settingsBrowserState struct {
+	loaded  bool
+	loading bool
+	failure string
+	engine  model.BrowserEngine
+}
+
+// browser is the browser this computer's bots use: ego (lite)'s where it is installed, or the
+// one Lorca carries. It is a setting of this computer's CLI, so only this computer shows it.
+func (s settingsPane) browser(c *ui.Context) {
+	p := colors(c)
+	state := &s.page.browser
+	if !state.loaded && !state.loading {
+		state.loading = true
+		store.BrowserEngine(func(engine model.BrowserEngine, err error) {
+			state.loading = false
+			if err != nil {
+				state.failure = model.ErrorText(err)
+				return
+			}
+			state.loaded, state.failure, state.engine = true, "", engine
+		})
+	}
+	s.section(c, browserEntry().row, nil, func(k *card) {
+		if !state.loaded {
+			text, tint := L("Loading…"), &p.Label2
+			if state.failure != "" {
+				text, tint = state.failure, &p.Red
+			}
+			keyValueRow(c, k, text, "", false, tint)
+			return
+		}
+		label := L("Browser")
+		s.mark(c, accessoryRow(c, k, label, "", func() {
+			engines := []string{model.BrowserAuto, model.BrowserEgo, model.BrowserPlaywright}
+			picked := slices.Index(engines, state.engine.Engine)
+			if picked < 0 {
+				picked = 0
+			}
+			segmented(c, &picked, label, L("Automatic"), L("ego (lite)"), L("Built-in")).OnChange(func() {
+				previous := state.engine
+				state.engine.Engine = engines[picked]
+				store.SetBrowserEngine(engines[picked], func(engine model.BrowserEngine, err error) {
+					if err != nil {
+						state.engine = previous
+						s.w.showAlert(alertOptions{Message: L("Couldn't change the browser"), Informative: model.ErrorText(err)}, nil)
+						return
+					}
+					state.engine = engine
+				})
+			})
+		}), label)
+		inUse := L("Using the built-in browser.")
+		if state.engine.Effective == model.BrowserEgo {
+			inUse = L("Using ego (lite).")
+		}
+		keyValueRow(c, k, inUse, "", false, &p.Label2)
+		if !state.engine.EgoInstalled {
+			missing := L("ego (lite) isn't installed")
+			element, action := actionRow(c, k, missing, actionRowOptions{Tint: &p.Label2, Action: L("Download…")})
+			s.mark(c, element, missing)
+			if action.Action {
+				_ = openExternal("https://lite.ego.app/")
+			}
+		}
+	})
+	s.footnote(c, L("ego (lite) is a browser built for you and your bots; it is used where it is installed. Bots drive it from a shell, so one whose Access turns shell commands off uses the built-in browser. A bot's Access has one switch for Browser."))
 }

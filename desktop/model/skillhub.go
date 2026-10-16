@@ -104,7 +104,7 @@ func (s *Store) ImportSkill(scope PlaybookScope, via, source string, done func(P
 				}
 			}
 			s.mockPlaybooksChanged()
-			done(record, []string{"scripts/browser-steps.json"}, nil)
+			done(record, nil, nil)
 		})
 		return
 	}

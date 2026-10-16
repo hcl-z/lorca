@@ -110,7 +110,6 @@ pub enum Check {
     Limits,
     Feedback,
     Access,
-    BrowserReview,
     CodingReview,
     PluginReview,
     AutoReview,

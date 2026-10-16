@@ -25,6 +25,8 @@ type botAccessSheet struct {
 	filesystem model.AccessLevel
 	shell      bool
 	drafts     bool
+	// browser is the one switch for Browser, whichever browser the Runner uses.
+	browser bool
 	// problem is why the tools could not be listed.
 	problem string
 	closed  bool
@@ -43,12 +45,15 @@ func (w *appWindow) presentBotAccess(botID string) *botAccessSheet {
 		botID: botID, botName: bot.Name, runner: store.Device(bot.RunnerID), saved: saved.Clone(),
 		levels: map[string]model.AccessLevel{}, chosen: map[string][]string{}, expanded: map[string]bool{},
 		filesystem: saved.Filesystem, shell: saved.Shell, drafts: saved.Drafts,
+		browser: saved.Level(model.BrowserPluginID) != model.AccessNone,
 	}
 	// The Runner's own list first, so the sheet opens complete while it is asked for tools.
 	var listed []model.AccessPlugin
 	if st.runner != nil {
 		for _, plugin := range st.runner.Plugins {
-			listed = append(listed, model.AccessPlugin{ID: plugin.ID, Name: plugin.Name})
+			if !plugin.IsBrowser() {
+				listed = append(listed, model.AccessPlugin{ID: plugin.ID, Name: plugin.Name})
+			}
 		}
 	}
 	st.show(listed)
@@ -75,6 +80,7 @@ func (st *botAccessSheet) runnerName() string {
 
 // show lists `listed`, keeping what the user already chose for a plugin listed before.
 func (st *botAccessSheet) show(listed []model.AccessPlugin) {
+	listed = slices.DeleteFunc(slices.Clone(listed), func(plugin model.AccessPlugin) bool { return plugin.ID == model.BrowserPluginID })
 	st.plugins = listed
 	for _, plugin := range listed {
 		if _, ok := st.levels[plugin.ID]; ok {
@@ -134,7 +140,7 @@ func (st *botAccessSheet) toggleTool(plugin model.AccessPlugin, name string, on 
 // later included.
 func (st *botAccessSheet) policy() *model.BotPermissions {
 	policy := &model.BotPermissions{Filesystem: st.filesystem, Shell: st.shell, Drafts: st.drafts}
-	open := true
+	open := st.browser
 	for _, plugin := range st.plugins {
 		if _, picked := st.chosen[plugin.ID]; st.levels[plugin.ID] != model.AccessWrite || picked {
 			open = false
@@ -153,6 +159,9 @@ func (st *botAccessSheet) policy() *model.BotPermissions {
 				grant.Tools = &tools
 			}
 			connections[plugin.ID] = grant
+		}
+		if st.browser {
+			connections[model.BrowserPluginID] = model.ConnectionPermissions{Capabilities: model.AccessWrite.Capabilities()}
 		}
 		policy.Connections = &connections
 	}
@@ -200,6 +209,9 @@ func (st *botAccessSheet) view(c *ui.Context, s *sheet) {
 				})
 				accessoryRow(c, k, L("Shell commands"), "", func() {
 					settingsSwitch(c, &st.shell, L("Shell commands"), false)
+				})
+				accessoryRow(c, k, L("Browser"), "", func() {
+					settingsSwitch(c, &st.browser, L("Browser"), false)
 				})
 			})
 			ui.Text(c, L("Shell commands run as you on %@ and can reach anything you can there.", st.runnerName())).FontSize(textCaption).TextColor(p.Label2).LineHeight(1.4)

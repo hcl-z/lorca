@@ -185,7 +185,7 @@ fn create_lead_bot(app: &Arc<App>) {
     let bot = crate::model::Bot {
         id: String::new(),
         name: LEAD_BOT_NAME.into(),
-        description: "Chief of staff. Routes each request to the teammate whose job it is and pulls their results together, proposing a new teammate when none fits. Does the work itself only when no teammate's job covers it.".into(),
+        description: "Chief of staff. Routes each request to the teammate whose job it is and pulls their results together. The only bot that makes new bots and group chats: ask Chef for either. Does the work itself only when no teammate's job covers it.".into(),
         symbol_name: "sparkles".into(),
         accent: "indigo".into(),
         avatar: None,

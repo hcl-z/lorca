@@ -28,6 +28,7 @@ type settingsPageState struct {
 	claimed bool
 
 	mcp     settingsMcpState
+	browser settingsBrowserState
 	service settingsServiceState
 	secrets settingsSecretsState
 }

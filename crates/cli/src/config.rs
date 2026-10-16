@@ -97,6 +97,43 @@ pub struct Settings {
     /// false (`lorca update --auto off`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_update: Option<bool>,
+    /// Which browser the bots on this Runner use ([`crate::browser`]); `auto` unless set.
+    #[serde(default, skip_serializing_if = "BrowserEngine::is_auto")]
+    pub browser_engine: BrowserEngine,
+}
+
+/// The browser a Runner's bots use: ego (lite)'s through its `ego-browser` skill, or the
+/// Playwright plugin Lorca carries. `auto` takes ego where it is installed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BrowserEngine {
+    #[default]
+    Auto,
+    Ego,
+    Playwright,
+}
+
+impl BrowserEngine {
+    pub fn is_auto(&self) -> bool {
+        *self == BrowserEngine::Auto
+    }
+
+    pub fn parse(text: &str) -> Option<BrowserEngine> {
+        match text {
+            "auto" => Some(BrowserEngine::Auto),
+            "ego" => Some(BrowserEngine::Ego),
+            "playwright" => Some(BrowserEngine::Playwright),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            BrowserEngine::Auto => "auto",
+            BrowserEngine::Ego => "ego",
+            BrowserEngine::Playwright => "playwright",
+        }
+    }
 }
 
 impl Settings {

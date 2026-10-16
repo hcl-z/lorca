@@ -119,6 +119,11 @@ func pluginEntry(plugin model.InstalledPlugin) settingsEntry {
 	return entry(model.PanePlugins, plugin.Name, "", plugin.Description, L("plugin mcp marketplace"))
 }
 
+// browserEntry is the section that picks the browser this computer's bots use.
+func browserEntry() settingsEntry {
+	return entry(model.PanePlugins, L("Browser"), L("Browser engine"), L("browser web ego lite playwright built-in automatic engine"))
+}
+
 // mcpServersEntry is the section a Runner's mcp.json fills; each server in it goes by its row.
 func mcpServersEntry(device *model.Device) settingsEntry {
 	return entry(model.PanePlugins, L("MCP Servers"), L("MCP Servers on %@", device.Name), L("mcp model context protocol server mcp.json custom command url json claude cursor"))
@@ -205,9 +210,12 @@ func entriesIn(pane model.SettingsPane, device *model.Device) []settingsEntry {
 		var out, servers []settingsEntry
 		if device != nil {
 			for _, plugin := range device.Plugins {
-				if !plugin.IsMcpServer() {
+				if !plugin.IsMcpServer() && !plugin.IsBrowser() {
 					out = append(out, pluginEntry(plugin))
 				}
+			}
+			if device.IsThisDevice && device.IsRunner() {
+				out = append(out, browserEntry())
 			}
 			if device.IsRunner() {
 				servers = append(servers, mcpServersEntry(device))

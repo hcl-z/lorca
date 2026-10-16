@@ -651,7 +651,7 @@ func (m *mainWindow) inspectorPlugins(c *ui.Context, bot *model.Bot) {
 	section(c, L("Plugins"), sectionCaption, nil, func(k *card) {
 		var plugins []model.InstalledPlugin
 		if runner != nil {
-			plugins = runner.Plugins
+			plugins = slices.DeleteFunc(slices.Clone(runner.Plugins), func(plugin model.InstalledPlugin) bool { return plugin.IsBrowser() })
 		}
 		for _, plugin := range plugins {
 			pluginID := plugin.ID

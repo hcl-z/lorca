@@ -22,7 +22,7 @@ pub const BUILTIN_MARK: &str = ".lorca-builtin";
 /// Where an imported skill came from, for checking it for updates.
 pub const SOURCE_FILE: &str = ".lorca-source.json";
 /// The skills Lorca ships. A folder of the user's cannot take these names.
-pub const BUILTIN_NAMES: [&str; 3] = ["lorca", "write-skill", "save-skill"];
+pub const BUILTIN_NAMES: [&str; 4] = ["lorca", "write-skill", "save-skill", "ego-browser"];
 /// A text file longer than this is listed but not sent to an app to edit.
 const TEXT_LIMIT: u64 = 2 * 1024 * 1024;
 const TRASH_KEEP_SECS: u64 = 30 * 24 * 3600;
@@ -519,10 +519,6 @@ pub fn save(app: &App, scope: &Scope, current: Option<&str>, input: Input, expec
         if !safe_relative(&file.path) || files.insert(file.path.clone(), scrub(app, &file.text)).is_some() {
             return Err(format!("Invalid or duplicate file path: {}", file.path));
         }
-    }
-    // Recorded browser steps are checked as a run reads them.
-    if let Some(steps) = files.get(crate::browser::steps::PATH) {
-        crate::browser::steps::parse(steps)?;
     }
     std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     let staging = root.join(format!(".tmp-{}", uuid::Uuid::new_v4()));
