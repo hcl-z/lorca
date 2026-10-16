@@ -7,7 +7,7 @@
 import { create } from "zustand";
 import * as core from "../../modules/lorca-core";
 import { t } from "../i18n";
-import type { BotPermissions } from "./model";
+import { BROWSER_PLUGIN_ID, type BotPermissions } from "./model";
 import { useStore } from "./store";
 
 /// How far a grant reaches, each level taking in the ones below it: a plugin's read, draft, and
@@ -67,6 +67,11 @@ export function chosenTools(policy: BotPermissions | undefined, pluginId: string
   return policy?.connections?.[pluginId]?.tools;
 }
 
+/// Whether the bot may use a browser. Browser has one switch, whichever browser the Runner uses.
+export function browserOn(policy: BotPermissions | undefined): boolean {
+  return pluginLevel(policy, BROWSER_PLUGIN_ID) !== "none";
+}
+
 export function isFullAccess(policy: BotPermissions | undefined): boolean {
   return !policy?.connections && filesLevel(policy) === "write" && shellOn(policy);
 }
@@ -79,9 +84,14 @@ export function reaches(level: AccessLevel, capability: string | null | undefine
 /// Every plugin at Read and write with all its tools is the Runner's every plugin, one installed
 /// later included; otherwise only the plugins given a level are listed.
 export function withPlugin(policy: BotPermissions | undefined, plugins: AccessPlugin[], pluginId: string, level: AccessLevel, tools: string[] | undefined): BotPermissions {
-  const grants = plugins.map((plugin) =>
-    plugin.id === pluginId ? { id: plugin.id, level, tools } : { id: plugin.id, level: pluginLevel(policy, plugin.id), tools: chosenTools(policy, plugin.id) },
-  );
+  // Browser is not among the listed plugins; its switch keeps its place in the policy.
+  const listed = plugins.filter((plugin) => plugin.id !== BROWSER_PLUGIN_ID);
+  const grants = [
+    ...listed.map((plugin) =>
+      plugin.id === pluginId ? { id: plugin.id, level, tools } : { id: plugin.id, level: pluginLevel(policy, plugin.id), tools: chosenTools(policy, plugin.id) },
+    ),
+    { id: BROWSER_PLUGIN_ID, level: pluginId === BROWSER_PLUGIN_ID ? level : browserOn(policy) ? ("write" as const) : ("none" as const), tools: undefined },
+  ];
   const open = grants.every((grant) => grant.level === "write" && !grant.tools);
   const connections: BotPermissions["connections"] = {};
   for (const grant of grants) {
@@ -89,6 +99,11 @@ export function withPlugin(policy: BotPermissions | undefined, plugins: AccessPl
     connections[grant.id] = { capabilities: capabilities(grant.level), ...(grant.tools ? { tools: [...grant.tools].sort() } : {}) };
   }
   return { ...(open ? {} : { connections }), filesystem: filesLevel(policy), shell: shellOn(policy) };
+}
+
+/// The policy with Browser on or off.
+export function withBrowser(policy: BotPermissions | undefined, plugins: AccessPlugin[], on: boolean): BotPermissions {
+  return withPlugin(policy, plugins, BROWSER_PLUGIN_ID, on ? "write" : "none", undefined);
 }
 
 /// The policy with one tool of `plugin` chosen or left out. Every tool chosen is all of them.

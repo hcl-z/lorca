@@ -734,6 +734,9 @@ pub(crate) fn install_instance(app: &Arc<App>, manifest: Manifest, source: &str,
 /// Removes a plugin, its secrets, and its folder; every bot on this Runner loses it. A server
 /// from `mcp.json` leaves that file.
 pub fn uninstall(app: &Arc<App>, id: &str) -> Result<(), String> {
+    if id == crate::browser::PLUGIN_ID {
+        return Err("Browser is part of Lorca. Turn it off for a bot in its Access.".into());
+    }
     #[cfg(feature = "runner")]
     {
         let from_file = app.plugins.lock().unwrap().get(id).filter(|plugin| plugin.source == mcp_json::SOURCE).map(|plugin| plugin.manifest.name.clone());
@@ -753,11 +756,6 @@ pub fn uninstall(app: &Arc<App>, id: &str) -> Result<(), String> {
         store.secrets.remove(id);
         store.notes.remove(id);
         store.save(&app.config).map_err(|e| e.to_string())?;
-    }
-    // The bots' browser profiles stay, closed, for when Browser is back.
-    #[cfg(feature = "runner")]
-    if id == crate::browser::PLUGIN_ID {
-        app.browser_sessions.close_all(app);
     }
     let dir = app.config.plugins_dir().join(id);
     if dir.is_dir() {
@@ -962,6 +960,23 @@ pub fn refresh_installed(app: &Arc<App>, manifests: &[Manifest]) -> Vec<String> 
     let mut updated = Vec::new();
     {
         let mut store = app.plugins.lock().unwrap();
+        // Browser comes with every Runner: installed here when it is not, from the index in use
+        // or else this build's own.
+        #[cfg(feature = "runner")]
+        if store.get(crate::browser::PLUGIN_ID).is_none() {
+            let bundled;
+            let manifest = match manifests.iter().find(|m| m.id == crate::browser::PLUGIN_ID) {
+                Some(manifest) => Some(manifest),
+                None => {
+                    bundled = crate::marketplace::bundled();
+                    bundled.plugins.iter().find(|m| m.id == crate::browser::PLUGIN_ID)
+                }
+            };
+            if let Some(manifest) = manifest {
+                store.installed.push(Installed { manifest: manifest.clone(), source: "marketplace".into(), installed_at: now_secs(), variables: BTreeMap::new(), service_id: None, account_name: None });
+                updated.push(manifest.id.clone());
+            }
+        }
         for plugin in store.installed.iter_mut().filter(|p| p.source == "marketplace") {
             let Some(fresh) = manifests.iter().find(|m| m.id == plugin.service_id()) else { continue };
             let mut fresh = fresh.clone();
@@ -1226,8 +1241,10 @@ mod tests {
         let mut vars = BTreeMap::new();
         vars.insert("GITHUB_TOKEN".to_string(), "ghp-secret".to_string());
         set_variables(app, "github", &vars).unwrap();
-        assert_eq!(refresh_installed(app, &crate::marketplace::bundled().plugins), vec!["github".to_string()]);
+        assert_eq!(refresh_installed(app, &crate::marketplace::bundled().plugins), vec!["playwright".to_string(), "github".to_string()], "Browser is installed, and GitHub follows the index");
         assert!(refresh_installed(app, &crate::marketplace::bundled().plugins).is_empty(), "already current");
+        assert!(uninstall(app, "playwright").is_err(), "Browser is part of Lorca");
+        assert!(app.plugins.lock().unwrap().get("playwright").is_some());
         let store = app.plugins.lock().unwrap();
         let ServerSpec::Http { auth: Some(AuthSpec::Oauth { client_id, device_authorization_endpoint, .. }), .. } = store.get("github").unwrap().manifest.servers.get("github").unwrap() else { panic!("http oauth") };
         assert!(client_id.as_deref().is_some_and(|c| !c.is_empty()) && device_authorization_endpoint.is_some(), "the device flow arrived");

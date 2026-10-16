@@ -7,6 +7,7 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect } from "react";
 import { ScrollView, StyleSheet } from "react-native";
 import {
+  browserOn,
   chosenTools,
   draftsOn,
   filesLevel,
@@ -20,12 +21,13 @@ import {
   toolDoes,
   toolsSummary,
   useAccessStore,
+  withBrowser,
   withPlugin,
   withTool,
   type AccessPlugin,
   type FilesLevel,
 } from "../core/access";
-import type { BotPermissions } from "../core/model";
+import { BROWSER_PLUGIN_ID, type BotPermissions } from "../core/model";
 import { useStore } from "../core/store";
 import { t, useLanguage } from "../i18n";
 import { alert } from "./alert";
@@ -38,7 +40,8 @@ function useAccess(botId: string) {
   const bot = useStore((s) => s.bots.find((each) => each.id === botId));
   const runner = useStore((s) => s.devices.find((device) => device.id === bot?.runner_id));
   const catalog = useAccessStore((s) => s.byBot[botId]);
-  const plugins: AccessPlugin[] = Array.isArray(catalog) ? catalog : (runner?.plugins ?? []).map((plugin) => ({ id: plugin.id, name: plugin.name, tools: [] }));
+  // Browser is a switch of its own, not one of the plugins.
+  const plugins: AccessPlugin[] = (Array.isArray(catalog) ? catalog : (runner?.plugins ?? []).map((plugin) => ({ id: plugin.id, name: plugin.name, tools: [] }))).filter((plugin) => plugin.id !== BROWSER_PLUGIN_ID);
   const save = (policy: BotPermissions) =>
     setBotPermissions(botId, policy).catch((error) => alert(t("Could not update the bot"), error instanceof Error ? error.message : String(error)));
   return { bot, runner, plugins, failed: catalog === "failed", save };
@@ -97,6 +100,7 @@ export default function AccessScreen() {
             }}
           />
           <ToggleRow title={t("Shell commands")} value={shellOn(policy)} onValueChange={(on) => void save({ ...policy, filesystem: filesLevel(policy), shell: on })} />
+          <ToggleRow title={t("Browser")} value={browserOn(policy)} onValueChange={(on) => void save(withBrowser(policy, plugins, on))} />
         </Section>
       </ScrollView>
     </>

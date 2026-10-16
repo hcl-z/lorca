@@ -505,7 +505,7 @@ async fn fetch(app: &App, source: &Source) -> Result<(Folder, String), String> {
 
 /// Copies a skill's folder into `scope`'s skills folder, built beside it and renamed into place, so
 /// no bot reads half of it. A name the scope already uses refuses the import. The files that did
-/// not come across (a recording only the user makes) are named in the answer.
+/// not come across (a path that leaves the folder) are named in the answer.
 /// `reference` is the address the import was given, which the store matches its rows against.
 fn install(app: &App, scope: &Scope, folder: &Folder, name: &str, source: &Source, reference: &str) -> Result<(Value, Vec<String>), String> {
     let (root, target) = skills::folder(app, scope, name)?;
@@ -520,8 +520,7 @@ fn install(app: &App, scope: &Scope, folder: &Folder, name: &str, source: &Sourc
     let mut skipped = Vec::new();
     let written = (|| -> Result<(), String> {
         for item in &folder.files {
-            // Lorca itself runs recorded browser steps, so only the user records them.
-            if item.path == crate::browser::steps::PATH || (item.path != skills::SKILL_FILE && !skills::safe_relative(&item.path)) {
+            if item.path != skills::SKILL_FILE && !skills::safe_relative(&item.path) {
                 skipped.push(item.path.clone());
                 continue;
             }
@@ -669,7 +668,7 @@ mod tests {
         assert_eq!(view["description"], "Fill and read PDFs");
         assert_eq!(view["source"], "clawhub:pdf-tools", "the list says which address a skill came from");
         assert_eq!(view["instructions"], "Use the scripts.");
-        assert_eq!(skipped, ["scripts/browser-steps.json"], "only the user's own recording is left out");
+        assert!(skipped.is_empty(), "every file of the folder comes across");
         let dir = home.join("workspaces").join(&bot).join("skills/pdf-tools");
         for file in ["references/forms.md", "scripts/fill.py", "assets/logo.png", "LICENSE.txt", skills::SOURCE_FILE] {
             assert!(dir.join(file).is_file(), "{file}");

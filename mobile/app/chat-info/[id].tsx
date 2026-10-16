@@ -464,7 +464,7 @@ export default function ChatInfoScreen() {
 
       {bot && runner && (
         <Section title={t("Plugins")} footer={(runner.plugins ?? []).length === 0 ? t("No plugins on {runner} yet. Add one from the desktop app, or ask {bot} to find one.", { runner: runner.name, bot: bot.name }) : t("Installed on {runner}. Access says which ones {bot} may use.", { runner: runner.name, bot: bot.name })}>
-          {(runner.plugins ?? []).map((plugin) => (
+          {(runner.plugins ?? []).filter((plugin) => plugin.id !== BROWSER_PLUGIN_ID).map((plugin) => (
             // A plugin opens its screen, its state and call limit; a named account's (Gmail · Work)
             // has its name and sign-in, and its name already says which. One the bot's Access
             // leaves out says it has none.
@@ -476,17 +476,6 @@ export default function ChatInfoScreen() {
                 icon={plugin.icon || "puzzlepiece.extension"}
                 chevron
                 onPress={() => router.push({ pathname: "/chat-info/account/[id]", params: { id: plugin.id, runner: runner.id } })}
-              />
-            ) : plugin.id === BROWSER_PLUGIN_ID ? (
-              // Browser opens the bot's profiles: their sign-ins, takeover, and hand back.
-              <Row
-                key={plugin.id}
-                title={plugin.name}
-                subtitle={plugin.state === "ready" ? plugin.description : plugin.detail}
-                detail={pluginLevel(bot.permissions, plugin.id) === "none" ? t("No access") : undefined}
-                icon={plugin.icon || "puzzlepiece.extension"}
-                chevron
-                onPress={() => router.push({ pathname: "/chat-info/browser/[id]", params: { id: bot.id, chat: chat.id } })}
               />
             ) : (
               <Row

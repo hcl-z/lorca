@@ -199,6 +199,7 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         crate::plugins::mcp::plugin_briefs(app)
             .into_iter()
             .filter(|brief| bot.permissions.as_ref().is_none_or(|policy| policy.allows_connection(&brief.id)))
+            .filter(|brief| brief.id != crate::browser::PLUGIN_ID || crate::browser::plugin_offered(app, &bot))
             .collect(),
     );
     let skills_before = crate::skills_turn::fingerprint(app, &bot.id, &chat.meta.id);
@@ -213,12 +214,9 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         Arc::new(ListTeammates { app: app.clone(), chat_id: chat.meta.id.clone() }),
         Arc::new(MessageBot { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone(), hops: job.hops, task_id: job.task_id.clone(), origin: origin.clone() }),
         Arc::new(Handoffs { app: app.clone(), bot_id: bot.id.clone(), request: crate::handoffs::bound_request(app, job), origin }),
-        Arc::new(CreateBot { app: app.clone(), bot: bot.clone() }),
         Arc::new(FinishSetup { app: app.clone(), bot: bot.clone() }),
         Arc::new(RecommendPlugins { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone() }),
         Arc::new(EditBot { app: app.clone(), bot: bot.clone() }),
-        Arc::new(crate::groups::CreateGroup { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone(), unattended }),
-        Arc::new(crate::groups::EditGroup { app: app.clone(), bot: bot.clone(), unattended }),
         Arc::new(Routines { app: app.clone(), bot: bot.clone() }),
         Arc::new(crate::channels::ChannelsTool { app: app.clone(), bot: bot.clone(), user_started: matches!(job.kind.as_str(), "turn" | "room_turn") }),
         Arc::new(crate::feedback::FeedbackTool { app: app.clone(), bot_id: bot.id.clone() }),
@@ -231,6 +229,12 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         Arc::new(crate::secrets::RequestSecret { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone(), unattended }),
         Arc::new(crate::ask::AskUser { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone(), unattended }),
     ];
+    // Only the chief makes bots and groups; the other bots send those requests to it.
+    if is_chief(app, &bot) {
+        tools.push(Arc::new(CreateBot { app: app.clone(), bot: bot.clone() }));
+        tools.push(Arc::new(crate::groups::CreateGroup { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone(), unattended }));
+        tools.push(Arc::new(crate::groups::EditGroup { app: app.clone(), bot: bot.clone(), unattended }));
+    }
     if job.kind == crate::workflows::SAMPLE_JOB {
         // A setup's sample cannot create teammates, hand off, install integrations, or arm schedules.
         tools.retain(|tool| matches!(tool.name(), "list_teammates" | "search_plugins"));
@@ -244,12 +248,6 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         app: app.clone(), bot_id: bot.id.clone(), chat_id: chat.meta.id.clone(), hops: job.hops,
         handled: attention_handled.clone(), requesting_bot_id: job.from_bot_id.clone().filter(|_| job.kind == "message"),
     }));
-    // A bot's browser profiles come with the Browser plugin on its Runner, when its Access
-    // allows Browser.
-    let browser = app.plugins.lock().unwrap().get(crate::browser::PLUGIN_ID).is_some();
-    if browser && bot.permissions.as_ref().is_none_or(|policy| policy.allows_connection(crate::browser::PLUGIN_ID)) {
-        tools.push(Arc::new(crate::browser::SessionTool { app: app.clone(), bot: bot.clone(), chat_id: chat.meta.id.clone() }));
-    }
     // Claude Code or Codex on this Runner, which the bot starts and supervises.
     if job.kind != crate::workflows::SAMPLE_JOB {
         tools.push(Arc::new(crate::coding::CodingAgentTool {
@@ -667,7 +665,7 @@ fn steering_message(
     let (Author::You, Body::Text { text, attachments, mentions, reply_to }) = (&message.author, &message.body) else { return None };
     let timestamp = (message.promoted_at.unwrap_or(message.created_at) * 1000.0) as u64;
     let text = user_words(app, bot, text, mentions, reply_to.as_ref());
-    if attachments.is_empty() && message.recording.is_none() {
+    if attachments.is_empty() {
         return Some(user(&text, timestamp));
     }
     let mut content = Vec::new();
@@ -676,9 +674,6 @@ fn steering_message(
     }
     for attachment in attachments {
         content.extend(crate::files::content_parts(app, attachment, workdir, pixels));
-    }
-    if let Some(recording) = &message.recording {
-        content.extend(crate::browser::recording_content(app, &message.id, recording, pixels));
     }
     Some(AgentMessage::User(UserMessage { content, timestamp }))
 }
@@ -714,7 +709,6 @@ pub(crate) fn hear_user_message(app: &App, message: &Message) {
     }
     if steer_message(app, message) {
         app.shell_sessions.user_wrote(&message.chat_id);
-        app.browser_sessions.user_wrote();
     }
     crate::plugins::mcp::dismiss_questions(app, &message.chat_id);
 }
@@ -887,8 +881,21 @@ impl TurnHooks {
                 return Some((Check::Access, crate::permissions::refuse(&self.app, &self.chat_id, &self.bot, denied)));
             }
         }
-        if let Some(refused) = crate::browser::review_call(&self.app, &self.bot, &self.chat_id, &self.trigger, self.unattended, &ctx).await {
-            return Some((Check::BrowserReview, refused));
+        if ctx.tool_call.name == "bash" {
+            if let Some(command) = ctx.tool_call.arguments["command"].as_str().filter(|command| crate::browser::mentions_ego(command)) {
+                // Running ego-browser is using Browser: its switch in the bot's Access decides.
+                if let Err(denied) = crate::permissions::check_plugin(&self.app, &self.bot, crate::browser::PLUGIN_ID, "bash") {
+                    return Some((Check::Access, crate::permissions::refuse(&self.app, &self.chat_id, &self.bot, denied)));
+                }
+                // One of its scripts is not judged as a shell command; one that takes saved
+                // secrets, or runs on past the call, still is.
+                let plain = crate::browser::is_plain_script(command)
+                    && ctx.tool_call.arguments["secrets"].as_array().is_none_or(|secrets| secrets.is_empty())
+                    && ctx.tool_call.arguments["background"].as_bool() != Some(true);
+                if plain {
+                    return None;
+                }
+            }
         }
         if let Some(refused) = crate::coding::review_start(&self.app, &self.bot, &self.chat_id, &self.trigger, self.unattended, &ctx).await {
             return Some((Check::CodingReview, refused));
@@ -1891,6 +1898,11 @@ fn script_summary(plugins: &[String], failed: bool) -> String {
 /// and `bash_output` do.
 const SCRIPTABLE_TOOLS: [&str; 10] = ["read", "write", "edit", "grep", "find", "ls", "memory_update", "memory_log", "recall", "publish_output"];
 
+/// Whether `bot` is the account's chief, the one bot that makes bots and groups.
+fn is_chief(app: &App, bot: &Bot) -> bool {
+    app.chief_id().as_deref() == Some(bot.id.as_str())
+}
+
 /// Tools an unattended turn (a routine's run, an event) goes without: each makes a bot, a group,
 /// a profile change, or a plugin card for the user.
 const USER_REQUEST_TOOLS: [&str; 5] = ["create_bot", "edit_bot", "create_group", "edit_group", "recommend_plugins"];
@@ -1987,6 +1999,7 @@ fn system_prompt(app: &Arc<App>, chat: &Chat, bot: &Bot, job: &Job, store: &Memo
     prompt.push_str(&crate::attention::prompt(&chat.meta.id));
     prompt.push_str("\nDurable work: use tasks to track multi-turn goals, ownership, acceptance criteria, dependencies, next action, blockers, and result/evidence. Open records appear after the transcript on every request, even after compaction. A queued task only runs when explicitly started with tasks run. Read the latest revision before editing; a conflict means reload, never overwrite.\n");
     prompt.push_str(&plugins_prompt(app, bot, plugins));
+    prompt.push_str(&crate::browser::prompt(app, bot));
     prompt.push_str(&crate::secrets::prompt(app, &bot.id));
     prompt.push_str(&memory_prompt(store, &workdir));
     prompt.push_str("\nPublish deliverables with publish_output so the user can retrieve them on paired Devices. Attach test results and, for visual changes, before/after screenshots as evidence. Report failures and what remains unverified; publishing evidence does not complete a task. Creating or uploading to an external service uses its reviewed tools.\n");
@@ -2116,6 +2129,18 @@ fn team_prompt(app: &App, bot: &Bot, chat: &Chat, unattended: bool) -> String {
     if unattended {
         return prompt;
     }
+    if !is_chief(app, bot) {
+        // The chief makes bots and groups; this bot changes only its own profile.
+        let chief = app.chief_id().and_then(|id| app.bot(&id)).filter(|chief| chief.id != bot.id);
+        let who = chief.map(|chief| format!("{} (id {})", chief.name, chief.id)).unwrap_or_else(|| "the chief".into());
+        prompt.push_str(&format!(
+            "You do not make bots or groups. When the user asks for a new bot, or a group chat, or a job needs teammates working \
+             together where the user can watch, hand the request to {who} with message_bot: it makes them. When the user wants \
+             you (your id is {}) to behave differently, change your profile with edit_bot.\n",
+            bot.id
+        ));
+        return prompt;
+    }
     prompt.push_str(&format!(
         "When the user asks for a bot, call create_bot at once with what they said as brief, and ask them nothing about it: \
          the new bot works out its job, name, and plugins with them in its own chat. When the right teammate for a request \
@@ -2154,7 +2179,7 @@ fn routines_prompt(unattended: bool) -> String {
 fn plugins_prompt(app: &App, bot: &Bot, plugins: &[crate::plugins::mcp::PluginBrief]) -> String {
     let runner = app.device(&bot.runner_id).map(|d| d.name).unwrap_or_else(|| "your Runner".into());
     let mut prompt = format!(
-        "\nPlugins are connected services (GitHub, Linear, Notion, a browser, or any MCP server). A plugin installed on \
+        "\nPlugins are connected services (GitHub, Linear, Notion, or any MCP server). A plugin installed on \
          {runner} is available to every bot there. You use a plugin from a codemode script: its tools are \
          `tools.<plugin>__<tool>(args)`, declared in the codemode tool's description, and `searchTools()` finds the ones not \
          listed there. A script can page through results, call tools in parallel, and return only what matters, so the rest \
@@ -2345,8 +2370,6 @@ fn transcript_bounded(app: &App, chat: &Chat, bot: &Bot, workdir: &std::path::Pa
             out.push(compaction::summary_message(&c.summary, c.tokens_before));
         }
     }
-    // A recording's screenshots go to the model while it is the user's latest word.
-    let latest_from_user = messages.iter().rposition(|message| message.author == Author::You);
     // The latest profile notice gives the profile as it stands; earlier ones say where it changed.
     let latest_profile_notice = messages.iter().rposition(|message| ProfileNotice::of_id(&message.id).is_some());
     for (index, message) in messages.iter().enumerate() {
@@ -2374,7 +2397,7 @@ fn transcript_bounded(app: &App, chat: &Chat, bot: &Bot, workdir: &std::path::Pa
                 }
                 out.push(AgentMessage::User(UserMessage { content, timestamp }));
             }
-            (Author::You, Body::Text { text, attachments, mentions, reply_to }) if attachments.is_empty() && message.recording.is_none() => {
+            (Author::You, Body::Text { text, attachments, mentions, reply_to }) if attachments.is_empty() => {
                 out.push(user(&user_words(app, bot, text, mentions, reply_to.as_ref()), timestamp))
             }
             (Author::You, Body::Text { text, attachments, mentions, reply_to }) => {
@@ -2386,9 +2409,6 @@ fn transcript_bounded(app: &App, chat: &Chat, bot: &Bot, workdir: &std::path::Pa
                 }
                 for attachment in attachments {
                     content.extend(crate::files::content_parts(app, attachment, workdir, pixels));
-                }
-                if let Some(recording) = &message.recording {
-                    content.extend(crate::browser::recording_content(app, &message.id, recording, pixels && latest_from_user == Some(index)));
                 }
                 out.push(AgentMessage::User(UserMessage { content, timestamp }));
             }
@@ -3381,7 +3401,7 @@ async fn resolve_connectors(app: &Arc<App>, wanted: &[String], bot: &Bot) -> Vec
         if index.is_none() {
             index = Some(crate::marketplace::index(app).await);
         }
-        let find = |index: &crate::marketplace::Index| index.plugins.iter().find(|m| m.id.to_lowercase() == lower || m.name.to_lowercase() == lower).cloned();
+        let find = |index: &crate::marketplace::Index| index.plugins.iter().filter(|m| m.id != crate::browser::PLUGIN_ID).find(|m| m.id.to_lowercase() == lower || m.name.to_lowercase() == lower).cloned();
         let mut manifest = index.as_deref().and_then(find);
         // A plugin published since this Runner's last check is in a newer index.
         if manifest.is_none() && crate::marketplace::check_for_missing(app).await {
@@ -3854,7 +3874,7 @@ impl Tool for InstallPlugin {
         if self.app.this_device_id().as_deref() != Some(self.bot.runner_id.as_str()) {
             return Err("Plugins are installed on your Runner, which is not this Device.".into());
         }
-        let find = |index: Arc<crate::marketplace::Index>| index.plugins.iter().find(|m| m.id.eq_ignore_ascii_case(&wanted) || m.name.eq_ignore_ascii_case(&wanted)).cloned();
+        let find = |index: Arc<crate::marketplace::Index>| index.plugins.iter().filter(|m| m.id != crate::browser::PLUGIN_ID).find(|m| m.id.eq_ignore_ascii_case(&wanted) || m.name.eq_ignore_ascii_case(&wanted)).cloned();
         let mut manifest = find(crate::marketplace::index(&self.app).await);
         // A plugin published since this Runner's last check is in a newer index.
         if manifest.is_none() && crate::marketplace::check_for_missing(&self.app).await {
@@ -4576,6 +4596,7 @@ mod tests {
         };
         let writer = Bot { description: "Turns findings into drafts".into(), ..bot("b3", "Writer") };
         let dm = chat("dm", "dm", None, &["b1"]);
+        let dm_of = |bot_id: &str| chat("dm", "dm", None, &[bot_id]);
         let mut group = chat("room", "group", Some("Launch"), &["b1", "b2"]);
         group.meta.owner_bot_id = Some("b1".into());
         {
@@ -4603,6 +4624,12 @@ mod tests {
         assert!(!run.contains("Route work before you start it.") && !run.contains("create_bot"), "{run}");
         assert!(!run.contains("mentions another bot with @") && !run.contains("a routine is a task"), "{run}");
         assert!(prompt.contains("mentions another bot with @") && prompt.contains("a routine is a task"), "{prompt}");
+        // Only the chief makes bots and groups: another bot is told to hand those requests over.
+        let scout_store = MemoryStore::for_bot(&app.config.home, &scout);
+        let other = system_prompt(app, &dm_of("b2"), &scout, &room_job("dm", "b2"), &scout_store, false, &[]);
+        assert!(other.contains("You do not make bots or groups") && other.contains("Chef (id b1)") && other.contains("edit_bot"), "{other}");
+        assert!(!other.contains("call create_bot at once") && !other.contains("create_group"), "{other}");
+        assert!(!prompt.contains("You do not make bots or groups"), "{prompt}");
         // The working directory is named once.
         let workdir = chef.working_directory(&app.config.home).display().to_string();
         assert_eq!(prompt.matches(&workdir).count(), 1, "{prompt}");
@@ -4614,6 +4641,21 @@ mod tests {
         let store = MemoryStore::for_bot(&app.config.home, &scout);
         let member = system_prompt(app, &group, &scout, &room_job("room", "b2"), &store, false, &[]);
         assert!(!member.contains("You are the owner.") && member.contains("When the owner assigns you a part with @"), "{member}");
+    }
+
+    /// The chief is the bot made first that is done setting up; one made on the same moment goes
+    /// by id, and a bot still setting itself up is never it.
+    #[test]
+    fn the_chief_is_the_first_bot_made_that_is_set_up() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        assert_eq!(app.chief_id(), None);
+        let made = |id: &str, at: f64, setting_up: bool| Bot { created_at: at, setting_up, ..bot(id, id) };
+        app.state.lock().unwrap().bots = vec![made("late", 30.0, false), made("early-but-new", 5.0, true), made("b", 10.0, false), made("a", 10.0, false)];
+        assert_eq!(app.chief_id().as_deref(), Some("a"), "the same moment goes by id");
+        assert!(is_chief(app, &made("a", 10.0, false)) && !is_chief(app, &made("b", 10.0, false)));
+        app.state.lock().unwrap().bots.retain(|bot| bot.id != "a" && bot.id != "b");
+        assert_eq!(app.chief_id().as_deref(), Some("late"), "a bot still setting up is skipped");
     }
 
     /// What started a turn is in its brief, not its system prompt, which stays the chat's own.

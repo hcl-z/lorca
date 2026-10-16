@@ -343,7 +343,7 @@ fn parse(text: &str) -> Result<Index, String> {
 /// tags. All of them for an empty query.
 pub fn search_plugins<'a>(plugins: &'a [Manifest], query: &str) -> Vec<&'a Manifest> {
     let words = words(query);
-    plugins.iter().filter(|p| matches(&[&p.id, &p.name, &p.description, &p.category, &p.author, &p.tags.join(" ")], &words)).collect()
+    plugins.iter().filter(|p| p.id != crate::browser::PLUGIN_ID).filter(|p| matches(&[&p.id, &p.name, &p.description, &p.category, &p.author, &p.tags.join(" ")], &words)).collect()
 }
 
 /// Bots matching `query` the same way, over the id, name, summary, description, and category.
@@ -422,7 +422,10 @@ mod tests {
         assert!(index.plugins.iter().any(|p| p.featured) && index.bots.iter().any(|b| b.featured));
         // GitHub and Gitee both have pull requests; no other plugin does.
         assert_eq!(search_plugins(&index.plugins, "PULL requests").iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["github", "gitee"]);
-        assert_eq!(search_plugins(&index.plugins, "").len(), index.plugins.len());
+        // Browser comes with every Runner, so the marketplace does not list it.
+        assert!(index.plugin(crate::browser::PLUGIN_ID).is_some());
+        assert!(search_plugins(&index.plugins, "browser").iter().all(|p| p.id != crate::browser::PLUGIN_ID));
+        assert_eq!(search_plugins(&index.plugins, "").len(), index.plugins.len() - 1);
         assert!(search_plugins(&index.plugins, "nothing-like-this").is_empty());
         assert!(search_bots(&index.bots, "pull requests").iter().any(|b| b.id == "pr-reviewer"));
         assert_eq!(search_bots(&index.bots, "").len(), index.bots.len());

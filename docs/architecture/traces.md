@@ -19,7 +19,7 @@ Every record has `v` (the format, 1), `type`, `job_id`, `seq`, `step` (the loop'
 | `call_end` | how long the call took and when its first event came, its stop reason, usage, and error |
 | `response` | the reply as the loop keeps it: text, thinking, tool calls, stop reason, error, usage |
 | `tool` | a call's id, name, arguments, result text, the type and base64 size of each image it returned, details, whether it failed or asked the turn to end, and how long it ran |
-| `hold` | a call `before_tool_call` refused, the codemode call whose script made it (`parent`, empty for the model's own), and which check refused it: `limits`, `feedback`, `access`, `browser_review`, `coding_review`, `plugin_review`, or `auto_review` |
+| `hold` | a call `before_tool_call` refused, the codemode call whose script made it (`parent`, empty for the model's own), and which check refused it: `limits`, `feedback`, `access`, `coding_review`, `plugin_review`, or `auto_review` |
 | `steering` | a message the user sent while the turn ran, as the loop read it |
 | `follow_up` | the reply the turn asked about once more ([Turn context](turn-context.md#asking-once-more-for-announced-work)) |
 | `prompt_refresh` | the bot's profile changed mid-turn (`changed`: name, description, setup), the new system prompt's size, and whether a finished setup brought the usual tools |

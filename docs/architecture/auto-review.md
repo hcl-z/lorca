@@ -1,6 +1,6 @@
 # Auto-review
 
-Auto-review is the check a Runner runs before a bot's action that may have effects: a shell command, what a bot types into one (`bash_input`), an effectful plugin call, opening or running a browser profile, starting a coding agent, and each command a coding agent runs. It runs only within the bot's [Access](bot-permissions.md), which is checked first and cannot be widened by any rule or answer. It follows Claude Code's auto mode: most actions never reach a model, a model allows by default and holds only what it can name a rule for, and a held action goes back to the bot before it reaches the user.
+Auto-review is the check a Runner runs before a bot's action that may have effects: a shell command, what a bot types into one (`bash_input`), an effectful plugin call, starting a coding agent, and each command a coding agent runs. It runs only within the bot's [Access](bot-permissions.md), which is checked first and cannot be widened by any rule or answer. It follows Claude Code's auto mode: most actions never reach a model, a model allows by default and holds only what it can name a rule for, and a held action goes back to the bot before it reaches the user.
 
 ## Settings and rules
 

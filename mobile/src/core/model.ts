@@ -86,22 +86,10 @@ export interface UpdateStatus {
   error?: string;
 }
 
-/// A plugin as its Runner advertises it: installed, and in what state.
-/// The Browser plugin, whose screen lists a bot's browser profiles.
+/// The Browser plugin every Runner has. A bot's Access has one switch for it.
 export const BROWSER_PLUGIN_ID = "playwright";
 
-/// One of a bot's browser profiles, as its Runner reports it (`browser.sessions`). Each keeps its
-/// own sign-ins there. `revision` goes up with every change of control; Return to Bot sends the
-/// one this phone last saw.
-export interface BrowserProfile {
-  id: string;
-  name: string;
-  state: "stopped" | "bot" | "taking_over" | "human";
-  revision: number;
-  /// The user records a workflow in it for the bot to learn, with the browser in hand.
-  recording?: boolean;
-}
-
+/// A plugin as its Runner advertises it: installed, and in what state.
 export interface PluginStatus {
   id: string;
   name: string;

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": "2026-10-14T07:38:13Z",
+  "updated": "2026-10-15T12:30:00Z",
   "plugins": [
     {
       "id": "slack",
@@ -490,9 +490,8 @@
     {
       "id": "playwright",
       "name": "Browser",
-      "description": "Opens web pages in a browser on the Runner to read them, fill forms, and take screenshots, signed in with the bot's own browser profiles.",
+      "description": "Opens web pages in a headless browser on the Runner to read them, fill forms, and take screenshots. Every Runner has it; a bot's Access turns it on or off, and ego (lite) can be the browser instead.",
       "category": "research",
-      "featured": true,
       "author": "Microsoft",
       "version": "2",
       "icon": "globe",
@@ -506,7 +505,7 @@
         {
           "name": "Reading a page",
           "description": "How to read a page without filling the context.",
-          "content": "# Reading a page\n\nNavigate with browser_navigate, then read browser_snapshot once. Prefer the snapshot over screenshots: it is text. Close tabs you opened when done.\n\nFor a site that needs the user's sign-in, open one of your browser profiles with browser_session (create one if you have none) and ask the user to sign in there. While it is open your Browser calls use it, and a screenshot you take shows in the chat. While the user has taken it over, your calls wait until they hand it back."
+          "content": "# Reading a page\n\nNavigate with browser_navigate, then read browser_snapshot once. Prefer the snapshot over screenshots: it is text. Close tabs you opened when done.\n\nFor a site that needs a password, ask for it with request_secret (use browser) and type it as {{secret:NAME}} with browser_type or browser_fill_form while the site's sign-in page is open."
         }
       ]
     },
@@ -3021,7 +3020,7 @@
       "category": "research",
       "featured": true,
       "author": "Lorca",
-      "plugins": ["context7", "playwright"]
+      "plugins": ["context7"]
     },
     {
       "id": "pr-reviewer",
@@ -3049,7 +3048,6 @@
       "category": "research",
       "featured": true,
       "author": "Lorca",
-      "plugins": ["playwright"],
       "routines": [
         {"name": "Check watched pages", "schedule": "every 2h", "prompt": "Check every watched page for changes since the last check and report only what changed."}
       ]
@@ -3091,7 +3089,6 @@
       "accent": "green",
       "category": "research",
       "author": "Lorca",
-      "plugins": ["playwright"],
       "routines": [
         {"name": "Weekly competitor briefing", "schedule": "0 9 * * 1", "prompt": "Check each competitor's pages and brief the user on what changed since last week."}
       ]

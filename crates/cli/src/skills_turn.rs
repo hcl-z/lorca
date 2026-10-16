@@ -31,7 +31,9 @@ pub fn prompt(app: &App, bot: &Bot, chat_id: &str) -> String {
         _ => 2,
     });
     let folder = |kind: &str| scopes.iter().find(|scope| scope.kind == kind).and_then(|scope| scope.root(app).ok()).map(|root| root.display().to_string());
-    let found: Vec<Found> = scopes.iter().flat_map(|scope| skills::list_scope(app, scope)).collect();
+    // ego (lite)'s skill is listed when ego is the browser the turn uses.
+    let ego = crate::browser::skill_offered(app, bot);
+    let found: Vec<Found> = scopes.iter().flat_map(|scope| skills::list_scope(app, scope)).filter(|skill| skill.name != crate::browser::EGO_SKILL || ego).collect();
     let all: Vec<Skill> = found
         .iter()
         .map(|skill| Skill { name: skill.name.clone(), description: cut(&skill.description, 300), content: String::new(), path: skill.skill_file(), disable_model_invocation: false })
@@ -142,11 +144,9 @@ pub fn selected_evidence(app: &App, scope: &Scope, bot_id: &str, chat_id: &str, 
     match kind {
         "workflow" if bot_replied => {}
         "corrections" if messages.len() >= 2 && messages.iter().all(|m| m.author == Author::You) => {}
-        "recording" if messages.iter().any(|m| m.recording.as_ref().is_some_and(|r| r.bot_id == bot_id)) => {}
         "workflow" => return Err("Select a completed bot reply as evidence of the workflow".into()),
-        "recording" => return Err("Cite the user's message with the recording".into()),
         "corrections" => return Err("Select at least two user corrections to make a standing instruction".into()),
-        _ => return Err("The kind must be workflow, corrections, or recording".into()),
+        _ => return Err("The kind must be workflow or corrections".into()),
     }
     Ok(messages)
 }

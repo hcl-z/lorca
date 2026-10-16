@@ -51,7 +51,7 @@ const (
 
 // onboardingDefaultDescription is the first bot's description as the CLI writes it, which the bot
 // step shows in the app's language.
-const onboardingDefaultDescription = "Chief of staff. Routes each request to the teammate whose job it is and pulls their results together, proposing a new teammate when none fits. Does the work itself only when no teammate's job covers it."
+const onboardingDefaultDescription = "Chief of staff. Routes each request to the teammate whose job it is and pulls their results together. The only bot that makes new bots and group chats: ask Chef for either. Does the work itself only when no teammate's job covers it."
 
 // onboardingStatus is the line under a step's field: what is under way, or what failed.
 type onboardingStatus struct {
@@ -144,7 +144,7 @@ func (o *onboardingWindow) show(next onboardingStep) {
 	if next == onboardingBot {
 		bot := o.firstBot()
 		o.botName = Lc("Chef", "first bot name")
-		o.botDescription = L("Chief of staff. Routes each request to the teammate whose job it is and pulls their results together, proposing a new teammate when none fits. Does the work itself only when no teammate's job covers it.")
+		o.botDescription = L("Chief of staff. Routes each request to the teammate whose job it is and pulls their results together. The only bot that makes new bots and group chats: ask Chef for either. Does the work itself only when no teammate's job covers it.")
 		if bot != nil && bot.Name != "Chef" {
 			o.botName = bot.Name
 		}

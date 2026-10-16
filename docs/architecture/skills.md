@@ -18,11 +18,12 @@ A name is checked as a slug and refused when it is a Windows device name; a path
 
 ## The skills Lorca ships
 
-`crates/cli/src/docs.rs` holds three skills, their files embedded from `crates/cli/skills/`, and writes them into the shared folder as the CLI starts, each with a `.lorca-builtin` mark holding a hash of what this build ships. A copy whose mark differs is rewritten; a folder of that name without a mark, one the user made or took over by removing the mark, is left alone. The apps list them, cannot edit or remove them, and no shared skill of the user's can take their names.
+`crates/cli/src/docs.rs` holds four skills, their files embedded from `crates/cli/skills/`, and writes them into the shared folder as the CLI starts, each with a `.lorca-builtin` mark holding a hash of what this build ships. A copy whose mark differs is rewritten; a folder of that name without a mark, one the user made or took over by removing the mark, is left alone. The apps list them, cannot edit or remove them, and no shared skill of the user's can take their names.
 
 - `lorca` points the bot at Lorca's user docs on the website ([Website](website.md)): `https://lorca.app/llms.txt`, the pages as `/docs/<page>.md`, `/llms-full.txt`, and the Chinese ones under `/zh`, fetched with the web fetch tool or `curl`, never from memory or Lorca's binary.
 - `write-skill` says how to keep a way of working as a skill: which folder, the format and its limits from the spec, short instructions with detail in `references/`, relative paths, no secrets, scripts that pass Auto-review, a try with a real request, and its `references/format.md` holds a template and a checklist.
 - `save-skill` brings in skills other tools saved: it lists only the folders in its `references/locations.md` (`~/.agents/skills`, `~/.claude/skills`, `~/.cursor/skills`, and the rest from the skills CLI's list of agents, plus a project's `.agents/skills`, `.claude/skills`, and `skills`), never the home folder recursively, counts a skill once through `realpath`, asks the user with `ask_user` which to bring in, where, and whether to move and link, move, or copy, then does it with `mv`, `cp -R`, and `ln -s`, which pass Auto-review outside Lorca's folders. It runs none of their scripts.
+- `ego-browser` is ego (lite)'s own skill for its browser, with its files and MIT license as ego publishes them: the `ego-browser nodejs` scripts, the API in `references/`, how to install ego, and notes on a few sites. A turn lists it only when ego is the [browser](browser.md) the bot uses.
 
 ## In a turn
 
@@ -30,7 +31,7 @@ Every turn's system prompt names the three folders and lists the skills it sees 
 
 `read`, `grep`, `find`, and `ls` on a path inside one of the bot's skills folders run for a bot whose Access turns file reading off (`permissions::check_tool_call`), so every bot can read its skills. A skill's text grants no permissions. A command that names a path in a skills folder, or runs from one, is never in [Auto-review's](auto-review.md#fast-paths) Lorca-folders fast path: a skill's scripts may be a community's code. A bot that copies a script elsewhere first is reviewed as any command there.
 
-When a turn ends, the CLI compares the turn's skills folders with what they held before it (`skills_turn::fingerprint`, by each folder's file count, sizes, and newest change) and says in the chat which skills the bot saved, changed, or removed, with their paths, at most five lines. Recorded browser steps, `scripts/browser-steps.json`, are checked when a save writes them and again when a run reads them ([Running recorded steps](browser-sessions.md#running-recorded-steps)).
+When a turn ends, the CLI compares the turn's skills folders with what they held before it (`skills_turn::fingerprint`, by each folder's file count, sizes, and newest change) and says in the chat which skills the bot saved, changed, or removed, with their paths, at most five lines.
 
 ## Sync
 

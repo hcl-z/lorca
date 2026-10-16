@@ -95,7 +95,7 @@ mod tests {
         assert_eq!(renamed.name, "Gmail · Office");
         let mut updated = manifest;
         updated.version = "2".into();
-        assert_eq!(plugins::refresh_installed(&app, &[updated]), vec![work.id.clone(), personal.id.clone()]);
+        assert_eq!(plugins::refresh_installed(&app, &[updated]), vec!["playwright".to_string(), work.id.clone(), personal.id.clone()], "Browser is installed first");
         let reloaded = Store::load(&app.config);
         assert_eq!(reloaded.instances("gmail").count(), 2);
         assert_eq!(reloaded.get(&work.id).unwrap().manifest.version, "2");

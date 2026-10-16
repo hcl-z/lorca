@@ -92,7 +92,7 @@ One doc per subject under `docs/architecture/`, each read in one pass: `bun run 
 | [Coding agents](docs/architecture/coding-agents.md) | Claude Code or Codex a bot runs and supervises on its Runner: worktrees, panes, its secrets, review of its commands and questions, transcripts, follow-ups, outputs, wake-ups, the card |
 | [Questions](docs/architecture/questions.md) | A bot asking the user to choose: `ask_user`, the card and its answer, each app |
 | [Secret requests](docs/architecture/secrets.md) | A password, key, or code a bot asks for on a card: sealed to and kept on its Runner, filled by name into Browser on its site or a command's environment, kept out of results and chats; managing them |
-| [Browser sessions](docs/architecture/browser-sessions.md) | A bot's browser profiles on its Runner: sign-ins, a profile in a window, taking the browser over and back, a recorded workflow run as a skill's steps, screenshots, the Profiles section |
+| [Browser](docs/architecture/browser.md) | A bot's browser: ego (lite)'s through its shipped skill or the Browser plugin every Runner carries, the Runner's setting that picks one, the one Browser switch in Access, secrets, Stop, Settings' Browser section |
 | [Codemode and Plugins](docs/architecture/plugins.md) | Scripts that call plugin tools, MCP plugins and their installs, sign-in, plugin calls at turn time |
 | [Integrations and named accounts](docs/architecture/integrations.md) | Slack, Gmail, Calendar, and Drive; stable account instances, OAuth on the Runner, account selection, access recovery, and source links |
 | [Marketplace](docs/architecture/marketplace.md) | The index of plugins and bot templates and how lorca.app keeps it current on every Device, bots added from a template, the marketplace sheet |

@@ -885,6 +885,10 @@ func (p InstalledPlugin) Symbol() string {
 // IsMcpServer is a plugin that is one of the Runner's mcp.json servers.
 func (p InstalledPlugin) IsMcpServer() bool { return p.Source == "mcp.json" }
 
+// IsBrowser is the Browser plugin every Runner has, which the plugin lists leave out: a bot's Access
+// has a switch for it and Settings picks the browser.
+func (p InstalledPlugin) IsBrowser() bool { return p.ID == BrowserPluginID }
+
 // Tone is the role of a color a state takes: the views map it to the theme's colors.
 type Tone int
 

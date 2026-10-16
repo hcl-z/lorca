@@ -1356,7 +1356,6 @@ async fn watch_parent(app: std::sync::Arc<App>, pid: u32) {
             tracing::info!(pid, "parent exited; stopping");
             app.shell_sessions.shutdown(&app);
             app.coding_agents.shutdown(&app).await;
-            app.browser_sessions.shutdown(&app).await;
             std::process::exit(0);
         }
     }
@@ -1378,7 +1377,6 @@ async fn stop_on_signal(app: std::sync::Arc<App>) {
     };
     app.shell_sessions.shutdown(&app);
     app.coding_agents.shutdown(&app).await;
-    app.browser_sessions.shutdown(&app).await;
     unsafe {
         libc::signal(number, libc::SIG_DFL);
         libc::raise(number);

@@ -8,6 +8,10 @@ phone app's.
 
 ## [Unreleased]
 
+- A bot's browser is ego (lite)'s where it is installed, and a built-in one elsewhere. Lorca now carries ego's `ego-browser` skill, and every computer has the Browser plugin without installing it; Settings › Plugins picks Automatic, ego (lite), or Built-in. A bot's Access has one Browser switch for either. Browser profiles, taking the browser over, and recording a workflow are gone, and the Browser page on the phone with them.
+- Only the chief, the first bot made, makes new bots and group chats. The other bots are told to ask it, and Chef's description now says so. Chef's description changes for new accounts only; edit it in an existing account to match.
+- The browser instructions a bot reads are shorter, name only the browser in use, and end with closing it.
+
 ## [1.0.22]
 
 - A bot that says what it is about to do and then stops is asked once more, so a morning routine no longer ends on "Fetching all sources now." with nothing fetched: the bot does the work, or stays quiet when it is done. Bots are also told to keep messages short but not the work, to say they did something only when it shows, and to answer in your language.

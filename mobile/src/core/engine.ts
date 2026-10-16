@@ -12,7 +12,7 @@ import { reviewEditParams } from "./reviewEdit";
 import { editedText, rerunnable } from "./rerun";
 import type { AskAnswer } from "./ask";
 import { hostFacts } from "./host";
-import { connectedProviders, isRunner, PROVIDER_KINDS, orderProjectEntries, providerConnectMethod, sectionName, withReviewModel, sameDraft, skillInputOf, skillRecordOf, skillSummaryOf, type SkillRow, type SkillView, type Section, type PlaybookContent, type PlaybookRecord, type PlaybookScope, type ProjectContext, type ProjectEntry, type ProjectKind, type ProjectSource, type Attachment, type AutoReview, type Bot, type BrowserProfile, type BudgetLimits, type BudgetState, type CallLimits, type Chat, type ChatMeta, type ChatSearchResults, type ChatUsage, type CustomAPI, type CustomModel, type DurableTask, type Message, type MessageDraft, type ReviewItem, type PluginDetail, type PluginStatus, type ProviderKind, type ProviderStatus, type SavedSecret, routinesAwaitingSetup } from "./model";
+import { connectedProviders, isRunner, PROVIDER_KINDS, orderProjectEntries, providerConnectMethod, sectionName, withReviewModel, sameDraft, skillInputOf, skillRecordOf, skillSummaryOf, type SkillRow, type SkillView, type Section, type PlaybookContent, type PlaybookRecord, type PlaybookScope, type ProjectContext, type ProjectEntry, type ProjectKind, type ProjectSource, type Attachment, type AutoReview, type Bot, type BudgetLimits, type BudgetState, type CallLimits, type Chat, type ChatMeta, type ChatSearchResults, type ChatUsage, type CustomAPI, type CustomModel, type DurableTask, type Message, type MessageDraft, type ReviewItem, type PluginDetail, type PluginStatus, type ProviderKind, type ProviderStatus, type SavedSecret, routinesAwaitingSetup } from "./model";
 import { coreHome, loadPrefs, pathOf, wipePrefs } from "./prefs";
 import type { SharedLink, TemplateContents, TemplateImportPreview, TemplateSelection } from "./templates";
 import { clearPushes, installPushHandlers, registerForPushes } from "./push";
@@ -1021,28 +1021,6 @@ class Engine {
       replace(shown, asked);
       throw error;
     }
-  }
-
-  /// A plugin on its Runner, with how each of its servers signs in; sealed to another Runner.
-  /// The bot's browser profiles, oldest first, from its Runner through the relay.
-  async browserProfiles(botId: string): Promise<BrowserProfile[]> {
-    const { sessions } = await core.request<{ sessions: BrowserProfile[] }>("browser.sessions", { bot_id: botId });
-    return sessions;
-  }
-
-  /// `browser.create` (`name`), `browser.takeover`, `browser.resume` (`revision`), `browser.stop`,
-  /// `browser.delete`, `browser.screenshot` (`chat_id`), or `browser.record` for one of the bot's
-  /// profiles (`session_id`), on its Runner. Windows open only there, so the phone never sends
-  /// `browser.open`, and records only in a browser already open on the Runner's screen.
-  async browserAction(method: string, botId: string, params: Record<string, string | number>): Promise<void> {
-    await core.request(method, { ...params, bot_id: botId });
-  }
-
-  /// Stops the profile's recording and sends it to the bot in the chat with the user's words.
-  /// False when the user did nothing in the browser, so nothing went.
-  async stopBrowserRecording(botId: string, sessionId: string, chatId: string, text: string): Promise<boolean> {
-    const { message_id } = await core.request<{ message_id?: string | null }>("browser.stop_recording", { bot_id: botId, session_id: sessionId, chat_id: chatId, text });
-    return !!message_id;
   }
 
   /// Sets limits on the bot's Runner; what the work used stays. `kind` is `chat` for each new turn

@@ -4,9 +4,10 @@
 //! and never enters the transcript, the synced chat, or the model's context. The bot uses it by
 //! name, where the card said it would go:
 //!
-//! - `browser`: `{{secret:NAME}}` in what Browser types (`browser_type`, `browser_fill_form`),
-//!   filled in right before the call reaches the browser, and only while its page is on the
-//!   secret's site, over https.
+//! - `browser`: `{{secret:NAME}}` in what the Browser plugin types (`browser_type`,
+//!   `browser_fill_form`), filled in right before the call reaches the browser, and only while
+//!   its page is on the secret's site, over https. With ego as the browser a bot asks for
+//!   `command` instead.
 //! - `command`: `secrets: ["NAME"]` on a `bash` call, which sets `$NAME` for that command alone.
 //! - `plugin`: a setting of an installed plugin, written to the plugin's own secrets.
 //!
@@ -713,6 +714,9 @@ impl RequestSecret {
                     return Err("Browser is not installed on your Runner.".into());
                 }
                 crate::permissions::check_plugin(&self.app, &self.bot, crate::browser::PLUGIN_ID, "browser_type").map_err(|denied| denied.to_string())?;
+                if crate::browser::engine_for(&self.app, &self.bot) == Some(crate::browser::Engine::Ego) {
+                    return Err("Your browser is ego-browser, which has no {{secret:NAME}} filling. Ask with use: \"command\", and run the script with bash's `secrets`, reading process.env.NAME in it.".into());
+                }
                 (Some(site), crate::browser::PLUGIN_ID.to_string(), "Browser".to_string())
             }
             COMMAND => {

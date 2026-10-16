@@ -1,7 +1,8 @@
 //! The skills Lorca ships to every bot: `lorca` points at its user docs on lorca.app, so a bot
 //! answers how to use Lorca from them instead of guessing; `write-skill` and `save-skill` say how
-//! to keep a way of working as a skill and how to bring in skills other tools saved. They are
-//! written into the shared skills folder, where every bot reads them like any skill.
+//! to keep a way of working as a skill and how to bring in skills other tools saved; `ego-browser`
+//! is ego (lite)'s own skill for driving its browser. They are written into the shared skills
+//! folder, where every bot reads them like any skill.
 
 use std::path::Path;
 
@@ -16,7 +17,7 @@ pub struct Builtin {
     pub files: &'static [(&'static str, &'static str)],
 }
 
-pub const BUILTINS: [Builtin; 3] = [
+pub const BUILTINS: [Builtin; 4] = [
     Builtin { name: "lorca", files: &[("SKILL.md", include_str!("../skills/lorca/SKILL.md"))] },
     Builtin {
         name: "write-skill",
@@ -30,6 +31,32 @@ pub const BUILTINS: [Builtin; 3] = [
         files: &[
             ("SKILL.md", include_str!("../skills/save-skill/SKILL.md")),
             ("references/locations.md", include_str!("../skills/save-skill/references/locations.md")),
+        ],
+    },
+    Builtin {
+        name: "ego-browser",
+        files: &[
+            ("SKILL.md", include_str!("../skills/ego-browser/SKILL.md")),
+            ("LICENSE", include_str!("../skills/ego-browser/LICENSE")),
+            ("learnings/github/browser-tools/repo-stats.js", include_str!("../skills/ego-browser/learnings/github/browser-tools/repo-stats.js")),
+            ("learnings/github/manifest.json", include_str!("../skills/ego-browser/learnings/github/manifest.json")),
+            ("learnings/github/notes/overview.md", include_str!("../skills/ego-browser/learnings/github/notes/overview.md")),
+            ("learnings/github/tools/open-issues.js", include_str!("../skills/ego-browser/learnings/github/tools/open-issues.js")),
+            ("learnings/github/tools/search-repos.js", include_str!("../skills/ego-browser/learnings/github/tools/search-repos.js")),
+            ("learnings/google/browser-tools/autocomplete.js", include_str!("../skills/ego-browser/learnings/google/browser-tools/autocomplete.js")),
+            ("learnings/google/manifest.json", include_str!("../skills/ego-browser/learnings/google/manifest.json")),
+            ("learnings/google/notes/overview.md", include_str!("../skills/ego-browser/learnings/google/notes/overview.md")),
+            ("learnings/google/tools/search-extract.js", include_str!("../skills/ego-browser/learnings/google/tools/search-extract.js")),
+            ("learnings/x-com/browser-tools/extract-post.js", include_str!("../skills/ego-browser/learnings/x-com/browser-tools/extract-post.js")),
+            ("learnings/x-com/manifest.json", include_str!("../skills/ego-browser/learnings/x-com/manifest.json")),
+            ("learnings/x-com/notes/overview.md", include_str!("../skills/ego-browser/learnings/x-com/notes/overview.md")),
+            ("learnings/x-com/notes/timeline.md", include_str!("../skills/ego-browser/learnings/x-com/notes/timeline.md")),
+            ("learnings/x-com/tools/search-users.js", include_str!("../skills/ego-browser/learnings/x-com/tools/search-users.js")),
+            ("learnings/x-com/tools/timeline.js", include_str!("../skills/ego-browser/learnings/x-com/tools/timeline.js")),
+            ("references/api.md", include_str!("../skills/ego-browser/references/api.md")),
+            ("references/clearing-state.md", include_str!("../skills/ego-browser/references/clearing-state.md")),
+            ("references/install.md", include_str!("../skills/ego-browser/references/install.md")),
+            ("scripts/install.sh", include_str!("../skills/ego-browser/scripts/install.sh")),
         ],
     },
 ];

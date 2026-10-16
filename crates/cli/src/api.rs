@@ -109,7 +109,8 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
             crate::marketplace::check_in_background(app);
             Ok(app.snapshot())
         }
-        method if method.starts_with("browser.") => crate::browser::dispatch(app, method, params).await,
+        // Which browser this Runner's bots use; a setting of this Device alone.
+        method @ ("browser.engine" | "browser.set_engine") => crate::browser::dispatch(app, method, &params),
         // A Runner's saved secrets: listed without their values, replaced, or deleted, there when
         // this Device is the Runner, else sealed to it. A new value travels only sealed.
         "secrets.list" | "secrets.set" | "secrets.delete" => {

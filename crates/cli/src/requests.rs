@@ -126,8 +126,6 @@ async fn answer(app: &Arc<App>, from: &str, request: &Request) -> Result<Value, 
         #[cfg(feature = "runner")]
         verb if verb.starts_with("mcp.") => crate::plugins::mcp_json::serve_request(app, verb, body).await,
         #[cfg(feature = "runner")]
-        verb if verb.starts_with("browser.") => crate::browser::serve(app, verb, body, true).await,
-        #[cfg(feature = "runner")]
         verb if verb.starts_with("secrets.") => crate::secrets::serve(app, verb, body),
         #[cfg(feature = "runner")]
         "bash.stdin" | "bash.stop" | "bash.background" => crate::shell::serve(app, &request.verb, body).await,

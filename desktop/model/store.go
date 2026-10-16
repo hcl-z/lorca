@@ -227,8 +227,9 @@ type Store struct {
 	mockMcp              map[string][]McpServer
 	// mockFeedback is the demo's workflow feedback, changed in place by the same calls.
 	mockFeedback map[string]BotFeedback
-	mockBrowser  map[string][]BrowserProfile
-	mockSecrets  []mockSecret
+	// mockBrowserEngine is the demo's Browser setting.
+	mockBrowserEngine string
+	mockSecrets       []mockSecret
 }
 
 type pendingEvent struct {
@@ -3307,7 +3308,7 @@ func (s *Store) ResetMockData() {
 	}
 	s.mockFeedback = map[string]BotFeedback{}
 	s.Devices = mockDevices()
-	s.mockBrowser = nil
+	s.mockBrowserEngine = ""
 	s.Bots = mockBots()
 	s.Chats = mockChats()
 	s.seedMockFiles()

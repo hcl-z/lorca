@@ -294,9 +294,6 @@ pub struct App {
     /// Connected MCP servers.
     #[cfg(feature = "runner")]
     pub mcp: crate::plugins::mcp::Pool,
-    /// The bots' browser profiles on this Runner and their open browsers.
-    #[cfg(feature = "runner")]
-    pub browser_sessions: crate::browser::Sessions,
     /// The secrets the user saved for this Runner's bots.
     #[cfg(feature = "runner")]
     pub secrets: crate::secrets::Store,
@@ -405,8 +402,6 @@ impl App {
             updates: crate::update::Updater::default(),
             #[cfg(feature = "runner")]
             mcp: crate::plugins::mcp::Pool::new(),
-            #[cfg(feature = "runner")]
-            browser_sessions: crate::browser::Sessions::default(),
             #[cfg(feature = "runner")]
             secrets: crate::secrets::Store::default(),
             #[cfg(feature = "runner")]
@@ -652,8 +647,6 @@ impl App {
         self.steering_queues.lock().unwrap().clear();
         #[cfg(feature = "runner")]
         self.step_interrupts.lock().unwrap().clear();
-        #[cfg(feature = "runner")]
-        self.browser_sessions.reset();
         #[cfg(feature = "runner")]
         self.secrets.reset();
         *self.identity.lock().unwrap() = None;
@@ -917,6 +910,13 @@ impl App {
     }
 
     // MARK: - Lookup
+
+    /// The account's chief: the bot made first that is not still setting itself up, which is the
+    /// one that makes bots and groups. Bots made on one moment go by id.
+    pub fn chief_id(&self) -> Option<String> {
+        let state = self.state.lock().unwrap();
+        state.bots.iter().filter(|bot| !bot.setting_up).min_by(|a, b| a.created_at.total_cmp(&b.created_at).then_with(|| a.id.cmp(&b.id))).map(|bot| bot.id.clone())
+    }
 
     pub fn bot(&self, id: &str) -> Option<Bot> {
         self.state.lock().unwrap().bots.iter().find(|b| b.id == id).cloned()
