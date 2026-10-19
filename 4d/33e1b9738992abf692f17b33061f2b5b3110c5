@@ -1,0 +1,25 @@
+compose.yaml
+  s_de64bc2a113aef::t_f009de0fe69eeb 4,6-8,19,40,49-53
+crates/cli/docker-entrypoint.sh
+  s_de64bc2a113aef::t_07d7df67f4d055 1-26
+crates/cli/Dockerfile
+  s_de64bc2a113aef::t_5ceab8dfcf3b0c 43,48-50
+docs/architecture/runtime.md
+  s_de64bc2a113aef::t_cb16b9b65b5fa9 13-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.50-trip",
+  "base_commit_sha": "4d33e1b9738992abf692f17b33061f2b5b3110c5",
+  "prompts": {},
+  "sessions": {
+    "s_de64bc2a113aef": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_s4euiiw938g8",
+        "model": "DeepSeek-V4.1-Flash"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
