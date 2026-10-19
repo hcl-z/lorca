@@ -1,0 +1,68 @@
+# Lorca in containers: the relay, and a CLI Runner with no desktop app on the same computer.
+#
+#   docker compose up -d --build
+#   docker compose exec runner lorca identity new --name nas     # once, or `lorca pair <string>`
+#   docker compose exec runner lorca status
+#
+# Ports are picked away from the defaults (relay 8787, CLI 4862) so a locally running relay or
+# a desktop app's CLI on this computer never collides with these.
+#
+# Only the relay is published. The runner's local websocket binds 127.0.0.1 inside its container
+# and accepts only a loopback Host, which a published port does not carry, so it stays reachable
+# from that container alone; the relay is how a bot on it is driven from another Device.
+
+services:
+  relay:
+    build:
+      context: .
+      dockerfile: crates/relay/Dockerfile
+    image: lorca-relay:1.0.23
+    environment:
+      # Signs bearer tokens. Fixed, so a restart does not log every Device out.
+      LORCA_RELAY_SECRET: f65e22d1782f35d72845d1e18c0b0c86bf5327668111c218451799ffa8c2655c
+      # The image's default is [::]:${PORT:-8787}; this names the port the published mapping uses.
+      LORCA_RELAY_BIND: "[::]:18787"
+    ports:
+      # Loopback only. A phone or another computer needs an HTTPS name in front of it.
+      - "127.0.0.1:18787:18787"
+    volumes:
+      # The image runs in /data: lorca-relay.db and lorca-relay.files live here.
+      - relay-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:18787/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  runner:
+    build:
+      context: .
+      dockerfile: crates/cli/Dockerfile
+    image: lorca-cli:1.0.23
+    environment:
+      # The data directory: keys, credentials, chats, workspaces, and the local websocket token.
+      LORCA_HOME: /data
+      # No app on this computer to learn the relay from, so name it.
+      LORCA_RELAY_URL: http://relay:18787
+      # Away from the CLI's default, so a desktop app's own CLI on this computer cannot collide.
+      LORCA_PORT: "14862"
+      RUST_LOG: lorca=info
+    volumes:
+      - runner-data:/data
+    depends_on:
+      relay:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      # `lorca serve` answers "lorca" on / for this data directory's loopback.
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:14862/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  relay-data:
+  runner-data:

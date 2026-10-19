@@ -6,6 +6,12 @@ Commands:
 
 - `lorca tasks list` / `get <id>` / `create '<JSON>'` / `update '<JSON>'` / `run '<JSON>'` — [durable work](tasks.md), through the local service for mutations; `-` reads JSON from stdin. Encrypted records, receipts, and run journals share `lorca.sqlite3`, and interrupted claims require explicit recovery.
 
+## In a container
+
+`crates/cli/Dockerfile` builds the binary into a Debian image with `git`, `bash`, `ripgrep`, `node`/`npm`, `uv`, and the CA certificates a bot's tools, the provider clients, and the marketplace's `npx` and `uvx` plugins need. The root `compose.yaml` runs it as a Runner beside a relay, with `LORCA_HOME=/data` on a volume and `LORCA_PORT=14862`.
+
+A container has no systemd user session, so `lorca service install` refuses; `--restart` keeps the process running instead. The local websocket binds `127.0.0.1` inside the container and accepts only a loopback `Host`, which a published port does not carry, so a containerized CLI is reached by that container alone: a bot on it is driven from another Device through the relay, and its own `lorca` commands run with `docker compose exec`. A build from source is not self-updating (`update::SELF_UPDATING`), so a container is upgraded by building a new image.
+
 - `lorca serve` — the app connects here; `lorca` alone lists the commands and starts nothing, so a bot's `lorca` never starts a second service
 - `lorca identity new` / `identity restore <phrase>` / `identity show`
 - `lorca pair` — show a pairing string and wait; `lorca pair <string>` joins

@@ -2,6 +2,8 @@
 
 `crates/relay`: Rust, axum, rusqlite (bundled SQLite) or tokio-postgres. `lorca-relay --bind 127.0.0.1:8787 --db lorca-relay.db` (or `--db postgres://…`); `LORCA_RELAY_SECRET` signs bearer tokens (random per boot when unset); `--quota-bytes` (`LORCA_RELAY_QUOTA_BYTES`) caps stored ciphertext per identity, 0 for none.
 
+`crates/relay/Dockerfile` builds the image from the repo root, with `/data` as its working directory so a volume there keeps `lorca-relay.db` and `lorca-relay.files`. The root `compose.yaml` runs it with a CLI Runner beside it: ports 18787 and 14862, away from the defaults, and loopback-only, since a device on another computer needs an HTTPS name in front of the relay.
+
 Storage sits behind one trait (`Store` in `db.rs`) with two backends, picked by `--db` / `LORCA_RELAY_DB`: a path opens SQLite, a `postgres://` URL opens Postgres. All SQL lives in a backend; `routes.rs` only decides what to ask for. One suite (`db/tests.rs`) runs against both; Postgres joins when `LORCA_RELAY_TEST_POSTGRES` names a database.
 
 SQLite (`db/sqlite.rs`) is one WAL database (`synchronous = NORMAL`) behind a single writer connection and a pool of reader connections, one per core; every query runs on tokio's blocking pool. One relay process owns the file, so a deploy stops the old process before the new one starts, and the Devices reconnect after a few seconds.

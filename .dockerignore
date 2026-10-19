@@ -1,0 +1,17 @@
+# The images build from the Cargo workspace alone. Everything else is a client, a site, or
+# build output, and `target/` alone is several gigabytes.
+target/
+node_modules/
+mobile/
+desktop/
+web/
+docs/
+scripts/
+temp/
+.build/
+dist/
+.git/
+.DS_Store
+.env
+.env.local
+*.log
