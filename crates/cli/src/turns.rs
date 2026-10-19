@@ -1129,7 +1129,10 @@ async fn memory_flush(
     }
     let context = match turn {
         Some(turn) => {
+            // The notes the turn's requests end with, so the flush sees what memory and the
+            // profile already hold.
             let mut context_messages = messages.to_vec();
+            context_messages.extend(context_notes(app, bot, &chat.meta.id, now_secs() as i64).into_iter().map(|note| AgentMessage::User(UserMessage::text(note))));
             let prompt = memory_flush_prompt(Some(&compaction::describe_cut(&messages[skip + cut.first_kept])));
             context_messages.push(AgentMessage::User(UserMessage::text(prompt)));
             AgentContext { system_prompt: turn.system_prompt.clone(), messages: context_messages, tools: turn.tools.clone(), cache_points: turn.cache_points.clone() }
@@ -1138,15 +1141,12 @@ async fn memory_flush(
             // Only as much of the history as one request may carry: the newest of it.
             let chunk = compaction::chunk_by_tokens(history, settings.max_input_tokens).pop().unwrap_or(history);
             let store = MemoryStore::for_bot(&app.config.home, bot);
-            let index = store.load_index();
-            let mut system = format!("You are {}, a bot in Lorca, doing housekeeping on your own memory.\n", bot.name);
-            if !index.text.trim().is_empty() {
-                system.push_str(&format!("\nYour memory (MEMORY.md) so far:\n{}\n", index.text));
-            }
+            let system = format!("You are {}, a bot in Lorca, doing housekeeping on your own memory.\n", bot.name);
             let mut context_messages: Vec<AgentMessage> = messages[..skip].to_vec();
             context_messages.extend(chunk.iter().cloned());
             // The turn's thinking is bound to the turn's system prompt and tools, not this run's.
             drop_bound_thinking(provider.model_id(), &mut context_messages);
+            context_messages.extend(context_notes(app, bot, &chat.meta.id, now_secs() as i64).into_iter().map(|note| AgentMessage::User(UserMessage::text(note))));
             context_messages.push(AgentMessage::User(UserMessage::text(memory_flush_prompt(None))));
             AgentContext { system_prompt: system, messages: context_messages, tools: memory_tools(app, &store, chat), cache_points: Vec::new() }
         }
@@ -4347,7 +4347,9 @@ mod tests {
         assert_eq!(first.tools.iter().map(|tool| tool.name.clone()).collect::<Vec<_>>(), turn.tools.iter().map(|tool| tool.name().to_string()).collect::<Vec<_>>());
         assert_eq!(first.cache_points, vec![2]);
         assert_eq!(format!("{:?}", &first.messages[..4]), format!("{:?}", convert_with_compaction(&messages)));
-        let LlmMessage::User(instruction) = &first.messages[4] else { panic!("the instruction") };
+        // The turn's notes come after the transcript, as on its own requests, then the instruction.
+        assert!(format!("{:?}", &first.messages[4]).contains("[It is now"), "{:?}", first.messages[4]);
+        let LlmMessage::User(instruction) = first.messages.last().unwrap() else { panic!("the instruction") };
         let instruction = instruction.content[0].as_text().unwrap();
         assert!(instruction.contains("Everything before your message that begins \"On it.\""), "{instruction}");
         // The command never ran; the fact was saved.

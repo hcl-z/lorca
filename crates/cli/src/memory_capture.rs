@@ -118,10 +118,9 @@ pub fn runs(store: &MemoryStore) -> Vec<Run> {
     runs
 }
 
-/// The newest run, when it added something and the user has not undone it: what the apps offer
-/// to undo.
+/// The newest run that added something the user has not undone: what the apps offer to undo.
 pub fn latest(store: &MemoryStore) -> Option<Run> {
-    runs(store).into_iter().next().filter(|run| !run.undone && !run.added.is_empty())
+    runs(store).into_iter().find(|run| !run.undone && !run.added.is_empty())
 }
 
 fn save_run(store: &MemoryStore, run: &Run) -> Result<(), String> {
@@ -472,6 +471,12 @@ mod tests {
         assert!(latest(&store).is_none(), "an undone run is not offered again");
         assert!(crate::memory_check::check("the user ships on Fridays", &store).is_err(), "an undone fact is not proposed again");
         assert_eq!(undo(&store, "capture-1").unwrap(), 0);
+
+        // An older run stays undoable behind a newer one that added nothing or was undone.
+        let Change::Appended { line } = store.append_entry("the user drinks tea", Some("chat (noticed)"), 0).unwrap() else { panic!() };
+        save_run(&store, &Run { id: "capture-2".into(), bot_id: "b1".into(), chat_id: "c".into(), at: 2, added: vec![line], refused: Vec::new(), undone: false }).unwrap();
+        save_run(&store, &Run { id: "capture-3".into(), bot_id: "b1".into(), chat_id: "c".into(), at: 3, added: Vec::new(), refused: vec!["x — refused".into()], undone: false }).unwrap();
+        assert_eq!(latest(&store).map(|run| run.id), Some("capture-2".into()));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
