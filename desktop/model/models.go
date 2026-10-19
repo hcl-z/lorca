@@ -1305,6 +1305,52 @@ type BotMemory struct {
 	MaxBytes  int
 	Topics    []string
 	Logs      []string
+	// The account's profile of the user, which every bot on the Runner reads.
+	Profile Profile
+	// The newest capture run that was not undone, if there is one.
+	Capture *CaptureRun
+}
+
+// Profile is the account's PROFILE.md on a Runner: what every bot there knows about the user.
+type Profile struct {
+	Text      string
+	Hash      string
+	Lines     int
+	Bytes     int
+	Truncated bool
+	MaxLines  int
+	MaxBytes  int
+}
+
+// Empty reports whether the user has written nothing about themselves yet.
+func (p Profile) Empty() bool { return p.Text == "" }
+
+// CaptureRun is one pass of learning from a bot's quiet direct chat: the lines it added, and
+// the facts the write gate refused.
+type CaptureRun struct {
+	ID      string
+	At      int64
+	Added   []string
+	Refused []string
+	Undone  bool
+}
+
+// CaptureFacts is the facts of memory lines as a person reads them, without the bullet, the
+// date, or where each came from: "- 2026-10-19 · from chat with Nova · the user ships on
+// Fridays" is "the user ships on Fridays".
+func CaptureFacts(lines []string) []string {
+	facts := make([]string, 0, len(lines))
+	for _, line := range lines {
+		parts := strings.Split(strings.TrimPrefix(strings.TrimSpace(line), "- "), " · ")
+		if len(parts) > 1 && len(parts[0]) == len("2006-01-02") && parts[0][4] == '-' {
+			parts = parts[1:]
+		}
+		if len(parts) > 1 && strings.HasPrefix(parts[0], "from ") {
+			parts = parts[1:]
+		}
+		facts = append(facts, strings.Join(parts, " · "))
+	}
+	return facts
 }
 
 // BudgetSummary is "12 lines · 1.2 KB of 24 KB", or "Empty".

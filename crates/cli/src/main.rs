@@ -91,6 +91,19 @@ enum Command {
         #[usage(subcommand)]
         command: TasksCommand,
     },
+    /// What every bot on this computer knows about the user (PROFILE.md).
+    Profile {
+        #[usage(subcommand)]
+        command: ProfileCommand,
+    },
+    /// What a bot's next turn sends as its system prompt, section by section.
+    Prompt {
+        /// The bot's name or id.
+        bot: String,
+        /// The chat whose place, team, and skills apply; the bot's direct chat by default.
+        #[usage(long)]
+        chat: Option<String>,
+    },
     /// Update this computer's lorca to the latest release. `lorca serve` checks once a day and
     /// installs what it finds, then restarts into it once no bot is at work.
     Update {
@@ -324,6 +337,19 @@ enum McpCommand {
 }
 
 #[derive(Subcommands, Debug)]
+enum ProfileCommand {
+    /// The profile as every bot reads it, with its budget.
+    Show,
+    /// Replace the profile with the text of a file, or - for stdin. `--expect <hash>` refuses
+    /// when the file changed since that hash was read.
+    Edit {
+        file: Option<PathBuf>,
+        #[usage(long)]
+        expect: Option<String>,
+    },
+}
+
+#[derive(Subcommands, Debug)]
 enum ChatsCommand {
     /// List the chats: each one's id and bots, and a group's owner.
     List,
@@ -509,6 +535,8 @@ async fn main() -> anyhow::Result<()> {
         Command::Marketplace { command: MarketplaceCommand::Reload } => reload(&app, "marketplace.reload", lorca::marketplace::enable, "marketplace").await,
         Command::Models { command: ModelsCommand::Reload } => reload(&app, "models.reload", lorca::catalog::enable, "model catalog").await,
         Command::Chats { command } => chats(&app, command).await,
+        Command::Profile { command } => profile(&app, command),
+        Command::Prompt { bot, chat } => prompt(&app, &bot, chat.as_deref()).await,
         Command::Tasks { command } => tasks(&app, command).await,
         Command::Update { check, auto } => update(&app, check, auto).await,
         Command::Service { .. } | Command::Coding { .. } | Command::Traces { .. } => unreachable!(),
@@ -628,6 +656,51 @@ async fn tasks(app: &std::sync::Arc<App>, command: TasksCommand) -> anyhow::Resu
     };
     println!("{}", serde_json::to_string_pretty(&result)?);
     Ok(())
+}
+
+/// What a bot's next turn sends, section by section. Built on the bot's Runner, so a bot that
+/// runs elsewhere is asked there when it is online.
+async fn prompt(app: &std::sync::Arc<App>, name: &str, chat: Option<&str>) -> anyhow::Result<()> {
+    let (bots, chats) = {
+        let state = app.state.lock().unwrap();
+        (state.bots.clone(), state.chats.clone())
+    };
+    let bot = bots.into_iter().find(|bot| bot.id == name || bot.name.eq_ignore_ascii_case(name)).ok_or_else(|| anyhow::anyhow!("No bot {name}. `lorca status` lists them."))?;
+    let chat_id = match chat {
+        Some(chat) => Some(chats.into_iter().find(|c| c.meta.id == chat || c.meta.title.as_deref() == Some(chat)).map(|c| c.meta.id).ok_or_else(|| anyhow::anyhow!("No chat {chat}."))?),
+        None => None,
+    };
+    let params = serde_json::json!({ "bot_id": bot.id, "chat_id": chat_id });
+    let preview = lorca::api::dispatch(app, "bots.prompt", params).await.map_err(|message| anyhow::anyhow!(message))?;
+    println!("{}", serde_json::to_string_pretty(&preview)?);
+    Ok(())
+}
+
+/// What every bot on this computer knows about the user, read and written in place. Turns read
+/// the file at every request, so a running `lorca serve` sees an edit at its bots' next step.
+fn profile(app: &std::sync::Arc<App>, command: ProfileCommand) -> anyhow::Result<()> {
+    let store = lorca::profile::store(&app.config.home);
+    match command {
+        ProfileCommand::Show => {
+            let overview = lorca::profile::overview(&store);
+            println!("{}", serde_json::to_string_pretty(&overview)?);
+            Ok(())
+        }
+        ProfileCommand::Edit { file, expect } => {
+            let text = match file.as_deref() {
+                Some(path) => std::fs::read_to_string(path).map_err(|e| anyhow::anyhow!("Cannot read {}: {e}", path.display()))?,
+                None => {
+                    use std::io::Read;
+                    let mut text = String::new();
+                    std::io::stdin().read_to_string(&mut text).map_err(|e| anyhow::anyhow!("Cannot read stdin: {e}"))?;
+                    text
+                }
+            };
+            let hash = store.write_index(&text, expect.as_deref()).map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            println!("Saved the profile ({}).", hash);
+            Ok(())
+        }
+    }
 }
 
 /// Names groups and bots as the apps show them. A change goes through the running service

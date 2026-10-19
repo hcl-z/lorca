@@ -110,6 +110,8 @@ pub enum Check {
     Limits,
     Feedback,
     Access,
+    /// A command or file tool that would change memory, which only `memory_update` may do.
+    Memory,
     CodingReview,
     PluginReview,
     AutoReview,

@@ -49,6 +49,10 @@ func TestRenderBotSheets(t *testing.T) {
 		{"sheet-routine", func(m *mainWindow) { m.presentRoutine("rt-reviews", store.Bot("bot-nova"), nil) }},
 		{"sheet-routine-plain", func(m *mainWindow) { m.presentRoutine("rt-checklist", store.Bot("bot-nova"), nil) }},
 		{"sheet-memory", func(m *mainWindow) { m.presentMemory(store.Bot("bot-nova"), demoMemory(t, "bot-nova"), nil) }},
+		{"sheet-profile", func(m *mainWindow) {
+			m.presentProfile("dev-mac", "Studio Mac", model.Profile{Text: "- 2026-09-17 · the user prefers short replies\n", Hash: "h", Lines: 1, Bytes: 44, MaxLines: 120, MaxBytes: 8_000}, nil)
+		}},
+		{"sheet-prompt", func(m *mainWindow) { m.presentPrompt(store.Bot("bot-nova"), "") }},
 		{"sheet-newgroup", func(m *mainWindow) { m.presentNewGroupChat(nil) }},
 		{"sheet-botpicker", func(m *mainWindow) {
 			m.presentBotPicker(L("Add a bot to %@", "Launch copy"), []*model.Bot{store.Bot("bot-patch"), store.Bot("bot-ember")}, nil)

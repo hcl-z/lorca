@@ -618,6 +618,48 @@ type WireBotMemory struct {
 	} `json:"index"`
 	Topics []string `json:"topics"`
 	Logs   []string `json:"logs"`
+	// The account's profile of the user, on the same Runner.
+	Profile *WireProfile `json:"profile"`
+	// The newest capture run that added facts and was not undone.
+	Capture *struct {
+		ID      string   `json:"id"`
+		At      int64    `json:"at"`
+		Added   []string `json:"added"`
+		Refused []string `json:"refused"`
+		Undone  bool     `json:"undone"`
+	} `json:"capture"`
+}
+
+// WirePrompt is `bots.prompt`: a bot's system prompt as named sections, with the notes a turn
+// sends after the transcript.
+type WirePrompt struct {
+	BotID        string `json:"bot_id"`
+	ChatID       string `json:"chat_id"`
+	TotalBytes   int    `json:"total_bytes"`
+	ApproxTokens int    `json:"approx_tokens"`
+	Sections     []struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+		Text  string `json:"text"`
+		Bytes int    `json:"bytes"`
+	} `json:"sections"`
+	Notes      []string `json:"notes"`
+	NotesBytes int      `json:"notes_bytes"`
+}
+
+// WireProfile is `profile`: the account's PROFILE.md on one Runner, with its load budget.
+type WireProfile struct {
+	Text      string `json:"text"`
+	Hash      string `json:"hash"`
+	Lines     int    `json:"lines"`
+	Bytes     int    `json:"bytes"`
+	Truncated bool   `json:"truncated"`
+	MaxLines  int    `json:"max_lines"`
+	MaxBytes  int    `json:"max_bytes"`
+}
+
+func (w WireProfile) profile() Profile {
+	return Profile{Text: w.Text, Hash: w.Hash, Lines: w.Lines, Bytes: w.Bytes, Truncated: w.Truncated, MaxLines: w.MaxLines, MaxBytes: w.MaxBytes}
 }
 
 type WirePairStart struct {
@@ -1309,6 +1351,12 @@ func ToBotMemory(wire WireBotMemory) BotMemory {
 	if index := wire.Index; index != nil {
 		memory.Text, memory.Hash, memory.Lines, memory.Bytes, memory.Truncated = index.Text, index.Hash, index.Lines, index.Bytes, index.Truncated
 		memory.MaxLines, memory.MaxBytes = index.MaxLines, index.MaxBytes
+	}
+	if profile := wire.Profile; profile != nil {
+		memory.Profile = profile.profile()
+	}
+	if capture := wire.Capture; capture != nil {
+		memory.Capture = &CaptureRun{ID: capture.ID, At: capture.At, Added: capture.Added, Refused: capture.Refused, Undone: capture.Undone}
 	}
 	return memory
 }

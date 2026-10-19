@@ -2322,6 +2322,105 @@ func (s *Store) WriteBotMemory(id, text, expectedHash string, done func(string, 
 	}, done)
 }
 
+// ReadProfile reads the account's PROFILE.md on a Runner.
+func (s *Store) ReadProfile(runnerID string, done func(Profile, error)) {
+	if s.IsMock {
+		s.post(func() { done(Profile{MaxLines: 120, MaxBytes: 8000}, nil) })
+		return
+	}
+	Async(s, func() (Profile, error) {
+		wire, err := call[WireProfile](s, "profile", map[string]any{"runner_id": runnerID})
+		return wire.profile(), err
+	}, done)
+}
+
+// WriteProfile replaces the account's PROFILE.md on a Runner. With an expected hash, the write
+// is refused when the file changed since it was read.
+func (s *Store) WriteProfile(runnerID, text, expectedHash string, done func(string, error)) {
+	if s.IsMock {
+		s.post(func() { done("mock", nil) })
+		return
+	}
+	params := map[string]any{"runner_id": runnerID, "text": text}
+	if expectedHash != "" {
+		params["expected_hash"] = expectedHash
+	}
+	Async(s, func() (string, error) {
+		reply, err := call[struct {
+			Hash string `json:"hash"`
+		}](s, "profile.write", params)
+		return reply.Hash, err
+	}, done)
+}
+
+// UndoCapture removes the lines a capture run added, and marks the run undone.
+func (s *Store) UndoCapture(botID, runID string, done func(error)) {
+	if s.IsMock {
+		s.post(func() { done(nil) })
+		return
+	}
+	Async(s, func() (struct{}, error) {
+		_, err := call[struct {
+			Removed int `json:"removed"`
+		}](s, "memory_capture.undo", map[string]any{"bot_id": botID, "run_id": runID})
+		return struct{}{}, err
+	}, func(_ struct{}, err error) { done(err) })
+}
+
+// BotPrompt is a bot's system prompt as its Runner builds it for a chat, section by section,
+// and the notes a turn sends after the transcript.
+type BotPrompt struct {
+	BotID        string
+	ChatID       string
+	Sections     []PromptSection
+	TotalBytes   int
+	ApproxTokens int
+	Notes        []string
+	NotesBytes   int
+}
+
+// PromptSection is one named part of the prompt.
+type PromptSection struct {
+	ID    string
+	Title string
+	Text  string
+	Bytes int
+}
+
+// Text is the whole prompt and its notes, for copying.
+func (p BotPrompt) Text() string {
+	var parts []string
+	for _, section := range p.Sections {
+		parts = append(parts, strings.TrimSpace(section.Text))
+	}
+	parts = append(parts, p.Notes...)
+	return strings.Join(parts, "\n\n")
+}
+
+// Prompt reads the prompt a bot's next turn would send.
+func (s *Store) Prompt(botID, chatID string, done func(BotPrompt, error)) {
+	if s.IsMock {
+		s.post(func() {
+			done(BotPrompt{BotID: botID, ChatID: chatID, TotalBytes: 1200, ApproxTokens: 300, Sections: []PromptSection{
+				{ID: "identity", Title: "Identity", Text: "You are Nova, a bot in Lorca.", Bytes: 29},
+				{ID: "memory", Title: "Memory", Text: "Memory: your notes live in ~/.lorca/memory/bot-nova.", Bytes: 52},
+			}, Notes: []string{"[It is now Monday 2026-10-19, 15:35 local time on your Runner.]"}, NotesBytes: 64}, nil)
+		})
+		return
+	}
+	Async(s, func() (BotPrompt, error) {
+		wire, err := call[WirePrompt](s, "bots.prompt", map[string]any{"bot_id": botID, "chat_id": chatID})
+		if err != nil {
+			return BotPrompt{}, err
+		}
+		prompt := BotPrompt{BotID: wire.BotID, ChatID: wire.ChatID, TotalBytes: wire.TotalBytes, ApproxTokens: wire.ApproxTokens, Notes: wire.Notes, NotesBytes: wire.NotesBytes}
+		for _, section := range wire.Sections {
+			prompt.Sections = append(prompt.Sections, PromptSection{ID: section.ID, Title: section.Title, Text: section.Text, Bytes: section.Bytes})
+		}
+		return prompt, nil
+	}, done)
+}
+
 func (s *Store) RetryNote(chatID string) string { return s.retryNotes[chatID] }
 
 func (s *Store) IsThinking(botID, chatID string) bool { return s.thinkingBots[chatID] == botID }

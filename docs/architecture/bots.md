@@ -1,4 +1,4 @@
-# Bots and Memory
+# Bots
 
 ## Bot profiles
 
@@ -63,25 +63,11 @@ A workflow adds the routines it needs paused, and `routines.set_enabled` keeps o
 
 ## Memory
 
-A bot made from a [template](templates.md#import) gets a DM, the template's memories as its `MEMORY.md`, and its routines paused, and runs no turn or routine check; the user turns routines on from the inspector.
+A bot keeps a curated long-term memory on its Runner, learns from quiet chats, and shares the account's profile of the user: [Memory](memory.md) has the files, the write gate, the capture, and the profile.
 
-Reusable procedures are [skills](skills.md): folders with a `SKILL.md`, a bot's beside its memory in `~/.lorca/workspaces/<bot id>/skills/`, a group's under `~/.lorca/groups/<chat id>/skills/`, and the ones every bot uses under `~/.lorca/skills/`. Every turn lists them, and a bot reads one with `read` when it fits.
+Reusable procedures are [skills](skills.md): folders with a `SKILL.md`, a bot's beside its workspace in `~/.lorca/workspaces/<bot id>/skills/`, a group's under `~/.lorca/groups/<chat id>/skills/`, and the ones every bot uses under `~/.lorca/skills/`. Every turn lists them, and a bot reads one with `read` when it fits.
 
-Groups also keep [shared project context](project-context.md): a current brief, goals, constraints, decisions, references, and assets with provenance and freshness. Every assigned member receives that group's bounded index and reads full entries with `project_context`. Corrections and source refreshes survive transcript compaction. Selection is the current group id and membership, while each bot retains its own memory below.
-
-Every bot keeps its own long-term memory on its Runner, in Grok Bot's shape of a curated profile over append-only logs, as plain markdown under `~/.lorca/workspaces/<bot id>/` (keyed by id, so a rename or a changed working directory never moves it; `crates/cli/src/memory.rs`):
-
-- `MEMORY.md` is the curated memory. Its first 200 lines or 24 KB, whichever cuts first, open in every turn's system prompt; past that nothing loads, and the prompt tells the bot how much is cut off and asks it to consolidate. The bot writes it only through `memory_update`, one dated entry per call (`- 2026-09-17 · from your chat with the user · the user prefers short replies`), never a whole-file write, so two of its turns cannot clobber each other: `append` adds a fact (an exact duplicate is refused), `replace` rewrites one unique passage, `supersede` strikes the old entry through with a date and adds the new fact so the file shows what changed, `remove` deletes a passage.
-- `memory/<topic>.md` files hold longer notes the bot reads with `read` when it needs them; the prompt lists their names.
-- `memory/log/YYYY-MM-DD.md` is the bot's diary: what happened, not what is true. The Runner appends one line per finished turn (`- 09:05 · in group "Standup" · said "Sent the three flagged invoices…" · used bash, edit`), and the bot adds events with `memory_log`. Logs are never loaded into a prompt; `recall` finds them.
-
-Every write is atomic and goes through a credential scrubber first (API keys, AWS and GitHub tokens, bearer tokens, JWTs, private key blocks, `password: …` values become `«redacted N chars»`), since memory is bot-authored as often as person-authored.
-
-Two things keep a bot's chats from being islands, after OpenMausBot. Every turn carries a **recent-work brief**, a bracketed note after the transcript: the newest thing the bot said in each of its *other* chats over the last two days, at most ten lines and about 350 tokens, newest first (`- today 09:05 · group "Standup" · you said: "…"`), so a bot in a group knows what it did in its DM an hour ago without the transcript. It stays out of the system prompt, which it would change each time the bot speaks elsewhere, costing the chat its prompt cache. And `recall` searches the memory files and every chat the bot is in by words and by time, naming the chat and the speaker of each hit.
-
-Before a compaction summarizes part of a chat, a silent **memory flush** turn runs over the messages about to be cut, with a prompt to save what is durable and not yet in memory, and only `memory_update` and `memory_log` run; nothing it says reaches the chat, a failure or a two-minute timeout is logged and the compaction goes ahead (`LORCA_MEMORY_FLUSH=0` turns it off). A compaction of a turn's own context (before the turn, or between its model calls) asks the flush as that turn's next request: the turn's system prompt, tools, and every message, then the prompt naming the message the kept part starts with, so the provider's prompt cache serves the context, and the hooks refuse every tool but the two. Any other compaction asks it as a request of its own, with only those two tools, over the newest of the history one request may carry. This is what keeps a fact from being lost because it was only ever said in conversation.
-
-The desktop app's DM inspector shows the bot's memory (`bots.memory`): the index against its load budget, an editor (`bots.memory.write`, refused with the bot's current text when the file changed under the editor, then Reload or Overwrite), and a Show button for the folder. For a bot on another Runner the CLI asks that Runner through the relay (a `request` / `response` pair, see [Protocols](protocols.md)), so the same rows read and edit it; only the folder cannot be opened, and an offline Runner shows as such with a Retry. The phone shows no memory yet.
+Groups also keep [shared project context](project-context.md): a current brief, goals, constraints, decisions, references, and assets with provenance and freshness. Every assigned member receives that group's bounded index and reads full entries with `project_context`. Corrections and source refreshes survive transcript compaction. Selection is the current group id and membership, while each bot retains its own memory.
 
 A routine can have [limits](budgets.md): its runs and checks, scheduled or started by hand, count toward them together. Once it reaches one it stops until the user resumes it from the routine sheet's Limits row, after raising the limit or with the limits granted again in full.
 

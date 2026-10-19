@@ -132,17 +132,28 @@ pub fn format_skill_invocation(skill: &Skill, additional_instructions: Option<&s
 /// The system prompt block listing the skills the model may read, in agentskills.io's shape.
 /// Empty when no skill is model-visible.
 pub fn format_skills_for_system_prompt(skills: &[Skill]) -> String {
+    let block = format_skills_block(skills);
+    if block.is_empty() {
+        return block;
+    }
+    [
+        "The following skills provide specialized instructions for specific tasks.",
+        "Read the full skill file when the task matches its description.",
+        "When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.",
+        "",
+        &block,
+    ]
+    .join("\n")
+}
+
+/// The `<available_skills>` list alone, for a prompt that says how to use skills in its own words.
+/// Empty when no skill is model-visible.
+pub fn format_skills_block(skills: &[Skill]) -> String {
     let visible: Vec<&Skill> = skills.iter().filter(|s| !s.disable_model_invocation).collect();
     if visible.is_empty() {
         return String::new();
     }
-    let mut lines = vec![
-        "The following skills provide specialized instructions for specific tasks.".to_string(),
-        "Read the full skill file when the task matches its description.".to_string(),
-        "When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.".to_string(),
-        String::new(),
-        "<available_skills>".to_string(),
-    ];
+    let mut lines = vec!["<available_skills>".to_string()];
     for skill in visible {
         lines.push("  <skill>".into());
         lines.push(format!("    <name>{}</name>", escape_xml(&skill.name)));

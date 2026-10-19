@@ -120,6 +120,8 @@ async fn answer(app: &Arc<App>, from: &str, request: &Request) -> Result<Value, 
             let text = body["text"].as_str().ok_or("missing text")?;
             memory_write(app, body["bot_id"].as_str().ok_or("missing bot_id")?, text, body["expected_hash"].as_str())
         }
+        // The account's profile on this Runner, and a bot's prompt preview and capture runs.
+        "profile.read" | "profile.write" | "bots.prompt" | "memory_capture.list" | "memory_capture.undo" => answer_here(app, &request.verb, body),
         verb if verb.starts_with("feedback.") => crate::feedback::serve(app, verb, body, from).await,
         #[cfg(feature = "runner")]
         verb if verb.starts_with("plugins.") || verb == "permission.answer" || verb == "permissions.catalog" => crate::plugins::serve_request(app, verb, body, Some(from)).await,
@@ -169,10 +171,18 @@ async fn answer(app: &Arc<App>, from: &str, request: &Request) -> Result<Value, 
     }
 }
 
-/// A bot's memory as this Runner has it: the index with its budget and the other files by name.
+/// A bot's memory as this Runner has it: the index with its budget and the other files by name,
+/// with the account's profile and the newest capture run, which the inspector shows beside it.
 pub fn memory_read(app: &Arc<App>, bot_id: &str) -> Result<Value, String> {
     let bot = local_bot(app, bot_id)?;
-    Ok(MemoryStore::for_bot(&app.config.home, &bot).overview())
+    let store = MemoryStore::for_bot(&app.config.home, &bot);
+    let mut overview = store.overview();
+    overview["profile"] = crate::profile::overview(&crate::profile::store(&app.config.home));
+    #[cfg(feature = "runner")]
+    {
+        overview["capture"] = crate::memory_capture::latest(&store).map(|run| json!(run)).unwrap_or(Value::Null);
+    }
+    Ok(overview)
 }
 
 /// Replaces a bot's MEMORY.md on this Runner, refusing when it changed since `expected_hash`.
@@ -180,6 +190,41 @@ pub fn memory_write(app: &Arc<App>, bot_id: &str, text: &str, expected_hash: Opt
     let bot = local_bot(app, bot_id)?;
     let hash = MemoryStore::for_bot(&app.config.home, &bot).write_index(text, expected_hash).map_err(|e| e.to_string())?;
     Ok(json!({ "hash": hash }))
+}
+
+/// Replaces the account's profile on this Runner, refusing when it changed since `expected_hash`.
+pub fn profile_write(app: &Arc<App>, text: &str, expected_hash: Option<&str>) -> Result<Value, String> {
+    let store = crate::profile::store(&app.config.home);
+    let hash = store.write_index(text, expected_hash).map_err(|e| e.to_string())?;
+    Ok(json!({ "hash": hash }))
+}
+
+/// The verbs about what lives on this Runner that the local API and the relay answer alike: the
+/// profile, a bot's prompt preview, and its memory capture runs. A bot verb checks the bot runs
+/// here.
+pub fn answer_here(app: &Arc<App>, verb: &str, body: &Value) -> Result<Value, String> {
+    match verb {
+        "profile.read" => Ok(crate::profile::overview(&crate::profile::store(&app.config.home))),
+        "profile.write" => profile_write(app, body["text"].as_str().ok_or("missing text")?, body["expected_hash"].as_str()),
+        #[cfg(feature = "runner")]
+        "bots.prompt" => {
+            let bot = local_bot(app, body["bot_id"].as_str().ok_or("missing bot_id")?)?;
+            crate::turns::prompt_preview(app, &bot.id, body["chat_id"].as_str())
+        }
+        #[cfg(feature = "runner")]
+        "memory_capture.list" => {
+            let bot = local_bot(app, body["bot_id"].as_str().ok_or("missing bot_id")?)?;
+            Ok(json!({ "runs": crate::memory_capture::runs(&MemoryStore::for_bot(&app.config.home, &bot)) }))
+        }
+        #[cfg(feature = "runner")]
+        "memory_capture.undo" => {
+            let bot = local_bot(app, body["bot_id"].as_str().ok_or("missing bot_id")?)?;
+            let run_id = body["run_id"].as_str().ok_or("missing run_id")?;
+            let removed = crate::memory_capture::undo(&MemoryStore::for_bot(&app.config.home, &bot), run_id)?;
+            Ok(json!({ "removed": removed }))
+        }
+        other => Err(format!("Unknown request {other}")),
+    }
 }
 
 fn local_bot(app: &Arc<App>, bot_id: &str) -> Result<crate::model::Bot, String> {

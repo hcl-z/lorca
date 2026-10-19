@@ -20,7 +20,7 @@ pub use hooks::{
     AfterToolDecision, BeforeToolDecision, BlockedTool, CompactionDecision, CompactionReason, HarnessHooks, HookRegistry,
     RequestStep, Resources,
 };
-pub use skills::{format_skill_invocation, format_skills_for_system_prompt, load_skills, LoadedSkills, Skill, SkillDiagnostic};
+pub use skills::{format_skill_invocation, format_skills_block, format_skills_for_system_prompt, load_skills, LoadedSkills, Skill, SkillDiagnostic};
 pub use system_prompt::{build_system_prompt, SystemPromptParts};
 pub use templates::{
     format_prompt_template_invocation, load_prompt_templates, parse_command_args, substitute_args, LoadedTemplates, PromptTemplate,

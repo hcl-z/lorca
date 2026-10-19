@@ -51,7 +51,7 @@ pub fn memory_dir(app: &App, bot_id: &str) -> Result<PathBuf, String> {
         return Err("The bot id is not a workspace directory name.".into());
     }
     let root = app.config.home.canonicalize().map_err(|e| e.to_string())?;
-    let dir = root.join("workspaces").join(bot_id);
+    let dir = crate::memory::root(&root).join(bot_id);
     regular_directories(&root, &dir)?;
     Ok(dir)
 }
