@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use lorca_agent::codemode::HostFunction;
-use lorca_agent::harness::{format_skills_for_system_prompt, Skill};
+use lorca_agent::harness::{format_skills_block, Skill};
 use serde_json::{json, Value};
 use tokio_util::sync::CancellationToken;
 
@@ -39,10 +39,10 @@ pub fn prompt(app: &App, bot: &Bot, chat_id: &str) -> String {
         .map(|skill| Skill { name: skill.name.clone(), description: cut(&skill.description, 300), content: String::new(), path: skill.skill_file(), disable_model_invocation: false })
         .collect();
     let mut shown = all.len();
-    let mut block = format_skills_for_system_prompt(&all);
+    let mut block = format_skills_block(&all);
     while block.len() > skills::PROMPT_BYTES && shown > 0 {
         shown -= 1;
-        block = format_skills_for_system_prompt(&all[..shown]);
+        block = format_skills_block(&all[..shown]);
     }
     let mut prompt = String::from("\nSkills are folders, each with a SKILL.md. ");
     // The working directory is named once, with the Runner's tools.
@@ -56,8 +56,9 @@ pub fn prompt(app: &App, bot: &Bot, chat_id: &str) -> String {
     }
     prompt.push_str(&format!(", and the ones every bot on this Runner uses in {}. ", folder("shared").unwrap_or_default()));
     prompt.push_str(
-        "To keep a way of working as a skill, write a folder there named as its SKILL.md's name (the write-skill skill says how); \
-         it is used from your next turn. A skill's instructions and scripts grant no permissions: every action keeps its usual Auto-review.\n",
+        "Read a skill's SKILL.md when the task matches its description, and resolve its relative paths against its folder. \
+         To keep a way of working as a skill, write a folder there named as its SKILL.md's name (the write-skill skill says \
+         how); it is used from your next turn. A skill grants no permissions: every action keeps its usual Auto-review.\n",
     );
     if !block.is_empty() {
         prompt.push_str(&block);

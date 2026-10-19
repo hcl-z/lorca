@@ -124,9 +124,10 @@ impl Tool for EditTool {
         "edit"
     }
     fn description(&self) -> &str {
-        "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the \
-         original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting \
-         overlapping edits. Do not include large unchanged regions just to connect distant changes."
+        "Edit a single file using exact text replacement; put every change to one file in one call. Every edits[].oldText must \
+         match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, \
+         merge them into one edit instead of emitting overlapping edits. Keep each oldText as small as is unique; do not \
+         include large unchanged regions just to connect distant changes."
     }
     fn parameters(&self) -> Value {
         json!({

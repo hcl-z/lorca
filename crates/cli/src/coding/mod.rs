@@ -1121,6 +1121,10 @@ async fn approve(app: &Arc<App>, agent: &Arc<Agent>, approval: Approval) -> Resu
     let auto_review = app.auto_review().is_enabled;
     let (tool, description, args, question) = match &approval {
         Approval::Command { command } => {
+            // Memory is the bot's, and only memory_update writes it.
+            if crate::local_review::writes_memory_root(app, command, &folder) {
+                return Err("Memory is changed only with memory_update, never by a command. Do not retry it.".into());
+            }
             // An agent holding saved secrets has each command reviewed, knowing which: any of
             // them can read its environment.
             if auto_review && record.secrets.is_empty() && crate::local_review::needs_no_review(app, command, &folder) {
@@ -1137,6 +1141,9 @@ async fn approve(app: &Arc<App>, agent: &Arc<Agent>, approval: Approval) -> Resu
             ("bash", description, json!({ "command": command }), question)
         }
         Approval::Files { paths } => {
+            if paths.iter().any(|path| crate::local_review::path_writes_memory_root(app, path, &folder)) {
+                return Err("Memory is changed only with memory_update, never by editing its files. Do not retry it.".into());
+            }
             let inside = |path: &String| {
                 let path = Path::new(path);
                 let path = if path.is_absolute() { path.to_path_buf() } else { folder.join(path) };

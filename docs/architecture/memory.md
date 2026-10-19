@@ -1,0 +1,49 @@
+# Memory
+
+What a bot keeps between chats, where it lives, and what may write it.
+
+## A bot's memory
+
+Every bot keeps its own long-term memory on its Runner, in Grok Bot's shape of a curated profile over append-only logs, as plain markdown under `~/.lorca/memory/<bot id>/` (keyed by id, so a rename or a changed working directory never moves it; `crates/cli/src/memory.rs`). Memory sits outside the bot's working directory on purpose. `turns::memory_write_guard` refuses, as the `memory` check in a turn's trace, a `write` or `edit` that names a path in it and a shell command that is not read-only and names one: by absolute path, `~` or `$HOME`, a relative path from the working directory or from any folder the command `cd`s to, or `memory/` right after a variable it cannot expand (`$LORCA_HOME/memory`). The shell review checks the same again for a codemode script's commands, and a coding agent's commands and file edits are held to it too. `memory_update` and `profile_update` are therefore the only writers, so the guarantees below cannot be bypassed by a bot's own tools; this is a policy check on what a command names, not a sandbox. A bot whose memory still sits in `workspaces/<id>/` has it moved once on the first start, index and `memory/` tree each moved on its own (renamed, or copied then removed across volumes); a part that fails stays in place and is retried on the next start.
+
+- `MEMORY.md` is the curated memory. Its first 200 lines or 24 KB, whichever cuts first, open in every turn, in the note after the transcript rather than in the system prompt, so a fact saved mid-turn does not invalidate the provider's cached prefix ([Turn context](turn-context.md#the-system-prompt)). Past that nothing loads, and the note tells the bot how much is cut off and asks it to consolidate. The bot writes it only through `memory_update`, one dated entry per call (`- 2026-09-17 · from your chat with the user · the user prefers short replies`), never a whole-file write, so two of its turns cannot clobber each other: `append` adds a fact (an exact duplicate is refused), `replace` rewrites one unique passage, `supersede` strikes the old entry through with a date and adds the new fact so the file shows what changed, `remove` deletes a passage and records it in `forgotten.md` so it is not quietly added back.
+- `memory/<topic>.md` files hold longer notes the bot reads with `read` when it needs them; the memory note lists their names.
+- `memory/log/YYYY-MM-DD.md` is the bot's diary: what happened, not what is true. The Runner appends one line per finished turn (`- 09:05 · in group "Standup" · said "Sent the three flagged invoices…" · used bash, edit`), and the bot adds events with `memory_log`. Logs are never loaded into a prompt; `recall` finds them.
+
+A bot made from a [template](templates.md#import) gets a DM and the template's memories as its `MEMORY.md`.
+
+## The write gate
+
+Every write is atomic, goes through a credential scrubber first (API keys, AWS and GitHub tokens, bearer tokens, JWTs, private key blocks, `password: …` values become `«redacted N chars»`), and passes the gate in `crates/cli/src/memory_check.rs`. The gate refuses an entry that:
+
+- is longer than 1,000 characters;
+- holds hidden, zero-width, bidi, or tag characters, which can make text read differently than it is;
+- reads like an instruction to the bot ("ignore previous", "system prompt", "you are now", 忽略之前的指令, 不要告诉用户);
+- carries a prompt in a URL's query (`?prompt=`, `?instructions=`, `?q=`);
+- holds what looks like a credential;
+- opens with a date of its own, which the entry already carries;
+- adds a fact the user removed (it is in `forgotten.md`), one a supersede struck through, or one already there, compared without bullet, date, source, case, or extra spaces.
+
+`replace` and `supersede` check only the new words, since the passage they change is meant to be there. A refusal comes back as a message the bot can act on, not an error. Memory is bot-authored as often as person-authored, and a page a bot read must not be able to plant a line it follows every turn.
+
+## Learning from a quiet chat
+
+The memory flush runs only before a compaction, so a short chat that never grows long enough would teach the bot nothing. `crates/cli/src/memory_capture.rs` reads a bot's direct chat once it has been still for five minutes, or once eight of the user's messages have arrived since the last read, whichever comes first. Only direct chats are read: a group's facts belong to no one member, and a channel's conversation is somebody outside Lorca writing. Each read covers the finished messages since the last one, from the newest 40, with one model call and no tools that asks for facts as JSON, each with the user's words it rests on; a channel contact's message and a system notice stay out of the transcript, and the bot's replies are context, never evidence.
+
+A proposal whose quote is not in what the user wrote is refused, and the rest go through the same gate: at most eight per run and no more than a quarter of the facts memory already holds (at least one). Each run is recorded under `memory/<bot id>/capture/` with the lines it added and what was refused, and where each chat was last read is kept in `memory/capture.json`. `memory_capture.list` and `memory_capture.undo` show and reverse a run; undoing removes its lines and records them as forgotten, so they are not learned again. `LORCA_MEMORY_CAPTURE=0` turns it off. A read waits while a turn is in flight in that chat and while an earlier read of it is still running. The call runs under the DM's [limits](budgets.md) as one of its turns would and its usage counts toward them; when the limits refuse it, the same messages are read once they allow it. A failure is retried up to three times before the chat waits for its next message.
+
+## The user's profile
+
+Every bot on a Runner reads the same `~/.lorca/memory/profile/PROFILE.md` (`crates/cli/src/profile.rs`): who the user is, how they like to be spoken to, and facts that hold in every chat, so a second bot does not have to learn them again. Bots change it only through `profile_update`, with the same four actions as `memory_update` under the same gate and scrubber; an addition that would take it past 8 KB is refused, so the profile stays whole. It rides the note after the transcript under a 120-line / 8 KB budget, framed as information about the person rather than instructions, and the system prompt only says what it is and how to add to it.
+
+The user edits it from a bot's inspector (About you) or with `lorca profile edit` (stdin or a file, with `--expect <hash>` to refuse a stale write), and `lorca profile show` prints it with its budget. `profile` / `profile.write` are the app API and take a `runner_id`, this Runner by default; for another Runner the CLI asks it with the sealed `profile.read` / `profile.write` requests. It belongs to the Runner, not the account: a bot moved to another Runner starts from that Runner's profile.
+
+## Across chats
+
+Two things keep a bot's chats from being islands, after OpenMausBot. Every turn carries a **recent-work brief**, a bracketed note after the transcript: the newest thing the bot said in each of its *other* chats over the last two days, at most ten lines and about 350 tokens, newest first (`- today 09:05 · group "Standup" · you said: "…"`), so a bot in a group knows what it did in its DM an hour ago without the transcript. It stays out of the system prompt, which it would change each time the bot speaks elsewhere, costing the chat its prompt cache. And `recall` searches the memory files and every chat the bot is in by words and by time, naming the chat and the speaker of each hit.
+
+Before a compaction summarizes part of a chat, a silent **memory flush** turn runs over the messages about to be cut, with a prompt to save what is durable and not yet in memory, and only `memory_update`, `memory_log`, and `profile_update` run; nothing it says reaches the chat, a failure or a two-minute timeout is logged and the compaction goes ahead (`LORCA_MEMORY_FLUSH=0` turns it off). A compaction of a turn's own context (before the turn, or between its model calls) asks the flush as that turn's next request: the turn's system prompt, tools, and every message, then the prompt naming the message the kept part starts with, so the provider's prompt cache serves the context, and the hooks refuse every tool but those. Any other compaction asks it as a request of its own, with only those tools, over the newest of the history one request may carry. This is what keeps a fact from being lost because it was only ever said in conversation.
+
+## In the apps
+
+The desktop app's DM inspector shows the bot's memory (`bots.memory`): the index against its load budget, an editor (`bots.memory.write`, refused with the bot's current text when the file changed under the editor, then Reload or Overwrite), a Show button for the folder, and the newest capture run that added facts, while it is not undone: Undo… lists its facts and forgets them on the user's word. Its own About you section edits the profile on the bot's Runner, with the same Reload or Overwrite on a conflict. The Bot tab's This chat section has Prompt, which shows what the bot's next turn sends in that chat (`bots.prompt`, `lorca prompt <bot>`): each section of the system prompt with its size, then the notes after the transcript, with Copy. For a bot on another Runner the CLI asks that Runner through the relay (a `request` / `response` pair, see [Protocols](protocols.md)), so the same rows work; only the folder cannot be opened, and an offline Runner shows as such with a Retry. The phone shows no memory or profile yet.

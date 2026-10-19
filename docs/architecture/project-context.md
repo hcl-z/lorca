@@ -1,6 +1,6 @@
 # Shared project context
 
-A project is an existing group chat: its id is `ChatMeta.id`, its assigned bots are `ChatMeta.bot_ids`, and its owner is `owner_bot_id`. `crates/cli/src/project_context.rs` stores the group's shared brief, goals, constraints, decisions, facts, document links, and reference assets outside its transcript. A transcript compaction leaves this content intact. Each bot keeps its own [private memory](bots.md#memory).
+A project is an existing group chat: its id is `ChatMeta.id`, its assigned bots are `ChatMeta.bot_ids`, and its owner is `owner_bot_id`. `crates/cli/src/project_context.rs` stores the group's shared brief, goals, constraints, decisions, facts, document links, and reference assets outside its transcript. A transcript compaction leaves this content intact. Each bot keeps its own [private memory](memory.md).
 
 ## Scope and discovery
 

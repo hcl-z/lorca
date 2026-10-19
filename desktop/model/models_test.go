@@ -296,3 +296,11 @@ func TestOrderedModelIDs(t *testing.T) {
 	checklist.DefaultID = ""
 	expect(t, checklist.OrderedIDs(), []string{"a", "c", "d"})
 }
+
+func TestCaptureFactsDropTheDateAndSource(t *testing.T) {
+	expect(t, CaptureFacts([]string{
+		"- 2026-10-19 · from chat with Nova (noticed) · the user ships on Fridays",
+		"- 2026-10-19 · the user drinks tea · mostly green",
+		"a line edited by hand",
+	}), []string{"the user ships on Fridays", "the user drinks tea · mostly green", "a line edited by hand"})
+}

@@ -1304,6 +1304,32 @@ pub struct Job {
     pub created_at: f64,
 }
 
+impl Job {
+    /// Work for one bot in one chat that never leaves this Runner, as the prompt preview and a
+    /// memory capture are: no trigger message, no handoff, no routine.
+    pub fn local(kind: &str, chat_id: &str, bot_id: &str, requested_by: &str) -> Job {
+        Job {
+            id: format!("{kind}-{}", uuid::Uuid::new_v4()),
+            chat_id: chat_id.into(),
+            bot_id: bot_id.into(),
+            task_id: None,
+            task_context: None,
+            kind: kind.into(),
+            trigger_message_id: String::new(),
+            handoff: None,
+            routine_id: None,
+            check: None,
+            requested_by: requested_by.into(),
+            from_bot_id: None,
+            hops: 0,
+            round: 0,
+            is_winding_down: false,
+            setup: None,
+            created_at: crate::config::now_secs(),
+        }
+    }
+}
+
 /// What a bot added from a marketplace template sets up on its first turn, as Grok Bot's
 /// template import asks its new bot to.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]

@@ -41,11 +41,15 @@ pub mod local_review;
 pub mod marketplace;
 pub mod workflows;
 pub mod memory;
+#[cfg(feature = "runner")]
+pub mod memory_capture;
+pub mod memory_check;
 pub mod model;
 pub mod outputs;
 pub mod pairing;
 pub mod permissions;
 pub mod plugins;
+pub mod profile;
 pub mod project_context;
 #[cfg(feature = "provider-auth")]
 pub mod provider_auth;

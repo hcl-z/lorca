@@ -42,6 +42,15 @@ pub async fn before_tool_call(
     }
     let command = ctx.args.get("command").and_then(Value::as_str).unwrap_or("");
     let workdir = std::fs::canonicalize(workdir).unwrap_or_else(|_| workdir.to_path_buf());
+    // Memory is not a file a bot edits: `memory_update` is the only writer, so a command that
+    // would change it is refused outright, whichever way the review would have gone.
+    if writes_memory_root(app, command, &workdir) {
+        return Some(blocked(
+            "Memory is changed only with memory_update, never by a command. Read it with read or recall, and use \
+             memory_update to append, replace, supersede, or remove a fact."
+                .into(),
+        ));
+    }
     // A command given saved secrets is always reviewed, knowing which: it holds credentials.
     let secrets = crate::secrets::named_in(ctx.args);
     if app.auto_review().is_enabled
@@ -513,6 +522,95 @@ fn stays_in_workdir(command: &str, workdir: &Path, home: Option<&Path>) -> bool 
         }
         shell_words(stage).iter().all(|word| paths_inside(word, workdir, home, moves, &inside))
     })
+}
+
+/// Whether a command names a path inside the memory root, which only `memory_update` and the
+/// apps' editor may change. Memory sits outside the working directories on purpose, so this
+/// check is what keeps a bot's own shell from rewriting it behind the tool's back: reading it is
+/// still free, and anything else is refused rather than reviewed, since no answer would make it
+/// safe.
+pub(crate) fn writes_memory_root(app: &App, command: &str, workdir: &Path) -> bool {
+    if read_only(command) {
+        return false;
+    }
+    command_names_memory(command, workdir, dirs::home_dir().as_deref(), &normalized(&crate::memory::root(&app.config.home)))
+}
+
+fn command_names_memory(command: &str, workdir: &Path, home: Option<&Path>, root: &Path) -> bool {
+    let (stages, _) = parsed_shell(command);
+    // A relative path may be read from the working directory or from any folder the command
+    // moves to, so each counts.
+    let mut bases = vec![workdir.to_path_buf()];
+    for stage in &stages {
+        if let Some((name, args)) = command_and_args(stage) {
+            if matches!(name.as_str(), "cd" | "pushd") {
+                bases.extend(args.iter().filter_map(|dir| match resolve_piece(dir, workdir, home) {
+                    Piece::Path(path) => Some(path),
+                    _ => None,
+                }));
+            }
+        }
+    }
+    stages.iter().any(|stage| shell_words(stage).iter().any(|word| path_pieces(word).any(|piece| bases.iter().any(|base| in_memory_root(piece, base, home, root)))))
+}
+
+/// Whether a file path a tool was given (`write`, `edit`) lies in the memory root.
+pub(crate) fn path_writes_memory_root(app: &App, path: &str, workdir: &Path) -> bool {
+    let path = path.trim();
+    !path.is_empty() && in_memory_root(path, workdir, dirs::home_dir().as_deref(), &normalized(&crate::memory::root(&app.config.home)))
+}
+
+/// Whether one path, read from `base`, names the memory root or something in it. A path behind
+/// a variable this cannot expand counts when `memory` follows the variable or a `.lorca` folder,
+/// since `$LORCA_HOME/memory/…` is the memory root by another name.
+fn in_memory_root(piece: &str, base: &Path, home: Option<&Path>, root: &Path) -> bool {
+    match resolve_piece(piece, base, home) {
+        Piece::Path(path) => normalized(&path).starts_with(root),
+        Piece::Unknown => {
+            let parts: Vec<&str> = piece.split(['/', '\\']).collect();
+            parts.get(1) == Some(&"memory") || parts.windows(2).any(|pair| pair == [".lorca", "memory"])
+        }
+        Piece::NotAPath => false,
+    }
+}
+
+/// The pieces of one shell word that can be paths: split at the shell's and option syntax's
+/// separators, with a flag reduced to the path attached to it (`-C/dir`, `--out=dir`). A flag
+/// with no path attached is left out.
+fn path_pieces(word: &str) -> impl Iterator<Item = &str> {
+    word.split(|c: char| c.is_whitespace() || matches!(c, '=' | ',' | ':' | '<' | '>' | '(' | ')' | '\'' | '"' | ';' | '|' | '&' | '@'))
+        .filter(|piece| !piece.is_empty())
+        .filter_map(|piece| match piece.strip_prefix('-') {
+            Some(flag) => flag.find(['/', '~']).map(|at| &flag[at..]),
+            None => Some(piece),
+        })
+}
+
+/// What one piece of a command names.
+enum Piece {
+    /// A path, read from the given folder when it is relative.
+    Path(PathBuf),
+    /// A path behind something this cannot expand: `~user`, a variable other than `$HOME`.
+    Unknown,
+    NotAPath,
+}
+
+fn resolve_piece(piece: &str, base: &Path, home: Option<&Path>) -> Piece {
+    if piece.is_empty() {
+        return Piece::NotAPath;
+    }
+    let under_home = |rest: &str| home.map(|home| Piece::Path(home.join(rest.trim_start_matches('/')))).unwrap_or(Piece::Unknown);
+    if piece == "~" || piece.starts_with("~/") {
+        under_home(piece.trim_start_matches('~'))
+    } else if let Some(rest) = piece.strip_prefix("${HOME}").or_else(|| piece.strip_prefix("$HOME")).filter(|rest| rest.is_empty() || rest.starts_with('/')) {
+        under_home(rest)
+    } else if piece.starts_with('~') || piece.contains('$') || piece.contains('`') {
+        Piece::Unknown
+    } else if piece.starts_with('/') {
+        Piece::Path(PathBuf::from(piece))
+    } else {
+        Piece::Path(base.join(piece))
+    }
 }
 
 /// Whether every path in one shell word lies inside Lorca's folders. URLs are not paths; a flag
@@ -1196,6 +1294,29 @@ fn has_effectful_redirection(stage: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_path_in_the_memory_root_is_told_apart_from_one_in_the_workspace() {
+        let home = PathBuf::from("/Users/someone");
+        let root = home.join(".lorca/memory");
+        let workdir = home.join(".lorca/workspaces/bot-1");
+        let inside = |path: &str| in_memory_root(path, &workdir, Some(&home), &root);
+        assert!(inside("/Users/someone/.lorca/memory/bot-1/MEMORY.md"));
+        assert!(inside("~/.lorca/memory/bot-1/MEMORY.md"));
+        assert!(inside("${HOME}/.lorca/memory"));
+        assert!(inside("../../memory/bot-1/MEMORY.md"), "climbing out of the workspace");
+        assert!(inside("$LORCA_HOME/memory/bot-1/MEMORY.md"), "the root by another name");
+        assert!(!inside("MEMORY.md"), "a relative path is the working directory's");
+        assert!(!inside("/Users/someone/.lorca/workspaces/bot-1/MEMORY.md"));
+        assert!(!inside("$OUT/notes.md"));
+
+        let writes = |command: &str| command_names_memory(command, &workdir, Some(&home), &root);
+        assert!(writes("echo hi >> ~/.lorca/memory/bot-1/MEMORY.md"));
+        assert!(writes("cd ~/.lorca && rm -rf memory/bot-1"), "a relative path after cd");
+        assert!(writes("sed -i '' s/a/b/ --in-place=/Users/someone/.lorca/memory/bot-1/MEMORY.md"));
+        assert!(!writes("echo hi >> notes/MEMORY.md"));
+        assert!(!writes("cd ~/.lorca && ls workspaces"));
+    }
 
     #[test]
     fn read_only_commands_skip_the_review() {

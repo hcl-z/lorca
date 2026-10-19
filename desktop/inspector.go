@@ -46,10 +46,11 @@ const (
 	// tabActivity is what waits for the user and what the chat's bots did: reviews, tasks,
 	// outputs, and feedback.
 	tabActivity = iota
-	// tabProfile is who the chat is with: a DM's bot and what it runs with, a group's members,
-	// name, and project, and where turns run.
+	// tabProfile is who the chat is with: a DM's bot, what it runs with, and this chat's usage,
+	// limits, and prompt; or a group's members, name, and project, and where turns run.
 	tabProfile
-	// tabSkills is what the bots know and can use: memory, skills, and plugins.
+	// tabSkills is what the bots know and can use: memory, what they know about the user, skills,
+	// and plugins.
 	tabSkills
 	// tabRoutines is when and where a DM's bot works on its own: routines and channels.
 	tabRoutines
@@ -57,7 +58,7 @@ const (
 
 // inspectorTabs are the tabs a chat's inspector has: a group has no Routines.
 func inspectorTabs(chat *model.Chat) []iconTab {
-	people := iconTab{Symbol: "slider.horizontal.3", Title: L("Profile")}
+	people := iconTab{Symbol: "slider.horizontal.3", Title: L("Bot")}
 	if !chat.IsDM() {
 		people = iconTab{Symbol: "person.2", Title: L("Members")}
 	}
@@ -190,9 +191,11 @@ func (m *mainWindow) inspectorTab(c *ui.Context, chat *model.Chat, members []*mo
 	case tabActivity:
 		m.inspectorActivity(c, chat, single)
 	case tabProfile:
+		// A DM's Runner is in the header, which opens it; a group's Runners get a section.
 		if single != nil {
 			m.inspectorProfile(c, single)
-			m.inspectorRuntime(c, single, chat)
+			m.inspectorRuntime(c, single)
+			m.inspectorThisChat(c, single, chat)
 		} else {
 			m.inspectorParticipants(c, chat, members)
 			add := pushButton(c, L("Add Bot…"), pushOptions{Disabled: !(chat.CanAddBot() && len(members) < len(store.Bots))}).AlignSelf(ui.Start).Margin(-10, 0, 0, 0)
@@ -201,11 +204,12 @@ func (m *mainWindow) inspectorTab(c *ui.Context, chat *model.Chat, members []*mo
 			}
 			m.inspectorGroup(c, chat, members)
 			m.inspectorProject(c, chat)
+			m.inspectorRouting(c, members)
 		}
-		m.inspectorRouting(c, members)
 	case tabSkills:
 		if single != nil {
 			m.inspectorMemory(c, single)
+			m.inspectorAboutYou(c, single)
 		}
 		m.inspectorSkills(c, chat, members)
 		if single != nil {
@@ -251,11 +255,10 @@ func (m *mainWindow) inspectorHero(c *ui.Context, chat *model.Chat, members []*m
 		}
 		ui.Text(c, store.Title(chat)).Margin(8, 0, 0, 0).FontSize(17).FontWeight(600).TextAlign(ui.Center).SingleLine()
 		state, color := L("%d bots", len(members)), p.Label2
-		dot := false
+		var runner *model.Device
 		if single != nil {
 			state, color = L("unassigned"), p.Label3
-			if runner := store.Device(single.RunnerID); runner != nil {
-				dot = true
+			if runner = store.Device(single.RunnerID); runner != nil {
 				if runner.Status == model.StatusOnline {
 					state, color = L("Online · %@", runner.Name), p.Green
 				} else {
@@ -263,12 +266,30 @@ func (m *mainWindow) inspectorHero(c *ui.Context, chat *model.Chat, members []*m
 				}
 			}
 		}
-		ui.Row(c).Gap(5).Children(func() {
-			if dot {
-				ui.Box(c).Size(7, 7).Radius(3.5).Background(color)
-			}
-			ui.Text(c, state).FontSize(12).TextColor(p.Label2).SingleLine()
-		})
+		line := func(text ui.Color) {
+			ui.Row(c).Gap(5).Children(func() {
+				if runner != nil {
+					ui.Box(c).Size(7, 7).Radius(3.5).Background(color)
+				}
+				ui.Text(c, state).FontSize(12).TextColor(text).SingleLine()
+			})
+		}
+		if runner == nil {
+			line(p.Label2)
+			return
+		}
+		// A DM's Runner opens from here, where a group lists its Runners in a section.
+		runnerID := runner.ID
+		open := ui.ButtonBase(c.Key("hero-runner")).Padding(2, 8).Radius(radiusCapsule).Label(L("Open %@", runner.Name)).Tooltip(L("Open %@", runner.Name))
+		text := p.Label2
+		if open.Hovered() {
+			open.Background(p.RowHover)
+			text = p.Label
+		}
+		open.Children(func() { line(text) })
+		if open.Clicked() {
+			m.openDevice(runnerID)
+		}
 	})
 }
 
@@ -383,7 +404,9 @@ func (m *mainWindow) inspectorProfile(c *ui.Context, bot *model.Bot) {
 	})
 }
 
-func (m *mainWindow) inspectorRuntime(c *ui.Context, bot *model.Bot, chat *model.Chat) {
+// inspectorRuntime is what the bot runs with, in every chat: provider, model, thinking, and the
+// credential.
+func (m *mainWindow) inspectorRuntime(c *ui.Context, bot *model.Bot) {
 	p := colors(c)
 	// The built-in providers, then the custom ones. A custom provider the account deleted stays
 	// listed, under its slug, while the bot is still on it.
@@ -460,7 +483,15 @@ func (m *mainWindow) inspectorRuntime(c *ui.Context, bot *model.Bot, chat *model
 				m.presentConnectProvider(bot.Provider, baseURL, nil)
 			}
 		}
-		// What the turns here have used, and a way to shorten the context by hand.
+	})
+}
+
+// inspectorThisChat is the state of this chat's turns: what they have used, with a way to shorten
+// the context by hand, what each may use or the turn that stopped at a limit, and the prompt the
+// next one sends.
+func (m *mainWindow) inspectorThisChat(c *ui.Context, bot *model.Bot, chat *model.Chat) {
+	p := colors(c)
+	section(c, L("This chat"), sectionCaption, nil, func(k *card) {
 		if usage := chat.Usage; usage != nil {
 			label := p.Label
 			if _, result := actionRow(c, k, L("Context"), actionRowOptions{Value: usage.ContextSummary(), Tint: &label, Action: L("Compact")}); result.Action {
@@ -472,7 +503,6 @@ func (m *mainWindow) inspectorRuntime(c *ui.Context, bot *model.Bot, chat *model
 				keyValueRow(c, k, L("Spent"), usage.SpendSummary(), false, nil)
 			}
 		}
-		// What each turn may use, or the turn that stopped at a limit.
 		limits, tint := Lc("None", "limits"), p.Label2
 		if b := store.Budget("chat", chat.ID, bot.RunnerID); b != nil {
 			limits = b.Limits.Summary()
@@ -482,6 +512,11 @@ func (m *mainWindow) inspectorRuntime(c *ui.Context, bot *model.Bot, chat *model
 		}
 		if disclosureRow(c, k, L("Limits"), limits, &tint) {
 			m.presentBudget(bot, chat.ID, "")
+		}
+		if disclosureRow(c.Key("prompt"), k, L("Prompt"), L("What the next turn sends"), &p.Label2) {
+			if current := store.Bot(bot.ID); current != nil {
+				m.presentPrompt(current, chat.ID)
+			}
 		}
 	})
 }
@@ -521,6 +556,17 @@ func (m *mainWindow) inspectorMemory(c *ui.Context, bot *model.Bot) {
 				m.presentMemory(current, memory, func() { s.refreshMemory(botID) })
 			}
 		}
+		// What the last capture learned from the bot's direct chat, and taking it back.
+		if capture := memory.Capture; capture != nil && !capture.Undone && len(capture.Added) > 0 {
+			learned := L("1 fact from a recent chat")
+			if len(capture.Added) != 1 {
+				learned = L("%d facts from a recent chat", len(capture.Added))
+			}
+			facts := model.CaptureFacts(capture.Added)
+			if _, result := actionRow(c, k, L("Learned"), actionRowOptions{Value: learned, Tint: &p.Label2, Action: L("Undo…"), Tooltip: strings.Join(facts, "\n")}); result.Action {
+				m.confirmUndoCapture(bot.ID, capture.ID, facts)
+			}
+		}
 		folder := L("%@ · on %@", memory.FilesSummary(), memory.Runner)
 		action := ""
 		if memory.Here {
@@ -530,6 +576,49 @@ func (m *mainWindow) inspectorMemory(c *ui.Context, bot *model.Bot) {
 		if row.Action {
 			showInFolder(joinPath(memory.Path, "MEMORY.md"))
 		}
+	})
+}
+
+// inspectorAboutYou is the account's profile on the bot's Runner: what every bot there knows about
+// the user, apart from this bot's own memory. It comes with the memory, so it waits for it.
+func (m *mainWindow) inspectorAboutYou(c *ui.Context, bot *model.Bot) {
+	p := colors(c)
+	s := &m.inspector
+	memory, known := s.memory[bot.ID]
+	if !known {
+		return
+	}
+	section(c, L("About you"), sectionCaption, nil, func(k *card) {
+		profile := memory.Profile
+		value, tint := L("Nothing yet"), p.Label2
+		if !profile.Empty() {
+			value, tint = L("%d lines · %@", profile.Lines, model.Kilobytes(profile.Bytes)), p.Label
+		}
+		if _, result := actionRow(c, k, L("Shared notes"), actionRowOptions{Value: value, Tint: &tint, Action: L("Edit…"), Tooltip: L("Shared by every bot on %@.", memory.Runner)}); result.Action {
+			botID, runnerID, runner := bot.ID, bot.RunnerID, memory.Runner
+			m.presentProfile(runnerID, runner, profile, func() { s.refreshMemory(botID) })
+		}
+	})
+}
+
+// confirmUndoCapture lists what a capture added and removes it on the user's word. Removed facts
+// are remembered as forgotten, so the bot does not learn them again on its own.
+func (m *mainWindow) confirmUndoCapture(botID, runID string, facts []string) {
+	m.showAlert(alertOptions{
+		Message:     L("Forget what the bot learned?"),
+		Informative: strings.Join(facts, "\n") + "\n\n" + L("These leave its memory, and it won't add them again unless you bring them up."),
+		Buttons:     []alertButton{{Title: L("Forget"), Destructive: true}, {Title: L("Cancel")}},
+	}, func(index int) {
+		if index != 0 {
+			return
+		}
+		store.UndoCapture(botID, runID, func(err error) {
+			if err != nil {
+				m.showAlert(alertOptions{Message: L("Couldn't forget the learned facts"), Informative: model.ErrorText(err)}, nil)
+				return
+			}
+			m.inspector.refreshMemory(botID)
+		})
 	})
 }
 

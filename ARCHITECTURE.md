@@ -92,14 +92,15 @@ One doc per subject under `docs/architecture/`, each read in one pass: `bun run 
 | [Coding agents](docs/architecture/coding-agents.md) | Claude Code or Codex a bot runs and supervises on its Runner: worktrees, panes, its secrets, review of its commands and questions, transcripts, follow-ups, outputs, wake-ups, the card |
 | [Questions](docs/architecture/questions.md) | A bot asking the user to choose: `ask_user`, the card and its answer, each app |
 | [Secret requests](docs/architecture/secrets.md) | A password, key, or code a bot asks for on a card: sealed to and kept on its Runner, filled by name into Browser on its site or a command's environment, kept out of results and chats; managing them |
-| [Browser](docs/architecture/browser.md) | A bot's browser: ego (lite)'s through its shipped skill or the Browser plugin every Runner carries, the Runner's setting that picks one, the one Browser switch in Access, secrets, Stop, Settings' Browser section |
+| [Browser](docs/architecture/browser.md) | A bot's browser: ego (lite) or the Browser plugin, the Runner's setting, the Access switch, Stop |
 | [Codemode and Plugins](docs/architecture/plugins.md) | Scripts that call plugin tools, MCP plugins and their installs, sign-in, plugin calls at turn time |
 | [Integrations and named accounts](docs/architecture/integrations.md) | Slack, Gmail, Calendar, and Drive; stable account instances, OAuth on the Runner, account selection, access recovery, and source links |
 | [Marketplace](docs/architecture/marketplace.md) | The index of plugins and bot templates and how lorca.app keeps it current on every Device, bots added from a template, the marketplace sheet |
 | [Workflow onboarding](docs/architecture/workflows.md) | Workflows from the marketplace: packs, a setup on a Runner and its accounts, the sample before the schedule, how setups sync, the workflow page in each app |
 | [Bot templates](docs/architecture/templates.md) | A bot shared as a link or a file and a new bot made from one: what a template holds, redaction and flags, encrypted links and their keys, the Runner's own connections, the apps' sheets |
 | [MCP servers](docs/architecture/mcp-servers.md) | The user's own MCP servers in a Runner's `mcp.json`: the file and other apps' spellings, sign-in when a server asks, `mcp.*` and `lorca mcp`, the apps' MCP Servers section and sheet |
-| [Bots and Memory](docs/architecture/bots.md) | The lead bot, DMs and groups, who answers, handoffs between bots, a bot's memory |
+| [Bots](docs/architecture/bots.md) | The lead bot, DMs and groups, who answers, handoffs between bots |
+| [Memory](docs/architecture/memory.md) | Memory outside the working directory, its gate, capture, the profile |
 | [Routines](docs/architecture/routines.md) | A bot's scheduled tasks: schedules and their timezones, runs and read-only checks, missed runs, health and recovery, and the apps' routine sheet and service row |
 | [One-time routines, routines on events, and calendar events](docs/architecture/routine-triggers.md) | Routines run once at a time, on each event about one subject (a pull request until it merges or closes, a webhook's requests), or around a Calendar's events |
 | [Event triggers](docs/architecture/event-triggers.md) | Runner event subscriptions, the gateways users run to sign and seal a service's events, the encrypted inbox, ordering and recovery |

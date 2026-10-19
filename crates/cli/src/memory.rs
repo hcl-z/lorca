@@ -4,6 +4,10 @@
 //! happened, never shown but searchable. Everything is plain markdown the user can open and
 //! edit. Every write goes through the credential scrubber first: memory is bot-authored as
 //! often as person-authored, and a key the bot read from a file must not end up on disk.
+//!
+//! Memory lives under `<LORCA_HOME>/memory/`, outside every bot's working directory, so a
+//! bot's own file and shell tools cannot rewrite it: `memory_update` is the only writer, which
+//! keeps one dated fact per entry and a supersede history.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -37,9 +41,9 @@ impl fmt::Display for MemoryError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             MemoryError::Invalid(why) => write!(f, "{why}"),
-            MemoryError::NotFound => write!(f, "That passage is not in MEMORY.md. Read it again and pass the exact text."),
-            MemoryError::Ambiguous(n) => write!(f, "That passage appears {n} times in MEMORY.md. Pass a longer, unique passage."),
-            MemoryError::Conflict { .. } => write!(f, "MEMORY.md changed since you opened it. Reload it and apply only your change."),
+            MemoryError::NotFound => write!(f, "That passage is not in the file. Read it again and pass the exact text."),
+            MemoryError::Ambiguous(n) => write!(f, "That passage appears {n} times. Pass a longer, unique passage."),
+            MemoryError::Conflict { .. } => write!(f, "The file changed since you opened it. Reload it and apply only your change."),
             MemoryError::TooLarge => write!(f, "The file would be over {} KB.", MEMORY_FILE_MAX_BYTES / 1024),
             MemoryError::Io(why) => write!(f, "{why}"),
         }
@@ -117,6 +121,21 @@ use libc::mktime;
 extern "C" {
     #[link_name = "_mktime64"]
     fn mktime(tm: *mut libc::tm) -> i64;
+}
+
+/// How far the machine's local time is ahead of UTC at `unix`, in seconds: the local wall clock
+/// read as if it were UTC, less the instant.
+pub fn utc_offset_secs(unix: i64) -> i64 {
+    let tm = local_tm(unix);
+    let (year, month) = (tm.tm_year as i64 + 1900, tm.tm_mon as i64 + 1);
+    // Days since 1970-01-01 of the civil date (Howard Hinnant's days_from_civil).
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * ((month + 9) % 12) + 2) / 5 + tm.tm_mday as i64 - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    days * 86_400 + tm.tm_hour as i64 * 3_600 + tm.tm_min as i64 * 60 + tm.tm_sec as i64 - unix
 }
 
 /// Midnight at the start of the local day `unix` falls in.
@@ -235,30 +254,43 @@ pub fn hash_text(text: &str) -> String {
 
 // MARK: - The store
 
-/// One bot's memory folder.
+/// Where every bot's memory lives, outside the working directories bots write in: a bot's own
+/// file and shell tools must not be able to rewrite what only `memory_update` may change.
+pub fn root(home: &Path) -> PathBuf {
+    home.join("memory")
+}
+
+/// One bot's memory folder, or the account's profile folder.
 #[derive(Debug, Clone)]
 pub struct MemoryStore {
     dir: PathBuf,
+    /// The file the entries live in: `MEMORY.md` for a bot, `PROFILE.md` for the account.
+    index: String,
+    /// How much of the index opens every turn: the first lines or bytes, whichever cuts first.
+    max_lines: usize,
+    max_bytes: usize,
 }
 
 impl MemoryStore {
     pub fn new(dir: impl Into<PathBuf>) -> Self {
-        MemoryStore { dir: dir.into() }
+        MemoryStore::with_budget(dir, "MEMORY.md", MEMORY_MAX_LINES, MEMORY_MAX_BYTES)
     }
 
-    /// Where a bot's memory lives: its private workspace under the CLI home, keyed by id so a
-    /// rename or a changed working directory never moves it. A `MEMORY.md` an earlier version
-    /// left in a custom working directory is adopted once.
+    /// A store whose index has its own name and load budget, as the account's profile does.
+    pub fn with_budget(dir: impl Into<PathBuf>, index: &str, max_lines: usize, max_bytes: usize) -> Self {
+        MemoryStore { dir: dir.into(), index: index.to_string(), max_lines, max_bytes }
+    }
+
+    /// Where a bot's memory lives: under the memory root, keyed by id so a rename or a changed
+    /// working directory never moves it. A bot's earlier memory in its workspace, or a
+    /// `MEMORY.md` an even earlier version left in a custom working directory, is adopted once.
     pub fn for_bot(home: &Path, bot: &crate::model::Bot) -> Self {
-        let store = MemoryStore::new(home.join("workspaces").join(&bot.id));
+        let store = MemoryStore::new(root(home).join(&bot.id));
+        let workspace = home.join("workspaces").join(&bot.id);
+        adopt_workspace_memory(&workspace, &store.dir);
         let workdir = bot.working_directory(home);
-        if workdir != store.dir {
-            let legacy = workdir.join("MEMORY.md");
-            if legacy.is_file() && !store.index_path().is_file() {
-                if let Err(error) = std::fs::create_dir_all(&store.dir).and_then(|_| std::fs::rename(&legacy, store.index_path())) {
-                    tracing::warn!(%error, "adopting a MEMORY.md from the working directory");
-                }
-            }
+        if workdir != workspace && workdir != store.dir {
+            adopt_index(&workdir, &store);
         }
         store
     }
@@ -266,8 +298,15 @@ impl MemoryStore {
     pub fn dir(&self) -> &Path {
         &self.dir
     }
+    pub fn index_name(&self) -> &str {
+        &self.index
+    }
     pub fn index_path(&self) -> PathBuf {
-        self.dir.join("MEMORY.md")
+        self.dir.join(&self.index)
+    }
+    /// The load budget: lines, then bytes.
+    pub fn budget(&self) -> (usize, usize) {
+        (self.max_lines, self.max_bytes)
     }
     pub fn topics_dir(&self) -> PathBuf {
         self.dir.join("memory")
@@ -287,12 +326,12 @@ impl MemoryStore {
         let bytes = text.len();
         let mut shown = text.clone();
         let mut truncated = false;
-        if lines > MEMORY_MAX_LINES {
-            shown = text.lines().take(MEMORY_MAX_LINES).collect::<Vec<_>>().join("\n");
+        if lines > self.max_lines {
+            shown = text.lines().take(self.max_lines).collect::<Vec<_>>().join("\n");
             truncated = true;
         }
-        if shown.len() > MEMORY_MAX_BYTES {
-            let mut cut = MEMORY_MAX_BYTES;
+        if shown.len() > self.max_bytes {
+            let mut cut = self.max_bytes;
             while !shown.is_char_boundary(cut) {
                 cut -= 1;
             }
@@ -304,6 +343,32 @@ impl MemoryStore {
 
     pub fn is_over_budget(&self) -> bool {
         self.load_index().truncated
+    }
+
+    /// The facts the index holds now: its entry lines, leaving out headings, blank lines, and
+    /// entries struck through by a supersede.
+    pub fn entry_count(&self) -> usize {
+        self.read_index().lines().map(str::trim).filter(|line| line.starts_with("- ") && !line.starts_with("- ~~")).count()
+    }
+
+    /// The facts of the entries a supersede struck through: what changed, which a later write
+    /// must not quietly bring back.
+    pub fn superseded_facts(&self) -> Vec<String> {
+        self.read_index()
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("- ~~").and_then(|rest| rest.split_once("~~")).map(|(struck, _)| fact_of(struck)))
+            .filter(|fact| !fact.is_empty())
+            .collect()
+    }
+
+    /// The facts the user removed, which `remove` records in `forgotten.md`.
+    pub fn forgotten_facts(&self) -> Vec<String> {
+        std::fs::read_to_string(self.dir.join("forgotten.md"))
+            .unwrap_or_default()
+            .lines()
+            .map(fact_of)
+            .filter(|fact| !fact.is_empty())
+            .collect()
     }
 
     fn write_file(&self, path: &Path, text: &str) -> Result<(), MemoryError> {
@@ -390,7 +455,8 @@ impl MemoryStore {
         Ok(Change::Replaced)
     }
 
-    /// Deletes one unique passage; a line left empty goes with it.
+    /// Deletes one unique passage; a line left empty goes with it. A removed fact is recorded in
+    /// `forgotten.md` so a later turn does not quietly add it back.
     pub fn remove(&self, old_text: &str) -> Result<Change, MemoryError> {
         let (text, at) = self.locate(old_text)?;
         let old = old_text.trim();
@@ -407,7 +473,26 @@ impl MemoryStore {
             updated.replace_range(line_start..line_end, &line);
         }
         self.save_index(updated)?;
+        self.forget(&text[line_start..line_end])?;
         Ok(Change::Removed)
+    }
+
+    /// Records a line's fact as one the user asked to forget, so the write gate refuses it again.
+    fn forget(&self, line: &str) -> Result<(), MemoryError> {
+        let fact = fact_of(line);
+        if fact.is_empty() {
+            return Ok(());
+        }
+        let path = self.dir.join("forgotten.md");
+        let mut text = std::fs::read_to_string(&path).unwrap_or_default();
+        if text.lines().any(|existing| fact_of(existing).eq_ignore_ascii_case(&fact)) {
+            return Ok(());
+        }
+        if !text.is_empty() && !text.ends_with('\n') {
+            text.push('\n');
+        }
+        text.push_str(&format!("- {fact}\n"));
+        self.write_file(&path, &text)
     }
 
     /// Strikes the line holding one unique passage through, dated, and adds the new fact as
@@ -526,7 +611,7 @@ impl MemoryStore {
             }
         }
         if let Some(query) = query {
-            let mut files = vec![("MEMORY.md".to_string(), self.index_path())];
+            let mut files = vec![(self.index.clone(), self.index_path())];
             files.extend(self.topics().into_iter().map(|name| (format!("memory/{name}"), self.topics_dir().join(&name))));
             for (label, path) in files {
                 let text = std::fs::read_to_string(path).unwrap_or_default();
@@ -553,18 +638,86 @@ impl MemoryStore {
         let loaded = self.load_index();
         json!({
             "path": self.dir.display().to_string(),
+            "index_name": self.index,
             "index": {
                 "text": text,
                 "hash": hash_text(&text),
                 "lines": loaded.lines,
                 "bytes": loaded.bytes,
                 "truncated": loaded.truncated,
-                "max_lines": MEMORY_MAX_LINES,
-                "max_bytes": MEMORY_MAX_BYTES,
+                "max_lines": self.max_lines,
+                "max_bytes": self.max_bytes,
             },
             "topics": self.topics(),
             "logs": self.log_days(),
         })
+    }
+}
+
+/// Moves a bot's memory from the workspace it used to live in into the memory root, once: the
+/// index and the `memory/` tree, each on its own, so a part whose move failed is tried again on
+/// the next start while the part that moved stays where it went. Nothing is overwritten.
+fn adopt_workspace_memory(workspace: &Path, dir: &Path) {
+    for name in ["MEMORY.md", "memory"] {
+        let from = workspace.join(name);
+        let to = dir.join(name);
+        if std::fs::symlink_metadata(&from).is_err() || std::fs::symlink_metadata(&to).is_ok() {
+            continue;
+        }
+        if let Err(error) = std::fs::create_dir_all(dir).and_then(|_| move_path(&from, &to)) {
+            tracing::warn!(%error, from = %from.display(), "moving a bot's memory out of its workspace");
+        }
+    }
+}
+
+/// A rename, or across volumes a copy into a staging name, a rename of the copy into place, and
+/// only then the removal of the original, so an interrupted move leaves the original whole.
+fn move_path(from: &Path, to: &Path) -> std::io::Result<()> {
+    if std::fs::rename(from, to).is_ok() {
+        return Ok(());
+    }
+    let staging = to.with_extension("moving");
+    if std::fs::symlink_metadata(&staging).is_ok() {
+        remove_path(&staging)?;
+    }
+    copy_tree(from, &staging)?;
+    std::fs::rename(&staging, to)?;
+    remove_path(from)
+}
+
+/// Copies a file or a folder's regular files and folders; a link is left behind, as it may point
+/// anywhere.
+fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
+    let meta = std::fs::symlink_metadata(from)?;
+    if meta.is_dir() {
+        std::fs::create_dir_all(to)?;
+        for entry in std::fs::read_dir(from)? {
+            let entry = entry?;
+            if !entry.file_type()?.is_symlink() {
+                copy_tree(&entry.path(), &to.join(entry.file_name()))?;
+            }
+        }
+        Ok(())
+    } else {
+        std::fs::copy(from, to).map(|_| ())
+    }
+}
+
+fn remove_path(path: &Path) -> std::io::Result<()> {
+    if std::fs::symlink_metadata(path)?.is_dir() {
+        std::fs::remove_dir_all(path)
+    } else {
+        std::fs::remove_file(path)
+    }
+}
+
+/// Adopts a `MEMORY.md` from a custom working directory, once, as earlier versions did.
+fn adopt_index(workdir: &Path, store: &MemoryStore) {
+    let legacy = workdir.join("MEMORY.md");
+    if legacy.is_file() && !store.index_path().is_file() {
+        if let Err(error) = std::fs::create_dir_all(store.dir()).and_then(|_| std::fs::rename(&legacy, store.index_path())) {
+            tracing::warn!(%error, "adopting a MEMORY.md from the working directory");
+        }
     }
 }
 
@@ -588,7 +741,7 @@ fn entry_line(date: &str, source: Option<&str>, fact: &str) -> String {
 }
 
 /// The fact of an entry line without its bullet, date, or source, for telling duplicates.
-fn fact_of(line: &str) -> String {
+pub(crate) fn fact_of(line: &str) -> String {
     let body = line.trim().trim_start_matches("- ").trim();
     let body = ENTRY_PREFIX.replace(body, "");
     normalise(&body)
@@ -718,6 +871,15 @@ mod tests {
     }
 
     #[test]
+    fn the_utc_offset_matches_the_local_clock() {
+        let now = local_unix("2026-09-17", Some("12:00")).unwrap();
+        let offset = utc_offset_secs(now);
+        assert!(offset.abs() <= 14 * 3_600 && offset % 900 == 0, "{offset}");
+        // Noon local time is noon UTC moved by the offset.
+        assert_eq!((now + offset).rem_euclid(86_400), 12 * 3_600);
+    }
+
+    #[test]
     fn when_parses_relative_and_absolute() {
         let now = local_unix("2026-09-17", Some("12:00")).unwrap();
         assert_eq!(parse_when("24h", now), Some(now - 86_400));
@@ -738,5 +900,54 @@ mod tests {
         assert_eq!(overview["index"]["max_lines"], MEMORY_MAX_LINES);
         assert_eq!(overview["index"]["truncated"], false);
         assert_eq!(overview["topics"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn a_workspace_memory_moves_under_the_memory_root_once() {
+        let dir = std::env::temp_dir().join(format!("lorca-memory-move-{}", uuid::Uuid::new_v4()));
+        let workspace = dir.join("workspaces").join("bot-1");
+        std::fs::create_dir_all(workspace.join("memory").join("log")).unwrap();
+        std::fs::write(workspace.join("MEMORY.md"), "- 2026-09-17 · the user ships on Fridays\n").unwrap();
+        std::fs::write(workspace.join("memory").join("clients.md"), "# Clients\nAcme\n").unwrap();
+
+        let store = MemoryStore::new(root(&dir).join("bot-1"));
+        adopt_workspace_memory(&workspace, store.dir());
+        assert!(store.read_index().contains("Fridays"));
+        assert_eq!(store.topics(), vec!["clients.md"]);
+        assert!(!workspace.join("MEMORY.md").exists(), "the old index moved rather than copied");
+        assert!(!workspace.join("memory").exists(), "the old topics moved with it");
+
+        // A second start finds the memory already moved and leaves it alone.
+        std::fs::write(store.index_path(), "- a newer fact\n").unwrap();
+        adopt_workspace_memory(&workspace, store.dir());
+        assert_eq!(store.read_index(), "- a newer fact\n");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_bot_keeps_its_memory_outside_its_working_directory() {
+        let dir = std::env::temp_dir().join(format!("lorca-memory-bot-{}", uuid::Uuid::new_v4()));
+        let bot = crate::model::Bot {
+            id: "bot-1".into(),
+            name: "Scout".into(),
+            description: String::new(),
+            symbol_name: String::new(),
+            accent: String::new(),
+            avatar: None,
+            runner_id: "runner-1".into(),
+            provider: String::new(),
+            model: None,
+            thinking: None,
+            legacy_instructions: String::new(),
+            setting_up: false,
+            workdir: None,
+            permissions: None,
+            created_at: 0.0,
+        };
+        let store = MemoryStore::for_bot(&dir, &bot);
+        assert_eq!(store.dir(), root(&dir).join("bot-1"));
+        assert_ne!(store.dir(), bot.working_directory(&dir));
+        assert!(store.dir().starts_with(root(&dir)));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

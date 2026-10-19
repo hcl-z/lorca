@@ -20,6 +20,16 @@ fn opt_string(params: &Value, key: &str) -> Option<String> {
     params[key].as_str().map(str::to_string).filter(|s| !s.is_empty())
 }
 
+/// A question about what lives on a bot's Runner: answered here when this is that Runner, else
+/// asked of it through the relay.
+async fn on_bots_runner(app: &Arc<App>, bot: &crate::model::Bot, verb: &str, body: Value) -> Result<Value, String> {
+    if app.this_device_id().as_deref() == Some(bot.runner_id.as_str()) {
+        requests::answer_here(app, verb, &body)
+    } else {
+        requests::ask(app, &bot.runner_id, verb, body).await
+    }
+}
+
 fn parse_permissions(params: &Value) -> Result<Option<crate::permissions::BotPermissions>, String> {
     let Some(value) = params.get("permissions") else { return Ok(None) };
     let policy: crate::permissions::BotPermissions = serde_json::from_value(value.clone())
@@ -481,6 +491,36 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
             } else {
                 requests::ask(app, &bot.runner_id, "memory.write", json!({ "bot_id": bot.id, "text": text, "expected_hash": expected_hash })).await
             }
+        }
+        // What a bot's next turn sends as its system prompt, section by section, with the notes
+        // that follow the transcript. Built on the bot's Runner, which holds its memory; it runs
+        // nothing.
+        "bots.prompt" => {
+            let bot = app.bot(&string(&params, "bot_id")?).ok_or("Unknown bot")?;
+            let body = json!({ "bot_id": bot.id, "chat_id": opt_string(&params, "chat_id") });
+            on_bots_runner(app, &bot, "bots.prompt", body).await
+        }
+        // The memory capture's runs for a bot, and undoing one, on the bot's Runner.
+        "memory_capture.list" | "memory_capture.undo" => {
+            let bot = app.bot(&string(&params, "bot_id")?).ok_or("Unknown bot")?;
+            let body = json!({ "bot_id": bot.id, "run_id": opt_string(&params, "run_id") });
+            on_bots_runner(app, &bot, method, body).await
+        }
+        // The account's profile of the user lives on each Runner and is shared by every bot
+        // there; `runner_id` names the Runner, this one by default. The apps edit it as one text
+        // with the hash they opened.
+        "profile" | "profile.write" => {
+            let runner_id = opt_string(&params, "runner_id").or_else(|| app.this_device_id()).ok_or("No Runner")?;
+            let verb = if method == "profile" { "profile.read" } else { "profile.write" };
+            let body = json!({ "text": params["text"], "expected_hash": opt_string(&params, "expected_hash") });
+            let mut answer = if app.this_device_id().as_deref() == Some(runner_id.as_str()) {
+                requests::answer_here(app, verb, &body)?
+            } else {
+                requests::ask(app, &runner_id, verb, body).await?
+            };
+            answer["runner_id"] = json!(runner_id);
+            answer["runner"] = json!(app.device(&runner_id).map(|d| d.name));
+            Ok(answer)
         }
         "chats.delete" => {
             app.delete_chat(&string(&params, "chat_id")?);

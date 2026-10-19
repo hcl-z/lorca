@@ -57,7 +57,7 @@ func TestInspectorLeavesDecisionModelsOut(t *testing.T) {
 	store.SetBotRuntime(bot.ID, "opencode", "", "")
 	tt := ui.NewTester(func(c *ui.Context) {
 		applyTheme(c)
-		m.inspectorRuntime(c, store.Bot("bot-nova"), store.Chat("chat-nova"))
+		m.inspectorRuntime(c, store.Bot("bot-nova"))
 	}, 360, 400)
 	settle(tt)
 	if err := tt.Click("OpenCode Zen"); err != nil {
