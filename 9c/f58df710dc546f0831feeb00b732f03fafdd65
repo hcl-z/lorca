@@ -1,0 +1,19 @@
+docs/architecture/relay.md
+  s_de64bc2a113aef::t_91bfadbf21763f 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.50-trip",
+  "base_commit_sha": "9cf58df710dc546f0831feeb00b732f03fafdd65",
+  "prompts": {},
+  "sessions": {
+    "s_de64bc2a113aef": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_s4euiiw938g8",
+        "model": "DeepSeek-V4.1-Flash"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
