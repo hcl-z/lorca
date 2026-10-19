@@ -63,7 +63,7 @@ jobs:
           fi
 
   build:
-    name: ${{ matrix.image }} (${{ matrix.platform }})
+    name: ${{ matrix.image.name }} (${{ matrix.platform }})
     needs: version
     # The arm64 runner is free for public repositories; a private one falls back to emulation.
     runs-on: ${{ matrix.platform == 'linux/arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
