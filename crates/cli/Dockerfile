@@ -40,8 +40,11 @@ RUN python3 -m venv /opt/uv \
     && ln -s /opt/uv/bin/uv /usr/local/bin/uv \
     && ln -s /opt/uv/bin/uvx /usr/local/bin/uvx
 COPY --from=build /src/target/release/lorca /usr/local/bin/lorca
+COPY --chmod=0755 crates/cli/docker-entrypoint.sh /usr/local/bin/lorca-entrypoint
 
 ENV LORCA_HOME=/data
 WORKDIR /data
 EXPOSE 4862
-CMD ["lorca", "serve"]
+# The entry point pairs or creates the identity on the first start, then runs the server.
+ENTRYPOINT ["lorca-entrypoint"]
+CMD ["serve"]

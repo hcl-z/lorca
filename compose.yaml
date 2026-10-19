@@ -1,13 +1,11 @@
 # Lorca in containers: the relay, and a CLI Runner with no desktop app on the same computer.
 #
 #   docker compose up -d
-#   docker compose exec runner lorca identity new --name nas     # once, or `lorca pair <string>`
-#   docker compose exec runner lorca status
+#   docker compose logs -f runner
 #
-# The images are built by .github/workflows/images.yml and published to GitHub Container Registry,
-# so this file pulls them rather than building the workspace here. Set LORCA_IMAGE_OWNER to the
-# account or organization the workflow ran in, and LORCA_IMAGE_TAG to a version, or to `edge` for
-# the latest build of main.
+# Nothing here has to be done with `docker` by hand: the Runner's entry point pairs or creates
+# its identity on the first start, then runs the server. To join an existing account, set
+# LORCA_PAIR_STRING below to the string a paired Device shows.
 #
 # Ports are picked away from the defaults (relay 8787, CLI 4862) so a locally running relay or
 # a desktop app's CLI on this computer never collides with these.
@@ -18,7 +16,7 @@
 
 services:
   relay:
-    image: ghcr.io/${LORCA_IMAGE_OWNER:-hcl-z}/lorca-relay:${LORCA_IMAGE_TAG:-edge}
+    image: ghcr.io/${LORCA_IMAGE_OWNER:-hcl-z}/lorca-relay:${LORCA_IMAGE_TAG:-1.0.23}
     environment:
       # Signs bearer tokens. Fixed, so a restart does not log every Device out.
       LORCA_RELAY_SECRET: f65e22d1782f35d72845d1e18c0b0c86bf5327668111c218451799ffa8c2655c
@@ -39,7 +37,7 @@ services:
       start_period: 10s
 
   runner:
-    image: ghcr.io/${LORCA_IMAGE_OWNER:-hcl-z}/lorca-cli:${LORCA_IMAGE_TAG:-edge}
+    image: ghcr.io/${LORCA_IMAGE_OWNER:-hcl-z}/lorca-cli:${LORCA_IMAGE_TAG:-1.0.23}
     environment:
       # The data directory: keys, credentials, chats, workspaces, and the local websocket token.
       LORCA_HOME: /data
@@ -48,6 +46,11 @@ services:
       # Away from the CLI's default, so a desktop app's own CLI on this computer cannot collide.
       LORCA_PORT: "14862"
       RUST_LOG: lorca=info
+      # The name this Device shows on every other one.
+      LORCA_DEVICE_NAME: nas
+      # A pairing string from a Device already in the account. Empty, the first start creates a
+      # new identity on this Device instead, and writes its backup phrase to /data/backup-phrase.txt.
+      LORCA_PAIR_STRING: ""
     volumes:
       - runner-data:/data
     depends_on:
