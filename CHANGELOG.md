@@ -8,6 +8,15 @@ phone app's.
 
 ## [Unreleased]
 
+## [1.0.24]
+
+- About you: one profile per computer that every bot there reads, with your name, your timezone, the language you want, and how you like replies. A bot saves what you tell it about yourself there, and you edit it from a bot's inspector or with `lorca profile`, so a second bot no longer has to learn the same things again.
+- A bot learns from a short chat too. Once its direct chat has gone quiet, it notes the facts you stated there, each one quoting your own words; the inspector's Learned row lists them, and Undo… forgets them so they are not learned again. Group chats and channel conversations are never read this way. `LORCA_MEMORY_CAPTURE=0` turns it off.
+- A bot's memory lives in `~/.lorca/memory/`, outside its working folder, and moves there on the first start. Only the memory tools write it: a file edit or shell command that would change it is refused. Each new fact is checked first, and one that holds a secret, reads like an instruction, hides characters, or brings back a fact you removed is refused.
+- See what a bot sends: the inspector's Prompt row and `lorca prompt <bot>` show its instructions section by section with their sizes, then the notes after the conversation, with Copy.
+- Bots' instructions are shorter. They say once whom a bot follows and that web pages, files, and tool results are data, keep progress and stale details out of memory, use the language your profile names, and leave tool details to the tools themselves. Memory, your profile, and the time come after the conversation, so a fact saved mid-conversation keeps the rest cached.
+- The desktop inspector is regrouped: a Bot tab with the profile, what it runs with, and this chat's context, spending, limits, and prompt; and Memory and About you in Skills. A direct chat's Runner opens from its header.
+
 ## [1.0.23]
 
 - A bot's browser is ego (lite)'s where it is installed, and a built-in one elsewhere. Lorca now carries ego's `ego-browser` skill, and every computer has the Browser plugin without installing it; Settings › Plugins picks Automatic, ego (lite), or Built-in. A bot's Access has one Browser switch for either. Browser profiles, taking the browser over, and recording a workflow are gone, and the Browser page on the phone with them.
