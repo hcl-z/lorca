@@ -1,0 +1,19 @@
+.github/workflows/images.yml
+  s_de64bc2a113aef::t_95405d8b88beb9 2,7-10,12,34,36-39,42-43,47-49,58-62,65-82,85,91-92,96-101,104,106-157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.50-trip",
+  "base_commit_sha": "d44761ab8321d7c5ef4b8a2231815332e191b787",
+  "prompts": {},
+  "sessions": {
+    "s_de64bc2a113aef": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_s4euiiw938g8",
+        "model": "DeepSeek-V4.1-Flash"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
