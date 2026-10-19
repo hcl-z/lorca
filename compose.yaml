@@ -1,7 +1,10 @@
 # Lorca in containers: the relay, and a CLI Runner with no desktop app on the same computer.
 #
-#   docker compose up -d
+#   LORCA_RELAY_SECRET=$(openssl rand -hex 32) docker compose up -d
 #   docker compose logs -f runner
+#
+# The relay's token-signing secret is not in this file. Set it in the shell, as above, or in a
+# .env beside this file; compose refuses to start without it.
 #
 # Nothing here has to be done with `docker` by hand: the Runner's entry point pairs or creates
 # its identity on the first start, then runs the server. To join an existing account, set
@@ -18,8 +21,11 @@ services:
   relay:
     image: ghcr.io/${LORCA_IMAGE_OWNER:-hcl-z}/lorca-relay:${LORCA_IMAGE_TAG:-1.0.23}
     environment:
-      # Signs bearer tokens. Fixed, so a restart does not log every Device out.
-      LORCA_RELAY_SECRET: f65e22d1782f35d72845d1e18c0b0c86bf5327668111c218451799ffa8c2655c
+      # Signs bearer tokens. Fixed, so a restart does not log every Device out. Compose reads it
+      # from the shell or a .env beside this file and refuses to start without it: a secret in
+      # the repository would let anyone who reads it impersonate a Device. Make one with
+      # `openssl rand -hex 32`.
+      LORCA_RELAY_SECRET: ${LORCA_RELAY_SECRET:?set LORCA_RELAY_SECRET to the output of openssl rand -hex 32}
       # The image's default is [::]:${PORT:-8787}; this names the port the published mapping uses.
       LORCA_RELAY_BIND: "[::]:18787"
     ports:
