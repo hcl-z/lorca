@@ -1,0 +1,103 @@
+# Builds the two images and pushes them to GitHub Container Registry, so a computer runs Lorca
+# from a published image instead of building the workspace itself. One run builds for linux/amd64
+# and linux/arm64, which is what a NAS and a Mac need.
+#
+#   ghcr.io/<owner>/lorca-relay:<version>   the relay
+#   ghcr.io/<owner>/lorca-cli:<version>     a CLI Runner
+#
+# A pull request builds both without pushing, so the Dockerfiles are checked before they merge.
+# A push to main pushes `edge`; a `cli-vX.Y.Z` tag or a run by hand pushes the crate's version,
+# and the version without it, which is what compose.yaml names.
+name: Images
+
+on:
+  push:
+    branches: [main]
+    tags: ["cli-v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: images-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  REGISTRY: ghcr.io
+
+jobs:
+  images:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    # The first build of a workspace this size takes a while; a cache makes later ones quick.
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - name: relay
+            image: lorca-relay
+            dockerfile: crates/relay/Dockerfile
+          - name: cli
+            image: lorca-cli
+            dockerfile: crates/cli/Dockerfile
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read the crate's version
+        id: version
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "lorca") | .version')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # A pull request checks that the Dockerfile builds; it has no business pushing.
+      - name: Decide what this run is
+        id: mode
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ $EVENT == pull_request ]]; then
+            echo "push=false" >> "$GITHUB_OUTPUT"
+          elif [[ $REF_TYPE == tag || $EVENT == workflow_dispatch ]]; then
+            echo "push=true" >> "$GITHUB_OUTPUT"
+            echo "tag=${{ steps.version.outputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "push=true" >> "$GITHUB_OUTPUT"
+            echo "tag=edge" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The two images are the same Cargo workspace, so they share a cache. The mode=max export
+      # keeps the compiler's intermediate layers, which is where the time goes.
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Sign in to the registry
+        if: steps.mode.outputs.push == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: ${{ steps.mode.outputs.push == 'true' }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}:${{ steps.mode.outputs.tag || 'pr' }}
+            ${{ steps.mode.outputs.push == 'true' && format('{0}/{1}/{2}:latest', env.REGISTRY, github.repository_owner, matrix.image) || '' }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.licenses=GPL-3.0-only

@@ -1,8 +1,13 @@
 # Lorca in containers: the relay, and a CLI Runner with no desktop app on the same computer.
 #
-#   docker compose up -d --build
+#   docker compose up -d
 #   docker compose exec runner lorca identity new --name nas     # once, or `lorca pair <string>`
 #   docker compose exec runner lorca status
+#
+# The images are built by .github/workflows/images.yml and published to GitHub Container Registry,
+# so this file pulls them rather than building the workspace here. Set LORCA_IMAGE_OWNER to the
+# account or organization the workflow ran in, and LORCA_IMAGE_TAG to a version, or to `edge` for
+# the latest build of main.
 #
 # Ports are picked away from the defaults (relay 8787, CLI 4862) so a locally running relay or
 # a desktop app's CLI on this computer never collides with these.
@@ -13,10 +18,7 @@
 
 services:
   relay:
-    build:
-      context: .
-      dockerfile: crates/relay/Dockerfile
-    image: lorca-relay:1.0.23
+    image: ghcr.io/${LORCA_IMAGE_OWNER:-hcl-z}/lorca-relay:${LORCA_IMAGE_TAG:-edge}
     environment:
       # Signs bearer tokens. Fixed, so a restart does not log every Device out.
       LORCA_RELAY_SECRET: f65e22d1782f35d72845d1e18c0b0c86bf5327668111c218451799ffa8c2655c
@@ -37,10 +39,7 @@ services:
       start_period: 10s
 
   runner:
-    build:
-      context: .
-      dockerfile: crates/cli/Dockerfile
-    image: lorca-cli:1.0.23
+    image: ghcr.io/${LORCA_IMAGE_OWNER:-hcl-z}/lorca-cli:${LORCA_IMAGE_TAG:-edge}
     environment:
       # The data directory: keys, credentials, chats, workspaces, and the local websocket token.
       LORCA_HOME: /data
