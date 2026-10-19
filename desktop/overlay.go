@@ -85,32 +85,30 @@ func (w *appWindow) presentFullWindow(view func(c *ui.Context, s *sheet), onDism
 func (w *appWindow) hasSheet() bool { return len(w.sheets) > 0 }
 
 // sheetsView builds the window's sheets over its content: the one in front over a dimmed window,
-// those behind it as they were. As AppKit's sheets on macOS 26, a sheet sits in the middle of the
-// window and grows into place as it fades in, and the last one shrinks as it fades out; one over
-// another goes at once, since what goes is drawn under what stays. The dimming is one element that
-// moves under whichever sheet is in front, so it stays as it was while a sheet opens or closes
-// over another.
+// those behind it as they were. A sheet hangs near the top of the window; the first one grows into
+// place as it fades in and shrinks as it fades out, as AppKit's sheets on macOS 26 do, and one over
+// another comes and goes at once. The dimming is one element that moves under whichever sheet is
+// in front, so it stays as it was while a sheet opens or closes over another.
 func (w *appWindow) sheetsView(c *ui.Context) {
 	p := colors(c)
-	dim := ui.ElementTransition{Enter: &ui.Motion{}, Exit: &ui.Motion{}, Duration: 200_000_000}
+	fade := ui.ElementTransition{Enter: &ui.Motion{}, Exit: &ui.Motion{}, Duration: 150_000_000}
+	pop := ui.ElementTransition{Enter: &ui.Motion{Scale: 0.96}, Exit: &ui.Motion{Scale: 0.96}, Duration: 150_000_000}
 	for i, s := range w.sheets {
 		front := i == len(w.sheets)-1
 		ui.Overlay(c, func() {
 			if front && !s.fullWindow {
-				ui.Box(c.Key(sheetScrimKey{})).Absolute().Left(0).Top(0).Right(0).Bottom(0).Background(p.Scrim).Transition(dim)
+				ui.Box(c.Key(sheetScrimKey{})).Absolute().Left(0).Top(0).Right(0).Bottom(0).Background(p.Scrim).Transition(fade)
 			}
 			layer := ui.Column(c.Key(s.id)).Absolute().Left(0).Top(0).Right(0).Bottom(0)
 			if !s.fullWindow {
-				layer.AlignItems(ui.Center).Justify(ui.Center).Padding(16)
+				layer.AlignItems(ui.Center).Padding(44, 16, 16, 16).TransformOrigin(0.5, 0)
 			}
 			if front {
 				layer.Modal()
 			}
-			pop := ui.ElementTransition{Enter: &ui.Motion{Scale: 0.94}, Duration: 200_000_000}
 			if i == 0 {
-				pop.Exit = &ui.Motion{Scale: 0.94}
+				layer.Transition(pop)
 			}
-			layer.Transition(pop)
 			frontSheet, backdropPressed = front && !s.alert, false
 			layer.Children(func() { s.view(c, s) })
 			frontSheet, backdropPressed = false, false
