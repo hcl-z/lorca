@@ -1,13 +1,15 @@
 # Builds the two images and pushes them to GitHub Container Registry, so a computer runs Lorca
-# from a published image instead of building the workspace itself. One run builds for linux/amd64
-# and linux/arm64, which is what a NAS and a Mac need.
+# from a published image instead of building the workspace itself.
 #
 #   ghcr.io/<owner>/lorca-relay:<version>   the relay
 #   ghcr.io/<owner>/lorca-cli:<version>     a CLI Runner
 #
+# Each platform builds on a runner of its own architecture: a Rust workspace this size under
+# QEMU takes an hour or more, where a native build takes minutes. The digests are then merged
+# into one multi-architecture tag.
+#
 # A pull request builds both without pushing, so the Dockerfiles are checked before they merge.
-# A push to main pushes `edge`; a `cli-vX.Y.Z` tag or a run by hand pushes the crate's version,
-# and the version without it, which is what compose.yaml names.
+# A push to main pushes `edge`; a `cli-vX.Y.Z` tag or a run by hand pushes the crate's version.
 name: Images
 
 on:
@@ -29,75 +31,127 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  images:
-    name: ${{ matrix.name }}
+  version:
     runs-on: ubuntu-latest
-    # The first build of a workspace this size takes a while; a cache makes later ones quick.
-    timeout-minutes: 90
+    outputs:
+      version: ${{ steps.crate.outputs.version }}
+      tag: ${{ steps.mode.outputs.tag }}
+      push: ${{ steps.mode.outputs.push }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: crate
+        name: Read the crate's version
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "lorca") | .version')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      # A pull request checks that the Dockerfiles build; it has no business pushing.
+      - id: mode
+        name: Decide what this run is
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          if [[ $EVENT == pull_request ]]; then
+            echo "push=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "push=true" >> "$GITHUB_OUTPUT"
+            if [[ $REF_TYPE == tag || $EVENT == workflow_dispatch ]]; then
+              echo "tag=${{ steps.crate.outputs.version }}" >> "$GITHUB_OUTPUT"
+            else
+              echo "tag=edge" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+  build:
+    name: ${{ matrix.image }} (${{ matrix.platform }})
+    needs: version
+    # The arm64 runner is free for public repositories; a private one falls back to emulation.
+    runs-on: ${{ matrix.platform == 'linux/arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: write
     strategy:
+      fail-fast: false
       matrix:
-        include:
-          - name: relay
-            image: lorca-relay
-            dockerfile: crates/relay/Dockerfile
-          - name: cli
-            image: lorca-cli
-            dockerfile: crates/cli/Dockerfile
+        image:
+          - { name: relay, dockerfile: crates/relay/Dockerfile }
+          - { name: cli, dockerfile: crates/cli/Dockerfile }
+        platform: [linux/amd64, linux/arm64]
     steps:
       - uses: actions/checkout@v7
-
-      - name: Read the crate's version
-        id: version
-        run: |
-          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "lorca") | .version')
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      # A pull request checks that the Dockerfile builds; it has no business pushing.
-      - name: Decide what this run is
-        id: mode
-        env:
-          EVENT: ${{ github.event_name }}
-          REF_TYPE: ${{ github.ref_type }}
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          if [[ $EVENT == pull_request ]]; then
-            echo "push=false" >> "$GITHUB_OUTPUT"
-          elif [[ $REF_TYPE == tag || $EVENT == workflow_dispatch ]]; then
-            echo "push=true" >> "$GITHUB_OUTPUT"
-            echo "tag=${{ steps.version.outputs.version }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "push=true" >> "$GITHUB_OUTPUT"
-            echo "tag=edge" >> "$GITHUB_OUTPUT"
-          fi
-
-      # The two images are the same Cargo workspace, so they share a cache. The mode=max export
-      # keeps the compiler's intermediate layers, which is where the time goes.
       - uses: docker/setup-buildx-action@v3
-
       - name: Sign in to the registry
-        if: steps.mode.outputs.push == 'true'
+        if: needs.version.outputs.push == 'true'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
+      # One platform, one digest: the merge job puts them under the same tag.
+      - id: build
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
-          platforms: linux/amd64,linux/arm64
-          push: ${{ steps.mode.outputs.push == 'true' }}
-          tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}:${{ steps.mode.outputs.tag || 'pr' }}
-            ${{ steps.mode.outputs.push == 'true' && format('{0}/{1}/{2}:latest', env.REGISTRY, github.repository_owner, matrix.image) || '' }}
-          cache-from: type=gha,scope=${{ matrix.name }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          file: ${{ matrix.image.dockerfile }}
+          platforms: ${{ matrix.platform }}
+          push: ${{ needs.version.outputs.push == 'true' }}
+          outputs: ${{ needs.version.outputs.push == 'true' && 'type=image,push-by-digest=true,name-canonical=true' || '' }}
+          cache-from: type=gha,scope=${{ matrix.image.name }}-${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}-${{ matrix.platform }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.version=${{ needs.version.outputs.version }}
             org.opencontainers.image.licenses=GPL-3.0-only
+      - name: Keep the digest
+        if: needs.version.outputs.push == 'true'
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+      - uses: actions/upload-artifact@v7
+        if: needs.version.outputs.push == 'true'
+        with:
+          name: digest-${{ matrix.image.name }}-${{ strategy.job-index }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: ${{ matrix.image }} manifest
+    needs: [version, build]
+    if: needs.version.outputs.push == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        image: [relay, cli]
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: /tmp/digests
+          pattern: digest-${{ matrix.image }}-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v3
+      - name: Sign in to the registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # The version tag, and `latest` only for a tagged release.
+      - name: Merge the platforms under one tag
+        working-directory: /tmp/digests
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/lorca-${{ matrix.image }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          tags=("$IMAGE:$TAG")
+          if [[ $TAG != edge ]]; then tags+=("$IMAGE:latest"); fi
+          args=()
+          for tag in "${tags[@]}"; do args+=("--tag" "$tag"); done
+          docker buildx imagetools create "${args[@]}" \
+            $(printf "$IMAGE@sha256:%s " *)
+          docker buildx imagetools inspect "$IMAGE:$TAG"
