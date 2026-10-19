@@ -1,0 +1,35 @@
+compose.yaml
+  s_de64bc2a113aef::t_0e17a17be1ba57 1-2,5-9,13-25,27-48,50-58,60-68
+  s_de64bc2a113aef::t_81302171a93edb 10-12,26,49,59
+  s_de64bc2a113aef::t_70fdb04047083d 3-4
+crates/cli/Dockerfile
+  s_de64bc2a113aef::t_147dbc5f46300a 1-5,10-15,17-28,32-33,36,42-47
+  s_de64bc2a113aef::t_d68933d7094727 16
+  s_de64bc2a113aef::t_4c5357cf2837dc 6-9,29
+  s_de64bc2a113aef::t_e4c14af1e20711 31,37
+  s_de64bc2a113aef::t_8f04314c0d564d 30,34-35,38-41
+docs/architecture/relay.md
+  s_de64bc2a113aef::t_105c8e029d00c6 5-6
+docs/architecture/runtime.md
+  s_de64bc2a113aef::t_ee109411482270 9-10,12,14
+  s_de64bc2a113aef::t_4d74cf6bb69740 11
+  s_de64bc2a113aef::t_8a7956016ded94 13
+.dockerignore
+  s_de64bc2a113aef::t_cfd46c5788200f 1-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.50-trip",
+  "base_commit_sha": "60d242c34794268eefa57745580c79f27e87402b",
+  "prompts": {},
+  "sessions": {
+    "s_de64bc2a113aef": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_s4euiiw938g8",
+        "model": "DeepSeek-V4.1-Flash"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
