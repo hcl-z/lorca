@@ -1,0 +1,26 @@
+crates/cli/src/turns.rs
+  s_a8adcd29c302dd::t_dd84c5cef2ee82 4350-4352
+  s_a8adcd29c302dd::t_28742d854255da 1132-1133,1135
+  s_a8adcd29c302dd::t_29bb9e0f950768 1144,1149
+docs/architecture/memory.md
+  s_a8adcd29c302dd::t_fd7544a58d6476 45
+crates/cli/src/memory_capture.rs
+  s_a8adcd29c302dd::t_f926db20df9a1d 121,123
+  s_a8adcd29c302dd::t_2b00dc45a55c6b 474-479
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.50-trip",
+  "base_commit_sha": "2e00c8a290897453568d739af7d067b19861d24d",
+  "prompts": {},
+  "sessions": {
+    "s_a8adcd29c302dd": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_hus0z8rozymc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
