@@ -85,27 +85,29 @@ func (w *appWindow) presentFullWindow(view func(c *ui.Context, s *sheet), onDism
 func (w *appWindow) hasSheet() bool { return len(w.sheets) > 0 }
 
 // sheetsView builds the window's sheets over its content: the one in front over a dimmed window,
-// those behind it as they were.
+// those behind it as they were. The dimming is one element that moves under whichever sheet is in
+// front, so it stays as it was while a sheet opens or closes over another.
 func (w *appWindow) sheetsView(c *ui.Context) {
 	p := colors(c)
+	fade := ui.ElementTransition{Enter: &ui.Motion{}, Duration: 120_000_000}
 	for i, s := range w.sheets {
 		front := i == len(w.sheets)-1
 		ui.Overlay(c, func() {
+			if front && !s.fullWindow {
+				ui.Box(c.Key(sheetScrimKey{})).Absolute().Left(0).Top(0).Right(0).Bottom(0).Background(p.Scrim).Transition(fade)
+			}
 			// The panel sits in the middle of the window, clear of the title bar's controls above
 			// it and by the same room below.
-			scrim := ui.Column(c.Key(s.id)).Absolute().Left(0).Top(0).Right(0).Bottom(0)
+			layer := ui.Column(c.Key(s.id)).Absolute().Left(0).Top(0).Right(0).Bottom(0)
 			if !s.fullWindow {
-				scrim.Center().Padding(44, 16)
+				layer.Center().Padding(44, 16)
 			}
 			if front {
-				if !s.fullWindow {
-					scrim.Background(p.Scrim)
-				}
-				scrim.Modal()
+				layer.Modal()
 			}
-			scrim.Transition(ui.ElementTransition{Enter: &ui.Motion{}, Duration: 120 * time.Millisecond})
+			layer.Transition(ui.ElementTransition{Enter: &ui.Motion{}, Duration: 120 * time.Millisecond})
 			frontSheet, backdropPressed = front && !s.alert, false
-			scrim.Children(func() { s.view(c, s) })
+			layer.Children(func() { s.view(c, s) })
 			frontSheet, backdropPressed = false, false
 		})
 	}
@@ -121,6 +123,9 @@ var frontSheet, backdropPressed bool
 func pressedBackdrop(panel ui.Element) bool {
 	return frontSheet && panel.PressedOutside()
 }
+
+// sheetScrimKey keys the dimming under the sheet in front.
+type sheetScrimKey struct{}
 
 // fieldSubmitted is set when a field in the sheet being built took Return, which confirms the
 // sheet as Return elsewhere in it does.
