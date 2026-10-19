@@ -1,0 +1,259 @@
+desktop/sheet_prompt.go
+  s_a8adcd29c302dd::t_d427edc85aa4a4 40
+  s_a8adcd29c302dd::t_9dfa2e387f3b8e 1-10,13-21,23-30,43-48,50-51,53,64,68,80
+  s_a8adcd29c302dd::t_5e2519922dfc73 11-12,22,31-39,41-42,49,52,54-63,65-67,69-79
+docs/architecture/memory.md
+  s_a8adcd29c302dd::t_c821bfb9210dcc 49
+  s_a8adcd29c302dd::t_5d217bd9046cd1 37,39
+  s_a8adcd29c302dd::t_eace418713a092 25,27
+  s_a8adcd29c302dd::t_a1df53ee0b3962 1-6,8-9,11-23,26,28-30,32,34-36,38,40-48
+  s_a8adcd29c302dd::t_814181f33494a4 31,33
+  s_a8adcd29c302dd::t_da8257206606b6 24
+  s_a8adcd29c302dd::t_33dbe2035a1a08 7
+  s_a8adcd29c302dd::t_7208226f0f48be 10
+crates/cli/src/project_context.rs
+  s_a8adcd29c302dd::t_1475adc6b248a2 568-569
+  s_a8adcd29c302dd::t_8116df1eec2583 555-557,565-567,570-578,581,583,586,594,597,600,603-613
+  s_a8adcd29c302dd::t_d69f3d73570262 561-564
+crates/cli/src/templates/files.rs
+  s_a8adcd29c302dd::t_0f0bda9a51ac8d 54
+docs/architecture/protocols.md
+  s_a8adcd29c302dd::t_d6c3238a28b6db 11
+crates/agent/src/tools/edit.rs
+  s_a8adcd29c302dd::t_9298a51677c8b7 127-130
+crates/agent/src/harness/mod.rs
+  s_a8adcd29c302dd::t_4a78aa2853465f 23
+crates/cli/src/api.rs
+  s_a8adcd29c302dd::t_b309c97044b4c1 498-499
+  s_a8adcd29c302dd::t_56fd9fb849d2f3 505
+  s_a8adcd29c302dd::t_67d3666bcb8640 23-32
+  s_a8adcd29c302dd::t_4c270d4e46dbb4 524
+  s_a8adcd29c302dd::t_2e696c9a282c5d 495-497,500-504,506-523
+desktop/sheet_bots_test.go
+  s_a8adcd29c302dd::t_f077f351a2d455 52,54-55
+  s_a8adcd29c302dd::t_af169cba6575bc 53
+desktop/model/models_test.go
+  s_a8adcd29c302dd::t_942e7deebf1bae 299-306
+docs/architecture/tools.md
+  s_a8adcd29c302dd::t_a90e4016bd2652 12
+  s_a8adcd29c302dd::t_f22509d2c895f2 11
+  s_a8adcd29c302dd::t_fae0756e29a1eb 13
+crates/cli/src/memory.rs
+  s_a8adcd29c302dd::t_5e872895eba628 641
+  s_a8adcd29c302dd::t_7ad24d423e393f 744
+  s_a8adcd29c302dd::t_a74d197038baed 354-373
+  s_a8adcd29c302dd::t_fa76f1b1f6e9a7 614
+  s_a8adcd29c302dd::t_1c4a946d7f8794 904-929,947-952
+  s_a8adcd29c302dd::t_63850de433eab2 257-263,267-268,284-286,288-290,292-293,305
+  s_a8adcd29c302dd::t_de7ce3111efe80 126-140
+  s_a8adcd29c302dd::t_8ee18489f8921d 329-330,333-334
+  s_a8adcd29c302dd::t_5b018998df17b2 7-10
+  s_a8adcd29c302dd::t_ec00a05f56781a 301-303,306-309
+  s_a8adcd29c302dd::t_37823e1a9b3e21 874-881
+  s_a8adcd29c302dd::t_575fd0b7638381 348-353
+  s_a8adcd29c302dd::t_bf1b7925ddf481 269-271,276-281
+  s_a8adcd29c302dd::t_8a62c8af0ed880 648-649
+  s_a8adcd29c302dd::t_b90c1b57e902a9 931-933,937-938,942,944-946
+  s_a8adcd29c302dd::t_e86676dd93e118 44-46
+  s_a8adcd29c302dd::t_00722b817fe2c0 657-659,661-665,667-668,670-699,701-710
+  s_a8adcd29c302dd::t_579eaa0753e6dd 930,934-936,939-941,943
+  s_a8adcd29c302dd::t_6d7ee84104fa93 660,666,669,700,711-723
+  s_a8adcd29c302dd::t_73049c1bc2f78a 458-459,476,480-495
+desktop/model/models.go
+  s_a8adcd29c302dd::t_7bea556a9a3917 1328-1329,1336-1353
+  s_a8adcd29c302dd::t_c5328ad4c672ab 1308-1327,1330-1335
+docs/architecture/turn-context.md
+  s_a8adcd29c302dd::t_da8257206606b6 7
+  s_a8adcd29c302dd::t_3bf64c115f7a94 9,11
+  s_a8adcd29c302dd::t_827df1aed2006c 17
+  s_a8adcd29c302dd::t_3f9fd10edee445 10
+desktop/model/store.go
+  s_a8adcd29c302dd::t_ab3338781086cd 2404-2407
+  s_a8adcd29c302dd::t_e3251b922a7aec 2370-2371,2373-2379,2387-2397
+  s_a8adcd29c302dd::t_04ac212b54da55 2325-2326,2328-2340,2344
+  s_a8adcd29c302dd::t_0d0be5b48eb8c3 2327,2341-2343,2345-2369,2372,2380-2386,2398-2403,2408-2415,2417,2419-2423
+crates/cli/src/memory_capture.rs
+  s_a8adcd29c302dd::t_13df8a54869d77 73,76
+  s_a8adcd29c302dd::t_2c2f204dddee22 6,13-14,16-20,23-26,28-30,32-34,36,38-39,42,45-61,63,66-68,75,79-89,92,98-110,112-118,125-135,140-143,145-149,151-155,157-158,160,163-164,166-167,173-179,189-190,192,196-197,218-220,246-248,250-266,282,300,306-308,312,314-318,320-323,328-333,338-340,364-365,368-374,378-379,381-385,387-392,420,424,476-477
+  s_a8adcd29c302dd::t_b10d1b5e71296a 21
+  s_a8adcd29c302dd::t_755660666b087c 22
+  s_a8adcd29c302dd::t_60b53f1f30bc97 395-406,425-426
+  s_a8adcd29c302dd::t_20f54c82a82a3d 1-5,7-12,15,27,31,35,37,40-41,43-44,62,64-65,69-72,74,77-78,90-91,93-97,111,119-124,136-139,144,150,156,159,161-162,165,168-172,180-188,191,193-194,198-211,213-217,221-245,249,267-281,283-299,301-305,309-311,313,319,324-327,334-337,341-363,366-367,377,386,393-394,407-419,421-423,427-475
+  s_a8adcd29c302dd::t_b1e407190b107c 212
+  s_a8adcd29c302dd::t_7a7ef43c64d83b 375-376,380
+  s_a8adcd29c302dd::t_589ff09251c14c 195
+crates/cli/src/profile.rs
+  s_a8adcd29c302dd::t_ad6ba383a4a01c 1-5,9-11,13-14,16-20,22-23,31-32,37,39,41,46-47,50-51,53,57-71,81-84,86-87,89,92-94
+  s_a8adcd29c302dd::t_0e6686e0875828 85
+  s_a8adcd29c302dd::t_db131f94a33b3b 27-30
+  s_a8adcd29c302dd::t_72b57bcce31916 6-8,12,15,21,24-26,33-36,38,40,42-45,48-49,52,54-56,72-80,88,90-91
+crates/cli/src/turns.rs
+  s_a8adcd29c302dd::t_ec3e96ecc80f7c 1181-1182
+  s_a8adcd29c302dd::t_333aaaff71870b 4813-4836
+  s_a8adcd29c302dd::t_7d558af06d7668 220
+  s_a8adcd29c302dd::t_5b3863e63cbf94 2154-2157
+  s_a8adcd29c302dd::t_daea5b45c28e95 2213-2220,2223,2229-2231,2237
+  s_a8adcd29c302dd::t_65774b247b79b9 4786-4812
+  s_a8adcd29c302dd::t_f1c84b9ed31169 73,80-81,84-90
+  s_a8adcd29c302dd::t_31eba6ab82c7e4 2221-2222,2224-2228,2232-2236,2238-2247
+  s_a8adcd29c302dd::t_389a2150fdb488 2426-2430,2432-2433
+  s_a8adcd29c302dd::t_7f6d5aec64dd86 2371
+  s_a8adcd29c302dd::t_303e58897c28ff 1250
+  s_a8adcd29c302dd::t_62bffc43dd0ed2 2001-2003
+  s_a8adcd29c302dd::t_014a385d27748d 901-903
+  s_a8adcd29c302dd::t_aad75cf244c0d9 2145-2148
+  s_a8adcd29c302dd::t_ad5288ff6d8cf6 2434-2442
+  s_a8adcd29c302dd::t_8b2bec9ca97508 2887
+  s_a8adcd29c302dd::t_91b34494c76f1b 4355
+  s_a8adcd29c302dd::t_d175d544fa6864 802
+  s_a8adcd29c302dd::t_f82af4f8c1d60d 1251-1252
+  s_a8adcd29c302dd::t_d310842f8eb669 2190-2192
+  s_a8adcd29c302dd::t_59c4c96f53a0c9 1977
+  s_a8adcd29c302dd::t_99aee504b1e19b 2030-2037,2039-2041,2044-2052,2054,2059-2060,2062,2064,2066,2069,2075,2077,2081,2083,2095,2101,2104,2106,2109,2114,2116,2120,2122-2134,2137-2143,2152-2153,2160,2169,2174,2188,2196,2198-2212
+  s_a8adcd29c302dd::t_2f037917123ee4 2135-2136
+  s_a8adcd29c302dd::t_eaf5f408b0b012 2074,2285
+  s_a8adcd29c302dd::t_3f4f394b3e709e 69-72,74-79,82-83
+  s_a8adcd29c302dd::t_5b5d3919e9d031 824-827
+  s_a8adcd29c302dd::t_25b808d9781d48 2893-2899,2901-2969,2981-2985,2988,2994-2996
+  s_a8adcd29c302dd::t_d41b5d35be662b 2118,2121
+  s_a8adcd29c302dd::t_1b089519386f8a 828-829
+  s_a8adcd29c302dd::t_43a00c9b625700 2008-2024
+  s_a8adcd29c302dd::t_01a758ea8f52ed 2431
+  s_a8adcd29c302dd::t_ecc40b9d82968e 788
+  s_a8adcd29c302dd::t_734fc93d1a567e 2443-2444
+  s_a8adcd29c302dd::t_b31525d8b27da3 1204-1220,1223-1224,1229,1231-1233,1235-1237
+  s_a8adcd29c302dd::t_3c9f38c590de7d 3385
+  s_a8adcd29c302dd::t_ef6867ccc93cdb 1187-1188
+  s_a8adcd29c302dd::t_7d9982e056fed3 2970-2980,2986-2987,2989-2993
+  s_a8adcd29c302dd::t_ab475ea083ee42 1221-1222,1225-1228,1230,1234,1238-1249
+  s_a8adcd29c302dd::t_9ae028d7ecf886 2028-2029,2038,2042-2043
+crates/cli/src/main.rs
+  s_a8adcd29c302dd::t_70ec9bfda563b5 99-106
+  s_a8adcd29c302dd::t_f72c12ee381d75 340-351
+  s_a8adcd29c302dd::t_86eff1b1d8a3a5 664-668,670
+  s_a8adcd29c302dd::t_137050ec9f7f53 94-98
+  s_a8adcd29c302dd::t_7d90ba03acce66 538
+  s_a8adcd29c302dd::t_8cdd919d8efe59 681-705
+  s_a8adcd29c302dd::t_b955a36dadf056 539
+  s_a8adcd29c302dd::t_66b9a2281a38ef 661-663,669,671-673,675-678
+  s_a8adcd29c302dd::t_fd0d596920ed75 674,679-680
+ARCHITECTURE.md
+  s_a8adcd29c302dd::t_2ea4b7b1d9ed64 102
+  s_a8adcd29c302dd::t_8d530bddcd080e 103
+  s_a8adcd29c302dd::t_865acb5b04d580 95
+docs/architecture/project-context.md
+  s_a8adcd29c302dd::t_9fdf357b339e91 3
+crates/cli/src/lib.rs
+  s_a8adcd29c302dd::t_b547e8de6123dd 45-46
+  s_a8adcd29c302dd::t_35323429a37d97 52
+  s_a8adcd29c302dd::t_f2cfba2ba23e79 44
+docs/architecture/desktop-app.md
+  s_a8adcd29c302dd::t_c821bfb9210dcc 8
+crates/cli/src/local_review.rs
+  s_a8adcd29c302dd::t_d2912bc30f3c29 564-565
+  s_a8adcd29c302dd::t_6730d6dfa3675f 45-53
+  s_a8adcd29c302dd::t_3a06c7878a56d0 1299-1300,1304,1309-1310,1319-1320
+  s_a8adcd29c302dd::t_59d2bf03111b4c 547,554
+  s_a8adcd29c302dd::t_fb098dab0a705c 536-539
+  s_a8adcd29c302dd::t_a5ff064a220f0b 541-546,548-553,560-563,566-568,573-600,602-610,612-613
+  s_a8adcd29c302dd::t_942a3ab9b37bef 527-535,540,555-559,601,611,614-615
+  s_a8adcd29c302dd::t_6ccfb1d9ea19c0 1301-1303,1305-1308,1311-1318
+  s_a8adcd29c302dd::t_19bfe803d65d77 569-572
+crates/cli/src/routines.rs
+  s_a8adcd29c302dd::t_5598dca92eaf10 582
+crates/cli/src/model.rs
+  s_a8adcd29c302dd::t_4b24382fac630a 1307-1332
+desktop/inspector.go
+  s_a8adcd29c302dd::t_78bd9551ba090c 407-409
+  s_a8adcd29c302dd::t_e497d45bad8a16 592,594,596
+  s_a8adcd29c302dd::t_c821bfb9210dcc 61
+  s_a8adcd29c302dd::t_7bd681a540eed6 286
+  s_a8adcd29c302dd::t_a8a43add785b50 600
+  s_a8adcd29c302dd::t_15b20fbfd9b37d 569,582-591,593,595,597
+  s_a8adcd29c302dd::t_42c99c52944506 258,261,269-285,287-292
+  s_a8adcd29c302dd::t_4ce73c7f779d07 559-568,598-599,601-621
+  s_a8adcd29c302dd::t_076c84f117d017 49-50,52-53
+  s_a8adcd29c302dd::t_44c32e24fdef14 194,197-198,207,212
+  s_a8adcd29c302dd::t_6e6988c5f336e4 486-494,516-519
+crates/agent/src/harness/skills.rs
+  s_a8adcd29c302dd::t_e1b484e8d05d47 135-151,156
+crates/cli/src/skills_turn.rs
+  s_a8adcd29c302dd::t_4a78aa2853465f 8,42,45
+  s_a8adcd29c302dd::t_44a0d5757c15cd 59-61
+docs/architecture/bots.md
+  s_a8adcd29c302dd::t_720d9d5d14eb2c 1
+  s_a8adcd29c302dd::t_51dcc1dd9ed39f 66,70
+  s_a8adcd29c302dd::t_ee3bd0de36eeff 68
+desktop/l10n/zh.go
+  s_a8adcd29c302dd::t_7b07f170d8529c 1534-1537,1541
+  s_a8adcd29c302dd::t_3a0fd11304e175 1525-1526
+  s_a8adcd29c302dd::t_c5c3b14d342bab 1516-1524,1527-1533,1538-1540
+  s_a8adcd29c302dd::t_b4db4d7d916c59 1514-1515,1542
+desktop/sheet_profile.go
+  s_a8adcd29c302dd::t_2a161c745a195e 67-68
+  s_a8adcd29c302dd::t_049423e42bcd46 1-9,13-14,19-20,25-26,28-32,34-35,37-51,54-60,63-64,83-86,88-90,92-93,98-105
+  s_a8adcd29c302dd::t_da8d52ef6c9a37 27
+  s_a8adcd29c302dd::t_bc4d5af6d3efdb 10-12,15-18,21-24,33,36,52-53,61-62,65-66,69-82,87,91,94-97
+crates/cli/src/requests.rs
+  s_50280128c4676a::t_f862434e8c3f83 123-124
+  s_a8adcd29c302dd::t_3d6847500ed9cb 174-175,178-180,185
+  s_a8adcd29c302dd::t_26265343354a76 195-201
+  s_a8adcd29c302dd::t_baef161f2611d9 202-229
+crates/cli/src/memory_check.rs
+  s_a8adcd29c302dd::t_9bbbfbdd2e56fd 22-24,27-29,32-36
+  s_a8adcd29c302dd::t_e613cbe68047bb 159-161
+  s_a8adcd29c302dd::t_7e3910b0c79427 55-57
+  s_a8adcd29c302dd::t_28e56170245214 95-96
+  s_a8adcd29c302dd::t_1149cce84dbbc1 1-21,25,45-54,58-73,77-94,97-110,113-158,162-171,174-177,179,193-195
+  s_a8adcd29c302dd::t_c3ee9522b4ebe2 111-112
+  s_a8adcd29c302dd::t_1340b52502b795 172-173
+  s_a8adcd29c302dd::t_6a69ce55744b67 178,180-192
+  s_a8adcd29c302dd::t_d7ebd25e4e880e 26,30-31,37-44
+  s_a8adcd29c302dd::t_e0966acad9b534 74-76
+crates/cli/src/traces.rs
+  s_a8adcd29c302dd::t_1ca349a5f86c95 113-114
+crates/cli/src/coding/mod.rs
+  s_a8adcd29c302dd::t_1be891b12b4ef1 1124
+  s_a8adcd29c302dd::t_e175f81c804db8 1125-1127
+  s_a8adcd29c302dd::t_346e59c78f3479 1144-1146
+crates/cli/src/browser.rs
+  s_a8adcd29c302dd::t_cec05de3ca1049 91
+  s_a8adcd29c302dd::t_0f4ceaf84a4ff6 86
+  s_a8adcd29c302dd::t_9c045affa1012b 203
+desktop/model/wire.go
+  s_a8adcd29c302dd::t_42ab8b254bcedc 622-623
+  s_a8adcd29c302dd::t_83b33d474ed11b 621,624-630
+  s_a8adcd29c302dd::t_100bcc18844850 636-639
+  s_a8adcd29c302dd::t_b8550a08c79d00 644,646-662
+  s_a8adcd29c302dd::t_27390ecaef862e 1355,1357-1360
+  s_a8adcd29c302dd::t_cb1d79565c7bf5 1356
+  s_a8adcd29c302dd::t_98549603f20c5a 633-635,640-643,645
+desktop/inspector_test.go
+  s_a8adcd29c302dd::t_199bed030178a6 60
+docs/architecture/providers.md
+  s_a8adcd29c302dd::t_bdfdb10fa2fb22 37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.50-trip",
+  "base_commit_sha": "2730aa4f2d0203327a203989196b8f86d13c512e",
+  "prompts": {},
+  "sessions": {
+    "s_50280128c4676a": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_yxerr996hw9u",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    },
+    "s_a8adcd29c302dd": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_hus0z8rozymc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
