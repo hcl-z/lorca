@@ -88,8 +88,8 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # One platform, one digest: the merge job puts them under the same tag. The action still
-      # wants a tag beside `push-by-digest`, which only names the build here.
+      # One platform, one digest: the merge job puts them under the same tag. A digest push
+      # carries its name in `outputs`, never in `tags`, which buildx refuses beside it.
       - id: build
         uses: docker/build-push-action@v6
         with:
@@ -97,8 +97,7 @@ jobs:
           file: ${{ matrix.image.dockerfile }}
           platforms: ${{ matrix.platform }}
           push: ${{ needs.version.outputs.push == 'true' }}
-          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/lorca-${{ matrix.image.name }}:${{ needs.version.outputs.tag || 'pr' }}-${{ matrix.platform == 'linux/arm64' && 'arm64' || 'amd64' }}
-          outputs: ${{ needs.version.outputs.push == 'true' && 'type=image,push-by-digest=true,name-canonical=true' || '' }}
+          outputs: ${{ needs.version.outputs.push == 'true' && format('type=image,name={0}/{1}/lorca-{2},push-by-digest=true,name-canonical=true,push=true', env.REGISTRY, github.repository_owner, matrix.image.name) || '' }}
           cache-from: type=gha,scope=${{ matrix.image.name }}-${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}-${{ matrix.platform }}
           labels: |
