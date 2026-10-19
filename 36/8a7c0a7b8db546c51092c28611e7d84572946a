@@ -1,0 +1,20 @@
+compose.yaml
+  s_de64bc2a113aef::t_8c6e0cfbd485d5 3,6-7
+  s_de64bc2a113aef::t_d190d9e56f8c68 24-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.50-trip",
+  "base_commit_sha": "368a7c0a7b8db546c51092c28611e7d84572946a",
+  "prompts": {},
+  "sessions": {
+    "s_de64bc2a113aef": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_s4euiiw938g8",
+        "model": "DeepSeek-V4.1-Flash"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
