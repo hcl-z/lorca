@@ -1,0 +1,27 @@
+package.json
+  s_a8adcd29c302dd::t_0ec3095abbbe5e 4
+Cargo.toml
+  s_a8adcd29c302dd::t_0ec3095abbbe5e 20
+desktop/mygo.config.ts
+  s_a8adcd29c302dd::t_0ec3095abbbe5e 9
+Cargo.lock
+  s_a8adcd29c302dd::t_0ec3095abbbe5e 1915,1972,2003,2012,2026,2034,2047,2080
+mobile/app.config.ts
+  s_a8adcd29c302dd::t_0ec3095abbbe5e 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.50-trip",
+  "base_commit_sha": "031713f5c3138651c1e2653a4790c76e7c85921c",
+  "prompts": {},
+  "sessions": {
+    "s_a8adcd29c302dd": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_hus0z8rozymc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
