@@ -528,9 +528,8 @@ func (mk *marketplace) view(c *ui.Context, s *sheet) {
 		mk.width, mk.height = min(800, max(640, w-60)), min(700, max(460, h-60))
 	}
 	page := mk.pages[len(mk.pages)-1]
-	panel := ui.Box(c).Width(mk.width).Height(mk.height).MaxWidthPercent(100).MaxHeightPercent(100).Radius(22).Clip().
-		Background(p.Sheet).Shadow(0, 10, 40, 0, p.Shadow).Border(0.5, p.ShadowEdge).Label(L("Marketplace")).
-		Transition(ui.ElementTransition{Enter: &ui.Motion{Y: -10}, Duration: 160 * time.Millisecond})
+	panel := ui.Box(c).Width(mk.width).Height(mk.height).MaxWidthPercent(100).MaxHeightPercent(100).Radius(18).Clip().
+		Background(p.Sheet).Shadow(0, 10, 40, 0, p.Shadow).Border(0.5, p.ShadowEdge).Label(L("Marketplace"))
 	panel.Children(func() {
 		ui.Box(c).Absolute().Top(44).Left(0).Right(0).Bottom(0).Children(func() {
 			content := ui.Scroll(c.Key(page.serial)).Fill().Padding(2, 32, 32, 32).Gap(24).TrackScroll(&page.scroll).

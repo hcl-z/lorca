@@ -85,27 +85,32 @@ func (w *appWindow) presentFullWindow(view func(c *ui.Context, s *sheet), onDism
 func (w *appWindow) hasSheet() bool { return len(w.sheets) > 0 }
 
 // sheetsView builds the window's sheets over its content: the one in front over a dimmed window,
-// those behind it as they were. The dimming is one element that moves under whichever sheet is in
-// front, so it stays as it was while a sheet opens or closes over another.
+// those behind it as they were. As AppKit's sheets on macOS 26, a sheet sits in the middle of the
+// window and grows into place as it fades in, and the last one shrinks as it fades out; one over
+// another goes at once, since what goes is drawn under what stays. The dimming is one element that
+// moves under whichever sheet is in front, so it stays as it was while a sheet opens or closes
+// over another.
 func (w *appWindow) sheetsView(c *ui.Context) {
 	p := colors(c)
-	fade := ui.ElementTransition{Enter: &ui.Motion{}, Duration: 120_000_000}
+	dim := ui.ElementTransition{Enter: &ui.Motion{}, Exit: &ui.Motion{}, Duration: 200_000_000}
 	for i, s := range w.sheets {
 		front := i == len(w.sheets)-1
 		ui.Overlay(c, func() {
 			if front && !s.fullWindow {
-				ui.Box(c.Key(sheetScrimKey{})).Absolute().Left(0).Top(0).Right(0).Bottom(0).Background(p.Scrim).Transition(fade)
+				ui.Box(c.Key(sheetScrimKey{})).Absolute().Left(0).Top(0).Right(0).Bottom(0).Background(p.Scrim).Transition(dim)
 			}
-			// The panel sits in the middle of the window, clear of the title bar's controls above
-			// it and by the same room below.
 			layer := ui.Column(c.Key(s.id)).Absolute().Left(0).Top(0).Right(0).Bottom(0)
 			if !s.fullWindow {
-				layer.Center().Padding(44, 16)
+				layer.AlignItems(ui.Center).Justify(ui.Center).Padding(16)
 			}
 			if front {
 				layer.Modal()
 			}
-			layer.Transition(ui.ElementTransition{Enter: &ui.Motion{}, Duration: 120 * time.Millisecond})
+			pop := ui.ElementTransition{Enter: &ui.Motion{Scale: 0.94}, Duration: 200_000_000}
+			if i == 0 {
+				pop.Exit = &ui.Motion{Scale: 0.94}
+			}
+			layer.Transition(pop)
 			frontSheet, backdropPressed = front && !s.alert, false
 			layer.Children(func() { s.view(c, s) })
 			frontSheet, backdropPressed = false, false
@@ -168,9 +173,8 @@ func sheetPanel(c *ui.Context, width float32) ui.Element {
 	if width == 0 {
 		width = 420
 	}
-	panel := ui.Column(c).Width(width).MaxWidthPercent(100).MaxHeightPercent(100).Padding(space5).Radius(radiusSheet).
-		Background(p.Sheet).Shadow(0, 10, 40, 0, p.Shadow).Border(0.5, p.ShadowEdge).
-		Transition(ui.ElementTransition{Enter: &ui.Motion{Y: -10, Scale: 0.97}, Duration: 180 * time.Millisecond})
+	panel := ui.Column(c).Width(width).MaxWidthPercent(100).MaxHeightPercent(100).Padding(20).Radius(18).
+		Background(p.Sheet).Shadow(0, 10, 40, 0, p.Shadow).Border(0.5, p.ShadowEdge)
 	if pressedBackdrop(panel) {
 		backdropPressed = true
 	}
