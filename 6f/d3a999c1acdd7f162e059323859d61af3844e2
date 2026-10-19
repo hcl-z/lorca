@@ -1,0 +1,25 @@
+docs/architecture/runtime.md
+  s_de64bc2a113aef::t_aabf537aed197a 11,13
+compose.yaml
+  s_de64bc2a113aef::t_31001919355c77 3,7-11,21,42
+docs/architecture/relay.md
+  s_de64bc2a113aef::t_447031e7e08793 5
+.github/workflows/images.yml
+  s_de64bc2a113aef::t_75ebf54f15dc15 1-103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.50-trip",
+  "base_commit_sha": "6fd3a999c1acdd7f162e059323859d61af3844e2",
+  "prompts": {},
+  "sessions": {
+    "s_de64bc2a113aef": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_s4euiiw938g8",
+        "model": "DeepSeek-V4.1-Flash"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
