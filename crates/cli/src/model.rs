@@ -549,6 +549,10 @@ pub struct AskAnswer {
     pub other: Option<String>,
 }
 
+/// The `tool` of a coding agent's question card. It is here rather than in `coding`, which only a
+/// Runner builds, because every Device reads the card.
+pub const ASK_TOOL: &str = "agent_ask";
+
 /// What a coding agent asks the user, on a card of its own in the chat (`tool` = `agent_ask`): its
 /// message and the fields of its form. The card is the bot's; its answer goes to the agent through
 /// the `coding_agent` row that started it (`coding.answer`). The card's `decision` is `pending`,

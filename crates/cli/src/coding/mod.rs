@@ -1299,8 +1299,7 @@ async fn ask_on_card(app: &Arc<App>, agent: &Arc<Agent>, question: AgentQuestion
     decision
 }
 
-/// The card's `tool`.
-pub const ASK_TOOL: &str = "agent_ask";
+pub use crate::model::ASK_TOOL;
 
 /// Asks the user what the agent asks, on a card of its own in the chat: the whole form, which the
 /// user fills in from any Device or the bot fills in for them. What comes back is the form filled

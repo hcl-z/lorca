@@ -101,7 +101,7 @@ pub fn permission(app: &Arc<App>, message: &Message) {
     // A question's summary is the question itself.
     let text = match tool {
         "secret" => format!("Asks for {summary}"),
-        "ask" | crate::coding::ASK_TOOL => summary,
+        "ask" | crate::model::ASK_TOOL => summary,
         _ => format!("Confirmation needed: {summary}"),
     };
     send(app, &chat, &bot, &text, Some(message.id.clone()));
