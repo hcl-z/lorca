@@ -1,10 +1,8 @@
 //! What a coding agent's work leaves for the bot and the user, published as outputs in the chat
 //! each time it is done ([Outputs and evidence](../../../../docs/architecture/outputs.md)): its
-//! diff, as a new version whenever it changed; the pull request its transcript names; and the
-//! files it saved as proof in `.lorca-proof/`, a screenshot as screenshot evidence and anything
-//! else as a test result. Evidence is the agent's own claim, so it reads as unverified. The bot
-//! gets their references to cite as task evidence. A saved secret in the diff or a text file
-//! goes out as its placeholder, and another file that holds one is not published.
+//! diff, as a new version whenever it changed, and the pull request its transcript names. The bot
+//! gets their references to cite as task evidence. A saved secret in the diff goes out as its
+//! placeholder.
 
 use std::path::Path;
 use std::sync::{Arc, LazyLock};
@@ -13,14 +11,9 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use super::workspace::PROOF_FOLDER;
 use super::Agent;
 use crate::app::App;
-use crate::outputs::{EvidenceKind, EvidenceStatus, OutputEvidence, PublishOutput};
-
-/// Proof files published at once, at most, and how big each may be.
-const PROOF_FILES: usize = 20;
-const PROOF_BYTES: u64 = 50 * 1024 * 1024;
+use crate::outputs::PublishOutput;
 
 /// What Lorca published of an agent's work so far, so a later round publishes only what changed.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -29,11 +22,9 @@ pub(crate) struct Published {
     pub diff: Option<Version>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub files: Vec<Version>,
 }
 
-/// One published file: its name, what it held, and the message of its latest version.
+/// A published diff: its name, what it held, and the message of its latest version.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub(crate) struct Version {
     pub name: String,
@@ -64,7 +55,6 @@ pub(crate) async fn publish(app: &Arc<App>, agent: &Arc<Agent>) -> Vec<Reference
     let record = agent.record();
     let mut published = record.published.clone();
     let mut references = Vec::new();
-    let who = super::name(&record.kind);
     let redactions = crate::secrets::Redactions::load(app);
     let scratch = app.config.home.join("agents").join(&record.id);
 
@@ -95,79 +85,6 @@ pub(crate) async fn publish(app: &Arc<App>, agent: &Arc<Agent>) -> Vec<Reference
             references.push(reference);
         }
         published.links.push(link);
-    }
-
-    let proof = record.folder.join(PROOF_FOLDER);
-    let mut files: Vec<(String, std::path::PathBuf, String)> = std::fs::read_dir(&proof)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter_map(|entry| {
-            let name = entry.file_name().to_string_lossy().to_string();
-            let metadata = entry.metadata().ok()?;
-            if name.starts_with('.') || !metadata.is_file() || metadata.len() == 0 || metadata.len() > PROOF_BYTES {
-                return None;
-            }
-            let modified = metadata.modified().ok().and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok()).map(|time| time.as_millis()).unwrap_or(0);
-            Some((name, entry.path(), format!("{}:{modified}", metadata.len())))
-        })
-        .collect();
-    files.sort();
-    for (name, path, fingerprint) in files.into_iter().take(PROOF_FILES) {
-        let previous = published.files.iter().find(|version| version.name == name).cloned();
-        if previous.as_ref().is_some_and(|version| version.fingerprint == fingerprint) {
-            continue;
-        }
-        let lower = name.to_lowercase();
-        let image = [".png", ".jpg", ".jpeg", ".gif", ".webp"].iter().any(|extension| lower.ends_with(extension));
-        // A file that holds a saved secret: a text one goes out as a copy with its placeholder,
-        // another not at all.
-        let mut clean_copy = None;
-        if !image && !redactions.is_empty() {
-            let Ok(bytes) = std::fs::read(&path) else { continue };
-            match String::from_utf8(bytes) {
-                Ok(text) => {
-                    if let Some(clean) = redactions.text(&text) {
-                        let copy = scratch.join(&name);
-                        if std::fs::create_dir_all(&scratch).and_then(|_| std::fs::write(&copy, clean)).is_err() {
-                            continue;
-                        }
-                        clean_copy = Some(copy);
-                    }
-                }
-                Err(error) if redactions.text(&String::from_utf8_lossy(error.as_bytes())).is_some() => continue,
-                Err(_) => {}
-            }
-        }
-        let evidence = OutputEvidence {
-            kind: match (image, lower.contains("before")) {
-                (true, true) => EvidenceKind::BeforeScreenshot,
-                (true, false) => EvidenceKind::AfterScreenshot,
-                (false, _) if lower.contains("test") => EvidenceKind::TestResult,
-                (false, _) => EvidenceKind::Verification,
-            },
-            summary: format!("{who} saved this as proof of its work."),
-            status: EvidenceStatus::Unverified,
-            command: None,
-            exit_code: None,
-        };
-        let request = PublishOutput {
-            name: name.clone(),
-            path: Some(clean_copy.as_deref().unwrap_or(&path).to_string_lossy().to_string()),
-            replaces: previous.as_ref().map(|version| version.message_id.clone()),
-            evidence: Some(evidence),
-            ..Default::default()
-        };
-        let published_from = if clean_copy.is_some() { &scratch } else { &proof };
-        let reference = output(app, &record, published_from, request).await;
-        if let Some(copy) = &clean_copy {
-            let _ = std::fs::remove_file(copy);
-        }
-        if let Some(reference) = reference {
-            published.files.retain(|version| version.name != name);
-            published.files.push(Version { name, fingerprint, message_id: reference.message_id.clone() });
-            references.push(reference);
-        }
     }
 
     agent.record.lock().unwrap().published = published;

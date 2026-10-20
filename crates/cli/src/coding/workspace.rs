@@ -1,15 +1,12 @@
 //! Where a coding agent works. In a git repository that is a worktree of its own, so it never
 //! edits the checkout the user works in: a new one on a branch of its own name, or the one a
 //! bot names again, under `worktrees/` in Lorca's folder. A folder that is not a repository is
-//! worked in as it is. The proof the bot expects goes in `.lorca-proof/` there, which ignores
-//! itself in git.
+//! worked in as it is.
 
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-/// The folder the agent saves its proof in, inside the folder it works in.
-pub(crate) const PROOF_FOLDER: &str = ".lorca-proof";
 /// The most diff an output carries.
 const DIFF_BYTES: usize = 2 * 1024 * 1024;
 /// New files a diff shows in full, at most, and how big each may be.
@@ -38,7 +35,6 @@ pub(crate) async fn prepare(home: &Path, workdir: &Path, folder: Option<&str>, w
         if worktree.is_some() {
             return Err(format!("{} is not a git repository, so it has no worktrees. Leave worktree out to work in the folder itself.", super::home_relative(&folder)));
         }
-        create_proof_folder(&folder)?;
         return Ok(Place { folder, branch: None, base: None });
     };
     let name = match worktree {
@@ -55,7 +51,6 @@ pub(crate) async fn prepare(home: &Path, workdir: &Path, folder: Option<&str>, w
         }
         let branch = git(&path, &["branch", "--show-current"]).await.ok().filter(|branch| !branch.is_empty());
         let base = git(&path, &["merge-base", "HEAD", &head]).await.ok();
-        create_proof_folder(&path)?;
         return Ok(Place { folder: path, branch, base });
     }
     std::fs::create_dir_all(path.parent().unwrap_or(home)).map_err(|e| e.to_string())?;
@@ -64,7 +59,6 @@ pub(crate) async fn prepare(home: &Path, workdir: &Path, folder: Option<&str>, w
     let added = if exists { git(&repo, &["worktree", "add", &target, &name]).await } else { git(&repo, &["worktree", "add", "-b", &name, &target, &head]).await };
     added.map_err(|error| format!("Could not make the worktree {name}: {error}"))?;
     let base = git(&path, &["rev-parse", "HEAD"]).await.ok();
-    create_proof_folder(&path)?;
     Ok(Place { folder: path, branch: Some(name), base })
 }
 
@@ -110,17 +104,6 @@ pub(crate) fn slug(text: &str) -> Option<String> {
     slug.truncate(40);
     let slug = slug.trim_matches('-').to_string();
     (!slug.is_empty()).then_some(slug)
-}
-
-/// The proof folder, which ignores itself and everything in it.
-fn create_proof_folder(folder: &Path) -> Result<(), String> {
-    let proof = folder.join(PROOF_FOLDER);
-    std::fs::create_dir_all(&proof).map_err(|e| format!("Could not make {}: {e}", super::home_relative(&proof)))?;
-    let ignore = proof.join(".gitignore");
-    if !ignore.exists() {
-        std::fs::write(&ignore, "*\n").map_err(|e| e.to_string())?;
-    }
-    Ok(())
 }
 
 /// Runs git in `folder` and returns what it printed, trimmed.
@@ -200,8 +183,7 @@ mod tests {
         assert_eq!(place.branch.as_deref(), Some("fix-login"));
         assert!(place.folder.starts_with(home.join("worktrees")), "{}", place.folder.display());
         assert!(place.folder.join("README.md").exists());
-        assert!(place.folder.join(PROOF_FOLDER).is_dir());
-        assert_eq!(git(&place.folder, &["status", "--porcelain"]).await.unwrap(), "", "the proof folder ignores itself");
+        assert_eq!(git(&place.folder, &["status", "--porcelain"]).await.unwrap(), "", "a new worktree has nothing in it but the commit");
 
         // Named again, it is the same worktree, and the diff shows what changed since.
         std::fs::write(place.folder.join("README.md"), "shop\nlogin\n").unwrap();

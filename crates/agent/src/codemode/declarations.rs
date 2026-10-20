@@ -134,7 +134,11 @@ pub fn output_summary(schema: &Value) -> String {
     if schema.get("type").and_then(Value::as_str) == Some("object") && mcp_structured_content_schema(Some(schema)).is_none() {
         if let Some(properties) = schema.get("properties").and_then(Value::as_object) {
             let required: Vec<&str> = schema.get("required").and_then(Value::as_array).map(|names| names.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
-            let fields: Vec<String> = properties.keys().map(|name| if required.contains(&name.as_str()) { name.clone() } else { format!("{name}?") }).collect();
+            // Sorted, as `object_type` lists members: serde_json keeps a map's insertion order when
+            // a dependency asks for `preserve_order`.
+            let mut names: Vec<&String> = properties.keys().collect();
+            names.sort();
+            let fields: Vec<String> = names.into_iter().map(|name| if required.contains(&name.as_str()) { name.clone() } else { format!("{name}?") }).collect();
             return format!("{{ {} }}", fields.join(", "));
         }
     }

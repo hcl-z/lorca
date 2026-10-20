@@ -1639,7 +1639,7 @@ impl TurnState {
                 // agent at work, what it asks, how it ended.
                 let starts_agent = tool_name == "coding_agent" && args["action"] == "start";
                 let agent = starts_agent.then(|| crate::model::AgentRun {
-                    kind: args["agent"].as_str().filter(|kind| crate::coding::KINDS.contains(kind)).unwrap_or("").to_string(),
+                    kind: args["agent"].as_str().filter(|kind| crate::coding::is_kind(kind)).unwrap_or("").to_string(),
                     task: args["prompt"].as_str().unwrap_or("").lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or("").chars().take(200).collect(),
                     state: "starting".into(),
                     started_at: Some(crate::config::now_secs()),
@@ -2188,7 +2188,7 @@ pub fn system_sections(
         tools.push_str(
             "\nFor a larger coding job in a repository on this Runner (a feature, a fix with tests, a refactor), or when the user \
              asks for Claude Code or Codex, start a coding agent with coding_agent; it works in a git worktree while you \
-             supervise. Say what proof you expect back, and check its work against the request. Once you start one, tell the \
+             supervise. Check its work against the request. Once you start one, tell the \
              user what you started; when you hear it is done, stalled, or cut off, tell them how it went.\n",
         );
     }

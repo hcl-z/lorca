@@ -979,6 +979,7 @@ pub fn post_sign_in_card(app: &Arc<App>, chat_id: &str, bot_id: &str, plugin_id:
             code: None,
             secret: None,
             ask: None,
+            agent_ask: None,
         },
     );
     app.upsert_message(message.clone(), true);
@@ -1035,6 +1036,7 @@ pub fn post_install_card(app: &Arc<App>, chat_id: &str, bot_id: &str, plugin_id:
             code: None,
             secret: None,
             ask: None,
+            agent_ask: None,
         },
     );
     app.upsert_message(message.clone(), true);
@@ -2838,11 +2840,14 @@ async fn persist_refreshed(app: &Arc<App>, plugin_id: &str, server: &str, auth: 
     }
 }
 
-/// `create_issue · repo: lorca, title: Fix the relay`
+/// `create_issue · repo: lorca, title: Fix the relay`, the arguments in alphabetical order whatever
+/// order serde_json keeps them in.
 fn call_summary(tool: &str, args: &Value) -> String {
     let mut parts = Vec::new();
     if let Some(object) = args.as_object() {
-        for (key, value) in object.iter().take(4) {
+        let mut entries: Vec<(&String, &Value)> = object.iter().collect();
+        entries.sort_by(|a, b| a.0.cmp(b.0));
+        for (key, value) in entries.into_iter().take(4) {
             let text = match value {
                 Value::String(s) => s.clone(),
                 other => other.to_string(),
@@ -2939,6 +2944,7 @@ pub async fn ask_with_rule(
             code: None,
             secret: None,
             ask: None,
+            agent_ask: None,
         },
     );
     let decision = await_answer(app, chat_id, &message.id, always_rule, cancel, || {
@@ -3450,7 +3456,7 @@ for line in sys.stdin:
         assert_eq!(tool_name("my-server", "weird.name/x"), "my_server__weird_name_x");
         assert_eq!(tool_name("p", "a-b"), tool_name("p", "a_b"), "names are identifiers, so a collision gets a suffix in the catalog");
         assert_eq!(tool_name("p", &"x".repeat(100)).len(), 64);
-        // serde_json keeps object keys sorted, so the summary lists them alphabetically.
+        // The summary lists the arguments alphabetically, not in the order they were given.
         assert_eq!(call_summary("create_issue", &json!({ "repo": "lorca", "title": "Fix   the relay", "body": "x".repeat(80) })), format!("create_issue · body: {}…, repo: lorca, title: Fix the relay", "x".repeat(60)));
         assert_eq!(call_summary("get_me", &json!({})), "get_me");
         assert_eq!(Decision::parse("always"), Some(Decision::Always));

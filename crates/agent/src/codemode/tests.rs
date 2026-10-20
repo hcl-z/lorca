@@ -328,7 +328,7 @@ async fn describe_namespace_lists_every_tool_of_a_group() {
     let result = run(&codemode, code).await;
     let text = text_of(&result);
     assert!(
-        text.ends_with(r#"[{"description":"Tools of mine","name":"my-tools","tools":["my_tools__lookup","my_tools__echo"]},{"name":"other","tools":["other__echo"]},null]"#),
+        text.ends_with(r#"[{"name":"my-tools","tools":["my_tools__lookup","my_tools__echo"],"description":"Tools of mine"},{"name":"other","tools":["other__echo"]},null]"#),
         "{text}"
     );
     let failed = run(&codemode, "return await describeNamespace();").await;

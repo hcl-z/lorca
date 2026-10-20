@@ -3,6 +3,7 @@
 // Every call is one request over the JSON API the desktop app speaks to the CLI; the Rust
 // core does the keys, the relay, jobs, rooms, and questions to Runners.
 
+import type { AgentTranscriptPage } from "./agentEntries";
 import * as WebBrowser from "expo-web-browser";
 import { AppState, Platform, type AppStateStatus } from "react-native";
 import * as core from "../../modules/lorca-core";
@@ -1125,21 +1126,21 @@ class Engine {
     await core.request("coding.stop", { chat_id: chatId, message_id: messageId });
   }
 
-  /// Answers what a coding agent's pane asks with one of the choices it offers.
-  async answerAgentChoice(chatId: string, messageId: string, choice: number) {
-    await core.request("coding.answer", { chat_id: chatId, message_id: messageId, choice });
+  /// Answers the question a coding agent asks in the chat with its form filled in, by field key,
+  /// through the row of the agent that asks (`rowId`).
+  async answerAgentAsk(chatId: string, rowId: string, values: Record<string, unknown>) {
+    await core.request("coding.answer", { chat_id: chatId, message_id: rowId, values });
   }
 
-  /// Types an answer into what a coding agent's pane asks, then Return.
-  async answerAgentText(chatId: string, messageId: string, text: string) {
-    await core.request("coding.answer", { chat_id: chatId, message_id: messageId, text });
+  /// Declines the question a coding agent asks: it goes on without an answer.
+  async declineAgentAsk(chatId: string, rowId: string) {
+    await core.request("coding.answer", { chat_id: chatId, message_id: rowId, decline: true });
   }
 
-  /// A coding agent's transcript, from its Runner: what it was sent, said, and did, or what its
-  /// pane shows.
-  async agentTranscript(chatId: string, messageId: string): Promise<string> {
-    const answer = await core.request<{ text: string }>("coding.transcript", { chat_id: chatId, message_id: messageId });
-    return answer.text;
+  /// A coding agent's transcript, from its Runner: what it was sent, said, and did, as entries,
+  /// those changed after change `since` when it is given.
+  async agentTranscript(chatId: string, messageId: string, since?: number): Promise<AgentTranscriptPage> {
+    return core.request<AgentTranscriptPage>("coding.transcript", { chat_id: chatId, message_id: messageId, ...(since === undefined ? {} : { since }) });
   }
 
   // MARK: - Routines

@@ -480,8 +480,10 @@ func developerThread() []*Message {
 			Agent: &AgentRun{
 				ID: "agent-3f9a2c1d", Kind: "claude", Task: "Fix the broken docs link on the download page, with a test",
 				Folder: "~/.lorca/worktrees/site-1a2b3c/fix-docs-link", Branch: "fix-docs-link", State: AgentWorking,
-				Output: "● Read(src/pages/download.astro)\n● Edit(src/pages/download.astro)\n  ⎿ Updated 1 line\n● Bash(bun test links)\n  ⎿ 14 pass\n    0 fail",
-				Device: "Workbench",
+				Output:    "● Read(src/pages/download.astro)\n● Edit(src/pages/download.astro)\n  ⎿ Updated 1 line\n● Bash(bun test links)\n  ⎿ 14 pass\n    0 fail",
+				Device:    "Workbench",
+				Settings:  []AgentSetting{{Name: "Model", Value: "Opus"}, {Name: "Effort", Value: "High"}, {Name: "Context", Value: "61k / 200k"}, {Name: "Cost", Value: "$0.38"}},
+				StartedAt: minutesAgo(11),
 			},
 		}}, minutesAgo(11)),
 		mockMessage(BotAuthor("bot-patch"), textBody("Claude Code is fixing the link in a worktree of its own. I'll check its test when it's done."), minutesAgo(11)),
