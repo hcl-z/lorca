@@ -1,0 +1,34 @@
+mobile/src/ui/files.tsx
+  s_e613e669393f0b::t_8142ac83c97762 12
+  s_d88a6c780361ee::t_8d00df3fb107a5 1-11,13-281
+mobile/src/core/files.test.ts
+  s_d88a6c780361ee::t_ea7c69540c81f7 1-77
+mobile/src/core/files.ts
+  s_d88a6c780361ee::t_f1bac63200ab34 1-243
+mobile/app/file/[id].tsx
+  s_d88a6c780361ee::t_12543d5080d715 1-86,88-343
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.50-trip",
+  "base_commit_sha": "041a397900a3b723f406e99f3b552bf6e53fc826",
+  "prompts": {},
+  "sessions": {
+    "s_d88a6c780361ee": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_q8v7hw1q5f2f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    },
+    "s_e613e669393f0b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4a595502-2bad-42b6-adcf-8f41e5187a70",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
