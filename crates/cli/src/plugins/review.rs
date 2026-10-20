@@ -752,11 +752,7 @@ fn action_line(bot: &str, message: &Message) -> Option<String> {
                 format!("{bot} ran: {} → {ended}", one_line(command))
             }
             (None, Some(agent)) => {
-                let who = match agent.kind.as_str() {
-                    "claude" => "Claude Code",
-                    "codex" => "Codex",
-                    _ => "a coding agent",
-                };
+                let who = if crate::coding::is_kind(&agent.kind) { crate::coding::name(&agent.kind) } else { "a coding agent" };
                 let branch = agent.branch.as_deref().map(|branch| format!(" on branch {branch}")).unwrap_or_default();
                 format!("{bot} started {who} in {}{branch}: {} → {}", agent.folder, one_line(&agent.task), state_word(&agent.state))
             }

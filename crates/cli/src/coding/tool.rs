@@ -8,7 +8,7 @@ use lorca_agent::{BeforeToolCallContext, BeforeToolCallResult, Tool, ToolError, 
 use serde_json::{json, Value};
 use tokio_util::sync::CancellationToken;
 
-use super::{hosts, name, process, workspace, Start, KINDS};
+use super::{find_program, is_kind, kinds, name, workspace, Start, KINDS};
 use crate::app::App;
 use crate::model::{AgentQuestion, Bot};
 use crate::plugins::mcp::Decision;
@@ -29,14 +29,18 @@ pub struct CodingAgentTool {
     pub event: Option<crate::event_triggers::EventTask>,
 }
 
-const DESCRIPTION: &str = "Hand a coding job to Claude Code or Codex on your Runner and supervise it. `start` runs one on `prompt` \
+const DESCRIPTION: &str = "Hand a coding job to a coding agent on your Runner and supervise it: Claude Code or Codex, or when you name one \
+an agent that speaks ACP (Gemini CLI, OpenCode, Kimi Code, GitHub Copilot, Cursor, Kiro, pi; pi runs its commands without asking, so none of them is reviewed). `start` runs one on `prompt` \
 in a git worktree of `folder` (default: your working directory): a new worktree on a branch of its own, or the one `worktree` names, \
-so it never edits the user's checkout; a folder that is not a repository is worked in as it is. Say in `proof` what you expect back \
-(test output, screenshots, a pull request). It returns the agent's id at once and works on its own; you get a turn when it is done, \
-stalls, or exits, with its last message and the outputs Lorca published from its work (its diff, its proof files, its pull request), \
+so it never edits the user's checkout; a folder that is not a repository is worked in as it is. It returns the agent's id at once and works on its own; you get a turn when it is done, \
+stalls, or exits, with its last message and the outputs Lorca published from its work (its diff and its pull request), \
 whose references you can cite as task evidence. `read` shows its transcript since you last read it (or its last `lines`), `send` gives \
 it `message`, taken up once it is done with what it does now, or at once with `interrupt: true`, which stops that first; a stopped \
-agent starts again on its session. `stop` ends it, `list` shows your agents in this chat. Every command it runs goes through Auto-review \
+agent starts again on its session. `stop` ends it, `list` shows your agents in this chat, and `commands` lists the slash commands and \
+skills one running offers, which you run by sending `/name` (Codex: `$name`) as a message. `plan: true` starts it in its plan mode, and `model` and `effort` choose its model and how hard it thinks; one it cannot take fails the start and says what it offers. `set` changes the model or effort of one that runs, with its conversation kept, so switch with it instead of stopping and starting another. An agent may ask a question while it works, as a form \
+on a card of its own in the chat: you get a turn with the question and its fields, and `answer` fills it in (`answers` by field label; \
+`choice`, numbered from 1, or `text` when it asks one thing) or `decline: true` declines it; answer only what the user's own words settle, \
+and otherwise leave it to the user on that card, who is asked at the same time. Every command it runs goes through Auto-review \
 as yours do, and its card in the chat shows the user its progress and anything it asks them. Saved secrets never go in a prompt or a \
 message: for a job that needs one, such as publishing a package, name your command secrets in `secrets`, and the agent has each as \
 $NAME in its environment.";
@@ -53,14 +57,20 @@ impl Tool for CodingAgentTool {
         json!({
             "type": "object",
             "properties": {
-                "action": { "type": "string", "enum": ["start", "read", "send", "stop", "list"] },
-                "agent": { "type": "string", "enum": KINDS, "description": "start: which agent. Default: Claude Code when it is installed, else Codex." },
+                "action": { "type": "string", "enum": ["start", "read", "send", "stop", "list", "commands", "answer", "set"] },
+                "agent": { "type": "string", "enum": kinds(), "description": "start: which agent. Default: Claude Code when it is installed, else Codex. The others run only when named, and only when installed on this Runner." },
                 "prompt": { "type": "string", "description": "start: the job, as you would put it to an engineer." },
                 "folder": { "type": "string", "description": "start: the repository or folder to work in, absolute, ~/…, or relative to your working directory." },
                 "worktree": { "type": "string", "description": "start: the worktree to work in, by name, made from the repository's current commit if new. Default: a new one named after the job." },
-                "proof": { "type": "string", "description": "start: the proof you expect back, such as \"the output of cargo test, and before/after screenshots of the settings page\"." },
-                "secrets": { "type": "array", "items": { "type": "string" }, "description": "start: names of your saved command secrets the job needs, given to the agent as environment variables. Starting it and every command it runs are then reviewed knowing which, and it runs as Lorca's own process, not in a pane." },
-                "id": { "type": "string", "description": "read, send, stop: the agent's id." },
+                "secrets": { "type": "array", "items": { "type": "string" }, "description": "start: names of your saved command secrets the job needs, given to the agent as environment variables. Starting it and every command it runs are then reviewed knowing which." },
+                "plan": { "type": "boolean", "description": "start: have it plan first, in its plan mode, and show the plan for approval before it changes anything. For a large or unclear change." },
+                "model": { "type": "string", "description": "start, set: the model it uses, by the name or id it gives it (such as sonnet or opus). An agent that has no such model says what it offers." },
+                "effort": { "type": "string", "description": "start, set: how hard it thinks (such as low, medium, high), by the name it gives it." },
+                "id": { "type": "string", "description": "read, send, stop, commands, answer: the agent's id." },
+                "answers": { "type": "object", "description": "answer: the form filled in, by field label: a choice's title or number from 1, a list of them where it takes several, text, true or false, or a number." },
+                "choice": { "type": "integer", "description": "answer: the number of the choice, from 1, when the agent asks one thing with choices (yes is 1, no 2)." },
+                "text": { "type": "string", "description": "answer: the answer, when the agent asks one thing in words." },
+                "decline": { "type": "boolean", "description": "answer: decline the question instead." },
                 "message": { "type": "string", "description": "send: the follow-up." },
                 "interrupt": { "type": "boolean", "description": "send: stop what it does now and take this message at once." },
                 "lines": { "type": "integer", "description": "read: its last lines instead of what is new." }
@@ -89,7 +99,7 @@ impl Tool for CodingAgentTool {
                 let record = agent.record();
                 let skipped = if skipped > 0 { format!("[{skipped} earlier lines left out]\n") } else { String::new() };
                 let text = if text.trim().is_empty() { "(nothing new)".to_string() } else { text };
-                format!("{} ({}) is {}.\n{skipped}{text}", name(&record.kind), record.id, state_words(&record))
+                format!("{} ({}) is {}.\n{skipped}{text}", name(&record.kind), record.id, standing(&agent))
             }
             Some("send") => {
                 let agent = agent()?;
@@ -116,12 +126,57 @@ impl Tool for CodingAgentTool {
                             Some(branch) => format!("{} on {branch}", super::home_relative(&record.folder)),
                             None => super::home_relative(&record.folder),
                         };
-                        format!("- {} {}: {} in {place}: “{}”", record.id, name(&record.kind), state_words(&record), record.task)
+                        format!("- {} {}: {} in {place}: “{}”", record.id, name(&record.kind), standing(agent), record.task)
                     })
                     .collect();
                 if rows.is_empty() { "You have started no coding agents in this chat.".into() } else { rows.join("\n") }
             }
-            _ => return Err(ToolError("action is start, read, send, stop, or list".into())),
+            Some("commands") => {
+                let agent = agent()?;
+                let record = agent.record();
+                let driver = agent
+                    .driver()
+                    .ok_or_else(|| ToolError(format!("{} ({}) is not running, so it lists no commands. Send it a message to start it again on its session.", name(&record.kind), record.id)))?;
+                let commands = driver.commands().await;
+                if commands.is_empty() {
+                    format!("{} ({}) offers no commands.", name(&record.kind), record.id)
+                } else {
+                    let rows: Vec<String> = commands
+                        .iter()
+                        .map(|(command, about)| {
+                            let command = if command.starts_with('$') || command.starts_with('/') { command.clone() } else { format!("/{command}") };
+                            if about.trim().is_empty() { format!("- {command}") } else { format!("- {command}: {}", about.trim()) }
+                        })
+                        .collect();
+                    format!("{} ({}) offers these. Run one by sending it as a message, with its arguments after it:\n{}", name(&record.kind), record.id, rows.join("\n"))
+                }
+            }
+            Some("answer") => {
+                let agent = agent()?;
+                let record = agent.record();
+                if args["decline"] == true {
+                    super::decline(app, &agent, true).map_err(ToolError)?;
+                    format!("Declined the question of {} ({}). It goes on without an answer.", name(&record.kind), record.id)
+                } else {
+                    let given = super::bot_answers(&agent, &args).map_err(ToolError)?;
+                    let shown = super::answer_form(app, &agent, &given, true).map_err(ToolError)?;
+                    format!("Answered {} ({}): {shown}. It goes on.", name(&record.kind), record.id)
+                }
+            }
+            Some("set") => {
+                let agent = agent()?;
+                let mut wants: Vec<(String, String)> = Vec::new();
+                for key in ["model", "effort"] {
+                    if let Some(value) = args[key].as_str().map(str::trim).filter(|value| !value.is_empty()) {
+                        wants.push((key.into(), value.into()));
+                    }
+                }
+                if wants.is_empty() {
+                    return Err(ToolError("set needs a model or an effort".into()));
+                }
+                super::set_options(app, &agent, &wants).await.map_err(ToolError)?
+            }
+            _ => return Err(ToolError("action is start, read, send, stop, list, commands, answer, or set".into())),
         };
         Ok(ToolResult::text(text))
     }
@@ -172,10 +227,17 @@ impl CodingAgentTool {
         let folder = args["folder"].as_str();
         let worktree = args["worktree"].as_str().map(str::trim).filter(|name| !name.is_empty());
         let place = workspace::prepare(&app.config.home, &self.workdir, folder, worktree, prompt).await?;
-        // A pane's command line and screen would show its secrets.
-        let host = if secrets.is_empty() { hosts::detect().await } else { None };
         let task: String = prompt.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or(prompt).chars().take(TASK_CHARS).collect();
-        let full = brief(prompt, args["proof"].as_str(), &place, &secrets);
+        let full = brief(prompt, &place, &secrets);
+        let mut wants: Vec<(String, String)> = Vec::new();
+        if args["plan"].as_bool().unwrap_or(false) {
+            wants.push(("plan".into(), "plan".into()));
+        }
+        for key in ["model", "effort"] {
+            if let Some(value) = args[key].as_str().map(str::trim).filter(|value| !value.is_empty()) {
+                wants.push((key.into(), value.into()));
+            }
+        }
         let start = Start {
             chat_id: self.chat_id.clone(),
             bot_id: self.bot.id.clone(),
@@ -183,11 +245,11 @@ impl CodingAgentTool {
             trigger_message_id: self.trigger_message_id.clone(),
             kind: kind.clone(),
             program,
-            host: host.clone(),
             place: place.clone(),
             task,
             prompt: full,
             secrets,
+            wants,
             event: self.event.as_ref().map(|event| crate::event_triggers::EventTask { data: String::new(), ..event.clone() }),
         };
         let agent = super::start(app, start).await?;
@@ -196,9 +258,8 @@ impl CodingAgentTool {
             Some(branch) => format!("the worktree {} on branch {branch}", super::home_relative(&place.folder)),
             None => super::home_relative(&place.folder),
         };
-        let pane = host.map(|host| format!(" It runs in a {} pane on this Runner, where the user can watch it.", host.title())).unwrap_or_default();
         Ok(format!(
-            "Started {} ({id}) in {place}.{pane} It works on its own; you get a turn when it is done, stalls, or exits. Meanwhile coding_agent read {id} shows its transcript, send gives it a follow-up, and stop ends it.",
+            "Started {} ({id}) in {place}. It works on its own; you get a turn when it is done, stalls, or exits. Meanwhile coding_agent read {id} shows its transcript, send gives it a follow-up, and stop ends it.",
             name(&kind)
         ))
     }
@@ -208,41 +269,36 @@ impl CodingAgentTool {
 async fn pick(asked: Option<&str>) -> Result<(String, PathBuf), String> {
     let asked = asked.map(str::trim).filter(|kind| !kind.is_empty());
     if let Some(kind) = asked {
-        if !KINDS.contains(&kind) {
-            return Err("agent is claude or codex".into());
+        if !is_kind(kind) {
+            return Err(format!("agent is one of {}", kinds().join(", ")));
         }
-        if let Some(program) = process::find(kind).await {
+        if let Some(program) = find_program(kind).await {
             return Ok((kind.to_string(), program));
         }
     }
     for kind in KINDS {
-        if let Some(program) = process::find(kind).await {
+        if let Some(program) = find_program(kind).await {
             return match asked {
                 Some(asked) => Err(format!("{} is not installed on this Runner; {} is.", name(asked), name(kind))),
                 None => Ok((kind.to_string(), program)),
             };
         }
     }
-    Err("Neither Claude Code nor Codex is installed on this Runner. Ask the user to install one (claude.com/claude-code or developers.openai.com/codex) and sign in to it there.".into())
+    match asked {
+        Some(asked) => Err(format!("{} is not installed on this Runner, and neither are Claude Code or Codex. Ask the user to install it and sign in to it there.", name(asked))),
+        None => Err("Neither Claude Code nor Codex is installed on this Runner. Ask the user to install one (claude.com/claude-code or developers.openai.com/codex) and sign in to it there.".into()),
+    }
 }
 
-/// The job as the agent reads it: the bot's prompt, where it works, and where its proof goes.
-fn brief(prompt: &str, proof: Option<&str>, place: &workspace::Place, secrets: &[String]) -> String {
+/// The job as the agent reads it: the bot's prompt and where it works.
+fn brief(prompt: &str, place: &workspace::Place, secrets: &[String]) -> String {
     let folder = place.folder.display();
-    let proof_folder = place.folder.join(workspace::PROOF_FOLDER);
     let mut brief = prompt.trim().to_string();
     match &place.branch {
         Some(branch) => brief.push_str(&format!("\n\nYou work in {folder}, a git worktree of its own on branch {branch}. Commit your work on that branch.")),
         None => brief.push_str(&format!("\n\nYou work in {folder}.")),
     }
-    let proof = proof.map(str::trim).filter(|proof| !proof.is_empty());
-    match proof {
-        Some(proof) => brief.push_str(&format!(" When you are done, save the proof of your work in {}: {proof}.", proof_folder.display())),
-        None => brief.push_str(&format!(" Save test output and screenshots that show your work in {}.", proof_folder.display())),
-    }
-    brief.push_str(
-        " That folder stays out of git, so never commit it. Test output goes in .txt or .log files there, screenshots in .png files; name a screenshot before-… or after-… when it shows a change. If you open a pull request, give its link in your last message.",
-    );
+    brief.push_str(" If you open a pull request, give its link in your last message.");
     if !secrets.is_empty() {
         let names = secrets.iter().map(|name| format!("${name}")).collect::<Vec<_>>().join(", ");
         brief.push_str(&format!(
@@ -267,6 +323,14 @@ fn secret_names(args: &Value) -> Result<Vec<String>, String> {
             Ok(out)
         }
         _ => Err("secrets is a list of names".into()),
+    }
+}
+
+/// How an agent stands, in a few words for the bot: a question waiting for an answer comes first.
+fn standing(agent: &super::Agent) -> String {
+    match agent.record().ask_card {
+        Some(_) => "waiting for an answer to its question (coding_agent answer, or the user on its card in the chat)".into(),
+        None => state_words(&agent.record()),
     }
 }
 
@@ -302,6 +366,7 @@ pub async fn review_start(app: &Arc<App>, bot: &Bot, chat_id: &str, trigger: &Tr
     update(&|card| {
         card.state = "checking".into();
         card.kind = kind.clone();
+        card.name = name(&kind).to_string();
         card.device = Some(runner_name.clone());
     });
     let who = name(&kind).to_string();
@@ -313,7 +378,7 @@ pub async fn review_start(app: &Arc<App>, bot: &Bot, chat_id: &str, trigger: &Tr
     if !secrets.is_empty() {
         description.push_str(&format!(" {}", super::holds_secrets(&secrets)));
     }
-    let args = json!({ "agent": ctx.args["agent"], "folder": ctx.args["folder"], "worktree": ctx.args["worktree"], "prompt": ctx.args["prompt"], "proof": ctx.args["proof"], "secrets": ctx.args["secrets"] });
+    let args = json!({ "agent": ctx.args["agent"], "folder": ctx.args["folder"], "worktree": ctx.args["worktree"], "prompt": ctx.args["prompt"], "secrets": ctx.args["secrets"] });
     let action = Action { target_name: &runner_name, tool: "coding_agent", description: &description, args: &args, script: None, facts: &[], propose_rule: true };
     let (reason, rule) = match crate::plugins::review::review(app, bot, chat_id, trigger, action, ctx.cancel).await {
         Outcome::Allow => {

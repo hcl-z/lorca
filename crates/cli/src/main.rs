@@ -123,11 +123,6 @@ enum Command {
     Status,
     /// Check the local setup.
     Doctor,
-    /// The coding agents bots run on this Runner.
-    Coding {
-        #[usage(subcommand)]
-        command: CodingCommand,
-    },
     /// The traces of bots' turns on this Runner: every request, reply, tool call, and how each
     /// turn ended. Off with LORCA_TRACES=0.
     Traces {
@@ -172,13 +167,6 @@ enum TracesCommand {
         #[usage(long)]
         days: Option<i64>,
     },
-}
-
-#[derive(Subcommands, Debug)]
-enum CodingCommand {
-    /// Claude Code's PreToolUse hook in a coding agent's pane: reads the hook's input on stdin
-    /// and prints whether the running lorca serve lets the command run.
-    Hook { agent: String },
 }
 
 #[derive(Subcommands, Debug)]
@@ -420,7 +408,6 @@ async fn main() -> anyhow::Result<()> {
     // The service manages a process; it needs no account of its own.
     let command = match command {
         Command::Service { command } => return service(&config, command).await,
-        Command::Coding { command: CodingCommand::Hook { agent } } => return coding_hook(&config, &agent).await,
         // Traces are files on this Runner; reading them needs no account.
         Command::Traces { command } => return traces(&config, command),
         command => command,
@@ -539,7 +526,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Prompt { bot, chat } => prompt(&app, &bot, chat.as_deref()).await,
         Command::Tasks { command } => tasks(&app, command).await,
         Command::Update { check, auto } => update(&app, check, auto).await,
-        Command::Service { .. } | Command::Coding { .. } | Command::Traces { .. } => unreachable!(),
+        Command::Service { .. } | Command::Traces { .. } => unreachable!(),
         Command::Status => {
             let snapshot = app.snapshot();
             println!("{}", serde_json::to_string_pretty(&snapshot)?);
@@ -1360,28 +1347,6 @@ async fn service(config: &Config, command: ServiceCommand) -> anyhow::Result<()>
             }
         }
     }
-    Ok(())
-}
-
-/// `lorca coding hook <agent>`: asks the `lorca serve` running the agent whether its Bash
-/// command may run, and prints the answer as Claude Code's hook output. A serve that does not
-/// answer lets nothing run.
-async fn coding_hook(config: &Config, agent: &str) -> anyhow::Result<()> {
-    use std::io::Read;
-    let mut input = String::new();
-    std::io::stdin().read_to_string(&mut input)?;
-    let Some(command) = lorca::coding::hook_command(&input) else {
-        println!("{}", lorca::coding::hook_answer(Ok(())));
-        return Ok(());
-    };
-    let verdict = match serve_call(config, "coding.review", &serde_json::json!({ "agent_id": agent, "command": command })).await {
-        Ok(Some(Ok(answer))) if answer["allow"].as_bool().unwrap_or(false) => Ok(()),
-        Ok(Some(Ok(answer))) => Err(answer["reason"].as_str().unwrap_or("Lorca did not allow it.").to_string()),
-        Ok(Some(Err(error))) => Err(format!("Lorca could not decide: {error}")),
-        Ok(None) => Err("Lorca is not running, so nothing it supervises may run.".to_string()),
-        Err(error) => Err(format!("Lorca could not decide: {error}")),
-    };
-    println!("{}", lorca::coding::hook_answer(verdict));
     Ok(())
 }
 

@@ -312,6 +312,7 @@ pub fn refuse(app: &Arc<App>, chat_id: &str, bot: &Bot, denied: AccessDenied) ->
                 link: None,
                 secret: None,
             ask: None,
+            agent_ask: None,
             },
         );
         app.upsert_message(message, true);

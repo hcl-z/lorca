@@ -311,6 +311,8 @@ func (m *mainWindow) chatRowView(c *ui.Context, chat *model.Chat, row chatRow, s
 				m.secretCard(c, chat, message, cardAvatar, row.groupStart)
 			} else if body.Request.IsAsk() {
 				m.askCard(c, chat, message, cardAvatar, row.groupStart)
+			} else if body.Request.IsAgentAsk() {
+				m.agentAskCard(c, chat, message, cardAvatar, row.groupStart)
 			} else {
 				m.permissionCard(c, chat, message, cardAvatar, row.groupStart)
 			}

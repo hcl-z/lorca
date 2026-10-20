@@ -14,10 +14,11 @@ import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSequence, with
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { ShimmerView } from "../../modules/lorca-core/ShimmerView";
-import { agentIsOpen, agentIsRunning, agentName, agentPlace, agentStarted, assignedTo, canBeQuoted, isLive, isSentMessage, showsCard, showsSpeakers, type AgentRun, type AskQuestion, type Author, type Body, type Bot, type Chat, type CommandRun, type Message } from "../core/model";
+import { agentIsRunning, agentName, agentPlace, agentSettings, agentStarted, assignedTo, canBeQuoted, isLive, isSentMessage, showsCard, showsSpeakers, type AgentRun, type AskQuestion, type Author, type Body, type Bot, type Chat, type CommandRun, type Message } from "../core/model";
 import { engine } from "../core/engine";
 import { canRegenerate, rerunnable } from "../core/rerun";
 import { answerWords, askAnswer, sendsOnPick, togglePick } from "../core/ask";
+import * as agentAsk from "../core/agentAsk";
 import { useStore } from "../core/store";
 import { language, t, tc, useLanguage } from "../i18n";
 import { AttachmentBlock } from "./attachments";
@@ -522,6 +523,7 @@ function CardButton({ label, primary = false, disabled = false, onPress }: { lab
 export const PermissionRow = memo(function PermissionRow({ row, isGroup, onDecide, onFill }: { row: Extract<Row, { type: "permission" }>; isGroup: boolean; onDecide: (message: Message, decision: "allow" | "always" | "deny") => void; onFill: (message: Message) => void }) {
   if (row.body.tool === "secret" && row.body.secret) return <SecretRow row={row} isGroup={isGroup} onDecide={onDecide} onFill={onFill} />;
   if (row.body.tool === "ask" && row.body.ask) return <QuestionRow row={row} ask={row.body.ask} isGroup={isGroup} onDecide={onDecide} />;
+  if (row.body.tool === "agent_ask" && row.body.agent_ask) return <AgentAskRow row={row} ask={row.body.agent_ask} isGroup={isGroup} />;
   return <AskRow row={row} isGroup={isGroup} onDecide={onDecide} />;
 });
 
@@ -840,6 +842,159 @@ const QuestionRow = memo(function QuestionRow({ row, ask, isGroup, onDecide }: {
   );
 });
 
+/// A coding agent's question, as the desktop's card: "Claude Code asks", its message, then its form.
+/// A pick is a row with a radio, or a box where it takes several, and Other… for the user's own
+/// words; yes or no is a pair of rows; text and numbers are fields. A form that asks for one pick
+/// sends on its tap; the rest send with Submit once each required field has an answer. Decline
+/// leaves the agent to go on without one. A refusal (offline, it no longer asks) shows why under the
+/// card. Answered, it keeps the question and says who answered and what, or why there is no answer.
+const AgentAskRow = memo(function AgentAskRow({ row, ask, isGroup }: { row: Extract<Row, { type: "permission" }>; ask: agentAsk.AgentAsk; isGroup: boolean }) {
+  useLanguage();
+  const p = usePalette();
+  const [draft, setDraft] = useState<agentAsk.AgentAskDraft>(agentAsk.emptyDraft);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const showsAvatar = isGroup && row.message.author.kind === "bot";
+  const pending = row.body.decision === "pending";
+  const who = row.bot?.name ?? t("The bot");
+  const filled = (next: agentAsk.AgentAskDraft) => agentAsk.formValues(ask, next, t("Yes"), t("No"), t(", "));
+  const act = (work: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(true);
+    setProblem(null);
+    haptic.send();
+    work()
+      .catch((error) => setProblem(error instanceof Error ? error.message : String(error)))
+      .finally(() => setBusy(false));
+  };
+  const send = (next: agentAsk.AgentAskDraft) => {
+    const { values, ready } = filled(next);
+    if (ready) act(() => engine.answerAgentAsk(row.message.chat_id, ask.row_id, values));
+  };
+  const pick = (field: agentAsk.AgentAskField, index: number) => {
+    if (busy) return;
+    const next = { ...draft, picks: { ...draft.picks, [field.key]: agentAsk.togglePick(field, draft.picks[field.key] ?? [], index) }, other: field.kind === "many" ? draft.other : { ...draft.other, [field.key]: undefined } };
+    setDraft(next);
+    if (agentAsk.sendsOnPick(ask, next)) send(next);
+  };
+  const ready = filled(draft).ready;
+  const outcome =
+    row.body.decision === "allowed"
+      ? ask.by === "bot" ? t("{who} answered", { who }) : t("You answered")
+      : row.body.decision === "denied"
+        ? ask.by === "bot" ? t("{who} declined it", { who }) : t("You declined it")
+        : row.body.decision === "expired"
+          ? t("No answer in time")
+          : t("{agent} stopped before it was answered", { agent: ask.name });
+  return (
+    <View style={[styles.messageRow, { paddingTop: row.groupStart ? 14 : 6 }]}>
+      {showsAvatar && (
+        <View style={{ width: AVATAR + GUTTER, alignSelf: "flex-end" }}>
+          <BotAvatar bot={row.bot} size={AVATAR} />
+        </View>
+      )}
+      <View style={[styles.permission, { backgroundColor: p.botBubble }]}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Symbol name="chevron.left.forwardslash.chevron.right" size={15} color={pending ? p.tint : p.secondaryLabel} />
+          <Text style={[styles.permissionTitle, { color: p.label, flex: 1 }]} numberOfLines={2}>
+            {t("{agent} asks", { agent: ask.name })}
+          </Text>
+        </View>
+        {ask.message ? <Text style={[styles.questionText, { color: p.label }]}>{ask.message}</Text> : null}
+        {pending ? (
+          <>
+            {ask.fields.map((field) => {
+              const choices = agentAsk.fieldChoices(field, t("Yes"), t("No"));
+              const picks = draft.picks[field.key] ?? [];
+              const writing = draft.other[field.key] !== undefined;
+              const label = field.required || field.kind === "flag" ? field.label : t("{field} (optional)", { field: field.label });
+              return (
+                <View key={field.key} style={{ gap: 6 }}>
+                  {ask.fields.length > 1 || field.label.trim() !== ask.message.trim() ? <Text style={[styles.optionLabel, { color: p.label }]}>{label}</Text> : null}
+                  {choices.length > 0 ? (
+                    <View style={[styles.innerCard, styles.options, { backgroundColor: p.innerCard }]}>
+                      {choices.map((choice, index) => {
+                        const on = picks.includes(index);
+                        return (
+                          <Pressable
+                            key={`${index}-${choice.value}`}
+                            onPress={() => pick(field, index)}
+                            disabled={busy}
+                            style={({ pressed }) => [styles.option, index > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: p.separator }, { opacity: pressed ? 0.6 : 1 }]}
+                            accessibilityRole={field.kind === "many" ? "checkbox" : "radio"}
+                            accessibilityState={{ checked: on, disabled: busy }}
+                          >
+                            <Symbol name={field.kind === "many" ? (on ? "checkmark.square.fill" : "square") : on ? "largecircle.fill.circle" : "circle"} size={19} color={on ? p.ink : p.tertiaryLabel} />
+                            <View style={{ flex: 1, gap: 2 }}>
+                              <Text style={[styles.optionLabel, { color: p.label }]}>{choice.title}</Text>
+                              {choice.description ? <Text style={[styles.reasonText, { color: p.secondaryLabel }]}>{choice.description}</Text> : null}
+                            </View>
+                          </Pressable>
+                        );
+                      })}
+                      {field.other ? (
+                        <Pressable
+                          onPress={() => setDraft({ ...draft, other: { ...draft.other, [field.key]: "" }, picks: field.kind === "many" ? draft.picks : { ...draft.picks, [field.key]: [] } })}
+                          disabled={busy || writing}
+                          style={[styles.option, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: p.separator }]}
+                          accessibilityRole="button"
+                        >
+                          <Symbol name="pencil" size={17} color={writing ? p.ink : p.tertiaryLabel} />
+                          {writing ? (
+                            <TextInput
+                              autoFocus
+                              value={draft.other[field.key]}
+                              onChangeText={(text) => setDraft({ ...draft, other: { ...draft.other, [field.key]: text } })}
+                              placeholder={t("Your own answer")}
+                              placeholderTextColor={p.tertiaryLabel as any}
+                              style={[styles.otherInput, { color: p.label }]}
+                              keyboardAppearance={p.dark ? "dark" : "light"}
+                            />
+                          ) : (
+                            <Text style={[styles.optionLabel, { color: p.secondaryLabel }]}>{t("Other…")}</Text>
+                          )}
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  ) : (
+                    <View style={[styles.innerCard, { backgroundColor: p.innerCard }]}>
+                      <TextInput
+                        value={draft.words[field.key] ?? ""}
+                        onChangeText={(text) => setDraft({ ...draft, words: { ...draft.words, [field.key]: text } })}
+                        placeholder={field.kind === "integer" ? t("A whole number") : field.kind === "number" ? t("A number") : t("Your answer")}
+                        placeholderTextColor={p.tertiaryLabel as any}
+                        keyboardType={field.kind === "integer" ? "number-pad" : field.kind === "number" ? "decimal-pad" : "default"}
+                        style={[styles.otherInput, { color: p.label }]}
+                        keyboardAppearance={p.dark ? "dark" : "light"}
+                        accessibilityLabel={field.label}
+                      />
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+            {problem ? <Text style={[styles.reasonText, { color: p.red }]}>{problem}</Text> : null}
+            <View style={styles.cardButtons}>
+              {!agentAsk.sendsOnPick(ask, draft) ? <CardButton label={t("Submit")} primary disabled={busy || !ready} onPress={() => send(draft)} /> : null}
+              <CardButton label={t("Decline")} disabled={busy} onPress={() => act(() => engine.declineAgentAsk(row.message.chat_id, ask.row_id))} />
+            </View>
+          </>
+        ) : (
+          <View style={{ gap: 3 }}>
+            <Text style={[styles.reasonText, { color: row.body.decision === "allowed" ? p.green : p.secondaryLabel }]}>{outcome}</Text>
+            {(ask.answers ?? []).map((answer, index) => (
+              <Text key={index} selectable style={[styles.reasonText, { color: p.label }]}>
+                <Text style={{ color: p.secondaryLabel }}>{`${answer.name}: `}</Text>
+                {answer.value}
+              </Text>
+            ))}
+          </View>
+        )}
+      </View>
+    </View>
+  );
+});
+
 /// An email or Slack message a bot wrote, as a card: who drafted it and the account it goes out
 /// from, To and Cc, the subject, the start of the text, and the attachments; while it waits, Send,
 /// Always Send on a Slack card (which also has the bot send its next messages directly), and
@@ -1090,9 +1245,6 @@ export function agentTitle(agent: AgentRun, who: string): string {
       return agent.device ? t("{who} wants to start {agent} on {device}", { who, agent: name, device: agent.device }) : t("{who} wants to start {agent}", { who, agent: name });
     case "command":
       return t("{agent} wants to run a command", { agent: name });
-    case "choices":
-    case "text":
-      return t("{agent} asks", { agent: name });
     default:
       return name;
   }
@@ -1101,33 +1253,28 @@ export function agentTitle(agent: AgentRun, who: string): string {
 /// The line under the task: how it stands and where it works, or how it ended.
 export function agentDetail(agent: AgentRun): string {
   if (agent.question) return "";
-  let parts = [agentStatus(agent)];
+  let parts = [agent.asking ? t("Asks you in the chat") : agentStatus(agent)];
   if (agent.state === "failed" && agent.outcome) parts = [t("Failed: {outcome}", { outcome: agent.outcome })];
   const place = agentPlace(agent);
   if (place && agent.state !== "denied") parts.push(place);
-  const host = agent.host === "herdr" ? "Herdr" : agent.host === "luvus" ? "Luvus" : "";
-  if (host && agentIsOpen(agent)) parts.push(t("in {host}", { host }));
   return parts.join(" · ");
 }
 
 /// A coding agent's card, on the row of the call that started it, from Auto-review's question to
 /// how it ended: the agent's name with Stop while it runs, what it was asked, how it stands and
 /// where it works, and while it works its last lines. When it asks: Allow once, Always allow, and
-/// Deny before it starts or runs a command; a button per choice its pane offers; or Answer, which
-/// opens the answer sheet. A tap on what it works on opens its transcript.
+/// Deny before it starts or runs a command. A question the agent itself asks is a card of its own
+/// further down the chat (`AgentAskRow`), which its status points to. A tap on what it works on
+/// opens its transcript.
 export const AgentRow = memo(function AgentRow({
   row,
   isGroup,
   onDecide,
-  onChoose,
-  onAnswer,
   onStop,
 }: {
   row: Extract<Row, { type: "agent" }>;
   isGroup: boolean;
   onDecide: (message: Message, decision: "allow" | "always" | "deny") => void;
-  onChoose: (message: Message, choice: number) => Promise<void>;
-  onAnswer: (message: Message) => void;
   onStop: (message: Message) => Promise<void>;
 }) {
   useLanguage();
@@ -1154,13 +1301,15 @@ export const AgentRow = memo(function AgentRow({
     }
   };
   const detail = agentDetail(agent);
+  const settings = question ? "" : agentSettings(agent);
   const output = !question && (agent.state === "starting" || agent.state === "working") ? (agent.output ?? "").split("\n").filter(Boolean).join("\n") : "";
   const decisions: [string, "allow" | "always" | "deny"][] = question?.rule
     ? [[t("Allow once"), "allow"], [t("Always allow"), "always"], [t("Deny"), "deny"]]
     : [[t("Allow once"), "allow"], [t("Deny"), "deny"]];
   const openTranscript = () => {
     const place = agentPlace(agent);
-    router.push({ pathname: "/agent/[id]", params: { id: row.message.id, chat: row.message.chat_id, title: place ? `${name} · ${place}` : name } });
+    const title = [name, agent.title, place].filter(Boolean).join(" · ");
+    router.push({ pathname: "/agent/[id]", params: { id: row.message.id, chat: row.message.chat_id, title } });
   };
   const body = (
     <>
@@ -1172,6 +1321,11 @@ export const AgentRow = memo(function AgentRow({
       {detail ? (
         <Text style={[styles.agentDetail, { color: p.secondaryLabel }]} numberOfLines={1}>
           {detail}
+        </Text>
+      ) : null}
+      {settings ? (
+        <Text style={[styles.agentDetail, { color: p.tertiaryLabel }]} numberOfLines={2}>
+          {settings}
         </Text>
       ) : null}
       {output ? <OutputBlock text={output} /> : null}
@@ -1221,7 +1375,6 @@ export const AgentRow = memo(function AgentRow({
             </Text>
           </Pressable>
         ) : null}
-        {(question?.kind === "choices" || question?.kind === "text") && question.text ? <OutputBlock text={question.text} /> : null}
         {question && (question.kind === "start" || question.kind === "command") && question.reason ? <Text style={[styles.reasonText, { color: p.secondaryLabel }]}>{question.reason}</Text> : null}
         {error ? <Text style={[styles.reasonText, { color: p.red }]}>{error}</Text> : null}
         {question && (question.kind === "start" || question.kind === "command") ? (
@@ -1229,28 +1382,6 @@ export const AgentRow = memo(function AgentRow({
             {decisions.map(([label, decision], index) => (
               <CardButton key={decision} label={label} primary={index === 0} onPress={() => onDecide(row.message, decision)} />
             ))}
-          </View>
-        ) : null}
-        {question?.kind === "choices" ? (
-          <View style={{ gap: 6, marginTop: 4 }}>
-            {(question.choices ?? []).map((choice, index) => (
-              <Pressable
-                key={`${index}-${choice}`}
-                disabled={busy}
-                onPress={() => void run(() => onChoose(row.message, index))}
-                style={({ pressed }) => [styles.choiceButton, { backgroundColor: p.innerCard, opacity: busy ? 0.5 : pressed ? 0.7 : 1 }]}
-                accessibilityRole="button"
-              >
-                <Text style={{ color: p.label, fontSize: 14, fontWeight: "600" }} numberOfLines={2}>
-                  {choice}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        ) : null}
-        {question?.kind === "text" ? (
-          <View style={{ flexDirection: "row", marginTop: 4 }}>
-            <CardButton label={t("Answer")} primary onPress={() => onAnswer(row.message)} />
           </View>
         ) : null}
         {question && (question.kind === "start" || question.kind === "command") && question.rule ? <Text style={[styles.ruleNote, { color: p.secondaryLabel }]}>{t("Always allow adds the rule “{rule}”.", { rule: question.rule })}</Text> : null}

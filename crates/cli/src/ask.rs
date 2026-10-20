@@ -100,6 +100,7 @@ impl Tool for AskUser {
                 code: None,
                 secret: None,
                 ask: Some(question.clone()),
+                agent_ask: None,
             },
         );
         let decision = mcp::await_answer(&self.app, &self.chat_id, &message.id, None, &cancel, || {

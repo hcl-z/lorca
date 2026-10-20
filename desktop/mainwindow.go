@@ -40,6 +40,9 @@ type mainWindow struct {
 	walkingHistory bool
 	lastChatID     string
 
+	// pips are the floating windows of the coding agents at work.
+	pips agentPips
+
 	userWantsInspector bool
 	sidebarCollapsed   bool
 	// squeezesContent is the user having opened a side pane the window could not widen enough
@@ -756,6 +759,7 @@ func (m *mainWindow) view(c *ui.Context) {
 			m.divider(c, width-inspector-1, false)
 		}
 	})
+	m.agentWindows(c)
 	m.palette.view(c, m)
 	refreshMenuBar()
 }

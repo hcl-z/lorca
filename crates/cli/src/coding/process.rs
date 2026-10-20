@@ -1,13 +1,12 @@
-//! A headless coding agent's process: started with the login shell's environment in a process
-//! group of its own (a job object on Windows), so Stop ends what it started too, and spoken to
-//! with one JSON value per line on its stdin and stdout.
+//! A coding agent's process: started with the login shell's environment in a process group of
+//! its own (a job object on Windows), so Stop ends what it started too, and spoken to on its stdin
+//! and stdout by the driver that takes them.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use process_wrap::tokio::{ChildWrapper, CommandWrap};
-use serde_json::Value;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::AsyncReadExt;
 use tokio::process::{ChildStdin, ChildStdout};
 use tokio::sync::{oneshot, Mutex};
 use tokio_util::sync::CancellationToken;
@@ -42,14 +41,9 @@ pub(crate) struct Process {
 }
 
 impl Process {
-    /// Writes one JSON value and a line break.
-    pub async fn send(&self, value: &Value) -> Result<(), String> {
-        let mut line = serde_json::to_vec(value).map_err(|e| e.to_string())?;
-        line.push(b'\n');
-        let mut stdin = self.stdin.lock().await;
-        let pipe = stdin.as_mut().ok_or("It is no longer running")?;
-        pipe.write_all(&line).await.map_err(|e| format!("It is no longer running: {e}"))?;
-        pipe.flush().await.map_err(|e| format!("It is no longer running: {e}"))
+    /// Hands its stdin to the driver that speaks to it.
+    pub async fn take_stdin(&self) -> Option<ChildStdin> {
+        self.stdin.lock().await.take()
     }
 
     /// Ends the process and everything it started.
@@ -113,29 +107,6 @@ pub(crate) async fn spawn(program: &Path, args: &[String], cwd: &Path, variables
         let _ = tx.send(Exit { code: status.and_then(|status| status.code()), said, stopped });
     });
     Ok((Arc::new(Process { stdin: Mutex::new(Some(stdin)), kill }), stdout, rx))
-}
-
-/// The lines of `stdout`, as JSON values; a line that is not JSON is skipped.
-pub(crate) fn json_lines(stdout: ChildStdout) -> tokio::sync::mpsc::UnboundedReceiver<Value> {
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-    tokio::spawn(async move {
-        let mut lines = BufReader::new(stdout).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
-            match serde_json::from_str::<Value>(line) {
-                Ok(value) => {
-                    if tx.send(value).is_err() {
-                        break;
-                    }
-                }
-                Err(_) => tracing::debug!(line = %line.chars().take(200).collect::<String>(), "a coding agent printed a line that is not JSON"),
-            }
-        }
-    });
-    rx
 }
 
 /// Where `name` is installed, on the login shell's `PATH`: what a terminal would run.
