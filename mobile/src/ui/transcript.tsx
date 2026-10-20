@@ -358,7 +358,7 @@ export const MessageRow = memo(function MessageRow({
             held && styles.held,
           ]}
         >
-          {attachments.length > 0 && <AttachmentBlock attachments={attachments} onUserBubble={isYou} maxWidth={attachmentWidth} />}
+          {attachments.length > 0 && <AttachmentBlock attachments={attachments} onUserBubble={isYou} maxWidth={attachmentWidth} chatId={message.chat_id} messageId={message.id} />}
           {text.length > 0 && <Markdown text={text} color={isYou ? p.userBubbleText : p.botBubbleText} maxWidth={attachmentWidth} sources={message.author.kind === "bot"} />}
           {failed && (
             <View style={styles.bubbleFooter}>

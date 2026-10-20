@@ -12,13 +12,15 @@ import { useEffect, useState } from "react";
 import { Platform, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { canPreviewFiles, previewFile } from "../../modules/lorca-core";
 import { engine } from "../core/engine";
-import { evidenceStatus, evidenceTitle, fileSize, isImage, outputKind, outputSymbol, outputTypeName, type Attachment, type Message, type Output, type OutputKind, type OutputSeries } from "../core/model";
+import { fileSize, isImage, outputKind, outputSymbol, outputTypeName, type Attachment, type Message, type Output, type OutputKind, type OutputSeries } from "../core/model";
 import { useBotMap, useStore } from "../core/store";
 import { t, useLanguage } from "../i18n";
 import { alert } from "./alert";
 import { Row } from "./forms";
 import { stamp } from "./format";
 import { Pressable } from "./Pressable";
+import { previewKind, peekIsEmpty } from "../core/files";
+import { FileIcon, FilePeekView, fileIcon, useFilePeek } from "./files";
 import { Symbol } from "./Symbol";
 import { accentColor, Font, usePalette, type Palette } from "./theme";
 
@@ -30,7 +32,7 @@ export function outputAttachment(message: Message): Attachment | undefined {
 }
 
 /// An output's row: what it is, its name, when it was published (and by whom, in a group), and
-/// how its check went. It opens the output.
+/// its size. It opens the output.
 export function OutputRow({ series, isGroup, onPress }: { series: OutputSeries; isGroup: boolean; onPress: () => void }) {
   useLanguage();
   const p = usePalette();
@@ -39,13 +41,14 @@ export function OutputRow({ series, isGroup, onPress }: { series: OutputSeries; 
   const output = latest.output!;
   const when = stamp(new Date(latest.created_at * 1000));
   const bot = isGroup ? bots.get(output.bot_id)?.name : undefined;
-  const evidence = output.evidence;
+  const file = outputAttachment(latest);
   return (
     <Row
       title={output.name}
       subtitle={bot ? `${bot} · ${when}` : when}
       icon={outputSymbol(output)}
-      accessory={evidence ? <Text style={[styles.status, { color: evidence.status === "failed" ? p.red : p.secondaryLabel }]}>{evidenceStatus(evidence)}</Text> : undefined}
+      leading={file ? <FileIcon name={output.name} mime={output.mime} size={26} /> : undefined}
+      accessory={file ? <Text style={[styles.status, { color: p.secondaryLabel }]}>{fileSize(file.size)}</Text> : undefined}
       chevron
       onPress={onPress}
     />
@@ -78,12 +81,12 @@ function outputTint(output: Output, p: Palette) {
 }
 
 /// A published output in the transcript, standing without a bubble or a time: an image's preview
-/// (the top of a tall one, as a page's screenshot starts at its top), the file's icon, name, type
-/// and size, and what the bot checked. A tap opens the output's screen, or fetches again a file
-/// that could not be fetched. A run of one bot's outputs joins into one list (`stack` says
+/// (the top of a tall one, as a page's screenshot starts at its top) or the start of a document,
+/// table, or text file as a page rising from the card, then the file's icon, name, type and size.
+/// A tap opens the file in the viewer, a link in its screen, or fetches again a file that could not
+/// be fetched. A run of one bot's outputs joins into one list (`stack` says
 /// whether the cards above and below are in it), a compact row each: the icon (an image's own
-/// picture), name, type and size, and the check's symbol; the check's words are on the output's
-/// screen.
+/// picture), name, type and size. What the bot says it checked is not shown: the card is the file.
 export function OutputCard({ message, maxWidth, stack }: { message: Message; maxWidth: number; stack?: { above: boolean; below: boolean } }) {
   useLanguage();
   const p = usePalette();
@@ -107,13 +110,18 @@ export function OutputCard({ message, maxWidth, stack }: { message: Message; max
     const full = (width * Math.max(attachment.height ?? 3, 1)) / Math.max(attachment.width ?? 4, 1);
     preview = Math.min(Math.max(full, PREVIEW_MIN), PREVIEW_MAX);
   }
-  const evidence = output.evidence;
-  const checkTint = evidence?.status === "passed" ? p.green : evidence?.status === "failed" ? p.red : p.secondaryLabel;
-  const checkSymbol = evidence?.status === "passed" ? "checkmark.circle.fill" : evidence?.status === "failed" ? "xmark.circle.fill" : "circle.dashed";
-  const summary = evidence?.summary.trim() ?? "";
-  const spoken = [output.name, detail, evidence ? `${evidenceTitle(evidence)} · ${evidenceStatus(evidence)}: ${summary}` : ""].filter(Boolean).join(", ");
+  const spoken = [output.name, detail].filter(Boolean).join(", ");
+  const previewAs = attachment ? previewKind(attachment.name, attachment.mime) : "none";
+  const peekable = !stacked && !error && (previewAs === "markdown" || previewAs === "html" || previewAs === "table" || previewAs === "text");
+  const peek = useFilePeek(peekable ? uri : undefined, previewAs, output.name);
   const open = () =>
-    error && attachment ? engine.retryFile(attachment) : router.push({ pathname: "/chat-info/output/[id]", params: { id: output.id, chat: message.chat_id } });
+    error && attachment
+      ? engine.retryFile(attachment)
+      : attachment
+        ? router.push({ pathname: "/file/[id]", params: { id: attachment.id, chat: message.chat_id, message: message.id } })
+        : router.push({ pathname: "/chat-info/output/[id]", params: { id: output.id, chat: message.chat_id } });
+  const icon = (size: number) =>
+    attachment ? <FileIcon name={output.name} mime={output.mime} size={size} /> : <Symbol name={outputSymbol(output)} size={size - 6} color={tint} />;
   if (stacked) {
     return (
       <Pressable
@@ -132,7 +140,7 @@ export function OutputCard({ message, maxWidth, stack }: { message: Message; max
           {kind === "image" && uri && !error ? (
             <Image source={{ uri }} style={styles.thumbnail} contentFit="cover" transition={150} />
           ) : (
-            <Symbol name={outputSymbol(output)} size={20} color={tint} />
+            icon(STACK_ICON + 4)
           )}
         </View>
         <View style={{ flex: 1 }}>
@@ -145,7 +153,6 @@ export function OutputCard({ message, maxWidth, stack }: { message: Message; max
             </Text>
           ) : null}
         </View>
-        {evidence && <Symbol name={checkSymbol} size={15} color={checkTint} />}
       </Pressable>
     );
   }
@@ -161,8 +168,9 @@ export function OutputCard({ message, maxWidth, stack }: { message: Message; max
           <Image source={uri && !error ? { uri } : undefined} style={StyleSheet.absoluteFill} contentFit="cover" contentPosition="top" transition={150} />
         </View>
       )}
+      {peek && !peekIsEmpty(peek) && attachment && <FilePeekView peek={peek} kind={previewAs} name={output.name} tint={fileIcon(output.name, output.mime).tint} />}
       <View style={styles.cardHeader}>
-        <Symbol name={outputSymbol(output)} size={24} color={tint} />
+        {icon(34)}
         <View style={{ flex: 1 }}>
           <Text style={[styles.cardName, { color: p.label }]} numberOfLines={1} ellipsizeMode="middle">
             {output.name}
@@ -174,22 +182,6 @@ export function OutputCard({ message, maxWidth, stack }: { message: Message; max
           ) : null}
         </View>
       </View>
-      {evidence && (
-        <View style={[styles.check, { borderTopColor: p.separator }]}>
-          <Symbol name={checkSymbol} size={15} color={checkTint} style={styles.checkIcon} />
-          <View style={{ flex: 1, gap: 2 }}>
-            <Text style={[styles.checkTitle, { color: checkTint }]}>
-              {evidenceTitle(evidence)} · {evidenceStatus(evidence)}
-            </Text>
-            {summary ? <Text style={[styles.checkSummary, { color: p.secondaryLabel }]}>{summary}</Text> : null}
-            {evidence.command ? (
-              <Text style={[styles.checkCommand, { color: p.tertiaryLabel }]} numberOfLines={1}>
-                {evidence.command}
-              </Text>
-            ) : null}
-          </View>
-        </View>
-      )}
     </Pressable>
   );
 }
@@ -228,10 +220,11 @@ function fileFailed(error: unknown) {
 }
 
 /// The file as its sheet shows it: an image, the start of a text file, or what it is; while it is
-/// on its way, or when it could not be fetched, it says so. A tap opens it on iOS.
-export function OutputPreview({ attachment }: { attachment: Attachment }) {
+/// on its way, or when it could not be fetched, it says so. A tap opens it in the viewer.
+export function OutputPreview({ attachment, chatId, messageId }: { attachment: Attachment; chatId: string; messageId: string }) {
   useLanguage();
   const p = usePalette();
+  const router = useRouter();
   const uri = useStore((s) => s.files[attachment.id]);
   const error = useStore((s) => s.fileErrors[attachment.id]);
   useEffect(() => {
@@ -267,7 +260,7 @@ export function OutputPreview({ attachment }: { attachment: Attachment }) {
   } else {
     content = (
       <View style={styles.placeholder}>
-        <Symbol name="doc" size={40} color={p.secondaryLabel} />
+        <FileIcon name={attachment.name} mime={attachment.mime} size={56} />
         <Text style={[styles.fileName, { color: p.label }]} numberOfLines={2}>
           {attachment.name}
         </Text>
@@ -276,7 +269,12 @@ export function OutputPreview({ attachment }: { attachment: Attachment }) {
     );
   }
   return (
-    <Pressable onPress={uri && canPreviewFiles ? () => void openFile(attachment) : undefined} disabled={!uri || !canPreviewFiles} accessibilityLabel={attachment.name} accessibilityRole={uri && canPreviewFiles ? "button" : undefined}>
+    <Pressable
+      onPress={uri ? () => router.push({ pathname: "/file/[id]", params: { id: attachment.id, chat: chatId, message: messageId } }) : undefined}
+      disabled={!uri}
+      accessibilityLabel={attachment.name}
+      accessibilityRole={uri ? "button" : undefined}
+    >
       {content}
     </Pressable>
   );
@@ -314,11 +312,6 @@ const styles = StyleSheet.create({
   cardHeader: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 13, paddingVertical: 11 },
   cardName: { fontSize: Font.message - 1, fontWeight: "600" },
   cardDetail: { fontSize: Font.small, marginTop: 1, fontVariant: ["tabular-nums"] },
-  check: { flexDirection: "row", gap: 8, paddingHorizontal: 13, paddingTop: 10, paddingBottom: 11, borderTopWidth: StyleSheet.hairlineWidth },
-  checkIcon: { marginTop: 1 },
-  checkTitle: { fontSize: Font.small, fontWeight: "600" },
-  checkSummary: { fontSize: Font.small, lineHeight: 18 },
-  checkCommand: { fontSize: Font.caption, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", marginTop: 1 },
   placeholder: { height: 220, alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 24 },
   placeholderTitle: { fontSize: Font.body, textAlign: "center" },
   placeholderDetail: { fontSize: Font.small, textAlign: "center" },

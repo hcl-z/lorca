@@ -9,51 +9,16 @@ import (
 )
 
 // Output is a file or document link a bot published in a chat: one version of it. ID names the
-// output across its versions; the message that carries it is the version.
+// output across its versions; the message that carries it is the version. The app shows the file,
+// not what the bot says it checked, so the record's `evidence` is not read.
 type Output struct {
-	ID       string          `json:"id"`
-	Name     string          `json:"name"`
-	Mime     string          `json:"mime"`
-	BotID    string          `json:"bot_id"`
-	Version  uint32          `json:"version"`
-	URL      string          `json:"url,omitempty"`
-	Evidence *OutputEvidence `json:"evidence,omitempty"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Mime    string `json:"mime"`
+	BotID   string `json:"bot_id"`
+	Version uint32 `json:"version"`
+	URL     string `json:"url,omitempty"`
 }
-
-// OutputEvidence is what the bot says it checked: a test run, a screenshot from before or after a
-// change, or another check, and how it went.
-type OutputEvidence struct {
-	Kind    string `json:"kind"`
-	Summary string `json:"summary"`
-	Status  string `json:"status"`
-	Command string `json:"command,omitempty"`
-}
-
-func (e OutputEvidence) Title() string {
-	switch e.Kind {
-	case "test_result":
-		return L("Test result")
-	case "before_screenshot":
-		return L("Before screenshot")
-	case "after_screenshot":
-		return L("After screenshot")
-	default:
-		return L("Check")
-	}
-}
-
-func (e OutputEvidence) StatusText() string {
-	switch e.Status {
-	case "passed":
-		return L("Passed")
-	case "failed":
-		return L("Failed")
-	default:
-		return L("Not verified")
-	}
-}
-
-func (e OutputEvidence) Failed() bool { return e.Status == "failed" }
 
 // DocumentURL is the document a link output points at; only an https address without credentials
 // opens.
@@ -145,7 +110,9 @@ func (o Output) Symbol() string {
 	return "doc"
 }
 
-// PreviewKind is how the viewer shows a file: rendered, or as the words it holds.
+// PreviewKind is how the viewer shows a file: rendered, or as the words it holds. A table is a
+// CSV or TSV file drawn as a grid; media is a recording the web view plays; an SVG is a vector
+// picture the web view draws, with its source a switch away.
 type PreviewKind int
 
 const (
@@ -155,6 +122,9 @@ const (
 	PreviewHTML
 	PreviewPDF
 	PreviewText
+	PreviewTable
+	PreviewMedia
+	PreviewSVG
 )
 
 var previewExtensions = map[string]PreviewKind{
@@ -162,15 +132,21 @@ var previewExtensions = map[string]PreviewKind{
 	"md": PreviewMarkdown, "markdown": PreviewMarkdown, "mdx": PreviewMarkdown,
 	"html": PreviewHTML, "htm": PreviewHTML, "xhtml": PreviewHTML,
 	"pdf": PreviewPDF,
+	"csv": PreviewTable, "tsv": PreviewTable,
+	"svg": PreviewSVG,
+	"mp3": PreviewMedia, "wav": PreviewMedia, "m4a": PreviewMedia, "aac": PreviewMedia, "flac": PreviewMedia, "ogg": PreviewMedia,
+	"oga": PreviewMedia, "opus": PreviewMedia, "mp4": PreviewMedia, "m4v": PreviewMedia, "mov": PreviewMedia, "webm": PreviewMedia,
 }
 
-// textExtensions are the files whose words the viewer shows as they are. SVG is here: the viewer
-// draws bitmaps, so a vector image shows as its source.
+// textExtensions are the files whose words the viewer shows as they are.
 var textExtensions = map[string]bool{
 	"txt": true, "log": true, "json": true, "jsonl": true, "yaml": true, "yml": true, "toml": true, "xml": true,
-	"csv": true, "tsv": true, "css": true, "js": true, "mjs": true, "ts": true, "tsx": true, "jsx": true, "go": true,
-	"rs": true, "py": true, "rb": true, "swift": true, "java": true, "kt": true, "c": true, "h": true, "cc": true,
-	"cpp": true, "sh": true, "sql": true, "svg": true, "diff": true, "patch": true, "ini": true, "conf": true,
+	"css": true, "scss": true, "less": true, "js": true, "mjs": true, "cjs": true, "ts": true, "tsx": true, "jsx": true,
+	"go": true, "rs": true, "py": true, "rb": true, "swift": true, "java": true, "kt": true, "c": true, "h": true,
+	"cc": true, "cpp": true, "hpp": true, "cs": true, "php": true, "lua": true, "sh": true, "zsh": true, "bash": true,
+	"ps1": true, "sql": true, "diff": true, "patch": true, "ini": true, "conf": true, "env": true, "properties": true,
+	"vue": true, "svelte": true, "graphql": true, "proto": true, "dockerfile": true, "makefile": true, "gradle": true,
+	"lock": true, "srt": true, "vtt": true, "tex": true, "rst": true, "adoc": true,
 }
 
 // PreviewKindOf is how a file of this name and media type is shown: its extension decides, then its
@@ -185,7 +161,11 @@ func PreviewKindOf(name, mime string) PreviewKind {
 	}
 	switch {
 	case mime == "image/svg+xml":
-		return PreviewText
+		return PreviewSVG
+	case mime == "text/csv", mime == "text/tab-separated-values":
+		return PreviewTable
+	case strings.HasPrefix(mime, "audio/"), strings.HasPrefix(mime, "video/"):
+		return PreviewMedia
 	case strings.HasPrefix(mime, "image/"):
 		return PreviewImage
 	case mime == "application/pdf":

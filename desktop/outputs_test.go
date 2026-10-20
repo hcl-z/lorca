@@ -170,7 +170,11 @@ func TestOutputsInTheInspectorAndTheirSheet(t *testing.T) {
 	tt := ui.NewTester(m.frame(m.view), 1180, 760)
 	f.pump(tt, "the inspector's outputs", func() bool { return tt.HasText("Release notes") })
 	// The three latest, newest first, and View all for the fourth.
-	wantText(t, tt, L("Outputs"), "Before.png", "Release notes", "Link check.txt", L("Passed"), L("View all"))
+	// Each row says the file's size, not what the bot says it checked.
+	wantText(t, tt, L("Outputs"), "Before.png", "Release notes", "Link check.txt", "160 B", L("View all"))
+	if tt.HasText(L("Passed")) {
+		t.Fatal("a row shows the bot's check")
+	}
 	if tt.HasText("Header after.png") {
 		t.Fatal("a fourth output took a row")
 	}
@@ -181,24 +185,46 @@ func TestOutputsInTheInspectorAndTheirSheet(t *testing.T) {
 	}
 	renderBoth(t, tt, "outputs-inspector")
 
-	// A row opens the output: its preview, its check, and its versions.
+	// A row opens the output over the whole window: its preview, and its versions and the file's
+	// facts in the side pane, without the bot's check.
 	if err := tt.Click("Link check.txt"); err != nil {
 		t.Fatal(err)
 	}
 	f.pump(tt, "the text preview", func() bool {
 		return tt.HasText("All 23 links answer.\n") || strings.Contains(strings.Join(tt.Texts(), "\n"), "ok  https://example.com/")
 	})
-	wantText(t, tt, L("Test result"), L("Result"), "All 23 links answer.", "bun run check:links", L("Version %d", 2), L("Version %d", 1), L("Save As…"), L("Open"), L("Done"))
-	renderBoth(t, tt, "output-sheet")
+	wantText(t, tt, L("Versions"), L("File"), L("Size"), L("Version %d", 2), L("Version %d", 1), L("Save As…"), L("Open"), L("Close"), L("Hide Info"))
+	for _, check := range []string{L("Test result"), L("Passed"), "bun run check:links"} {
+		if tt.HasText(check) {
+			t.Fatalf("the viewer shows the bot's check %q", check)
+		}
+	}
+	if !m.sheets[0].fullWindow {
+		t.Fatal("a file output opened in a sheet")
+	}
+	renderBoth(t, tt, "output-viewer")
 
 	// An earlier version shows in its place.
 	if err := tt.Click(L("Version %d", 1)); err != nil {
 		t.Fatal(err)
 	}
-	f.pump(tt, "version 1", func() bool { return tt.HasText("2 of 23 download links return 404.") })
-	if !tt.HasText(L("Failed")) {
-		t.Fatalf("version 1's check absent: %q", tt.Texts())
+	f.pump(tt, "version 1", func() bool { return tt.HasText("FAIL https://example.com/download/windows") })
+	if tt.HasText(L("Failed")) || tt.HasText("2 of 23 download links return 404.") {
+		t.Fatalf("version 1 shows the bot's check: %q", tt.Texts())
 	}
+
+	// The side pane closes and opens again.
+	if err := tt.Click(L("Hide Info")); err != nil {
+		t.Fatal(err)
+	}
+	settle(tt)
+	if tt.HasText(L("Version %d", 2)) || !tt.HasText(L("Show Info")) {
+		t.Fatalf("the side pane stayed: %q", tt.Texts())
+	}
+	if err := tt.Click(L("Show Info")); err != nil {
+		t.Fatal(err)
+	}
+	settle(tt)
 
 	// Save As… copies the shown version; Open hands its named copy to the system.
 	destination := filepath.Join(t.TempDir(), "Saved.txt")
@@ -269,7 +295,9 @@ func TestOutputLinkAndUnavailableFile(t *testing.T) {
 	f.pump(tt, "the failed fetch", func() bool { return tt.HasText(L("This file couldn't be downloaded.")) })
 	wantText(t, tt, "The relay no longer has Before.png", L("Try Again"))
 	renderBoth(t, tt, "output-unavailable")
-	tt.Key(0, ui.KeyEnter)
+	if err := tt.Click(L("Try Again")); err != nil {
+		t.Fatal(err)
+	}
 	f.pump(tt, "the retried fetch", func() bool { return !tt.HasText(L("This file couldn't be downloaded.")) })
 	if f.fetches["att-missing"] != 2 || !m.hasSheet() {
 		t.Fatalf("Try Again fetched %d times", f.fetches["att-missing"])
@@ -303,6 +331,7 @@ func TestOutputViewerDrawsMarkdownAndShowsItsSource(t *testing.T) {
 	m.presentOutput("chat-relay", "out-guide")
 	f.pump(tt, "the drawn page", func() bool { return tt.HasText("Welcome to Lorca") })
 	wantText(t, tt, L("Preview"), L("Source"), L("Copy"))
+	renderBoth(t, tt, "markdown-viewer")
 	if strings.Contains(strings.Join(tt.Texts(), "\n"), "# Welcome") {
 		t.Fatalf("the page shows Markdown marks: %q", tt.Texts())
 	}
@@ -342,7 +371,8 @@ func TestFileInAChatOpensInTheViewer(t *testing.T) {
 
 	m.presentFile(model.Attachment{ID: "att-guide", Name: "Guide.md", Mime: "text/markdown", Size: 19}, "chat-relay", "msg-guide")
 	f.pump(tt, "the drawn page", func() bool { return tt.HasText("Welcome to Lorca") })
-	wantText(t, tt, L("Save As…"), L("Open"), L("Done"))
+	wantText(t, tt, L("Save As…"), L("Open"), L("Close"), L("Preview"), L("Source"))
+	renderBoth(t, tt, "file-viewer")
 	tt.Key(0, ui.KeyEscape)
 	settle(tt)
 	if m.hasSheet() {
@@ -350,7 +380,7 @@ func TestFileInAChatOpensInTheViewer(t *testing.T) {
 	}
 }
 
-func TestImageInAChatOpensInTheLightbox(t *testing.T) {
+func TestImageInAChatOpensInTheViewer(t *testing.T) {
 	m := demoWindow(t)
 	m.selectChat("chat-relay")
 	f := newOutputFixture(t)
@@ -359,16 +389,17 @@ func TestImageInAChatOpensInTheLightbox(t *testing.T) {
 	f.pump(tt, "the transcript's files", func() bool { return tt.HasText(L("View all")) })
 
 	attachment := model.Attachment{ID: "att-header", Name: "Header after.png", Mime: "image/png", Size: 4096, Width: 640, Height: 360}
-	m.presentImage(attachment, "chat-relay", "msg-header")
-	f.pump(tt, "the lightbox", func() bool { return tt.HasText("640 × 360 · 4 KB") })
-	wantText(t, tt, "Header after.png")
-	if tt.HasText(L("Done")) || tt.HasText(L("Fit")) {
-		t.Fatal("the lightbox has a file sheet's buttons")
+	m.presentFile(attachment, "chat-relay", "msg-header")
+	f.pump(tt, "the picture", func() bool { return tt.HasText("PNG · 640 × 360 · 4 KB") })
+	wantText(t, tt, "Header after.png", L("Save As…"), L("Open"), L("Close"))
+	if tt.HasText(L("Preview")) || tt.HasText(L("Copy")) {
+		t.Fatal("a picture has a document's controls")
 	}
+	renderBoth(t, tt, "picture-viewer")
 	tt.Key(0, ui.KeyEscape)
 	settle(tt)
 	if m.hasSheet() {
-		t.Fatal("Escape left the lightbox up")
+		t.Fatal("Escape left the picture up")
 	}
 }
 
@@ -376,13 +407,13 @@ func TestReadViewerContentCutsLongTextAndLeavesBinaryAlone(t *testing.T) {
 	dir := t.TempDir()
 	long := filepath.Join(dir, "long.txt")
 	os.WriteFile(long, []byte(strings.Repeat("é", viewerTextLimit)), 0600)
-	read, err := readViewerContent(model.PreviewText, long)
+	read, err := readViewerContent(model.PreviewText, "long.txt", long)
 	if err != nil || !read.truncated || len(read.text) > viewerTextLimit || len(read.text) < viewerTextLimit-1 {
 		t.Fatalf("long text read as %d bytes, truncated %v, err %v", len(read.text), read.truncated, err)
 	}
 	binary := filepath.Join(dir, "data.txt")
 	os.WriteFile(binary, []byte{0xff, 0xfe, 0x00, 0x80}, 0600)
-	if read, err = readViewerContent(model.PreviewText, binary); err != nil || read.text != "" {
+	if read, err = readViewerContent(model.PreviewText, "data.txt", binary); err != nil || read.text != "" {
 		t.Fatalf("binary data read as %q, err %v", read.text, err)
 	}
 }
@@ -421,17 +452,17 @@ func TestPreviewNavigationKeepsThePageWhereItIs(t *testing.T) {
 	}
 }
 
-func TestLightboxPageCarriesThePictureAndAskingToClose(t *testing.T) {
-	page := lightboxHTML("image/jpeg", []byte("abc"))
-	for _, want := range []string{`src="data:image/jpeg;base64,YWJj"`, `"` + previewOrigin + `close"`, "gesturechange", "ctrlKey"} {
+func TestPicturePageCarriesThePictureAndAskingToClose(t *testing.T) {
+	page := pictureHTML("image/jpeg", []byte("abc"), "#f4f4f4")
+	for _, want := range []string{`src="data:image/jpeg;base64,YWJj"`, `"` + previewOrigin + `close"`, "gesturechange", "ctrlKey", "background: #f4f4f4;"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the page lacks %s", want)
 		}
 	}
-	if strings.Contains(page, "__IMAGE__") || strings.Contains(page, "__CLOSE__") {
+	if strings.Contains(page, "__IMAGE__") || strings.Contains(page, "__CLOSE__") || strings.Contains(page, "__GROUND__") {
 		t.Fatal("the page keeps a placeholder")
 	}
-	if !strings.Contains(lightboxHTML("application/octet-stream", nil), "data:image/png;base64,") {
+	if !strings.Contains(pictureHTML("application/octet-stream", nil, "#000000"), "data:image/png;base64,") {
 		t.Fatal("a picture of no known type is not given an image type")
 	}
 }
@@ -542,8 +573,135 @@ func TestARunOfOutputsJoinsIntoOneList(t *testing.T) {
 		tt.Frame()
 	}
 	settle(tt)
-	if tt.HasText("Claude Code saved this as proof of its work.") {
-		t.Fatal("a row in the run shows its check's summary")
+	if tt.HasText("Claude Code saved this as proof of its work.") || tt.HasText(L("Not verified")) {
+		t.Fatal("a row in the run shows the bot's check")
 	}
 	renderBoth(t, tt, "outputs-run")
+}
+
+func TestPeekOfAFileForItsCard(t *testing.T) {
+	md := peekOf("```\nskip\n```\n# Welcome to **Lorca**\n\nA [guide](https://x.dev) to `pairing`\nyour phone.\n\n## Next\n", model.PreviewMarkdown)
+	if md.title != "Welcome to Lorca" || md.body != "A guide to pairing your phone." {
+		t.Fatalf("markdown peek %+v", md)
+	}
+	page := peekOf("<html><head><title>Calc &amp; Co</title></head><body><h1>A <b>calculator</b></h1>", model.PreviewHTML)
+	if page.title != "Calc & Co" || page.body != "A calculator" {
+		t.Fatalf("html peek %+v", page)
+	}
+	if bare := peekOf("<h1>Only</h1>", model.PreviewHTML); bare.title != "Only" || bare.body != "" {
+		t.Fatalf("html peek without a title %+v", bare)
+	}
+	code := peekOf("\n\nfunc main() {\n\tprintln(1)\n}\n", model.PreviewText)
+	if len(code.lines) != 4 || code.lines[0] != "func main() {" || code.lines[1] != "    println(1)" {
+		t.Fatalf("text peek %q", code.lines)
+	}
+	if !peekOf("", model.PreviewText).empty() || peekable(model.PreviewPDF) {
+		t.Fatal("an empty file or a PDF has a peek")
+	}
+}
+
+func TestLoneOutputCardsShowTheirFilesStart(t *testing.T) {
+	m := demoWindow(t)
+	m.selectChat("chat-relay")
+	f := newOutputFixture(t)
+	f.messages = nil
+	bots := []string{"bot-nova", "bot-patch", "bot-nova", "bot-patch"}
+	for i, file := range []struct{ id, name, mime, text string }{
+		{"guide", "Getting started.md", "text/markdown", "# Getting started\n\nPair your phone with this computer, then chat with your bots from anywhere.\n"},
+		{"calc", "calculator-v1.html", "text/html", "<!doctype html><title>Calculator</title><h1>A tidy calculator</h1>"},
+		{"sales", "Q3 sales.csv", "text/csv", "Region,Units,Revenue\nNorth,1204,$48.1k\nSouth,987,$39.4k\n"},
+		{"conf", "config.json", "application/json", "{\n  \"relay\": \"https://relay.lorca.app\",\n  \"port\": 7421,\n  \"bots\": [\"Researcher\", \"Developer\"]\n}\n"},
+	} {
+		f.addFileOutput(file.id, file.name, file.mime, file.text)
+		last := f.messages[len(f.messages)-1]
+		last["author"] = map[string]any{"kind": "bot", "bot_id": bots[i]}
+		last["output"].(map[string]any)["bot_id"] = bots[i]
+		if file.id == "calc" {
+			last["output"].(map[string]any)["evidence"] = map[string]any{"kind": "test_result", "status": "passed", "summary": "Behaviour driven in the real page via Playwright: 12×8=96."}
+		}
+		// A test frame never reads a file off the main thread, so the starts are read here.
+		path := f.files["att-"+file.id]
+		peeks.Lock()
+		peeks.entries[path] = &peekEntry{peek: readPeek(path, file.name, model.PreviewKindOf(file.name, file.mime))}
+		peeks.Unlock()
+	}
+	f.install(true)
+	tt := ui.NewTester(m.frame(m.view), 1180, 760)
+	f.pump(tt, "the cards' peeks", func() bool {
+		return tt.HasText("A tidy calculator") && tt.HasText(`"port": 7421,`) && tt.HasText("Revenue")
+	})
+	wantText(t, tt, "Getting started", "Calculator", `"port": 7421,`, "HTML · 66 B")
+	if tt.HasText("Behaviour driven in the real page") || tt.HasText(L("Passed")) {
+		t.Fatal("the card shows the bot's check")
+	}
+	renderBoth(t, tt, "outputs-peek")
+}
+
+func TestFileIconsCoverCommonFiles(t *testing.T) {
+	entries, err := fileIconFiles.ReadDir("assets/fileicons")
+	if err != nil || len(entries) < 50 {
+		t.Fatalf("%d icons, err %v", len(entries), err)
+	}
+	for _, entry := range entries {
+		data, _ := fileIconFiles.ReadFile("assets/fileicons/" + entry.Name())
+		if _, err := ui.ParseSVG(data); err != nil {
+			t.Errorf("%s: %v", entry.Name(), err)
+		}
+	}
+	for _, c := range []struct{ name, mime, want string }{
+		{"calculator-v1.html", "text/html", "html"}, {"page.htm", "", "html"}, {"Report.PDF", "", "pdf"},
+		{"main.go", "", "code"}, {"App.tsx", "", "code"}, {"notes.md", "", "document"}, {"run.log", "", "txt"},
+		{"data.tsv", "", "spreadsheets"}, {"Budget.xlsx", "", "xlsx"}, {"Deck.key", "", "pptx"},
+		{"memo.m4a", "", "audio"}, {"clip.mov", "", "video"}, {"photo.heic", "", "image"}, {"backup.tar.gz", "", "zip"},
+		{"Dockerfile", "", "code"}, {"blob", "image/avif", "image"}, {"blob", "application/octet-stream", "empty"},
+	} {
+		if got := fileIconName(c.name, c.mime); got != c.want {
+			t.Errorf("fileIconName(%q, %q) = %q, want %q", c.name, c.mime, got, c.want)
+		}
+	}
+	if tint := fileIconFor("a.html", "").tint; tint != ui.Hex("#444CE7") {
+		t.Fatalf("html tint %v", tint)
+	}
+}
+
+func TestOutputViewerDrawsATableAndItsSource(t *testing.T) {
+	m := demoWindow(t)
+	m.selectChat("chat-relay")
+	f := newOutputFixture(t)
+	f.addFileOutput("steps", "Setup steps.csv", "text/csv", "Step,Platform,Finished\nInstall the app,macOS,1198\n\"Connect a provider, then a bot\",All,1422\n")
+	f.install(false)
+	tt := ui.NewTester(m.frame(m.view), 1180, 760)
+	f.pump(tt, "the inspector's outputs", func() bool { return tt.HasText("Release notes") })
+
+	m.presentOutput("chat-relay", "out-steps")
+	f.pump(tt, "the table", func() bool { return tt.HasText("Connect a provider, then a bot") })
+	wantText(t, tt, "Step", "Platform", "1198", L("Preview"), L("Source"))
+	renderBoth(t, tt, "table-viewer")
+	if err := tt.Click(L("Source")); err != nil {
+		t.Fatal(err)
+	}
+	f.pump(tt, "the source", func() bool { return strings.Contains(strings.Join(tt.Texts(), "\n"), "Step,Platform,Finished") })
+}
+
+func TestOutputViewerDrawsAnSVGAndLeavesAMediaFileToItsApp(t *testing.T) {
+	m := demoWindow(t)
+	m.selectChat("chat-relay")
+	f := newOutputFixture(t)
+	f.addFileOutput("logo", "logo.svg", "image/svg+xml", `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#f00"/></svg>`)
+	f.addFileOutput("memo", "memo.mp3", "audio/mpeg", "ID3")
+	f.install(false)
+	tt := ui.NewTester(m.frame(m.view), 1180, 760)
+	f.pump(tt, "the inspector's outputs", func() bool { return tt.HasText("memo.mp3") })
+
+	// The test window has no web view: the SVG draws as a native picture, with its source a switch
+	// away.
+	m.presentOutput("chat-relay", "out-logo")
+	f.pump(tt, "the picture", func() bool { return tt.HasText(L("Source")) })
+	tt.Key(0, ui.KeyEscape)
+	settle(tt)
+
+	// A recording plays in the web view; without one it is a card that opens it in its app.
+	m.presentOutput("chat-relay", "out-memo")
+	f.pump(tt, "the card", func() bool { return tt.HasText(L("No preview for this kind of file.")) })
+	wantText(t, tt, "memo.mp3", "MP3 · 3 B")
 }

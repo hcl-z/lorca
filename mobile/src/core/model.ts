@@ -547,33 +547,6 @@ export interface Output {
   bot_id: string;
   version: number;
   url?: string;
-  evidence?: OutputEvidence;
-}
-
-/// What the bot says it checked: a test run, a screenshot from before or after a change, or
-/// another check, and how it went.
-export interface OutputEvidence {
-  kind: "test_result" | "before_screenshot" | "after_screenshot" | "verification";
-  summary: string;
-  status: "passed" | "failed" | "unverified";
-  command?: string;
-}
-
-export function evidenceTitle(evidence: OutputEvidence): string {
-  switch (evidence.kind) {
-    case "test_result":
-      return t("Test result");
-    case "before_screenshot":
-      return t("Before screenshot");
-    case "after_screenshot":
-      return t("After screenshot");
-    default:
-      return t("Check");
-  }
-}
-
-export function evidenceStatus(evidence: OutputEvidence): string {
-  return evidence.status === "passed" ? t("Passed") : evidence.status === "failed" ? t("Failed") : t("Not verified");
 }
 
 /// The document a link output points at; only an https address without credentials opens.

@@ -3,7 +3,7 @@ import type { Message, Output } from "./model";
 
 mock.module("./prefs", () => ({ loadPrefs: () => ({}), savePrefs: () => {}, coreHome: () => "/unused", pathOf: (p: string) => p, wipePrefs: () => {} }));
 mock.module("expo-localization", () => ({ getLocales: () => [{ languageCode: "en", languageTag: "en-US" }] }));
-const { documentUrl, evidenceStatus, groupOutputs, outputKind, outputSymbol, outputTypeName } = await import("./model");
+const { documentUrl, groupOutputs, outputKind, outputSymbol, outputTypeName } = await import("./model");
 const { markFile, markFileError, removeChat, removeMessage, useStore } = await import("./store");
 
 function version(id: string, n: number, minutesAgo: number, output: Partial<Output> = {}): Message {
@@ -26,7 +26,6 @@ test("versions group under their output, newest first, the latest published outp
 });
 
 test("a check reads as one word, and only an https link opens", () => {
-  expect(evidenceStatus({ kind: "test_result", summary: "", status: "unverified" })).toBe("Not verified");
   expect(outputSymbol({ id: "o", name: "n", mime: "image/png", bot_id: "b", version: 1 })).toBe("photo");
   expect(documentUrl({ id: "o", name: "n", mime: "text/html", bot_id: "b", version: 1, url: "https://docs.example.com/a" })).toBe("https://docs.example.com/a");
   for (const url of ["http://example.com", "javascript:alert(1)", "https://user:secret@example.com", "file:///etc/passwd"]) {

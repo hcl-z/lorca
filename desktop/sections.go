@@ -204,8 +204,10 @@ type statusRowOptions struct {
 	// SymbolColor tints the symbol; secondary text by default.
 	SymbolColor *ui.Color
 	PluginID    string
-	Title       string
-	Subtitle    string
+	// FileIcon draws a file's icon, by its name and media type, in place of the symbol.
+	FileIcon [2]string
+	Title    string
+	Subtitle string
 	// SubtitleLines cuts the subtitle to that many lines; 0 lets it wrap.
 	SubtitleLines int
 	State         string
@@ -246,6 +248,8 @@ func statusRow(c *ui.Context, k *card, o statusRowOptions) (ui.Element, statusRo
 		ui.Row(c).Width(20).Justify(ui.Center).TextColor(tint).Children(func() {
 			if o.PluginID != "" {
 				pluginTile(c, o.PluginID, o.Symbol, 20)
+			} else if o.FileIcon[0] != "" {
+				fileIconView(c, o.FileIcon[0], o.FileIcon[1], 22)
 			} else if o.Symbol != "" {
 				symbol(c, o.Symbol, 16, 1.7)
 			}
