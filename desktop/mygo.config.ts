@@ -6,7 +6,7 @@ export default ({ command }: { command: string }) => ({
   identifier: "app.lorca",
   // The app's own version, apart from the Mac app's (the root package.json's). `bun run
   // release-desktop` and the Release desktop workflow read it here.
-  version: "1.0.24",
+  version: "1.0.25",
   icon: command === "dev" ? "assets/icon-dev.png" : "assets/icon.png",
   out: "build",
   // Open in Lorca on a shared bot's page (lorca.app/t/…). The installer registers the scheme on
