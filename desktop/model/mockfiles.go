@@ -13,7 +13,7 @@ import (
 )
 
 // The files Researcher's outputs carry in the demo (`LORCA_MOCK=1`): a Markdown note, an HTML page
-// with a script and a link, a PDF, a diagram, and a long log. They are made when first needed and
+// with a script and a link, a PDF, a diagram, a long log, and a table of the setup's steps. They are made when first needed and
 // written under a temporary folder, where the store finds them as the CLI's `files.path` would.
 
 type mockFile struct {
@@ -33,6 +33,7 @@ var mockFiles = sync.OnceValue(func() []mockFile {
 		{id: "pdf", name: "Setup comparison.pdf", mime: "application/pdf", data: mockPDF()},
 		{id: "diagram", name: "Device roles.png", mime: "image/png", data: picture, width: width, height: height},
 		{id: "log", name: "Link check.log", mime: "text/plain", data: []byte(mockLinkLog())},
+		{id: "table", name: "Setup steps.csv", mime: "text/csv", data: []byte(mockStepsCSV)},
 	}
 })
 
@@ -60,9 +61,9 @@ func (s *Store) seedMockFiles() {
 }
 
 // mockOutputMessages are Researcher's published files, in the order it made them: the note, then
-// a comparison as a page and a PDF beside a diagram, then a check with its result.
+// a comparison as a page and a PDF beside a diagram, then a log of a check.
 func mockOutputMessages() []*Message {
-	output := func(id string, minutes float64, evidence *OutputEvidence) *Message {
+	output := func(id string, minutes float64) *Message {
 		var file mockFile
 		for _, each := range mockFiles() {
 			if each.id == id {
@@ -71,20 +72,21 @@ func mockOutputMessages() []*Message {
 		}
 		message := mockMessage(BotAuthor("bot-scout"), textBody(""), minutesAgo(minutes))
 		message.Attachments = []Attachment{{ID: "att-mock-" + id, Name: file.name, Mime: file.mime, Size: int64(len(file.data)), Width: file.width, Height: file.height}}
-		message.Output = &Output{ID: "out-mock-" + id, Name: file.name, Mime: file.mime, BotID: "bot-scout", Version: 1, Evidence: evidence}
+		message.Output = &Output{ID: "out-mock-" + id, Name: file.name, Mime: file.mime, BotID: "bot-scout", Version: 1}
 		return message
 	}
 	return []*Message{
-		output("notes", 41, nil),
+		output("notes", 41),
 		mockMessage(BotAuthor("bot-scout"), textBody("I also compared how five similar apps explain their first steps."), minutesAgo(40)),
-		output("page", 39.6, nil),
-		output("pdf", 39.5, nil),
-		output("diagram", 39.4, nil),
+		output("page", 39.6),
+		output("pdf", 39.5),
+		output("diagram", 39.4),
 		mockMessage(BotAuthor("bot-scout"), textBody("I checked the links in the setup guide too."), minutesAgo(38.5)),
-		output("log", 38, &OutputEvidence{Kind: "test_result", Status: "passed", Summary: "All 41 links in the setup guide answer.", Command: "bun run check:links"}),
+		output("log", 38),
 		mockMessage(BotAuthor("bot-scout"), textBody("Here is where people drop off during setup, by step."), minutesAgo(37.5)),
-		// A picture of its own, large enough to need the lightbox's pinch and slide.
-		output("chart", 37, nil),
+		output("table", 37.2),
+		// A picture of its own, large enough to need the viewer's pinch and slide.
+		output("chart", 37),
 		mockSetupScreenshot(),
 	}
 }
@@ -274,3 +276,14 @@ func mockPDF() []byte {
 	fmt.Fprintf(&out, "trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", len(objects)+1, start)
 	return out.Bytes()
 }
+
+// mockStepsCSV is the setup's steps and how many people finished each, with a quoted field.
+const mockStepsCSV = `Step,Platform,Started,Finished,Median time
+Install the app,macOS,1240,1198,1m 12s
+Install the app,Windows,860,801,1m 40s
+Create an identity,All,1999,1950,24s
+Pair a phone,iPhone,1421,1180,2m 05s
+Pair a phone,Android,512,397,2m 31s
+"Connect a provider, then a bot",All,1577,1422,3m 18s
+Send a first message,All,1422,1390,41s
+`

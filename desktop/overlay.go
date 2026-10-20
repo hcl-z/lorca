@@ -41,6 +41,9 @@ type sheet struct {
 	window    *appWindow
 	// alert is a sheet only its buttons close: a press outside it does not.
 	alert bool
+	// fullWindow is a sheet that covers the whole window, title bar and all, as the file viewer
+	// does: no dimmed ground around it and no outside to press.
+	fullWindow bool
 }
 
 // dismiss takes the sheet away; the keyboard goes back to what had it when it came up.
@@ -71,6 +74,13 @@ func (w *appWindow) present(view func(c *ui.Context, s *sheet), onDismiss func()
 	return s
 }
 
+// presentFullWindow puts up a sheet that covers the whole window.
+func (w *appWindow) presentFullWindow(view func(c *ui.Context, s *sheet), onDismiss func()) *sheet {
+	s := w.present(view, onDismiss)
+	s.fullWindow = true
+	return s
+}
+
 // hasSheet is whether a sheet is up, so the window's commands leave the keyboard to it.
 func (w *appWindow) hasSheet() bool { return len(w.sheets) > 0 }
 
@@ -83,9 +93,15 @@ func (w *appWindow) sheetsView(c *ui.Context) {
 		ui.Overlay(c, func() {
 			// The panel sits in the middle of the window, clear of the title bar's controls above
 			// it and by the same room below.
-			scrim := ui.Column(c.Key(s.id)).Absolute().Left(0).Top(0).Right(0).Bottom(0).Center().Padding(44, 16)
+			scrim := ui.Column(c.Key(s.id)).Absolute().Left(0).Top(0).Right(0).Bottom(0)
+			if !s.fullWindow {
+				scrim.Center().Padding(44, 16)
+			}
 			if front {
-				scrim.Background(p.Scrim).Modal()
+				if !s.fullWindow {
+					scrim.Background(p.Scrim)
+				}
+				scrim.Modal()
 			}
 			scrim.Transition(ui.ElementTransition{Enter: &ui.Motion{}, Duration: 120 * time.Millisecond})
 			frontSheet, backdropPressed = front && !s.alert, false

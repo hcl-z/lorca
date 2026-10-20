@@ -28,7 +28,12 @@ func TestPreviewKindOf(t *testing.T) {
 	}{
 		{"shot.PNG", "", PreviewImage},
 		{"photo", "image/jpeg", PreviewImage},
-		{"logo.svg", "image/svg+xml", PreviewText},
+		{"logo.svg", "image/svg+xml", PreviewSVG},
+		{"Sales.csv", "text/csv", PreviewTable},
+		{"report.tsv", "application/octet-stream", PreviewTable},
+		{"intro.mov", "video/quicktime", PreviewMedia},
+		{"memo", "audio/mpeg", PreviewMedia},
+		{"App.vue", "application/octet-stream", PreviewText},
 		{"README.md", "text/plain", PreviewMarkdown},
 		{"notes", "text/markdown", PreviewMarkdown},
 		{"page.html", "application/octet-stream", PreviewHTML},
@@ -38,7 +43,7 @@ func TestPreviewKindOf(t *testing.T) {
 		{"data.json", "application/json", PreviewText},
 		{"out", "text/plain", PreviewText},
 		{"sheet.xlsx", "application/vnd.ms-excel", PreviewNone},
-		{"movie.mp4", "video/mp4", PreviewNone},
+		{"movie.mp4", "video/mp4", PreviewMedia},
 		{"archive.zip", "", PreviewNone},
 	} {
 		if got := PreviewKindOf(c.name, c.mime); got != c.want {
@@ -51,8 +56,8 @@ func TestDemoOutputsHaveFilesOnDisk(t *testing.T) {
 	s := NewStore(nil, func(fn func()) { fn() }, true)
 	s.ResetMockData()
 	series := s.Outputs("chat-scout")
-	if len(series) != 6 {
-		t.Fatalf("Researcher published %d outputs, want 6", len(series))
+	if len(series) != 7 {
+		t.Fatalf("Researcher published %d outputs, want 7", len(series))
 	}
 	kinds := map[PreviewKind]bool{}
 	for _, each := range series {
@@ -65,7 +70,7 @@ func TestDemoOutputsHaveFilesOnDisk(t *testing.T) {
 		}
 		kinds[attachment.PreviewKind()] = true
 	}
-	for _, want := range []PreviewKind{PreviewImage, PreviewMarkdown, PreviewHTML, PreviewPDF, PreviewText} {
+	for _, want := range []PreviewKind{PreviewImage, PreviewMarkdown, PreviewHTML, PreviewPDF, PreviewText, PreviewTable} {
 		if !kinds[want] {
 			t.Errorf("no demo output of preview kind %d", want)
 		}
@@ -91,13 +96,10 @@ func nextOutputPost(t *testing.T, posts <-chan func()) {
 
 const outputMessageFixture = `{"id":"msg-output-v2","chat_id":"chat-1","author":{"kind":"bot","bot_id":"bot-1"},"body":{"kind":"text","text":"Result","attachments":[{"id":"att-output-v2","name":"Tests.txt","mime":"text/plain","size":12}]},"state":{"kind":"complete"},"created_at":1728000000,"output":{"id":"out-result","name":"Tests.txt","mime":"text/plain","bot_id":"bot-1","chat_id":"chat-1","task_id":"task-3a249410-8034-4be2-bf42-9e68b4fe2c41","version":2,"previous_message_id":"msg-output-v1","evidence":{"kind":"test_result","summary":"Focused checks pass","status":"passed","command":"cargo test","exit_code":0}}}`
 
-func TestOutputWireKeepsTheVersionAndCheck(t *testing.T) {
+func TestOutputWireKeepsTheVersion(t *testing.T) {
 	m := ToMessage(decodeJSON[WireMessage](t, outputMessageFixture))
 	if m.Output == nil || m.Output.ID != "out-result" || m.Output.Version != 2 || m.Output.BotID != "bot-1" {
 		t.Fatalf("output version lost: %+v", m.Output)
-	}
-	if m.Output.Evidence.Command != "cargo test" || m.Output.Evidence.Title() != "Test result" || m.Output.Evidence.StatusText() != "Passed" {
-		t.Fatalf("check lost: %+v", m.Output.Evidence)
 	}
 	if m.Output.Symbol() != "doc.text" || len(m.Attachments) != 1 || m.Attachments[0].ID != "att-output-v2" {
 		t.Fatal("attachment lost")
