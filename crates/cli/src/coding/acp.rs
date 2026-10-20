@@ -1446,13 +1446,17 @@ mod tests {
 
     #[test]
     fn a_permission_request_becomes_what_lorca_decides() {
-        let folder = Path::new("/work/shop");
+        // Absolute on every platform: `/work/shop` is not on Windows, which needs a drive.
+        let root = std::env::temp_dir();
+        let folder = &root.join("shop");
+        let hosts = root.join("hosts").to_string_lossy().to_string();
         let run = json!({ "kind": "execute", "title": "Run `git push`", "rawInput": { "command": "git push origin main" } });
         assert!(matches!(approval(&run, folder), Approval::Command { command } if command == "git push origin main"));
         let parts = json!({ "kind": "execute", "title": "Run", "rawInput": { "command": ["npm", "publish"] } });
         assert!(matches!(approval(&parts, folder), Approval::Command { command } if command == "npm publish"));
-        let edit = json!({ "kind": "edit", "title": "Edit", "locations": [{ "path": "/etc/hosts" }], "rawInput": { "path": "notes.md" } });
-        assert!(matches!(approval(&edit, folder), Approval::Files { paths } if paths == ["/etc/hosts", "/work/shop/notes.md"]));
+        let edit = json!({ "kind": "edit", "title": "Edit", "locations": [{ "path": hosts }], "rawInput": { "path": "notes.md" } });
+        let notes = folder.join("notes.md").to_string_lossy().to_string();
+        assert!(matches!(approval(&edit, folder), Approval::Files { paths } if paths == [hosts.clone(), notes]));
         let fetch = json!({ "kind": "fetch", "title": "Fetch https://example.com", "rawInput": { "url": "https://example.com" } });
         assert!(matches!(approval(&fetch, folder), Approval::Tool { name, .. } if name == "Fetch https://example.com"));
         let plan = json!({ "kind": "switch_mode", "title": "Approve Plan", "rawInput": { "plan": "1. Fix it" } });
