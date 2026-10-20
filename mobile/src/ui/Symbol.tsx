@@ -6,6 +6,9 @@ import type { ColorValue, StyleProp, ViewStyle } from "react-native";
 
 const ANDROID: Record<string, string> = {
   sparkles: "auto_awesome",
+  "arrow.up.right": "north_east",
+  checklist: "checklist",
+  "arrow.down.right.and.arrow.up.left": "compress",
   "person.fill": "person",
   "person.2.fill": "group",
   "person.badge.plus": "person_add",

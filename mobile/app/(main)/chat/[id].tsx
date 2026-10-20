@@ -41,6 +41,7 @@ import {
 import { t, useLanguage } from "../../../src/i18n";
 import { AvatarCluster } from "../../../src/ui/Avatar";
 import { Composer } from "../../../src/ui/Composer";
+import { RunningAgents } from "../../../src/ui/RunningAgents";
 import { CapsuleButton, Float, RoundButton } from "../../../src/ui/chrome";
 import { KeyboardFoot } from "../../../src/ui/KeyboardFoot";
 import { useWide } from "../../../src/ui/layout";
@@ -1073,6 +1074,7 @@ export default function ChatScreen() {
             pinToBottom();
           }}
         >
+          <RunningAgents />
           <Composer
             members={members}
             isGroup={isGroup}
