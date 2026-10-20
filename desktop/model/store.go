@@ -1887,45 +1887,36 @@ func (s *Store) StopAgent(chatID, messageID string, done func(error)) {
 	s.simple(done, "coding.stop", map[string]any{"chat_id": chatID, "message_id": messageID})
 }
 
-// AnswerAgentChoice answers what a coding agent's pane asks with one of the choices it offers.
-func (s *Store) AnswerAgentChoice(chatID, messageID string, choice int, done func(error)) {
+// SetAgentOption changes the model (`what` is "model") or how hard (`"effort"`) a running coding
+// agent thinks, on its bot's Runner; its card shows the new value once the Runner has set it.
+func (s *Store) SetAgentOption(chatID, messageID, what, value string, done func(error)) {
 	if s.IsMock {
-		s.finishMockAgent(chatID, messageID, AgentWorking)
 		s.post(func() { done(nil) })
 		return
 	}
-	s.simple(done, "coding.answer", map[string]any{"chat_id": chatID, "message_id": messageID, "choice": choice})
-}
-
-// AnswerAgentText types an answer into what a coding agent's pane asks, then Return.
-func (s *Store) AnswerAgentText(chatID, messageID, text string, done func(error)) {
-	if s.IsMock {
-		s.finishMockAgent(chatID, messageID, AgentWorking)
-		s.post(func() { done(nil) })
-		return
-	}
-	s.simple(done, "coding.answer", map[string]any{"chat_id": chatID, "message_id": messageID, "text": text})
+	s.simple(done, "coding.set", map[string]any{"chat_id": chatID, "message_id": messageID, "what": what, "value": value})
 }
 
 // AgentTranscript is a coding agent's transcript, from its Runner: what it was sent, said, and
-// did, or what its pane shows.
-func (s *Store) AgentTranscript(chatID, messageID string, done func(string, error)) {
+// did, as entries, those changed after change `since` when it is not nil.
+func (s *Store) AgentTranscript(chatID, messageID string, since *uint64, done func(AgentTranscriptPage, error)) {
 	if s.IsMock {
-		s.post(func() { done(MockAgentTranscript, nil) })
+		page := AgentTranscriptPage{Text: MockAgentTranscript, Rev: 1}
+		if since == nil {
+			page.Entries = MockAgentEntries()
+		}
+		s.post(func() { done(page, nil) })
 		return
 	}
-	Async(s, func() (string, error) {
-		var answer struct {
-			Text string `json:"text"`
+	Async(s, func() (AgentTranscriptPage, error) {
+		params := map[string]any{"chat_id": chatID, "message_id": messageID}
+		if since != nil {
+			params["since"] = *since
 		}
-		err := s.request("coding.transcript", map[string]any{"chat_id": chatID, "message_id": messageID}, &answer)
-		return answer.Text, err
+		var page AgentTranscriptPage
+		err := s.request("coding.transcript", params, &page)
+		return page, err
 	}, done)
-}
-
-// ShowAgent brings a coding agent's pane forward on this Runner, in its terminal host.
-func (s *Store) ShowAgent(chatID, messageID string, done func(error)) {
-	s.simple(done, "coding.show", map[string]any{"chat_id": chatID, "message_id": messageID})
 }
 
 // RunsHere is whether this Device runs the bot behind `message`: only there does its pane show.
@@ -2991,6 +2982,35 @@ func (s *Store) IsResponding(chatID string) bool {
 
 // RunningCommands are the chat's running tasks: its commands running in their terminals, here or
 // on their Runners, in the order they started, once each has run for TaskDelay.
+// RunningAgent is a coding agent at work, with its chat and the row of its card.
+type RunningAgent struct {
+	Chat    *Chat
+	Message *Message
+	Agent   *AgentRun
+}
+
+// runningAgentLookback is how many of a chat's latest messages RunningAgents looks at: the card of
+// an agent at work is among them.
+const runningAgentLookback = 80
+
+// RunningAgents are the coding agents at work in the chats the window holds, oldest first.
+func (s *Store) RunningAgents() []RunningAgent {
+	var list []RunningAgent
+	for _, chat := range s.Chats {
+		messages := chat.Messages
+		if len(messages) > runningAgentLookback {
+			messages = messages[len(messages)-runningAgentLookback:]
+		}
+		for _, message := range messages {
+			if agent := AgentOf(message); agent != nil && agent.IsRunning() && agent.Started() {
+				list = append(list, RunningAgent{Chat: chat, Message: message, Agent: agent})
+			}
+		}
+	}
+	slices.SortStableFunc(list, func(a, b RunningAgent) int { return a.Message.CreatedAt.Compare(b.Message.CreatedAt) })
+	return list
+}
+
 func (s *Store) RunningCommands(chatID string) []*Message {
 	chat := s.Chat(chatID)
 	if chat == nil {

@@ -766,7 +766,6 @@ export default function ChatScreen() {
   const [answeringId, setAnsweringId] = useState<string | null>(null);
   const answering = answeringId ? chat?.messages.find((m) => m.id === answeringId) : undefined;
   const answeringRun = answering?.body.kind === "tool" ? answering.body.run : undefined;
-  const answeringAgent = answering?.body.kind === "tool" && answering.body.agent?.question?.kind === "text" ? answering.body.agent : undefined;
   /// The secret request whose sheet is up, while it still asks.
   const [fillingId, setFillingId] = useState<string | null>(null);
   const filling = fillingId ? chat?.messages.find((m) => m.id === fillingId) : undefined;
@@ -871,7 +870,6 @@ export default function ChatScreen() {
   const fillSecret = useCallback((message: Message) => setFillingId(message.id), []);
   const stopCommand = useCallback((message: Message) => engine.stopCommand(message.chat_id, message.id), []);
   const stopAgent = useCallback((message: Message) => engine.stopAgent(message.chat_id, message.id), []);
-  const chooseForAgent = useCallback((message: Message, choice: number) => engine.answerAgentChoice(message.chat_id, message.id, choice), []);
 
   const renderItem = useCallback(
     ({ item }: { item: Row }) => {
@@ -922,8 +920,6 @@ export default function ChatScreen() {
               row={item}
               isGroup={isGroup}
               onDecide={answerCard}
-              onChoose={chooseForAgent}
-              onAnswer={answerCommand}
               onStop={stopAgent}
             />
           );
@@ -1096,13 +1092,6 @@ export default function ChatScreen() {
           run={answeringRun}
           onDismiss={() => setAnsweringId(null)}
           onSend={(text) => engine.answerCommand(answering.chat_id, answering.id, text)}
-        />
-      ) : null}
-      {answering && answeringAgent ? (
-        <AnswerSheet
-          prompt={(answeringAgent.question?.text ?? "").split("\n").map((line) => line.trim()).filter(Boolean).pop()}
-          onDismiss={() => setAnsweringId(null)}
-          onSend={(text) => engine.answerAgentText(answering.chat_id, answering.id, text)}
         />
       ) : null}
       {filling && fillingAsk ? (

@@ -1,6 +1,7 @@
 // The domain model as the core reports it over the JSON API (crates/cli/src/model.rs and the
 // snapshot in app.rs). Field names are the wire names.
 
+import type { AgentAsk } from "./agentAsk";
 import { t } from "../i18n";
 
 export const MAX_GROUP_BOTS = 6;
@@ -309,7 +310,7 @@ export type Body =
   /// The bot asks before a plugin or shell action, or before installing a plugin (`tool` is `install`).
   /// `rule` is the rule Always allow adds, which Auto-review proposed for a shell command (`plugin_id` is `computer`);
   /// `command` is that command in full, where `summary` is its first line.
-  | { kind: "permission"; plugin_id: string; plugin_name: string; tool: string; summary: string; decision: "pending" | "allowed" | "always" | "denied" | "expired" | "dismissed" | "connected" | "failed"; reason?: string; rule?: string; command?: string; link?: string; code?: string; secret?: SecretAsk; ask?: AskQuestion }
+  | { kind: "permission"; plugin_id: string; plugin_name: string; tool: string; summary: string; decision: "pending" | "allowed" | "always" | "denied" | "expired" | "dismissed" | "connected" | "failed"; reason?: string; rule?: string; command?: string; link?: string; code?: string; secret?: SecretAsk; ask?: AskQuestion; agent_ask?: AgentAsk }
   /// An email or Slack message the bot wrote in the chat, waiting for the user to send it: the
   /// chat's view of its review item, whose `version` Send and Discard name. `note` says why it
   /// was not sent or needs another look; `direct` is whether, with drafts off, the bot sends such
@@ -403,10 +404,12 @@ export interface CommandRun {
 /// (`coding.answer`). Stop is `coding.stop`; its transcript, `coding.transcript`.
 export interface AgentRun {
   id: string;
-  /** `claude` or `codex`. */
+  /** `claude`, `codex`, or another agent that speaks ACP, such as `gemini`. */
   kind: string;
-  /** `herdr` or `luvus` when it runs in a pane of that terminal host on its Runner. */
-  host?: string;
+  /** What it is called, such as "Gemini CLI"; absent on a card from before agents over ACP. */
+  name?: string;
+  /** What it shows of its session, as the agent names them: its model, how hard it thinks, its mode, its context in use. */
+  settings?: { name: string; value: string }[];
   task: string;
   /** Where it works, from the home folder. */
   folder?: string;
@@ -417,16 +420,20 @@ export interface AgentRun {
   /** Auto-review held its start and told the bot why, without asking: it is `denied`. */
   held?: boolean;
   question?: AgentQuestion;
+  /** The card in the chat of the question it asks, by message id, while it waits there. */
+  asking?: string;
+  /** What the agent called its session. */
+  title?: string;
   output?: string;
   outcome?: string;
   device?: string;
   started_at?: number;
 }
 
-/// What a coding agent's card asks: whether it may start (`start`) or run a command (`command`),
-/// or what its pane asks, with a menu of choices (`choices`) or for text (`text`).
+/// What a coding agent's card asks: whether it may start (`start`) or run a command (`command`).
+/// What the agent itself asks is a card of its own in the chat (`AgentAsk`).
 export interface AgentQuestion {
-  kind: "start" | "command" | "choices" | "text";
+  kind: "start" | "command";
   text?: string;
   command?: string;
   choices?: string[];
@@ -436,7 +443,12 @@ export interface AgentQuestion {
 
 /// Its product's name, which is not translated.
 export function agentName(agent: AgentRun): string {
-  return agent.kind === "codex" ? "Codex" : "Claude Code";
+  return agent.name || (agent.kind === "codex" ? "Codex" : "Claude Code");
+}
+
+/// "Model: Opus · Effort: High · Context: 34k / 200k", or nothing when the agent says none.
+export function agentSettings(agent: AgentRun): string {
+  return (agent.settings ?? []).map((setting) => `${setting.name}: ${setting.value}`).join(" · ");
 }
 
 export function agentIsOpen(agent: AgentRun): boolean {

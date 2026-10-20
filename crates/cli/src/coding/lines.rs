@@ -88,15 +88,6 @@ pub(crate) fn result(text: &str, is_error: bool) -> Vec<String> {
     lines
 }
 
-/// The text of a tool result's content, which is a string or a list of text blocks.
-pub(crate) fn content_text(content: &Value) -> String {
-    match content {
-        Value::String(text) => text.clone(),
-        Value::Array(parts) => parts.iter().filter_map(|part| part.get("text").and_then(Value::as_str)).collect::<Vec<_>>().join("\n"),
-        _ => String::new(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,6 +106,5 @@ mod tests {
         let lines = result("a\nb\n\nc\nd\ne\nf", false);
         assert_eq!(lines, vec!["  ⎿ a", "    b", "    c", "    d", "    … +2 lines"]);
         assert_eq!(result("", true), vec!["  ⎿ Error"]);
-        assert_eq!(content_text(&json!([{ "type": "text", "text": "one" }, { "type": "text", "text": "two" }])), "one\ntwo");
     }
 }

@@ -1074,6 +1074,8 @@ type PermissionRequest struct {
 	Secret *SecretAsk
 	// Ask is a question with options: what the bot asks and, once answered, what was picked.
 	Ask *AskQuestion
+	// AgentAsk is a coding agent's question: its form and, once answered, what was given.
+	AgentAsk *AgentAsk
 }
 
 // AskQuestion is a question a bot asks with options (`ask_user`): one pick, or several with
@@ -1686,8 +1688,8 @@ const (
 )
 
 // AgentQuestion is what a coding agent's card asks: whether it may start (`start`) or run a
-// command (`command`), answered like a command's; or what its pane asks, with a menu of choices
-// (`choices`) or for text (`text`), answered with `coding.answer`.
+// command (`command`), answered like a command's. What the agent itself asks is a card of its own
+// in the chat (AgentAsk).
 type AgentQuestion struct {
 	Kind    string
 	Text    string
@@ -1709,45 +1711,95 @@ func (q *AgentQuestion) Decisions() []Answer {
 	return []Answer{{L("Allow once"), "allow"}, {L("Always allow"), "always"}, {L("Deny"), "deny"}}
 }
 
-// AgentRun is a coding agent a bot runs on its Runner, Claude Code or Codex, as the card of the
-// call that started it shows it: Auto-review's question before it starts, what it works on and
-// where, how it stands, its last lines, and what it asks.
+// AgentRun is a coding agent a bot runs on its Runner, Claude Code, Codex, or another that speaks
+// ACP, as the card of the call that started it shows it: Auto-review's question before it starts,
+// what it works on and where, how it stands, its last lines, and what it asks.
 type AgentRun struct {
 	ID string
-	// Kind is `claude` or `codex`.
+	// Kind is `claude`, `codex`, or another agent that speaks ACP, such as `gemini`.
 	Kind string
-	// Host is `herdr` or `luvus` when it runs in a pane of that terminal host on its Runner.
-	Host    string
-	Task    string
-	Folder  string
-	Branch  string
-	State   AgentState
-	Stalled bool
+	// ProductName is what the agent is called, such as "Gemini CLI"; empty on a card from before
+	// cards said so, which Name makes from Kind.
+	ProductName string
+	Task        string
+	Folder      string
+	Branch      string
+	State       AgentState
+	Stalled     bool
 	// Held is set when Auto-review held its start and told the bot why, without asking: it is
 	// AgentDenied.
 	Held     bool
 	Question *AgentQuestion
-	Output   string
-	Outcome  string
-	Device   string
+	// Asking is the card in the chat of the question it asks, by message id, while it waits there.
+	Asking string
+	// Title is what the agent called its session.
+	Title   string
+	Output  string
+	Outcome string
+	// PullRequest is the pull request it opened, when its transcript names one.
+	PullRequest string
+	// StartedAt is when it started; zero on a card that does not say.
+	StartedAt time.Time
+	Device    string
+	// Settings are what it shows of its session besides the work, as the agent names them: its
+	// model, how hard it thinks, its mode, how much of its context it has used.
+	Settings []AgentSetting
+	// Controls are the settings of a running agent that can be changed now, each with what the
+	// agent offers.
+	Controls []AgentControl
+}
+
+// AgentSetting is one of them: "Model" and "Opus".
+type AgentSetting struct {
+	Name, Value string
+}
+
+// AgentControl is a setting that can be changed while the agent runs: What is "model" or
+// "effort", which the Runner names it by; Value is the choice it has now.
+type AgentControl struct {
+	What, Name, Value string
+	Choices           []AgentChoice
+}
+
+// AgentChoice is one value of a control, with the name the agent gives it.
+type AgentChoice struct {
+	Value, Name string
+}
+
+// RestLine is the settings line without the ones a control already shows: "Context: 34k / 200k".
+func (a *AgentRun) RestLine() string {
+	parts := make([]string, 0, len(a.Settings))
+settings:
+	for _, setting := range a.Settings {
+		for _, control := range a.Controls {
+			if control.Name == setting.Name {
+				continue settings
+			}
+		}
+		parts = append(parts, setting.Name+": "+setting.Value)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// SettingsLine is "Model: Opus · Effort: High · Context: 34k / 200k", or nothing when the agent
+// says none.
+func (a *AgentRun) SettingsLine() string {
+	parts := make([]string, 0, len(a.Settings))
+	for _, setting := range a.Settings {
+		parts = append(parts, setting.Name+": "+setting.Value)
+	}
+	return strings.Join(parts, " · ")
 }
 
 // Name is its product's name, which is not translated.
 func (a *AgentRun) Name() string {
+	if a.ProductName != "" {
+		return a.ProductName
+	}
 	if a.Kind == "codex" {
 		return "Codex"
 	}
 	return "Claude Code"
-}
-
-func (a *AgentRun) HostName() string {
-	switch a.Host {
-	case "herdr":
-		return "Herdr"
-	case "luvus":
-		return "Luvus"
-	}
-	return ""
 }
 
 // IsOpen is an agent that has not ended.

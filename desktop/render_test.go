@@ -39,6 +39,8 @@ func demoWindow(t *testing.T) *mainWindow {
 	store.Start()
 	m := newMainWindow()
 	m.userWantsInspector = true
+	// The agents' floating windows repeat what the chat's cards show; their own test turns them on.
+	m.pips.off = true
 	app.main = m
 	m.restoreSelection()
 	return m

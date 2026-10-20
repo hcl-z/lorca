@@ -134,7 +134,7 @@ type WireRun struct {
 type WireAgent struct {
 	ID       string  `json:"id"`
 	Kind     string  `json:"kind"`
-	Host     *string `json:"host"`
+	Name     *string `json:"name"`
 	Task     *string `json:"task"`
 	Folder   *string `json:"folder"`
 	Branch   *string `json:"branch"`
@@ -149,9 +149,26 @@ type WireAgent struct {
 		Reason  *string  `json:"reason"`
 		Rule    *string  `json:"rule"`
 	} `json:"question"`
-	Output  *string `json:"output"`
-	Outcome *string `json:"outcome"`
-	Device  *string `json:"device"`
+	Asking      *string  `json:"asking"`
+	PullRequest *string  `json:"pull_request"`
+	StartedAt   *float64 `json:"started_at"`
+	Title       *string  `json:"title"`
+	Output      *string  `json:"output"`
+	Outcome     *string  `json:"outcome"`
+	Device      *string  `json:"device"`
+	Settings    []struct {
+		Name  string `json:"name"`
+		Value string `json:"value"`
+	} `json:"settings"`
+	Controls []struct {
+		What    string `json:"what"`
+		Name    string `json:"name"`
+		Value   string `json:"value"`
+		Choices []struct {
+			Value string `json:"value"`
+			Name  string `json:"name"`
+		} `json:"choices"`
+	} `json:"controls"`
 }
 
 type WireAuthor struct {
@@ -226,6 +243,7 @@ type WireBody struct {
 	Direct        *bool            `json:"direct"`
 	Secret        *WireSecretAsk   `json:"secret"`
 	Ask           *WireAskQuestion `json:"ask"`
+	AgentAsk      *AgentAsk        `json:"agent_ask"`
 	ReplyTo       *struct {
 		MessageID string     `json:"message_id"`
 		Author    WireAuthor `json:"author"`
@@ -960,13 +978,27 @@ func ToMessage(wire WireMessage) *Message {
 				state = AgentStopped
 			}
 			card := &AgentRun{
-				ID: agent.ID, Kind: agent.Kind, Host: str(agent.Host), Task: str(agent.Task), Folder: str(agent.Folder),
+				ID: agent.ID, Kind: agent.Kind, ProductName: str(agent.Name), Task: str(agent.Task), Folder: str(agent.Folder),
 				Branch: str(agent.Branch), State: state, Stalled: flag(agent.Stalled), Held: flag(agent.Held), Output: str(agent.Output),
-				Outcome: str(agent.Outcome), Device: str(agent.Device),
+				Outcome: str(agent.Outcome), Device: str(agent.Device), Asking: str(agent.Asking), Title: str(agent.Title),
+				PullRequest: str(agent.PullRequest),
+			}
+			if agent.StartedAt != nil && *agent.StartedAt > 0 {
+				card.StartedAt = time.Unix(0, int64(*agent.StartedAt*1e9))
+			}
+			for _, setting := range agent.Settings {
+				card.Settings = append(card.Settings, AgentSetting{Name: setting.Name, Value: setting.Value})
+			}
+			for _, control := range agent.Controls {
+				next := AgentControl{What: control.What, Name: control.Name, Value: control.Value}
+				for _, choice := range control.Choices {
+					next.Choices = append(next.Choices, AgentChoice{Value: choice.Value, Name: choice.Name})
+				}
+				card.Controls = append(card.Controls, next)
 			}
 			if q := agent.Question; q != nil {
 				switch q.Kind {
-				case "start", "command", "choices", "text":
+				case "start", "command":
 					card.Question = &AgentQuestion{
 						Kind: q.Kind, Text: str(q.Text), Command: str(q.Command), Choices: q.Choices,
 						Reason: str(q.Reason), Rule: str(q.Rule), HasRule: q.Rule != nil,
@@ -1001,6 +1033,7 @@ func ToMessage(wire WireMessage) *Message {
 			Command:    str(body.Command),
 			Secret:     secretAsk(body.Secret),
 			Ask:        askQuestion(body.Ask),
+			AgentAsk:   body.AgentAsk,
 		}}
 	case "draft":
 		card := &DraftCard{ReviewID: str(body.ReviewID), State: str(body.State), PluginID: str(body.PluginID),

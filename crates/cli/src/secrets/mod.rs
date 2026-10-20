@@ -624,6 +624,7 @@ impl Tool for RequestSecret {
                 code: None,
                 secret: Some(request.ask.clone()),
                 ask: None,
+                agent_ask: None,
             },
         );
         let decision = mcp::await_answer(&self.app, &self.chat_id, &message.id, None, &cancel, || {

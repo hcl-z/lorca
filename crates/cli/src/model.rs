@@ -454,6 +454,10 @@ pub enum Body {
         /// answered, what the user picked, which every Device shows.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ask: Option<AskQuestion>,
+        /// A coding agent's question (`tool` = `agent_ask`): its form, and once it is answered,
+        /// what was given and by whom.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent_ask: Option<AgentAsk>,
     },
     /// An email or Slack message the bot wrote in the chat, waiting for the user to send it: the
     /// chat's view of its review item (`review-status-<review id>`), rewritten as it changes.
@@ -545,6 +549,60 @@ pub struct AskAnswer {
     pub other: Option<String>,
 }
 
+/// The `tool` of a coding agent's question card. It is here rather than in `coding`, which only a
+/// Runner builds, because every Device reads the card.
+pub const ASK_TOOL: &str = "agent_ask";
+
+/// What a coding agent asks the user, on a card of its own in the chat (`tool` = `agent_ask`): its
+/// message and the fields of its form. The card is the bot's; its answer goes to the agent through
+/// the `coding_agent` row that started it (`coding.answer`). The card's `decision` is `pending`,
+/// `allowed` (answered), `denied` (declined), `expired` (nobody answered in time), or `dismissed`
+/// (the agent stopped first).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct AgentAsk {
+    /// The agent's handle and kind, and what it is called: `agent-3f9a2c1d`, `claude`, "Claude Code".
+    pub agent_id: String,
+    pub kind: String,
+    pub name: String,
+    /// The `coding_agent` row whose agent asks, which the answer names.
+    pub row_id: String,
+    pub message: String,
+    pub fields: Vec<AgentAskField>,
+    /// Once answered: each field the answer filled, in words, in the form's order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub answers: Vec<AgentSetting>,
+    /// Who answered or declined it: `you` or `bot`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<String>,
+}
+
+/// One field of a coding agent's question.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct AgentAskField {
+    /// What the answer names it by.
+    pub key: String,
+    pub label: String,
+    /// `one` (a pick among `choices`), `many` (any of them), `flag` (yes or no), `text`,
+    /// `number`, or `integer`.
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub required: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub choices: Vec<AgentAskChoice>,
+    /// A pick may be the user's own words instead (`one`), or beside the picks (`many`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub other: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct AgentAskChoice {
+    /// What the answer gives for it.
+    pub value: String,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
 /// What a secret request asks for: one or more named values, and where the Runner uses them.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct SecretAsk {
@@ -608,19 +666,26 @@ impl ReplyTo {
     }
 }
 
-/// A coding agent (Claude Code or Codex) a bot runs on its Runner, as the card on the
+/// A coding agent (Claude Code, Codex, or another that speaks ACP) a bot runs on its Runner, as the card on the
 /// `coding_agent` row that started it shows it (`crate::coding`): Auto-review's question before
 /// it starts, what it works on and where, how it stands, its last lines, and what it asks.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct AgentRun {
     /// The bot's handle for it, across turns: `agent-3f9a2c1d`.
     pub id: String,
-    /// `claude` (Claude Code) or `codex`.
+    /// `claude` (Claude Code), `codex`, or another agent that speaks ACP, such as `gemini`.
     pub kind: String,
-    /// `herdr` or `luvus` when it runs in a pane of that terminal host on the Runner, where the
-    /// user can watch it and type into it; none when Lorca runs it on its own.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub host: Option<String>,
+    /// What the apps call it: "Claude Code", "Gemini CLI". Empty on a card from before agents
+    /// over ACP, which the apps name from `kind`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
+    /// What it shows of its session besides the work: its model, how hard it thinks, its mode,
+    /// how much of its context it has used.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub settings: Vec<AgentSetting>,
+    /// The settings that can be changed while it runs (`coding.set`), with what each offers.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub controls: Vec<AgentControl>,
     /// What it was asked: the prompt's first line.
     pub task: String,
     /// Where it works, from the home folder: the worktree Lorca made for it, or a folder that
@@ -643,6 +708,13 @@ pub struct AgentRun {
     pub held: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub question: Option<AgentQuestion>,
+    /// The card in the chat of the question it asks, by message id, while it waits for an answer
+    /// there (`Body::Permission` with an `agent_ask`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asking: Option<String>,
+    /// The title the agent gave its session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     /// Its last lines, as its transcript shows them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output: Option<String>,
@@ -660,6 +732,32 @@ pub struct AgentRun {
     pub started_at: Option<f64>,
 }
 
+/// One thing a coding agent's card shows about its session, as the agent names it: "Model" and
+/// "Opus", "Context" and "34k / 200k".
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct AgentSetting {
+    pub name: String,
+    pub value: String,
+}
+
+/// A setting of a running coding agent that the card lets be changed.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct AgentControl {
+    /// `model` or `effort`, which `coding.set` names it by.
+    pub what: String,
+    /// What the agent calls it: "Model".
+    pub name: String,
+    /// The value it has now.
+    pub value: String,
+    pub choices: Vec<AgentChoice>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct AgentChoice {
+    pub value: String,
+    pub name: String,
+}
+
 impl AgentRun {
     /// It has not ended: it may still ask, work, or take a follow-up.
     pub fn is_open(&self) -> bool {
@@ -667,15 +765,15 @@ impl AgentRun {
     }
 }
 
-/// What a coding agent's card asks the user.
+/// What a coding agent's card asks the user: whether it may start or do something. What the
+/// agent itself asks is a card of its own in the chat (`AgentAsk`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct AgentQuestion {
     /// `start`: Auto-review asks before the agent starts. `command`: the agent wants to run
-    /// `command`. `choices`: its screen asks, with a menu of `choices`. `text`: its screen asks
-    /// for an answer to type. The first two are answered with `chats.permission`, the others
-    /// with `coding.answer`.
+    /// `command`. Answered with `chats.permission`. (`choices` and `text`, from before the
+    /// agent's questions had a card of their own, appear only on old cards.)
     pub kind: String,
-    /// The question, as the agent's screen shows it (`choices`, `text`).
+    /// The question (`choices`, `text`).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -692,7 +790,11 @@ pub struct AgentQuestion {
 
 /// One line about what a coding agent's card asks, for a notification: "Claude Code: $ git push".
 pub fn agent_question_summary(agent: &AgentRun, question: &AgentQuestion) -> String {
-    let name = if agent.kind == "codex" { "Codex" } else { "Claude Code" };
+    let name = match agent.name.as_str() {
+        "" if agent.kind == "codex" => "Codex",
+        "" => "Claude Code",
+        name => name,
+    };
     let what = match question.kind.as_str() {
         "start" => format!("start in {}", agent.folder),
         "command" => format!("$ {}", question.command.as_deref().unwrap_or("").lines().next().unwrap_or("").trim()),
@@ -1628,7 +1730,7 @@ mod app_view_tests {
     fn permission_cards_drop_the_reviewed_payload() {
         let permission = Message::new("c", Author::Bot { bot_id: "b".into() }, Body::Permission {
             plugin_id: "computer".into(), plugin_name: "Mac".into(), tool: "bash".into(), summary: "Run a command".into(),
-            arguments: serde_json::json!({ "command": "secret" }), decision: "pending".into(), reason: None, rule: None, command: None, link: None, code: None, secret: None, ask: None,
+            arguments: serde_json::json!({ "command": "secret" }), decision: "pending".into(), reason: None, rule: None, command: None, link: None, code: None, secret: None, ask: None, agent_ask: None,
         });
         let app = permission.for_app();
         let Body::Permission { arguments, summary, command, .. } = &app.body else { panic!() };
