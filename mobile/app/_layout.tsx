@@ -101,8 +101,8 @@ export default function RootLayout() {
               <Stack.Screen name="workflows" options={nestedSheet} />
               <Stack.Screen name="settings" options={nestedSheet} />
               <Stack.Screen
-                name="attachment/[id]"
-                options={{ presentation: "fullScreenModal", headerShown: true, headerStyle: { backgroundColor: "#000000" }, headerTintColor: "#FFFFFF", headerTitleStyle: { color: "#FFFFFF" }, contentStyle: { backgroundColor: "#000000" }, statusBarStyle: "light" }}
+                name="file/[id]"
+                options={{ presentation: "fullScreenModal", headerShown: true, headerShadowVisible: false, headerStyle: { backgroundColor: p.background as string }, contentStyle: { backgroundColor: p.background } }}
               />
             </Stack.Protected>
             <Stack.Protected guard={!paired}>

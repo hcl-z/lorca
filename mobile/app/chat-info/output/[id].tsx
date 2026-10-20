@@ -37,7 +37,7 @@ export default function OutputScreen() {
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingBottom: 40 }}>
         {attachment ? (
           <Section footer={published}>
-            <OutputPreview key={attachment.id} attachment={attachment} />
+            <OutputPreview key={attachment.id} attachment={attachment} chatId={chat} messageId={message.id} />
           </Section>
         ) : link ? (
           <Section title={t("Link")} footer={published}>

@@ -1,6 +1,13 @@
 // Simplified Chinese. The key is the English text passed to t(); `bun run l10n` checks this table.
 
 export const zh: Record<string, string> = {
+  "Copy Text": "复制文本",
+  "No preview for this kind of file.": "这类文件无法预览。",
+  "Open With…": "打开方式…",
+  "Preview": "预览",
+  "Showing the first {count} rows": "仅显示前 {count} 行",
+  "Showing the first {size}": "仅显示前 {size}",
+  "Source": "源码",
   "{amount} est.": "约 {amount}",
   "{api} + {estimate} est.": "{api} + 约 {estimate}",
   "{count} bot": "{count} 个智能体",

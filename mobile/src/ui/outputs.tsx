@@ -19,6 +19,8 @@ import { alert } from "./alert";
 import { Row } from "./forms";
 import { stamp } from "./format";
 import { Pressable } from "./Pressable";
+import { previewKind, peekIsEmpty } from "../core/files";
+import { FileIcon, FilePeekView, fileIcon, useFilePeek } from "./files";
 import { Symbol } from "./Symbol";
 import { accentColor, Font, usePalette, type Palette } from "./theme";
 
@@ -45,6 +47,7 @@ export function OutputRow({ series, isGroup, onPress }: { series: OutputSeries; 
       title={output.name}
       subtitle={bot ? `${bot} · ${when}` : when}
       icon={outputSymbol(output)}
+      leading={file ? <FileIcon name={output.name} mime={output.mime} size={26} /> : undefined}
       accessory={file ? <Text style={[styles.status, { color: p.secondaryLabel }]}>{fileSize(file.size)}</Text> : undefined}
       chevron
       onPress={onPress}
@@ -78,9 +81,10 @@ function outputTint(output: Output, p: Palette) {
 }
 
 /// A published output in the transcript, standing without a bubble or a time: an image's preview
-/// (the top of a tall one, as a page's screenshot starts at its top), the file's icon, name, type
-/// and size. A tap opens the output's screen, or fetches again a file
-/// that could not be fetched. A run of one bot's outputs joins into one list (`stack` says
+/// (the top of a tall one, as a page's screenshot starts at its top) or the start of a document,
+/// table, or text file as a page rising from the card, then the file's icon, name, type and size.
+/// A tap opens the file in the viewer, a link in its screen, or fetches again a file that could not
+/// be fetched. A run of one bot's outputs joins into one list (`stack` says
 /// whether the cards above and below are in it), a compact row each: the icon (an image's own
 /// picture), name, type and size. What the bot says it checked is not shown: the card is the file.
 export function OutputCard({ message, maxWidth, stack }: { message: Message; maxWidth: number; stack?: { above: boolean; below: boolean } }) {
@@ -107,8 +111,17 @@ export function OutputCard({ message, maxWidth, stack }: { message: Message; max
     preview = Math.min(Math.max(full, PREVIEW_MIN), PREVIEW_MAX);
   }
   const spoken = [output.name, detail].filter(Boolean).join(", ");
+  const previewAs = attachment ? previewKind(attachment.name, attachment.mime) : "none";
+  const peekable = !stacked && !error && (previewAs === "markdown" || previewAs === "html" || previewAs === "table" || previewAs === "text");
+  const peek = useFilePeek(peekable ? uri : undefined, previewAs, output.name);
   const open = () =>
-    error && attachment ? engine.retryFile(attachment) : router.push({ pathname: "/chat-info/output/[id]", params: { id: output.id, chat: message.chat_id } });
+    error && attachment
+      ? engine.retryFile(attachment)
+      : attachment
+        ? router.push({ pathname: "/file/[id]", params: { id: attachment.id, chat: message.chat_id, message: message.id } })
+        : router.push({ pathname: "/chat-info/output/[id]", params: { id: output.id, chat: message.chat_id } });
+  const icon = (size: number) =>
+    attachment ? <FileIcon name={output.name} mime={output.mime} size={size} /> : <Symbol name={outputSymbol(output)} size={size - 6} color={tint} />;
   if (stacked) {
     return (
       <Pressable
@@ -127,7 +140,7 @@ export function OutputCard({ message, maxWidth, stack }: { message: Message; max
           {kind === "image" && uri && !error ? (
             <Image source={{ uri }} style={styles.thumbnail} contentFit="cover" transition={150} />
           ) : (
-            <Symbol name={outputSymbol(output)} size={20} color={tint} />
+            icon(STACK_ICON + 4)
           )}
         </View>
         <View style={{ flex: 1 }}>
@@ -155,8 +168,9 @@ export function OutputCard({ message, maxWidth, stack }: { message: Message; max
           <Image source={uri && !error ? { uri } : undefined} style={StyleSheet.absoluteFill} contentFit="cover" contentPosition="top" transition={150} />
         </View>
       )}
+      {peek && !peekIsEmpty(peek) && attachment && <FilePeekView peek={peek} kind={previewAs} name={output.name} tint={fileIcon(output.name, output.mime).tint} />}
       <View style={styles.cardHeader}>
-        <Symbol name={outputSymbol(output)} size={24} color={tint} />
+        {icon(34)}
         <View style={{ flex: 1 }}>
           <Text style={[styles.cardName, { color: p.label }]} numberOfLines={1} ellipsizeMode="middle">
             {output.name}
@@ -206,10 +220,11 @@ function fileFailed(error: unknown) {
 }
 
 /// The file as its sheet shows it: an image, the start of a text file, or what it is; while it is
-/// on its way, or when it could not be fetched, it says so. A tap opens it on iOS.
-export function OutputPreview({ attachment }: { attachment: Attachment }) {
+/// on its way, or when it could not be fetched, it says so. A tap opens it in the viewer.
+export function OutputPreview({ attachment, chatId, messageId }: { attachment: Attachment; chatId: string; messageId: string }) {
   useLanguage();
   const p = usePalette();
+  const router = useRouter();
   const uri = useStore((s) => s.files[attachment.id]);
   const error = useStore((s) => s.fileErrors[attachment.id]);
   useEffect(() => {
@@ -245,7 +260,7 @@ export function OutputPreview({ attachment }: { attachment: Attachment }) {
   } else {
     content = (
       <View style={styles.placeholder}>
-        <Symbol name="doc" size={40} color={p.secondaryLabel} />
+        <FileIcon name={attachment.name} mime={attachment.mime} size={56} />
         <Text style={[styles.fileName, { color: p.label }]} numberOfLines={2}>
           {attachment.name}
         </Text>
@@ -254,7 +269,12 @@ export function OutputPreview({ attachment }: { attachment: Attachment }) {
     );
   }
   return (
-    <Pressable onPress={uri && canPreviewFiles ? () => void openFile(attachment) : undefined} disabled={!uri || !canPreviewFiles} accessibilityLabel={attachment.name} accessibilityRole={uri && canPreviewFiles ? "button" : undefined}>
+    <Pressable
+      onPress={uri ? () => router.push({ pathname: "/file/[id]", params: { id: attachment.id, chat: chatId, message: messageId } }) : undefined}
+      disabled={!uri}
+      accessibilityLabel={attachment.name}
+      accessibilityRole={uri ? "button" : undefined}
+    >
       {content}
     </Pressable>
   );

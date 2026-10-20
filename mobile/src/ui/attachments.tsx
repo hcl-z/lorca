@@ -1,5 +1,5 @@
 // Attachments in a bubble: image thumbnails sized from the width and height the message
-// carries, and a card for any other file, which opens it. The bytes come from the phone's own
+// carries, and a card with the file's icon for any other file. Either opens the file viewer. The bytes come from the phone's own
 // store, or from the relay the first time a message from another Device shows them; a fetch that
 // failed says so and is tried again on a tap.
 
@@ -12,9 +12,8 @@ import { engine } from "../core/engine";
 import { fileSize, isImage, type Attachment } from "../core/model";
 import { useStore } from "../core/store";
 import { t, useLanguage } from "../i18n";
-import { Symbol } from "./Symbol";
+import { FileIcon } from "./files";
 import { Font, usePalette } from "./theme";
-import { openFile } from "./outputs";
 
 export const IMAGE_MAX = 220;
 const IMAGE_MIN = 72;
@@ -37,17 +36,17 @@ export function imageBox(attachment: Attachment, maxWidth: number): { width: num
   return { width: Math.max(IMAGE_MIN, Math.ceil(w * scale)), height: Math.max(IMAGE_MIN, Math.ceil(h * scale)) };
 }
 
-export function AttachmentBlock({ attachments, onUserBubble, maxWidth }: { attachments: Attachment[]; onUserBubble: boolean; maxWidth: number }) {
+export function AttachmentBlock({ attachments, onUserBubble, maxWidth, chatId, messageId }: { attachments: Attachment[]; onUserBubble: boolean; maxWidth: number; chatId: string; messageId: string }) {
   return (
     <View style={styles.block}>
       {attachments.map((attachment) => (
-        <AttachmentTile key={attachment.id} attachment={attachment} onUserBubble={onUserBubble} maxWidth={maxWidth} />
+        <AttachmentTile key={attachment.id} attachment={attachment} onUserBubble={onUserBubble} maxWidth={maxWidth} chatId={chatId} messageId={messageId} />
       ))}
     </View>
   );
 }
 
-function AttachmentTile({ attachment, onUserBubble, maxWidth }: { attachment: Attachment; onUserBubble: boolean; maxWidth: number }) {
+function AttachmentTile({ attachment, onUserBubble, maxWidth, chatId, messageId }: { attachment: Attachment; onUserBubble: boolean; maxWidth: number; chatId: string; messageId: string }) {
   useLanguage();
   const p = usePalette();
   const router = useRouter();
@@ -55,12 +54,13 @@ function AttachmentTile({ attachment, onUserBubble, maxWidth }: { attachment: At
   const error = useStore((s) => s.fileErrors[attachment.id]);
   const quiet: ColorValue = onUserBubble ? "rgba(255,255,255,0.18)" : p.fill;
   const foreground: ColorValue = onUserBubble ? p.userBubbleText : p.botBubbleText;
+  const view = () => router.push({ pathname: "/file/[id]", params: { id: attachment.id, chat: chatId, message: messageId } });
 
   if (isImage(attachment) && !error) {
     const box = imageBox(attachment, maxWidth);
     return (
       <Pressable
-        onPress={() => uri && router.push({ pathname: "/attachment/[id]", params: { id: attachment.id, name: attachment.name } })}
+        onPress={() => uri && view()}
         accessibilityLabel={attachment.name}
         accessibilityRole="imagebutton"
       >
@@ -68,18 +68,18 @@ function AttachmentTile({ attachment, onUserBubble, maxWidth }: { attachment: At
       </Pressable>
     );
   }
-  // A file's card opens it, as its sheet's Open does; one whose bytes could not be fetched says so
-  // and fetches them again on a tap.
+  // A file's card opens it in the viewer; one whose bytes could not be fetched says so and fetches
+  // them again on a tap.
   const detail = error ? t("Couldn't download · Retry") : uri ? fileSize(attachment.size) : `${fileSize(attachment.size)} · ${t("fetching…")}`;
   return (
     <Pressable
-      onPress={error ? () => engine.retryFile(attachment) : uri ? () => void openFile(attachment) : undefined}
+      onPress={error ? () => engine.retryFile(attachment) : uri ? view : undefined}
       disabled={!error && !uri}
       style={[styles.card, { backgroundColor: quiet, width: Math.min(FILE_WIDTH, maxWidth) }, isImage(attachment) && imageBox(attachment, maxWidth)]}
       accessibilityLabel={`${attachment.name}, ${detail}`}
       accessibilityRole="button"
     >
-      <Symbol name={isImage(attachment) ? "photo" : "doc.fill"} size={22} color={foreground} />
+      <FileIcon name={attachment.name} mime={attachment.mime} size={30} />
       <View style={{ flex: 1 }}>
         <Text style={[styles.name, { color: foreground }]} numberOfLines={1}>
           {attachment.name}
