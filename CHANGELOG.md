@@ -8,6 +8,20 @@ phone app's.
 
 ## [Unreleased]
 
+## [1.0.25]
+
+- Coding agents run over the Agent Client Protocol: Claude Code and Codex through adapters pinned to your own CLI, pi, Gemini, and any other ACP agent, all handled the same way. Terminal panes and `lorca coding hook` are gone. A question the agent asks shows on a card of its own in the chat, and you or the bot answer it there. On the desktop, the agent's card shows its model, effort, mode, how full its context is, and what it has cost, with its pull request one click away. Its transcript reads as a timeline, and each running agent has a floating window that fills the app when clicked.
+- Files open over the whole desktop window. The bar is the title bar, with the file's icon, its name, Preview and Source, Copy, Save As…, and Open. Below it the file runs edge to edge:
+  - a picture pinches and slides
+  - Markdown is a page to read
+  - a CSV or TSV file is a table whose header stays in view
+  - code shows with line numbers
+  - an SVG, a PDF, or an HTML page draws in place, and a recording plays
+  An output's other versions and the file's details are in a pane at the side.
+- Files open full screen on the phone too: pictures and SVGs zoom, Markdown reads as a page, tables keep their header, and code has line numbers. A PDF, a recording, or a web page opens in Quick Look.
+- Files wear their format's icon everywhere, from Untitled UI's file icons. A lone card of a document, a page, a table, or a text file shows the start of the file.
+- Cards and viewers show the file only. What a bot says it checked when it published a file stays with the task and is no longer drawn.
+
 ## [1.0.24]
 
 - About you: one profile per computer that every bot there reads, with your name, your timezone, the language you want, and how you like replies. A bot saves what you tell it about yourself there, and you edit it from a bot's inspector or with `lorca profile`, so a second bot no longer has to learn the same things again.
