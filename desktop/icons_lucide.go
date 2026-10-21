@@ -208,6 +208,7 @@ var symbolIcons = map[string]string{
 	"music.note":                            "Music",
 	"photo.on.rectangle":                    "Images",
 	"pin.slash":                             "PinOff",
+	"pin.slash.fill":                        "PinOff",
 	"play":                                  "Play",
 	"point.3.connected.trianglepath.dotted": "Workflow",
 	"qrcode.viewfinder":                     "ScanQrCode",

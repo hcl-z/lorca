@@ -410,6 +410,8 @@ export interface AgentRun {
   name?: string;
   /** What it shows of its session, as the agent names them: its model, how hard it thinks, its mode, its context in use. */
   settings?: { name: string; value: string }[];
+  /** The settings that can be changed while it runs (`coding.set`), with what each offers. */
+  controls?: AgentControl[];
   task: string;
   /** Where it works, from the home folder. */
   folder?: string;
@@ -426,8 +428,20 @@ export interface AgentRun {
   title?: string;
   output?: string;
   outcome?: string;
+  /** The pull request it opened, when its transcript names one. */
+  pull_request?: string;
   device?: string;
+  /** When it started, in Unix seconds. */
   started_at?: number;
+}
+
+/// A setting of a running coding agent that its card lets be changed: `what` is how `coding.set`
+/// names it (`model`, `effort`), `name` how the agent does ("Model").
+export interface AgentControl {
+  what: string;
+  name: string;
+  value: string;
+  choices: { value: string; name: string }[];
 }
 
 /// What a coding agent's card asks: whether it may start (`start`) or run a command (`command`).
@@ -444,11 +458,6 @@ export interface AgentQuestion {
 /// Its product's name, which is not translated.
 export function agentName(agent: AgentRun): string {
   return agent.name || (agent.kind === "codex" ? "Codex" : "Claude Code");
-}
-
-/// "Model: Opus · Effort: High · Context: 34k / 200k", or nothing when the agent says none.
-export function agentSettings(agent: AgentRun): string {
-  return (agent.settings ?? []).map((setting) => `${setting.name}: ${setting.value}`).join(" · ");
 }
 
 export function agentIsOpen(agent: AgentRun): boolean {

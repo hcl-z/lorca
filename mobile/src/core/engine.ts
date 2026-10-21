@@ -1126,6 +1126,12 @@ class Engine {
     await core.request("coding.stop", { chat_id: chatId, message_id: messageId });
   }
 
+  /// Changes a running coding agent's model or how hard it thinks (`what`), as its card's controls
+  /// offer; the card shows the change once the agent has made it.
+  async setAgentOption(chatId: string, messageId: string, what: string, value: string): Promise<void> {
+    await core.request("coding.set", { chat_id: chatId, message_id: messageId, what, value });
+  }
+
   /// Answers the question a coding agent asks in the chat with its form filled in, by field key,
   /// through the row of the agent that asks (`rowId`).
   async answerAgentAsk(chatId: string, rowId: string, values: Record<string, unknown>) {
