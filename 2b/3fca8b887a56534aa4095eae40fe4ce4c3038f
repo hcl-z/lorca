@@ -1,0 +1,140 @@
+desktop/e2e_test.go
+  s_e88077b0d6618e::t_e9b14e65ee0f88 57-59
+mobile/src/core/agentKit.test.ts
+  s_e88077b0d6618e::t_45aadab89d2df7 2,7-10,22,25,33
+mobile/src/core/agentKit.ts
+  s_e88077b0d6618e::t_427e73e1275c47 14,19,36,38-39,63
+docs/architecture/coding-agents.md
+  s_e88077b0d6618e::t_b818ad461cf65b 69-70
+mobile/src/core/store.test.ts
+  s_e88077b0d6618e::t_66acd9add96f27 2,35-47
+  s_e88077b0d6618e::t_a7383f4038d8a7 7
+crates/cli/src/turns/profile.rs
+  s_e88077b0d6618e::t_0feb9c5f53ad38 7-8,31
+mobile/src/core/events.test.ts
+  s_e88077b0d6618e::t_38ed5bd82694b2 1-42
+crates/cli/src/ask/tests.rs
+  s_e88077b0d6618e::t_094beb8e4b5db5 132-134
+crates/cli/src/plugins/mcp_json.rs
+  s_e88077b0d6618e::t_81bd7d7f8dd407 1439-1452
+docs/architecture/questions.md
+  s_e88077b0d6618e::t_3c5ee939c55122 3
+docs/architecture/tasks.md
+  s_e88077b0d6618e::t_bca80efba6c735 59
+docs/architecture/bots.md
+  s_e88077b0d6618e::t_b90fb77293d8cc 42
+desktop/model/wire.go
+  s_e88077b0d6618e::t_bd39b334d9285e 159-166,991-994
+crates/cli/src/connector_limits.rs
+  s_e88077b0d6618e::t_bdac8ca38388df 276
+crates/cli/src/review_queue.rs
+  s_e88077b0d6618e::t_81bd7d7f8dd407 545-547
+crates/cli/src/event_triggers.rs
+  s_e88077b0d6618e::t_81bd7d7f8dd407 788-791
+crates/cli/src/plugins/mod.rs
+  s_e88077b0d6618e::t_bdac8ca38388df 1022,1025,1029-1030,1032-1033
+desktop/agentkit.go
+  s_e88077b0d6618e::t_91ea7489f9245f 42-43,45,47-49,51,53,55,61,63,127,129,132,175,177
+crates/cli/src/budgets.rs
+  s_e88077b0d6618e::t_bdac8ca38388df 444
+mobile/src/core/store.ts
+  s_e88077b0d6618e::t_971523e6f45ce8 236
+  s_e88077b0d6618e::t_ea5050346d6e3c 213
+  s_e88077b0d6618e::t_fa54c81b8fb8f1 253-264
+crates/cli/src/coding/mod.rs
+  s_e88077b0d6618e::t_bf82017c9deab5 481
+  s_e88077b0d6618e::t_08d8ce4c453617 486
+desktop/model/store.go
+  s_e88077b0d6618e::t_36035150404533 204,407,529-531,536,539,542-549,552-563,566-573,576-584,586-593,597-602,605-611,622-624,628-709
+  s_e88077b0d6618e::t_9e707030b39a99 716-719
+desktop/model/models.go
+  s_e88077b0d6618e::t_bd39b334d9285e 1750-1782
+desktop/model/store_test.go
+  s_e88077b0d6618e::t_ce47119e009194 63-67,69-72,74-77,89
+  s_e88077b0d6618e::t_a95e4749dd8efe 68,73,78-79,82-87
+docs/architecture/turn-context.md
+  s_e88077b0d6618e::t_b825058a881f55 17
+  s_e88077b0d6618e::t_405ca781f2e0d7 7,9,11,15-16
+crates/cli/src/turns/context.rs
+  s_e88077b0d6618e::t_7e1b0d500d4082 1-89
+desktop/model/wire_event_test.go
+  s_e88077b0d6618e::t_e9b14e65ee0f88 1-51
+docs/architecture/protocols.md
+  s_e88077b0d6618e::t_1d46f4ed6bfd06 53
+desktop/app.go
+  s_e88077b0d6618e::t_a95e4749dd8efe 199-200,203-208
+docs/architecture/phone-app.md
+  s_e88077b0d6618e::t_14f9c2c2538252 7
+crates/cli/src/model.rs
+  s_e88077b0d6618e::t_6def89f384d272 1805-1836
+  s_e88077b0d6618e::t_9c60c9bd95da52 733-754,788-823,1001,1004-1006
+crates/cli/src/turns.rs
+  s_e88077b0d6618e::t_415576481d2d12 225-228,232-234
+  s_e88077b0d6618e::t_1b320722fae688 4096-4100,4275
+  s_e88077b0d6618e::t_a3a3bc8578b88f 6589-6632,6634-6653
+  s_e88077b0d6618e::t_5c3bd7897c0224 6633
+  s_e88077b0d6618e::t_7c138f6af47df9 37,40-43,47,361,740
+  s_e88077b0d6618e::t_9d56a703290fd9 13
+  s_e88077b0d6618e::t_094beb8e4b5db5 3228-3229
+desktop/model/tasks_test.go
+  s_e88077b0d6618e::t_a95e4749dd8efe 56
+crates/cli/src/requests.rs
+  s_e88077b0d6618e::t_b17ecf426ef0d8 29-45,47-84
+  s_e88077b0d6618e::t_6bcc5bf1894c7e 273-314,316-328
+  s_e88077b0d6618e::t_f21a58ba0cf9ae 315
+crates/cli/src/feedback/mod.rs
+  s_e88077b0d6618e::t_81bd7d7f8dd407 525-527
+crates/cli/src/ask.rs
+  s_e88077b0d6618e::t_094beb8e4b5db5 56-57,60,163-167
+docs/architecture/desktop-app.md
+  s_e88077b0d6618e::t_14f9c2c2538252 5
+crates/cli/src/turns/tools.rs
+  s_e88077b0d6618e::t_0aa80791a0a5e4 30-33
+  s_e88077b0d6618e::t_61de14116d41dd 1-2,4-29,34-74,84-92,94-95,99-180,182,185,187-201,205-206
+  s_e88077b0d6618e::t_dd3c64508582a1 186
+  s_e88077b0d6618e::t_b825058a881f55 3,75-78
+  s_e88077b0d6618e::t_14d6010ce4c21b 202-204
+  s_e88077b0d6618e::t_2bdf3e91a71ed0 207-251
+  s_e88077b0d6618e::t_2f7cd8d1192dd8 181,183-184
+  s_e88077b0d6618e::t_c22f3b8fc036b3 79-83
+  s_e88077b0d6618e::t_83427c9da1b930 93,96-98
+crates/cli/src/api.rs
+  s_e88077b0d6618e::t_bdac8ca38388df 26
+  s_e88077b0d6618e::t_5716436da27747 717-726,734-743,961,964-967,979,982-985
+  s_e88077b0d6618e::t_7a032ae41c0347 438-442,472,482-483,506
+desktop/model/mock.go
+  s_e88077b0d6618e::t_91ea7489f9245f 487-488
+desktop/agents_test.go
+  s_e88077b0d6618e::t_27dcbcc6305759 54,61,65,84,88
+desktop/model/attention_test.go
+  s_e88077b0d6618e::t_a95e4749dd8efe 33,37
+mobile/src/core/engine.ts
+  s_e88077b0d6618e::t_19f514ccb4f866 12,170-173,175,178,181,184,187,191,194,199-200,203,206,209,212-214,217,220,223,226,229,232,235,238,241-244
+desktop/model/wire_event.go
+  s_e88077b0d6618e::t_f5d80a24a0d8e7 1-107,110-111,114-139,142-157,160-173,176-204
+  s_e88077b0d6618e::t_b9a7f8fba2371e 108-109,112-113,140-141,158-159,174-175
+crates/cli/src/app.rs
+  s_e88077b0d6618e::t_8d1b1172805db7 270-271,392
+desktop/model/reviews_test.go
+  s_e88077b0d6618e::t_a95e4749dd8efe 59,61
+mobile/src/core/model.ts
+  s_e88077b0d6618e::t_427e73e1275c47 436-441
+mobile/src/core/events.ts
+  s_e88077b0d6618e::t_98a764bc251c83 1-164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "2b3fca8b887a56534aa4095eae40fe4ce4c3038f",
+  "prompts": {},
+  "sessions": {
+    "s_e88077b0d6618e": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_88w2wpysn2ys",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
