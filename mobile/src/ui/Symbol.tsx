@@ -1,156 +1,54 @@
-// SF Symbols, the same names the Mac app and bot profiles use, with Material Symbols standing
-// in on Android.
+// The app's icons: Lucide's, the set the desktop app draws, by the SF Symbol names the Mac app,
+// the models, and bot profiles use (`lucideIcons.ts`, written from desktop/icons_lucide.go). Each
+// is a stroked 24-unit SVG drawn by react-native-svg in the text's color, the same on iOS and
+// Android. A name with no icon draws sparkles.
 
-import { SymbolView, type SymbolViewProps, type SymbolWeight } from "expo-symbols";
+import { memo, type ReactElement } from "react";
 import type { ColorValue, StyleProp, ViewStyle } from "react-native";
+import Svg, { Circle, Ellipse, Line, Path, Polygon, Polyline, Rect } from "react-native-svg";
+import { FILLED_SYMBOLS, LUCIDE_SHAPES, SYMBOL_ICONS } from "./lucideIcons";
 
-const ANDROID: Record<string, string> = {
-  sparkles: "auto_awesome",
-  "person.fill": "person",
-  "person.2.fill": "group",
-  "person.badge.plus": "person_add",
-  "gearshape.fill": "settings",
-  gearshape: "settings",
-  "square.and.pencil": "edit_square",
-  "info.circle": "info",
-  "arrow.left": "arrow_back",
-  "arrow.up": "arrow_upward",
-  "stop.fill": "stop",
-  "pin.fill": "push_pin",
-  pin: "push_pin",
-  "pin.slash": "push_pin",
-  trash: "delete",
-  "checkmark.circle.fill": "check_circle",
-  checkmark: "check",
-  "circle.fill": "circle",
-  "qrcode.viewfinder": "qr_code_scanner",
-  "doc.on.clipboard": "content_paste",
-  "exclamationmark.triangle.fill": "warning",
-  "info.circle.fill": "info",
-  laptopcomputer: "laptop_mac",
-  desktopcomputer: "desktop_mac",
-  macstudio: "desktop_mac",
-  macmini: "desktop_mac",
-  "server.rack": "dns",
-  pc: "computer",
-  iphone: "smartphone",
-  ipad: "tablet",
-  smartphone: "smartphone",
-  "questionmark.circle": "help",
-  "wand.and.stars": "auto_fix_high",
-  "hammer.fill": "handyman",
-  "book.fill": "menu_book",
-  "book.closed": "menu_book",
-  "paintbrush.fill": "brush",
-  "chart.bar.fill": "bar_chart",
-  "terminal.fill": "terminal",
-  terminal: "terminal",
-  "globe": "public",
-  "brain.head.profile": "psychology",
-  "magnifyingglass": "search",
-  "envelope.fill": "mail",
-  "calendar": "calendar_month",
-  "flask.fill": "science",
-  "bolt.fill": "bolt",
-  "leaf.fill": "eco",
-  "music.note": "music_note",
-  "camera.fill": "photo_camera",
-  "shield.fill": "shield",
-  "hand.raised": "pan_tool",
-  "cart.fill": "shopping_cart",
-  "arrow.triangle.turn.up.right.diamond.fill": "alt_route",
-  "chevron.right": "chevron_right",
-  "chevron.down": "expand_more",
-  "bell.slash.fill": "notifications_off",
-  // A value menu: Material's dropdown arrow.
-  "chevron.up.chevron.down": "arrow_drop_down",
-  "arrow.down": "arrow_downward",
-  "plus": "add",
-  // The bars' round buttons, the message actions, and the question card.
-  "person.crop.circle": "account_circle",
-  "chevron.left": "arrow_back",
-  "tray.full": "inbox",
-  "checkmark.square.fill": "check_box",
-  square: "check_box_outline_blank",
-  "largecircle.fill.circle": "radio_button_checked",
-  // Durable tasks' states and evidence.
-  "circle": "radio_button_unchecked",
-  "arrow.triangle.2.circlepath": "sync",
-  clock: "schedule",
-  "pause.circle": "pause_circle",
-  alarm: "alarm",
-  "arrow.triangle.pull": "merge",
-  "exclamationmark.circle.fill": "error",
-  "checkmark.circle": "check_circle",
-  "xmark.circle": "cancel",
-  "bubble.left": "chat_bubble",
-  play: "play_arrow",
-  "arrow.counterclockwise": "replay",
-  "xmark": "close",
-  // Android's overflow menu is the vertical one.
-  "ellipsis": "more_vert",
-  "crown.fill": "workspace_premium",
-  "key.fill": "key",
-  key: "key",
-  lock: "lock",
-  "person.badge.key.fill": "badge",
-  "antenna.radiowaves.left.and.right": "cell_tower",
-  "link": "link",
-  "at": "alternate_email",
-  "mic.fill": "mic",
-  "waveform": "graphic_eq",
-  "paperclip": "attach_file",
-  flag: "flag",
-  "checkmark.seal": "verified",
-  "photo.on.rectangle": "photo_library",
-  photo: "image",
-  "doc.fill": "description",
-  doc: "draft",
-  "doc.text": "description",
-  "doc.richtext": "picture_as_pdf",
-  // What a published output is.
-  "richtext.page": "picture_as_pdf",
-  "text.page": "description",
-  "zipper.page": "folder_zip",
-  document: "draft",
-  curlybraces: "data_object",
-  tablecells: "table",
-  "circle.dashed": "radio_button_unchecked",
-  film: "movie",
-  eye: "visibility",
-  safari: "open_in_browser",
-  "square.and.arrow.up": "share",
-  "square.and.arrow.down": "download",
-  "doc.on.doc": "content_copy",
-  "arrow.clockwise": "refresh",
-  "folder.fill": "folder",
-  "xmark.circle.fill": "cancel",
-  "arrowshape.turn.up.left.fill": "reply",
-  "binoculars.fill": "travel_explore",
-  "text.bubble": "chat",
-  "person.crop.circle.badge.checkmark": "how_to_reg",
-  "bubble.left.and.bubble.right": "forum",
-  "chevron.left.forwardslash.chevron.right": "code",
-  "pencil.and.scribble": "draw",
-  "bolt.horizontal.fill": "electric_bolt",
-  "flame.fill": "local_fire_department",
-  "puzzlepiece.extension": "extension",
-  "doc.text.magnifyingglass": "pageview",
-  // Workflow feedback.
-  "hand.thumbsup": "thumb_up",
-  pencil: "edit",
-  "pencil.line": "edit_note",
-  "arrow.uturn.backward": "undo",
-  "eye.slash": "visibility_off",
-  "exclamationmark.triangle": "warning",
-  // Workflows.
-  envelope: "mail",
-  // Channels' services.
-  paperplane: "send",
-  number: "tag",
-  "arrow.triangle.branch": "call_split",
-  "point.3.connected.trianglepath.dotted": "account_tree",
+/// SF Symbols' weights, as the stroke the icons draw with in their 24-unit box.
+export type SymbolWeight = "ultraLight" | "thin" | "light" | "regular" | "medium" | "semibold" | "bold" | "heavy" | "black";
+
+const STROKES: Record<SymbolWeight, number> = {
+  ultraLight: 1.25,
+  thin: 1.4,
+  light: 1.6,
+  regular: 1.8,
+  medium: 1.9,
+  semibold: 2.2,
+  bold: 2.45,
+  heavy: 2.7,
+  black: 2.9,
 };
+
+const ELEMENTS = { path: Path, circle: Circle, rect: Rect, line: Line, polyline: Polyline, polygon: Polygon, ellipse: Ellipse } as const;
+type Shape = { kind: keyof typeof ELEMENTS; props: Record<string, string> };
+
+const parsed = new Map<string, Shape[]>();
+
+/// An icon's elements and their attributes, read once.
+function shapesOf(icon: string): Shape[] {
+  let shapes = parsed.get(icon);
+  if (!shapes) {
+    shapes = [];
+    for (const match of (LUCIDE_SHAPES[icon] ?? "").matchAll(/<(\w+)((?:\s+[\w-]+="[^"]*")*)\s*\/>/g)) {
+      const kind = match[1] as Shape["kind"];
+      if (!(kind in ELEMENTS)) continue;
+      const props: Record<string, string> = {};
+      for (const attr of match[2].matchAll(/([\w-]+)="([^"]*)"/g)) props[attr[1].replace(/-(\w)/g, (_, c: string) => c.toUpperCase())] = attr[2];
+      shapes.push({ kind, props });
+    }
+    parsed.set(icon, shapes);
+  }
+  return shapes;
+}
+
+/// Whether a name draws an icon of its own rather than the fallback.
+export function hasSymbol(name: string): boolean {
+  return !!SYMBOL_ICONS[name];
+}
 
 export interface SymbolProps {
   name: string;
@@ -158,22 +56,33 @@ export interface SymbolProps {
   color?: ColorValue;
   weight?: SymbolWeight;
   style?: StyleProp<ViewStyle>;
-  type?: SymbolViewProps["type"];
 }
 
-export function Symbol({ name, size = 17, color, weight = "medium", style, type }: SymbolProps) {
+export const Symbol = memo(function Symbol({ name, size = 17, color, weight = "medium", style }: SymbolProps) {
+  const icon = SYMBOL_ICONS[name] ?? "Sparkles";
+  const filled = FILLED_SYMBOLS.has(name);
+  // Lucide's stroke is drawn in a 24-unit box: a small icon keeps it a little heavier, so it does
+  // not thin out next to its words.
+  const stroke = STROKES[weight] * (size < 16 ? 1.12 : 1);
   return (
-    <SymbolView
-      name={{ ios: name as any, android: (ANDROID[name] ?? "auto_awesome") as any }}
-      size={size}
-      tintColor={color}
-      weight={weight}
-      type={type}
-      resizeMode="scaleAspectFit"
-      style={[{ width: size, height: size }, style]}
-    />
+    <Svg width={size} height={size} viewBox="0 0 24 24" style={style} color={color as string} accessible={false} pointerEvents="none">
+      {shapesOf(icon).map(({ kind, props }, index): ReactElement => {
+        const Element = ELEMENTS[kind] as React.ComponentType<Record<string, unknown>>;
+        return (
+          <Element
+            key={index}
+            {...props}
+            fill={filled ? "currentColor" : "none"}
+            stroke="currentColor"
+            strokeWidth={stroke}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        );
+      })}
+    </Svg>
   );
-}
+});
 
 /// Symbols offered when creating a bot, a subset the Mac app also knows.
 export const BOT_SYMBOLS = [

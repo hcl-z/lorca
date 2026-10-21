@@ -12,7 +12,7 @@ import (
 // same thing, stroked in the text color.
 
 // filledSymbols are symbols SF draws solid, which the stroke icons fill to match.
-var filledSymbols = map[string]bool{"stop.fill": true, "pin.fill": true}
+var filledSymbols = map[string]bool{"stop.fill": true, "pin.fill": true, "circle.fill": true}
 
 type symbolKey struct {
 	name   string

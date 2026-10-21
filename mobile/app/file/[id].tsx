@@ -1,10 +1,11 @@
 // A file from a chat or a bot's output, full screen, after the desktop app's viewer: the file's icon,
 // name, and what it is in the bar, and the file edge to edge under it. A picture or an SVG pinches
 // and zooms; Markdown is drawn as a page; a CSV or TSV file is a grid with its header row kept in
-// view; code and data run unwrapped beside line numbers; other text wraps. Markdown, HTML, tables,
-// and SVG switch to their source. An HTML page, a PDF, a recording, or any other file is a card that
-// opens it in Quick Look on iOS (the share sheet on Android). The bar's menu opens, shares, and
-// copies the file, and puts an output's other versions on screen.
+// view; code and data run unwrapped beside line numbers; other text wraps. An HTML page runs in the
+// web view, a PDF draws there on iOS, and a recording plays there (`PageView`). Markdown, HTML,
+// tables, and SVG switch to their source. Any other file is a card that opens it in Quick Look on
+// iOS (the share sheet on Android). The bar's menu opens, shares, and copies the file, and puts an
+// output's other versions on screen.
 
 import * as Clipboard from "expo-clipboard";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
@@ -12,15 +13,17 @@ import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, Platform, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { canPreviewFiles } from "../../modules/lorca-core";
 import { engine } from "../../src/core/engine";
-import { extensionOf, isCode, layOutJSON, lineNumbers, parseTable, peekOf, previewKind, type PreviewKind } from "../../src/core/files";
+import { extensionOf, isCode, layOutJSON, lineNumbers, parseTable, previewKind } from "../../src/core/files";
 import { fileSize, type Attachment, type Message } from "../../src/core/model";
 import { useOutputs, useStore } from "../../src/core/store";
 import { t, useLanguage } from "../../src/i18n";
-import { FileIcon, FilePeekView, fileIcon, useFileHead, ZoomablePicture } from "../../src/ui/files";
+import { FileIcon, useFileHead, ZoomablePicture } from "../../src/ui/files";
 import { daySeparator } from "../../src/ui/format";
 import { Markdown } from "../../src/ui/Markdown";
 import { AndroidIcons, IconCloseToolbar } from "../../src/ui/navigation";
 import { openFile, outputAttachment, shareFile } from "../../src/ui/outputs";
+import { Button } from "../../src/ui/Button";
+import { PageView, pageShows } from "../../src/ui/PageView";
 import { Pressable } from "../../src/ui/Pressable";
 import { Font, usePalette } from "../../src/ui/theme";
 
@@ -59,6 +62,8 @@ export default function FileScreen() {
   const limit = kind === "markdown" || kind === "html" || kind === "svg" ? DOCUMENT_LIMIT : TEXT_LIMIT;
   const wantsText = kind === "markdown" || kind === "html" || kind === "text" || kind === "table" || kind === "svg";
   const head = useFileHead(wantsText ? uri : undefined, limit);
+  const paged = kind === "pdf" ? pageShows("pdf") : kind === "media";
+  const named = useNamedFile(paged && uri ? attachment : undefined);
   if (!attachment || !message) return null;
 
   const text = head.text !== undefined ? layOutJSON(head.text, attachment.name) : undefined;
@@ -74,10 +79,10 @@ export default function FileScreen() {
       <Centered>
         <Text style={[styles.cardTitle, { color: p.label }]}>{t("This file couldn't be downloaded.")}</Text>
         <Text style={[styles.cardDetail, { color: p.secondaryLabel }]}>{error.charAt(0).toUpperCase() + error.slice(1)}</Text>
-        <PillButton title={t("Try Again")} onPress={() => engine.retryFile(attachment)} />
+        <Button title={t("Try Again")} icon="arrow.clockwise" onPress={() => engine.retryFile(attachment)} style={styles.cardAction} />
       </Centered>
     );
-  } else if (!uri || head.loading) {
+  } else if (!uri || head.loading || (paged && !named.path && !named.failed)) {
     body = (
       <Centered>
         <ActivityIndicator />
@@ -95,15 +100,11 @@ export default function FileScreen() {
   } else if (kind === "table" && text !== undefined && !source) {
     const rows = parseTable(text, extensionOf(attachment.name) === "tsv", head.truncated, TABLE_ROWS);
     body = rows.length ? <TableView rows={rows} more={rows.length === TABLE_ROWS || head.truncated} /> : <CodeView text={text} truncated={head.truncated} />;
-  } else if (kind === "html" && text !== undefined && !source) {
-    body = (
-      <Centered>
-        <View style={styles.pagePeek}>
-          <FilePeekView peek={peekOf(text, "html")} kind="html" name={attachment.name} tint={fileIcon(attachment.name, attachment.mime).tint} />
-        </View>
-        <OpenButton attachment={attachment} />
-      </Centered>
-    );
+  } else if (kind === "html" && text !== undefined && !source && !head.truncated) {
+    body = <PageView source={{ html: text }} />;
+  } else if (paged && named.path) {
+    const fileUri = encodeURI(`file://${named.path}`);
+    body = <PageView source={kind === "pdf" ? { pdf: fileUri } : { media: fileUri, video: attachment.mime.startsWith("video/") || /\.(mp4|m4v|mov|webm)$/i.test(attachment.name) }} />;
   } else if (text !== undefined) {
     body = isCode(attachment.name) || source ? <CodeView text={text} truncated={head.truncated} /> : <ProseView text={text} truncated={head.truncated} />;
   } else {
@@ -178,20 +179,24 @@ function Centered({ children }: { children: React.ReactNode }) {
 
 /// The file in Quick Look on iOS, the share sheet's apps on Android.
 function OpenButton({ attachment }: { attachment: Attachment }) {
-  return <PillButton title={canPreviewFiles ? t("Open") : t("Open With…")} primary onPress={() => void openFile(attachment)} />;
+  return <Button title={canPreviewFiles ? t("Open") : t("Open With…")} icon={canPreviewFiles ? "eye" : "square.and.arrow.up"} kind="primary" onPress={() => void openFile(attachment)} style={styles.cardAction} />;
 }
 
-function PillButton({ title, primary, onPress }: { title: string; primary?: boolean; onPress: () => void }) {
-  const p = usePalette();
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      style={({ pressed }) => [styles.pill, { backgroundColor: primary ? p.ink : p.fill, opacity: pressed ? 0.75 : 1 }]}
-    >
-      <Text style={[styles.pillText, { color: primary ? p.inkText : p.label }]}>{title}</Text>
-    </Pressable>
-  );
+/// The file's copy under its own name, which a web view needs to know a PDF or a recording by.
+function useNamedFile(attachment: Attachment | undefined): { path?: string; failed: boolean } {
+  const [named, setNamed] = useState<{ id: string; path?: string; failed: boolean }>();
+  useEffect(() => {
+    if (!attachment) return;
+    let live = true;
+    engine.namedFile(attachment).then(
+      (path) => live && setNamed({ id: attachment.id, path, failed: false }),
+      () => live && setNamed({ id: attachment.id, failed: true }),
+    );
+    return () => {
+      live = false;
+    };
+  }, [attachment?.id]);
+  return named && named.id === attachment?.id ? named : { failed: false };
 }
 
 /// Preview and Source, for a file that has both.
@@ -319,9 +324,7 @@ const styles = StyleSheet.create({
   centered: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 32 },
   cardTitle: { fontSize: Font.body, fontWeight: "600", textAlign: "center", marginTop: 8 },
   cardDetail: { fontSize: Font.small, textAlign: "center" },
-  pagePeek: { width: 280, borderRadius: 16, overflow: "hidden", marginBottom: 8 },
-  pill: { marginTop: 14, paddingHorizontal: 22, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
-  pillText: { fontSize: Font.body - 1, fontWeight: "600" },
+  cardAction: { marginTop: 14 },
   switchBar: { alignItems: "center", paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
   switchTrack: { flexDirection: "row", padding: 2, borderRadius: 9 },
   switchSegment: { paddingHorizontal: 18, height: 28, borderRadius: 7, alignItems: "center", justifyContent: "center" },
