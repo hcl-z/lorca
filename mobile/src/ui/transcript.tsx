@@ -14,11 +14,13 @@ import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSequence, with
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { ShimmerView } from "../../modules/lorca-core/ShimmerView";
-import { agentIsRunning, agentName, agentPlace, agentSettings, agentStarted, assignedTo, canBeQuoted, isLive, isSentMessage, showsCard, showsSpeakers, type AgentRun, type AskQuestion, type Author, type Body, type Bot, type Chat, type CommandRun, type Message } from "../core/model";
+import { agentIsRunning, agentName, agentStarted, assignedTo, canBeQuoted, isLive, isSentMessage, showsCard, showsSpeakers, type AgentRun, type AskQuestion, type Author, type Body, type Bot, type Chat, type CommandRun, type Message } from "../core/model";
 import { engine } from "../core/engine";
 import { canRegenerate, rerunnable } from "../core/rerun";
 import { answerWords, askAnswer, sendsOnPick, togglePick } from "../core/ask";
 import * as agentAsk from "../core/agentAsk";
+import { agentBusy, agentSince, agentTail } from "../core/agentKit";
+import { AgentHeader, AgentTile, Callout, ConsoleTail, PullRequestButton, SpecStrip, StopButton, alpha, useNow } from "./agentKit";
 import { useStore } from "../core/store";
 import { language, t, tc, useLanguage } from "../i18n";
 import { AttachmentBlock } from "./attachments";
@@ -499,7 +501,7 @@ export const NoticeRow = memo(function NoticeRow({ row }: { row: Extract<Row, { 
 /// Access… opens the bot's Access, and Dismiss puts the request away; neither runs the call. In a
 /// group the card sits in the bubbles' column, the bot's avatar beside its bottom edge.
 /// One of a card's choices: ink for the first, gray for the rest.
-function CardButton({ label, primary = false, disabled = false, onPress }: { label: string; primary?: boolean; disabled?: boolean; onPress: () => void }) {
+export function CardButton({ label, primary = false, disabled = false, onPress }: { label: string; primary?: boolean; disabled?: boolean; onPress: () => void }) {
   const p = usePalette();
   return (
     <Pressable
@@ -848,7 +850,7 @@ const QuestionRow = memo(function QuestionRow({ row, ask, isGroup, onDecide }: {
 /// sends on its tap; the rest send with Submit once each required field has an answer. Decline
 /// leaves the agent to go on without one. A refusal (offline, it no longer asks) shows why under the
 /// card. Answered, it keeps the question and says who answered and what, or why there is no answer.
-const AgentAskRow = memo(function AgentAskRow({ row, ask, isGroup }: { row: Extract<Row, { type: "permission" }>; ask: agentAsk.AgentAsk; isGroup: boolean }) {
+export const AgentAskRow = memo(function AgentAskRow({ row, ask, isGroup }: { row: Extract<Row, { type: "permission" }>; ask: agentAsk.AgentAsk; isGroup: boolean }) {
   useLanguage();
   const p = usePalette();
   const [draft, setDraft] = useState<agentAsk.AgentAskDraft>(agentAsk.emptyDraft);
@@ -857,6 +859,7 @@ const AgentAskRow = memo(function AgentAskRow({ row, ask, isGroup }: { row: Extr
   const showsAvatar = isGroup && row.message.author.kind === "bot";
   const pending = row.body.decision === "pending";
   const who = row.bot?.name ?? t("The bot");
+  const width = Math.min(usePaneWidth() - 2 * INSET - (showsAvatar ? AVATAR + GUTTER : 0), 420) - 2 * 14;
   const filled = (next: agentAsk.AgentAskDraft) => agentAsk.formValues(ask, next, t("Yes"), t("No"), t(", "));
   const act = (work: () => Promise<void>) => {
     if (busy) return;
@@ -880,7 +883,7 @@ const AgentAskRow = memo(function AgentAskRow({ row, ask, isGroup }: { row: Extr
   const ready = filled(draft).ready;
   const outcome =
     row.body.decision === "allowed"
-      ? ask.by === "bot" ? t("{who} answered", { who }) : t("You answered")
+      ? t("Answered by {who}", { who })
       : row.body.decision === "denied"
         ? ask.by === "bot" ? t("{who} declined it", { who }) : t("You declined it")
         : row.body.decision === "expired"
@@ -894,13 +897,25 @@ const AgentAskRow = memo(function AgentAskRow({ row, ask, isGroup }: { row: Extr
         </View>
       )}
       <View style={[styles.permission, { backgroundColor: p.botBubble }]}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <Symbol name="chevron.left.forwardslash.chevron.right" size={15} color={pending ? p.tint : p.secondaryLabel} />
-          <Text style={[styles.permissionTitle, { color: p.label, flex: 1 }]} numberOfLines={2}>
-            {t("{agent} asks", { agent: ask.name })}
-          </Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <AgentTile kind={ask.kind} size={32} />
+          <View style={{ flex: 1, minWidth: 0, gap: 1 }}>
+            <Text style={[styles.permissionTitle, { color: p.label }]} numberOfLines={1}>
+              {t("{agent} asks", { agent: ask.name })}
+            </Text>
+            <Text style={{ color: p.tertiaryLabel, fontSize: 12 }} numberOfLines={1}>
+              {t("For {who} to answer, or you", { who })}
+            </Text>
+          </View>
+          {pending ? (
+            <View style={[styles.waitBadge, { backgroundColor: alpha(accentColor("orange", p.dark), 0.14) }]}>
+              <Text style={{ color: accentColor("orange", p.dark), fontSize: 11.5, fontWeight: "600" }} numberOfLines={1}>
+                {t("Waiting for your answer")}
+              </Text>
+            </View>
+          ) : null}
         </View>
-        {ask.message ? <Text style={[styles.questionText, { color: p.label }]}>{ask.message}</Text> : null}
+        {ask.message ? <Markdown text={ask.message} color={p.label} maxWidth={width} size={15} /> : null}
         {pending ? (
           <>
             {ask.fields.map((field) => {
@@ -980,15 +995,28 @@ const AgentAskRow = memo(function AgentAskRow({ row, ask, isGroup }: { row: Extr
             </View>
           </>
         ) : (
-          <View style={{ gap: 3 }}>
-            <Text style={[styles.reasonText, { color: row.body.decision === "allowed" ? p.green : p.secondaryLabel }]}>{outcome}</Text>
-            {(ask.answers ?? []).map((answer, index) => (
-              <Text key={index} selectable style={[styles.reasonText, { color: p.label }]}>
-                <Text style={{ color: p.secondaryLabel }}>{`${answer.name}: `}</Text>
-                {answer.value}
-              </Text>
-            ))}
-          </View>
+          (ask.answers ?? []).length === 0 ? (
+            <Text style={[styles.reasonText, { color: p.tertiaryLabel }]}>{outcome}</Text>
+          ) : (
+            // Answered: the answer as a reply beside a green bar, each field's label small over
+            // its answer, and whose it is when the bot gave it.
+            <View style={{ gap: 6, marginTop: 2 }}>
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <View style={{ width: 3, borderRadius: 1.5, backgroundColor: alpha(accentColor("green", p.dark), 0.75) }} />
+                <View style={{ flex: 1, gap: 8, paddingVertical: 1 }}>
+                  {(ask.answers ?? []).map((answer, index) => (
+                    <View key={index} style={{ gap: 1 }}>
+                      {(ask.answers ?? []).length > 1 || ask.fields.length > 1 ? <Text style={{ color: p.tertiaryLabel, fontSize: 12 }}>{answer.name}</Text> : null}
+                      <Text selectable style={{ color: p.label, fontSize: 16, fontWeight: "600", lineHeight: 21 }}>
+                        {answer.value}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+              {ask.by === "bot" ? <Text style={{ color: p.tertiaryLabel, fontSize: 12, marginLeft: 13 }}>{outcome}</Text> : null}
+            </View>
+          )
         )}
       </View>
     </View>
@@ -1209,33 +1237,6 @@ export const CommandRow = memo(function CommandRow({
   );
 });
 
-/// How a coding agent stands, in a word or two.
-export function agentStatus(agent: AgentRun): string {
-  switch (agent.state) {
-    case "checking":
-    case "starting":
-      return tc("Starting", "coding agent");
-    case "asking":
-      return tc("Needs you", "coding agent");
-    case "working":
-      return agent.stalled ? tc("Quiet", "coding agent") : tc("Working", "coding agent");
-    case "idle":
-      return tc("Done", "coding agent");
-    case "exited":
-      return tc("Ended", "coding agent");
-    case "failed":
-      return tc("Failed", "coding agent");
-    case "denied":
-      return agent.held ? tc("Held by Auto-review", "coding agent") : tc("Not allowed", "coding agent");
-    case "expired":
-      return tc("No answer", "coding agent");
-    case "dismissed":
-      return tc("Dismissed", "coding agent");
-    default:
-      return tc("Stopped", "coding agent");
-  }
-}
-
 /// "Chef wants to start Claude Code on Workbench", "Claude Code wants to run a command", "Claude
 /// Code asks", or the agent's name.
 export function agentTitle(agent: AgentRun, who: string): string {
@@ -1250,22 +1251,15 @@ export function agentTitle(agent: AgentRun, who: string): string {
   }
 }
 
-/// The line under the task: how it stands and where it works, or how it ended.
-export function agentDetail(agent: AgentRun): string {
-  if (agent.question) return "";
-  let parts = [agent.asking ? t("Asks you in the chat") : agentStatus(agent)];
-  if (agent.state === "failed" && agent.outcome) parts = [t("Failed: {outcome}", { outcome: agent.outcome })];
-  const place = agentPlace(agent);
-  if (place && agent.state !== "denied") parts.push(place);
-  return parts.join(" · ");
-}
-
 /// A coding agent's card, on the row of the call that started it, from Auto-review's question to
-/// how it ended: the agent's name with Stop while it runs, what it was asked, how it stands and
-/// where it works, and while it works its last lines. When it asks: Allow once, Always allow, and
-/// Deny before it starts or runs a command. A question the agent itself asks is a card of its own
-/// further down the chat (`AgentAskRow`), which its status points to. A tap on what it works on
-/// opens its transcript.
+/// how it ended, drawn from the agent kit (`agentKit.tsx`) as the desktop's: its tile, its name
+/// over where it works, how it stands as a pill, and Stop while it runs; what it was asked; while
+/// it works, what it does on a console; its session as a strip of cells, the model and effort a
+/// menu where they can change now, over a meter of its context and what it cost; the pull request
+/// it opened; and a footer with when it started and its transcript. When it asks: a callout with
+/// Allow once, Always allow, and Deny before it starts or runs a command. A question the agent
+/// itself asks is a card of its own further down the chat (`AgentAskRow`), which a callout points
+/// to. A tap on what it works on opens its transcript.
 export const AgentRow = memo(function AgentRow({
   row,
   isGroup,
@@ -1287,6 +1281,10 @@ export const AgentRow = memo(function AgentRow({
   const showsAvatar = isGroup && row.message.author.kind === "bot";
   const who = row.bot?.name ?? t("The bot");
   const name = agentName(agent);
+  const asks = question && (question.kind === "start" || question.kind === "command") ? question : undefined;
+  const askCard = useStore((s) => (agent.asking ? s.chats.find((chat) => chat.id === row.message.chat_id)?.messages.find((message) => message.id === agent.asking) : undefined));
+  const askText = askCard?.body.kind === "permission" ? askCard.body.agent_ask?.message : undefined;
+  const now = useNow(agentBusy(agent));
   // A new question clears what the last answer or Stop said.
   useEffect(() => setError(null), [question, agent.state]);
   const run = async (work: () => Promise<void>) => {
@@ -1300,36 +1298,21 @@ export const AgentRow = memo(function AgentRow({
       setBusy(false);
     }
   };
-  const detail = agentDetail(agent);
-  const settings = question ? "" : agentSettings(agent);
-  const output = !question && (agent.state === "starting" || agent.state === "working") ? (agent.output ?? "").split("\n").filter(Boolean).join("\n") : "";
-  const decisions: [string, "allow" | "always" | "deny"][] = question?.rule
+  const tail = agentTail(agent, 5);
+  const decisions: [string, "allow" | "always" | "deny"][] = asks?.rule
     ? [[t("Allow once"), "allow"], [t("Always allow"), "always"], [t("Deny"), "deny"]]
     : [[t("Allow once"), "allow"], [t("Deny"), "deny"]];
-  const openTranscript = () => {
-    const place = agentPlace(agent);
-    const title = [name, agent.title, place].filter(Boolean).join(" · ");
-    router.push({ pathname: "/agent/[id]", params: { id: row.message.id, chat: row.message.chat_id, title } });
-  };
+  const openTranscript = () => router.push({ pathname: "/agent/[id]", params: { id: row.message.id, chat: row.message.chat_id } });
+  const since = agentSince(agent, now);
   const body = (
-    <>
+    <View style={{ gap: 10 }}>
       {agent.task ? (
-        <Text style={[styles.agentTask, { color: p.label }]} numberOfLines={2}>
+        <Text style={[styles.agentTask, { color: p.label }]} numberOfLines={3}>
           {agent.task}
         </Text>
       ) : null}
-      {detail ? (
-        <Text style={[styles.agentDetail, { color: p.secondaryLabel }]} numberOfLines={1}>
-          {detail}
-        </Text>
-      ) : null}
-      {settings ? (
-        <Text style={[styles.agentDetail, { color: p.tertiaryLabel }]} numberOfLines={2}>
-          {settings}
-        </Text>
-      ) : null}
-      {output ? <OutputBlock text={output} /> : null}
-    </>
+      {tail.length > 0 ? <ConsoleTail lines={tail} live={agentBusy(agent)} /> : null}
+    </View>
   );
   return (
     <View style={[styles.messageRow, { paddingTop: row.groupStart ? 14 : 6 }]}>
@@ -1338,24 +1321,8 @@ export const AgentRow = memo(function AgentRow({
           <BotAvatar bot={row.bot} size={AVATAR} />
         </View>
       )}
-      <View style={[styles.permission, { backgroundColor: p.botBubble }]}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <Symbol name="chevron.left.forwardslash.chevron.right" size={15} color={p.tint} />
-          <Text style={[styles.permissionTitle, { color: p.label, flex: 1 }]} numberOfLines={2}>
-            {agentTitle(agent, who)}
-          </Text>
-          {agentIsRunning(agent) ? (
-            <Pressable
-              disabled={busy}
-              onPress={() => void run(() => onStop(row.message))}
-              hitSlop={6}
-              style={({ pressed }) => [styles.headerButton, { backgroundColor: p.innerCard, opacity: busy ? 0.5 : pressed ? 0.7 : 1 }]}
-              accessibilityRole="button"
-            >
-              <Text style={{ color: p.label, fontSize: 13, fontWeight: "600" }}>{t("Stop")}</Text>
-            </Pressable>
-          ) : null}
-        </View>
+      <View style={[styles.permission, styles.agentCard, { backgroundColor: p.botBubble }]}>
+        <AgentHeader agent={agent} trailing={agentIsRunning(agent) ? <StopButton busy={busy} onPress={() => void run(() => onStop(row.message))} /> : null} />
         {agentStarted(agent) ? (
           <Pressable onPress={openTranscript} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })} accessibilityRole="button" accessibilityHint={t("Show the transcript")}>
             {body}
@@ -1363,28 +1330,58 @@ export const AgentRow = memo(function AgentRow({
         ) : (
           body
         )}
-        {question?.kind === "command" && question.command ? (
-          <Pressable
-            onPress={() => router.push({ pathname: "/command/[id]", params: { id: row.message.id, chat: row.message.chat_id, title: t("{who}'s command", { who: name }) } })}
-            style={({ pressed }) => [styles.command, { backgroundColor: p.innerCard, opacity: pressed ? 0.6 : 1 }]}
-            accessibilityRole="button"
-            accessibilityLabel={t("Show the full command")}
-          >
-            <Text style={[styles.commandText, { color: p.label }]} numberOfLines={1}>
-              {`$ ${firstLine(question.command)}`}
-            </Text>
-          </Pressable>
+        <SpecStrip agent={agent} chatId={row.message.chat_id} messageId={row.message.id} />
+        {asks ? (
+          <Callout tint={accentColor("orange", p.dark)} icon="hand.raised" title={agentTitle(agent, who)}>
+            {asks.kind === "command" && asks.command ? (
+              <Pressable
+                onPress={() => router.push({ pathname: "/command/[id]", params: { id: row.message.id, chat: row.message.chat_id, title: t("{who}'s command", { who: name }) } })}
+                style={({ pressed }) => [styles.command, { backgroundColor: p.innerCard, opacity: pressed ? 0.6 : 1 }]}
+                accessibilityRole="button"
+                accessibilityLabel={t("Show the full command")}
+              >
+                <Text style={[styles.commandText, { color: p.label }]} numberOfLines={1}>
+                  {`$ ${firstLine(asks.command)}`}
+                </Text>
+              </Pressable>
+            ) : null}
+            {asks.reason ? <Text style={[styles.reasonText, { color: p.secondaryLabel }]}>{asks.reason}</Text> : null}
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              {decisions.map(([label, decision], index) => (
+                <CardButton key={decision} label={label} primary={index === 0} onPress={() => onDecide(row.message, decision)} />
+              ))}
+            </View>
+            {asks.rule ? <Text style={[styles.ruleNote, { color: p.secondaryLabel }]}>{t("Always allow adds the rule “{rule}”.", { rule: asks.rule })}</Text> : null}
+          </Callout>
         ) : null}
-        {question && (question.kind === "start" || question.kind === "command") && question.reason ? <Text style={[styles.reasonText, { color: p.secondaryLabel }]}>{question.reason}</Text> : null}
         {error ? <Text style={[styles.reasonText, { color: p.red }]}>{error}</Text> : null}
-        {question && (question.kind === "start" || question.kind === "command") ? (
-          <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
-            {decisions.map(([label, decision], index) => (
-              <CardButton key={decision} label={label} primary={index === 0} onPress={() => onDecide(row.message, decision)} />
-            ))}
+        {!asks && agent.asking ? (
+          <Callout tint={accentColor("orange", p.dark)} icon="questionmark.circle" title={t("Asks you in the chat")}>
+            {askText ? (
+              <Text style={[styles.reasonText, { color: p.secondaryLabel }]} numberOfLines={2}>
+                {firstLine(askText)}
+              </Text>
+            ) : null}
+          </Callout>
+        ) : null}
+        {!asks && agent.state === "failed" && agent.outcome ? (
+          <Callout tint={accentColor("red", p.dark)} icon="xmark.circle.fill" title={tc("Failed", "coding agent")}>
+            <Text selectable style={[styles.reasonText, { color: p.secondaryLabel }]} numberOfLines={4}>
+              {agent.outcome}
+            </Text>
+          </Callout>
+        ) : null}
+        {agent.pull_request ? <PullRequestButton link={agent.pull_request} /> : null}
+        {agentStarted(agent) ? (
+          <View style={[styles.agentFoot, { borderTopColor: p.separator }]}>
+            {since ? <Text style={[styles.agentFootText, { color: p.tertiaryLabel }]}>{t("Started {time} ago", { time: since })}</Text> : null}
+            <View style={{ flex: 1 }} />
+            <Pressable onPress={openTranscript} hitSlop={8} accessibilityRole="button" style={({ pressed }) => [styles.agentFootLink, { opacity: pressed ? 0.6 : 1 }]}>
+              <Text style={[styles.agentFootText, { color: p.secondaryLabel, fontWeight: "500" }]}>{t("Transcript")}</Text>
+              <Symbol name="chevron.right" size={10} color={p.secondaryLabel} weight="semibold" />
+            </Pressable>
           </View>
         ) : null}
-        {question && (question.kind === "start" || question.kind === "command") && question.rule ? <Text style={[styles.ruleNote, { color: p.secondaryLabel }]}>{t("Always allow adds the rule “{rule}”.", { rule: question.rule })}</Text> : null}
       </View>
     </View>
   );
@@ -1518,8 +1515,12 @@ const styles = StyleSheet.create({
   cardButtonText: { fontSize: 15, fontWeight: "600" },
   innerCard: { borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, gap: 6 },
   choiceButton: { paddingHorizontal: 12, paddingVertical: 9, borderRadius: 8 },
-  agentTask: { fontSize: 14, lineHeight: 19, marginTop: 6 },
-  agentDetail: { fontSize: 12, marginTop: 3 },
+  agentCard: { gap: 12, paddingBottom: 10 },
+  waitBadge: { height: 22, paddingHorizontal: 8, borderRadius: 11, justifyContent: "center", flexShrink: 1 },
+  agentTask: { fontSize: 15, lineHeight: 21 },
+  agentFoot: { flexDirection: "row", alignItems: "center", borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 9, marginTop: -2 },
+  agentFootText: { fontSize: 12, fontVariant: ["tabular-nums"] },
+  agentFootLink: { flexDirection: "row", alignItems: "center", gap: 3 },
   draftHeader: { fontSize: 13, lineHeight: 18 },
   draftSubject: { fontSize: 15, fontWeight: "600", lineHeight: 20 },
   draftBody: { fontSize: 15.5, lineHeight: 22 },
