@@ -156,7 +156,14 @@ type WireAgent struct {
 	Output      *string  `json:"output"`
 	Outcome     *string  `json:"outcome"`
 	Device      *string  `json:"device"`
-	Settings    []struct {
+	Tone        *string  `json:"tone"`
+	Busy        *bool    `json:"busy"`
+	Context     *struct {
+		Used uint64 `json:"used"`
+		Size uint64 `json:"size"`
+	} `json:"context"`
+	Now      *string `json:"now"`
+	Settings []struct {
 		Name  string `json:"name"`
 		Value string `json:"value"`
 	} `json:"settings"`
@@ -981,7 +988,10 @@ func ToMessage(wire WireMessage) *Message {
 				ID: agent.ID, Kind: agent.Kind, ProductName: str(agent.Name), Task: str(agent.Task), Folder: str(agent.Folder),
 				Branch: str(agent.Branch), State: state, Stalled: flag(agent.Stalled), Held: flag(agent.Held), Output: str(agent.Output),
 				Outcome: str(agent.Outcome), Device: str(agent.Device), Asking: str(agent.Asking), Title: str(agent.Title),
-				PullRequest: str(agent.PullRequest),
+				PullRequest: str(agent.PullRequest), Tone: AgentTone(str(agent.Tone)), Busy: flag(agent.Busy), Now: str(agent.Now),
+			}
+			if agent.Context != nil {
+				card.Context = &AgentContextUse{Used: agent.Context.Used, Size: agent.Context.Size}
 			}
 			if agent.StartedAt != nil && *agent.StartedAt > 0 {
 				card.StartedAt = time.Unix(0, int64(*agent.StartedAt*1e9))

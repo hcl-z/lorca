@@ -1019,18 +1019,18 @@ pub fn refresh_installed(app: &Arc<App>, manifests: &[Manifest]) -> Vec<String> 
 /// to that Runner (`crate::requests`), so a phone installs a plugin on another computer without the relay
 /// seeing the manifest or a secret.
 pub async fn on_runner(app: &Arc<App>, runner_id: &str, verb: &str, body: Value) -> Result<Value, String> {
-    if app.this_device_id().as_deref() == Some(runner_id) {
+    crate::requests::on_runner(app, runner_id, verb, body, crate::requests::REQUEST_TIMEOUT, async |body| {
         #[cfg(feature = "runner")]
         {
-            return serve_request(app, verb, &body, None).await;
+            serve_request(app, verb, &body, None).await
         }
         #[cfg(not(feature = "runner"))]
         {
-            let _ = (verb, body);
-            return Err("This Device does not run bots, so it has no plugins.".into());
+            let _ = body;
+            Err("This Device does not run bots, so it has no plugins.".into())
         }
-    }
-    crate::requests::ask(app, runner_id, verb, body).await
+    })
+    .await
 }
 
 /// The plugin verbs this Runner answers, from the local app or a sealed request from the

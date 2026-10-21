@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -40,26 +39,28 @@ func agentTile(c *ui.Context, p *palette, kind string, size float32) ui.Element 
 	return tile
 }
 
-// agentLook is how an agent's state reads: its tint and the words of its pill.
+// agentLook is how an agent's state reads: the tint of its tone, which the CLI gives, and the
+// words of its pill.
 func agentLook(p *palette, agent *model.AgentRun) (ui.Color, string) {
-	switch {
-	case agent.Question != nil || agent.Asking != "":
+	if agent.Question != nil || agent.Asking != "" {
 		return p.Orange, Lc("Needs you", "coding agent")
-	case agent.Stalled:
+	}
+	switch agent.Tone {
+	case model.AgentToneAsk:
 		return p.Orange, agent.Status()
-	case agent.State == model.AgentStarting || agent.State == model.AgentChecking || agent.State == model.AgentWorking:
+	case model.AgentToneBusy:
 		return p.Accent, agent.Status()
-	case agent.State == model.AgentIdle:
+	case model.AgentToneDone:
 		return p.Green, agent.Status()
-	case agent.State == model.AgentFailed:
+	case model.AgentToneFail:
 		return p.Red, agent.Status()
 	}
 	return p.Label3, agent.Status()
 }
 
-// agentBusy is an agent that is doing something now.
+// agentBusy is an agent that is doing something now, as the CLI says.
 func agentBusy(agent *model.AgentRun) bool {
-	return agent.Question == nil && agent.Asking == "" && (agent.State == model.AgentStarting || agent.State == model.AgentWorking) && !agent.Stalled
+	return agent.Busy
 }
 
 // agentPill is how the agent stands: a capsule in its state's tint, with a dot that breathes while
@@ -123,35 +124,12 @@ func agentSetting(agent *model.AgentRun, name string) string {
 	return ""
 }
 
-// agentContext is how much of its context it has used, from "34k / 200k": the share, and the words.
+// agentContext is how much of its context it has used: the share, and its words ("34k / 200k").
 func agentContext(agent *model.AgentRun) (float32, string, bool) {
-	words := agentSetting(agent, "Context")
-	used, size, ok := strings.Cut(words, "/")
-	if !ok {
+	if agent.Context == nil {
 		return 0, "", false
 	}
-	u, s := tokenCount(used), tokenCount(size)
-	if s <= 0 || u < 0 {
-		return 0, "", false
-	}
-	return float32(min(u/s, 1)), words, true
-}
-
-// tokenCount reads "34k", "1.2M", or "512".
-func tokenCount(text string) float64 {
-	text = strings.TrimSpace(text)
-	scale := 1.0
-	switch {
-	case strings.HasSuffix(text, "k"):
-		scale, text = 1e3, strings.TrimSuffix(text, "k")
-	case strings.HasSuffix(text, "M"):
-		scale, text = 1e6, strings.TrimSuffix(text, "M")
-	}
-	n, err := strconv.ParseFloat(text, 64)
-	if err != nil {
-		return -1
-	}
-	return n * scale
+	return agent.Context.Share(), agentSetting(agent, "Context"), true
 }
 
 // contextMeter is a bar of how full its context is, green, then orange past two thirds, and red
@@ -194,15 +172,9 @@ func agentChip(c *ui.Context, p *palette, icon, text, tooltip string, mono bool)
 	return chip
 }
 
-// agentNow is what it does now: its last tool line, without the mark.
+// agentNow is what it does now: its last tool's line, as the CLI says.
 func agentNow(agent *model.AgentRun) string {
-	lines := strings.Split(outputText(agent.Output), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		if line := strings.TrimSpace(lines[i]); strings.HasPrefix(line, "● ") {
-			return strings.TrimPrefix(line, "● ")
-		}
-	}
-	return ""
+	return agent.Now
 }
 
 // console is the console palette: a dark well in both appearances, as a terminal is.

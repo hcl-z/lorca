@@ -56,9 +56,9 @@ func TestReviewSnapshotAndEventsKeepNewestProjection(t *testing.T) {
 	next := s.Review("review-exact").Clone()
 	next.Revision, next.State = 10, "uncertain"
 	data, _ := json.Marshal(map[string]any{"item": next, "change": "interrupted"})
-	s.HandleEvent("reviews.changed", data)
+	handleFrame(t, s, "reviews.changed", data)
 	old := json.RawMessage(`{"item":` + exactReview + `}`)
-	s.HandleEvent("reviews.changed", old)
+	handleFrame(t, s, "reviews.changed", old)
 	if s.Review(next.ID).State != "uncertain" || len(events) != 1 || events[0].Kind != EventReviewsChanged {
 		t.Fatalf("regressed projection or event: %+v", events)
 	}

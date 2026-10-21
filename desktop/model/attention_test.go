@@ -30,11 +30,11 @@ func TestAttentionWireSnapshotEventsAndIdentity(t *testing.T) {
 	if s.Attention.Items[0].Revision.Counter != ^uint64(0) || s.Attention.Items[0].Sources[0].ReviewID != "review-1" || s.Attention.Preferences.Summaries {
 		t.Fatalf("projection: %+v", s.Attention)
 	}
-	s.HandleEvent("attention.changed", attentionProjectionJSON("Edited"))
+	handleFrame(t, s, "attention.changed", attentionProjectionJSON("Edited"))
 	if s.Attention.Items[0].Title != "Edited" {
 		t.Fatal("event did not replace view")
 	}
-	s.HandleEvent("identity.changed", json.RawMessage(`{"has_identity":false}`))
+	handleFrame(t, s, "identity.changed", json.RawMessage(`{"has_identity":false}`))
 	if len(s.Attention.Items) != 0 || !s.Attention.Preferences.Summaries || !s.Attention.Preferences.UrgentDirect {
 		t.Fatal("identity reset retains old account attention")
 	}

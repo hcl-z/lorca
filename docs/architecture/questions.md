@@ -1,6 +1,6 @@
 # Questions with options
 
-A bot asks the user to choose with `ask_user` (`crates/cli/src/ask.rs`): a question, two to six options with an optional one-line description each, `multiple` for several picks, `allow_other` for a line of the user's own words, and `recommended`, the place of the option the bot suggests. A turn nobody watches (a routine, a workflow's sample) does not get to ask; the tool tells the bot to decide and say what it chose.
+A bot asks the user to choose with `ask_user` (`crates/cli/src/ask.rs`): a question, two to six options with an optional one-line description each (checked by the tool, not the schema, so a call with too few is told to list them or to ask in its reply instead), `multiple` for several picks, `allow_other` for a line of the user's own words, and `recommended`, the place of the option the bot suggests. A turn nobody watches (a routine, a workflow's sample) does not get to ask; the tool tells the bot to decide and say what it chose.
 
 ## The card and the wait
 

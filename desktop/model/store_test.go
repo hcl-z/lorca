@@ -60,3 +60,30 @@ func TestReviewModelsAreSentAsAPatch(t *testing.T) {
 	expect(t, transport.next(t), recordedCall{"auto_review.set", `{"is_enabled":false,"rules":[]}`})
 	expect(t, []any{s.AutoReview.Provider, s.AutoReview.Models["custom:typesafe"]}, []any{"custom:typesafe", "jev-1.13"})
 }
+
+// A message the CLI synced ahead of its chat's roster is kept under a placeholder chat, which the
+// roster then names without losing the message.
+func TestMessageAheadOfItsRosterIsKept(t *testing.T) {
+	s := NewStore(nil, func(fn func()) { fn() }, false)
+	handleFrame(t, s, "message.added", json.RawMessage(`{"chat_id":"new","message":{"id":"m1","chat_id":"new","author":{"kind":"you"},"body":{"kind":"text","text":"hi"},"state":{"kind":"complete"},"created_at":5}}`))
+	chat := s.Chat("new")
+	if chat == nil || len(chat.Messages) != 1 || chat.Messages[0].ID != "m1" {
+		t.Fatalf("placeholder: %+v", chat)
+	}
+	handleFrame(t, s, "roster.changed", json.RawMessage(`{"devices":[],"bots":[],"chats":[{"id":"new","kind":"group","title":"Launch","bot_ids":["b1"],"is_pinned":false,"created_at":1}]}`))
+	chat = s.Chat("new")
+	if chat == nil || chat.CustomTitle != "Launch" || len(chat.Messages) != 1 || len(chat.BotIDs) != 1 || chat.BotIDs[0] != "b1" {
+		t.Fatalf("after roster: %+v", chat)
+	}
+}
+
+// handleFrame applies the frame the CLI sends as `name` with `data`, decoded as it arrives, to a
+// store past its bootstrap.
+func handleFrame(t *testing.T, s *Store, name string, data json.RawMessage) {
+	t.Helper()
+	event, ok := DecodeEvent(name, data)
+	if !ok {
+		t.Fatalf("%s did not decode: %s", name, data)
+	}
+	s.handle(event)
+}

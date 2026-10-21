@@ -210,7 +210,7 @@ export function replaceSnapshot(snapshot: {
   const running: Record<string, Running> = {};
   for (const turn of snapshot.running_turns ?? []) running[turn.job_id] = { chatId: turn.chat_id, botId: turn.bot_id, routineId: turn.routine_id ?? undefined };
   const busy = new Set(Object.values(running).map((r) => r.chatId));
-  const { thinking, retries } = useStore.getState();
+  const { thinking, retries, tasks: held, identityId } = useStore.getState();
   useStore.setState({
     ready: true,
     paired: snapshot.has_identity,
@@ -233,7 +233,7 @@ export function replaceSnapshot(snapshot: {
       return { ...c, ...kept, unread_count: c.unread_count ?? 0 };
     }),
     routines: snapshot.routines ?? [],
-    tasks: snapshot.tasks ?? [],
+    tasks: snapshotTasks(snapshot.tasks ?? [], snapshot.has_identity && snapshot.identity_id === identityId ? held : []),
     reviews: snapshot.reviews ?? [],
     budgets: snapshot.budgets ?? [],
     playbooks: [],
@@ -248,6 +248,18 @@ export function replaceSnapshot(snapshot: {
     thinking: pick(thinking, busy),
     retries: pick(retries, busy),
   });
+}
+
+/// A snapshot's tasks over the ones this phone holds for the same identity. Tasks are retained
+/// records (cancelling one changes its state), and a snapshot can be older than a task a reply or
+/// an event delivered: a held task at a newer revision, or one the snapshot does not list, stays.
+export function snapshotTasks(incoming: DurableTask[], held: DurableTask[]): DurableTask[] {
+  const tasks = incoming.map((task) => {
+    const previous = held.find((each) => each.id === task.id);
+    return previous && previous.revision > task.revision ? previous : task;
+  });
+  for (const previous of held) if (!incoming.some((task) => task.id === previous.id)) tasks.push(previous);
+  return tasks;
 }
 
 /// The value held, when the incoming one says the same: a roster's lists are small, and a new

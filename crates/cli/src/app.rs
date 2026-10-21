@@ -267,6 +267,8 @@ pub struct App {
     /// The questions this Device asked, by request id: the Runner asked, which alone answers, and
     /// where its answer goes.
     pub pending_responses: Mutex<HashMap<String, (String, tokio::sync::oneshot::Sender<Response>)>>,
+    /// How a question reaches another Runner: the relay, or another `App` in tests.
+    pub remote: Mutex<Arc<dyn crate::requests::Remote>>,
     /// Questions waiting for the user's answer, by the id of the row that asks: its chat, and
     /// where the answer goes.
     #[cfg(feature = "runner")]
@@ -387,6 +389,7 @@ impl App {
             watched_chat: Mutex::new(None),
             pending_results: Mutex::new(HashMap::new()),
             pending_responses: Mutex::new(HashMap::new()),
+            remote: Mutex::new(Arc::new(crate::requests::Relay)),
             #[cfg(feature = "runner")]
             pending_permissions: Mutex::new(HashMap::new()),
             #[cfg(feature = "runner")]

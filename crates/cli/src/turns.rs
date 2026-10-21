@@ -10,7 +10,7 @@ use lorca_agent::agent_loop::{
     run_agent_loop_continue, AfterToolCallContext, AfterToolCallResult, AgentContext, AgentLoopConfig, BeforeToolCallContext, BeforeToolCallResult,
     EventSink, LoopHooks, PrepareNextTurnContext, ShouldStopAfterTurnContext, ToolExecutionMode, TurnUpdate,
 };
-use lorca_agent::codemode::{CodemodeOptions, CodemodeTool, HostFunction, CODEMODE_TOOL_NAME};
+use lorca_agent::codemode::CODEMODE_TOOL_NAME;
 use lorca_agent::compaction::{self, CompactionSettings};
 use lorca_agent::estimate::{context_tokens, estimate_context_tokens, estimate_text_tokens};
 use lorca_agent::provider::{is_server_tool, AssistantEvent, WEB_FETCH_TOOL};
@@ -34,12 +34,17 @@ use crate::providers;
 use crate::runtime::{chat_source, name_of, TurnOutcome};
 use crate::traces::Check;
 
+mod context;
 mod follow_up;
 mod profile;
+mod tools;
+pub use context::prompt_preview;
+use context::{request_notes, PromptInputs};
+use tools::{turn_tools, TurnShape, TurnTools};
 use follow_up::FollowUp;
 #[cfg(test)]
 use follow_up::{announces_work, FOLLOW_UP_NOTE};
-use profile::{profile_note, PromptInputs};
+use profile::profile_note;
 
 /// The most chat messages a turn rebuilds as they are. Past this a chat is compacted by count,
 /// so nothing is dropped without a summary; with compaction off, older rows are left out.
@@ -214,102 +219,19 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
 
     let window = provider.model_info().map(|i| i.context_window).unwrap_or(0);
     let settings = compaction_settings(window);
-    let store = MemoryStore::for_bot(&app.config.home, &bot);
     // The prompt names the installed plugins the bot's Access lets it use; their tools are in the
     // codemode tool's description, and their servers stay dormant until a script calls them.
-    let plugin_briefs: Arc<Vec<_>> = Arc::new(turn_plugins(app, &bot));
-    let skills_before = crate::skills_turn::fingerprint(app, &bot.id, &chat.meta.id);
     let unattended = routine.is_some() || event.is_some();
-    let system_prompt = system_prompt(app, &chat, &bot, job, &store, unattended, &plugin_briefs);
+    let prompt_inputs = PromptInputs::for_turn(app, &bot, &chat, job, unattended);
+    let store = prompt_inputs.store.clone();
+    let skills_before = crate::skills_turn::fingerprint(app, &bot.id, &chat.meta.id);
+    let system_prompt = prompt_inputs.system_prompt(app, &chat, &bot);
     let brief = turn_brief(app, job, routine.as_ref(), event.as_ref());
-    // What the turn hands off belongs to the work it continues, which a Stop ends.
-    let origin = crate::handoffs::origin_of(app, job);
     let attention_handled = Arc::new(std::sync::atomic::AtomicBool::new(job.kind == "attention_report"));
     let attention_started_at = now_secs();
-    let mut tools: Vec<Arc<dyn Tool>> = vec![
-        Arc::new(ListTeammates { app: app.clone(), chat_id: chat.meta.id.clone() }),
-        Arc::new(MessageBot { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone(), hops: job.hops, task_id: job.task_id.clone(), origin: origin.clone() }),
-        Arc::new(Handoffs { app: app.clone(), bot_id: bot.id.clone(), request: crate::handoffs::bound_request(app, job), origin }),
-        Arc::new(FinishSetup { app: app.clone(), bot: bot.clone() }),
-        Arc::new(RecommendPlugins { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone() }),
-        Arc::new(EditBot { app: app.clone(), bot: bot.clone() }),
-        Arc::new(Routines { app: app.clone(), bot: bot.clone() }),
-        Arc::new(crate::channels::ChannelsTool { app: app.clone(), bot: bot.clone(), user_started: matches!(job.kind.as_str(), "turn" | "room_turn") }),
-        Arc::new(crate::feedback::FeedbackTool { app: app.clone(), bot_id: bot.id.clone() }),
-        Arc::new(crate::review_execution::StageReview { app: app.clone(), bot: bot.clone(), chat_id: chat.meta.id.clone(), trigger: trigger.clone() }),
-        Arc::new(crate::tasks::TasksTool { app: app.clone(), bot_id: bot.id.clone(), chat_id: chat.meta.id.clone(), job_id: job.id.clone() }),
-        Arc::new(crate::outputs::PublishOutputTool { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone(), workdir: workdir.clone() }),
-        Arc::new(SearchPlugins { app: app.clone() }),
-        Arc::new(InstallPlugin { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone(), unattended }),
-        Arc::new(ConnectPlugin { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone() }),
-        Arc::new(crate::secrets::RequestSecret { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone(), unattended }),
-        Arc::new(crate::ask::AskUser { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone(), unattended }),
-    ];
-    // Only the chief makes bots and groups; the other bots send those requests to it.
-    if is_chief(app, &bot) {
-        tools.push(Arc::new(CreateBot { app: app.clone(), bot: bot.clone() }));
-        tools.push(Arc::new(crate::groups::CreateGroup { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone(), unattended }));
-        tools.push(Arc::new(crate::groups::EditGroup { app: app.clone(), bot: bot.clone(), unattended }));
-    }
-    if job.kind == crate::workflows::SAMPLE_JOB {
-        // A setup's sample cannot create teammates, hand off, install integrations, or arm schedules.
-        tools.retain(|tool| matches!(tool.name(), "list_teammates" | "search_plugins"));
-    }
-    if unattended {
-        // These act on what the user asks for, and nobody is here to ask: their schemas stay out
-        // of the run's requests.
-        tools.retain(|tool| !USER_REQUEST_TOOLS.contains(&tool.name()));
-    }
-    tools.push(Arc::new(crate::attention::AttentionTool {
-        app: app.clone(), bot_id: bot.id.clone(), chat_id: chat.meta.id.clone(), hops: job.hops,
-        handled: attention_handled.clone(), requesting_bot_id: job.from_bot_id.clone().filter(|_| job.kind == "message"),
-    }));
-    // Claude Code or Codex on this Runner, which the bot starts and supervises.
-    if job.kind != crate::workflows::SAMPLE_JOB {
-        tools.push(Arc::new(crate::coding::CodingAgentTool {
-            app: app.clone(),
-            bot: bot.clone(),
-            chat_id: chat.meta.id.clone(),
-            workdir: workdir.clone(),
-            trigger_message_id: trigger.message_id.clone(),
-            event: trigger.event.clone(),
-        }));
-    }
-    tools.extend(memory_tools(app, &store, &chat));
-    tools.push(Arc::new(Recall { app: app.clone(), store: store.clone(), bot: bot.clone() }));
-    if crate::project_context::project_for_turn(app, &chat.meta.id, &bot.id).is_some() {
-        tools.push(Arc::new(crate::project_context::ProjectContextTool { app: app.clone(), chat_id: chat.meta.id.clone(), bot: bot.clone() }));
-    }
-    // Commands run in terminals of their own, kept on this Runner past the turn when they
-    // wait for input.
-    let sessions = Arc::new(crate::shell::TurnSessions::new(app, &chat.meta.id, &bot.id));
-    let secrets = Arc::new(crate::secrets::CommandSecrets { app: app.clone(), bot_id: bot.id.clone() });
-    tools.extend(lorca_agent::tools::coding_tools_with_sessions(workdir.clone(), sessions, crate::shell::bot_shell_extras(app), Some(secrets)));
-    let mut tools = crate::permissions::guarded::tools(app, &bot, &chat.meta.id, tools);
-    // Plugin tools are called from codemode scripts, with the bot's own file and memory tools
-    // and a bash of the scripts' own, on pipes. The tool list stays the same for the whole
-    // turn, and so does its prompt cache.
-    let mut scriptable: Vec<Arc<dyn Tool>> = tools.iter().filter(|tool| SCRIPTABLE_TOOLS.contains(&tool.name())).cloned().collect();
-    scriptable.extend(crate::permissions::guarded::tools(app, &bot, &chat.meta.id, vec![crate::shell::script_bash(app, &bot.id, &workdir)]));
-    let plugin_tools = crate::plugins::mcp::bot_catalog(app, &bot, &chat.meta.id, scriptable);
-    let script_store = Arc::new(crate::scripts::ScriptStore { app: app.clone(), chat_id: chat.meta.id.clone(), bot_id: bot.id.clone() });
-    let functions: Vec<Arc<dyn HostFunction>> =
-        crate::scripts::ModelsAsk::new(app, &chat.meta.id, &bot.provider).map(|ask| Arc::new(ask) as Arc<dyn HostFunction>).into_iter().collect();
-    // A routine's script has nobody to press Stop, so it gets less time.
-    let timeout = std::time::Duration::from_secs(if unattended { 10 * 60 } else { 30 * 60 });
-    let guidance = if plugin_briefs.is_empty() { SCRIPT_GUIDANCE.to_string() } else { format!("{SCRIPT_GUIDANCE}\n{}", crate::plugins::mcp::RESOURCE_TOOLS_GUIDANCE) };
-    let options = CodemodeOptions { mcp_types: !plugin_briefs.is_empty(), timeout, guidance: Some(guidance), ..CodemodeOptions::default() };
-    // Codemode itself also rechecks after any asynchronous review; its children have guards.
-    tools.extend(crate::permissions::guarded::tools(app, &bot, &chat.meta.id, vec![Arc::new(CodemodeTool::new(plugin_tools.clone(), options).with_store(script_store).with_functions(functions))]));
-    // The bot's usual tools, which a turn that finishes the bot's setup goes on with.
-    let full_tools: Option<Vec<Arc<dyn Tool>>> = bot.setting_up.then(|| tools.iter().filter(|tool| tool.name() != "finish_setup").cloned().collect());
-    if bot.setting_up {
-        // A new bot works out its job with the user, settles its profile, and lists its plugins
-        // before it does anything else.
-        tools.retain(|tool| SETUP_TOOLS.contains(&tool.name()));
-    } else {
-        tools.retain(|tool| tool.name() != "finish_setup");
-    }
+    let shape = TurnShape::of(app, job, &bot, &chat, unattended);
+    let TurnTools { tools, full_tools, plugin_tools } =
+        turn_tools(app, job, &bot, &chat, shape, &trigger, &store, &prompt_inputs.plugin_briefs, attention_handled.clone());
 
     // A transcript that no longer fits, or that has outgrown what a turn rebuilds, is
     // summarized before the turn starts, from the chat, so the model never sees the overflow
@@ -436,7 +358,7 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         follow_up: (!chat.meta.is_group() && chat.meta.channel.is_none()).then(FollowUp::default),
         brief,
         trace: trace.clone(),
-        prompt_inputs: PromptInputs { chat: chat.clone(), job: job.clone(), store: store.clone(), plugin_briefs: plugin_briefs.clone() },
+        prompt_inputs,
         profile: std::sync::Mutex::new(Profile::of(&bot)),
         full_tools,
         cancel: cancel.clone(),
@@ -815,16 +737,7 @@ impl LoopHooks for TurnHooks {
         }
         let mut messages = materialize_steering_messages(&self.app, &self.bot, &self.workdir, messages).await;
         messages.retain(|message| !matches!(message, AgentMessage::User(user) if user.content.iter().filter_map(ContentPart::as_text).any(crate::tasks::is_context)));
-        if let Some(note) = crate::tasks::context(&self.app, &self.bot.id, &self.chat_id) {
-            messages.push(AgentMessage::User(UserMessage::text(note)));
-        }
-        if let Some(note) = crate::attention::items_note(&self.app, &self.bot.id) {
-            messages.push(AgentMessage::User(UserMessage::text(note)));
-        }
-        // Memory, the profile, the group's context, and the clock are made for each request and
-        // kept in none, so a fact saved mid-turn is read by the next step, a compaction never
-        // drops them, and the transcript before them stays as the provider cached it.
-        for note in context_notes(&self.app, &self.bot, &self.chat_id, now_secs() as i64) {
+        for note in request_notes(&self.app, &self.bot, &self.chat_id, now_secs() as i64) {
             messages.push(AgentMessage::User(UserMessage::text(note)));
         }
         if let Some(brief) = &self.brief {
@@ -1970,25 +1883,10 @@ fn script_summary(plugins: &[String], failed: bool) -> String {
     }
 }
 
-/// What codemode scripts call besides plugin tools: the bot's own file, memory and output tools. `bash`
-/// is the scripts' own (`shell::script_bash`); the tools that hand work to teammates, change
-/// bots or routines, or install and sign in to plugins stay calls of their own, as `bash_input`
-/// and `bash_output` do.
-const SCRIPTABLE_TOOLS: [&str; 11] = ["read", "write", "edit", "grep", "find", "ls", "memory_update", "memory_log", "profile_update", "recall", "publish_output"];
-
 /// Whether `bot` is the account's chief, the one bot that makes bots and groups.
 fn is_chief(app: &App, bot: &Bot) -> bool {
     app.chief_id().as_deref() == Some(bot.id.as_str())
 }
-
-/// Tools an unattended turn (a routine's run, an event) goes without: each makes a bot, a group,
-/// a profile change, or a plugin card for the user.
-const USER_REQUEST_TOOLS: [&str; 5] = ["create_bot", "edit_bot", "create_group", "edit_group", "recommend_plugins"];
-
-/// What a script's `bash` does differently from the bot's own.
-const SCRIPT_GUIDANCE: &str = "In a script, `bash` runs one command at a time, on pipes with nothing on stdin: a command that asks \
-for input gets none, so pass answers as flags (--yes, -y) or through files. A command that exits with a nonzero code resolves too; \
-check `exit_code`.";
 
 fn first_line(text: &str, max: usize) -> Option<String> {
     let line = text.lines().next()?.trim();
@@ -2203,38 +2101,6 @@ fn push_if(sections: &mut Vec<Section>, id: &'static str, title: &'static str, t
     if !text.trim().is_empty() {
         sections.push(Section::new(id, title, text));
     }
-}
-
-/// The system prompt as one string, the way a provider takes it.
-fn system_prompt(app: &Arc<App>, chat: &Chat, bot: &Bot, job: &Job, store: &MemoryStore, unattended: bool, plugins: &[crate::plugins::mcp::PluginBrief]) -> String {
-    system_sections(app, chat, bot, job, store, unattended, plugins).into_iter().map(|section| section.text).collect()
-}
-
-/// What a turn sends as its system prompt, section by section, for the apps and `lorca prompt`.
-/// `chat_id` picks the chat whose place, team, and skills apply; without one, the bot's DM.
-pub fn prompt_preview(app: &Arc<App>, bot_id: &str, chat_id: Option<&str>) -> Result<Value, String> {
-    let bot = app.bot(bot_id).ok_or("Unknown bot")?;
-    let chat = match chat_id {
-        Some(id) => app.chat(id).ok_or("Unknown chat")?,
-        None => app.state.lock().unwrap().chats.iter().find(|chat| chat.meta.is_dm_of(&bot.id)).cloned().ok_or("That bot has no direct chat.")?,
-    };
-    let kind = if chat.meta.is_group() { "room_turn" } else { "turn" };
-    let job = Job::local(kind, &chat.meta.id, &bot.id, "preview");
-    let store = MemoryStore::for_bot(&app.config.home, &bot);
-    let sections = system_sections(app, &chat, &bot, &job, &store, false, &turn_plugins(app, &bot));
-    let notes = context_notes(app, &bot, &chat.meta.id, now_secs() as i64);
-    let size = |texts: &mut dyn Iterator<Item = &str>| texts.map(str::len).sum::<usize>();
-    let prompt_bytes = size(&mut sections.iter().map(|section| section.text.as_str()));
-    let notes_bytes = size(&mut notes.iter().map(String::as_str));
-    Ok(json!({
-        "bot_id": bot.id,
-        "chat_id": chat.meta.id,
-        "sections": sections.iter().map(|section| json!({ "id": section.id, "title": section.title, "text": section.text, "bytes": section.text.len() })).collect::<Vec<_>>(),
-        "total_bytes": prompt_bytes,
-        "approx_tokens": prompt_bytes / 4,
-        "notes": notes,
-        "notes_bytes": notes_bytes,
-    }))
 }
 
 /// The installed plugins a turn names: the ones the bot's Access lets it use, and Browser only
@@ -3343,9 +3209,6 @@ impl Tool for CreateBot {
     }
 }
 
-/// The tools a bot has while it sets itself up with the user.
-const SETUP_TOOLS: [&str; 5] = ["ask_user", "finish_setup", "search_plugins", "recommend_plugins", "memory_update"];
-
 /// The system prompt of a bot still setting itself up (`Bot::setting_up`): how to work out its
 /// job with the user, settle its profile, and list its plugins.
 fn setup_prompt(app: &App, bot: &Bot, chat: &Chat, job: &Job) -> String {
@@ -3362,7 +3225,8 @@ fn setup_prompt(app: &App, bot: &Bot, chat: &Chat, job: &Job) -> String {
     let mut prompt = format!(
         "You are a new bot in Lorca, just created, with the placeholder name \"{}\" and no job yet (your id is {}). This is your \
          direct chat with the user. Before you do any work, set yourself up with them, in this order:\n\
-         1. Work out your job. Ask one short question at a time, using ask_user when there are a few likely answers, until you \
+         1. Work out your job. Ask one short question at a time: with ask_user and its options when there are a few likely \
+         answers, else in your reply, which the user answers in their next message. Keep asking until you \
          know what you do, for whom, with which services, accounts, or files, how often, and what you must never do without \
          asking. Stop asking once you know enough; do not do the job yet.\n\
          2. Propose a name (one or two words) and a description: your job and how you work, in the user's language, a few \
@@ -4229,6 +4093,11 @@ mod tests {
     use crate::events::Event;
     use std::time::Duration;
 
+    /// The system prompt as one string, the way a provider takes it.
+    fn system_prompt(app: &Arc<App>, chat: &Chat, bot: &Bot, job: &Job, store: &MemoryStore, unattended: bool, plugins: &[crate::plugins::mcp::PluginBrief]) -> String {
+        system_sections(app, chat, bot, job, store, unattended, plugins).into_iter().map(|section| section.text).collect()
+    }
+
     #[test]
     fn chunks_end_at_paragraphs_first() {
         let text = "First para.\n\nSecond para that is still";
@@ -4403,7 +4272,7 @@ mod tests {
             follow_up: None,
             brief: None,
             trace: None,
-            prompt_inputs: PromptInputs { chat: chat.clone(), job: room_job(&chat.meta.id, &bot.id), store: MemoryStore::for_bot(&app.config.home, bot), plugin_briefs: Arc::new(Vec::new()) },
+            prompt_inputs: PromptInputs { chat: chat.clone(), job: room_job(&chat.meta.id, &bot.id), store: MemoryStore::for_bot(&app.config.home, bot), plugin_briefs: Arc::new(Vec::new()), unattended: false },
             profile: std::sync::Mutex::new(Profile::of(bot)),
             full_tools: full,
             cancel: CancellationToken::new(),
@@ -6716,5 +6585,70 @@ mod tests {
         assert!(cue.contains("does not have yet: Linear (Issues in Linear). After your hello, call install_plugin"), "{cue}");
         let bare = setup_cue(app, &TemplateSetup { template: "Prototyper".into(), ..Default::default() });
         assert!(!bare.contains("memory_update") && !bare.contains("routines") && !bare.contains("install_plugin"), "{bare}");
+    }
+
+    /// A turn makes its tools by its shape: the usual ones, the setup ones with the usual kept for
+    /// when the setup finishes, and what a script calls besides plugins.
+    #[test]
+    fn a_turn_makes_the_tools_its_shape_keeps() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        let chef = bot("b1", "Chef");
+        let dm = chat("dm", "dm", None, &["b1"]);
+        app.state.lock().unwrap().bots.push(chef.clone());
+        app.state.lock().unwrap().chats.push(dm.clone());
+        let job = Job { kind: "turn".into(), ..room_job("dm", "b1") };
+        let store = MemoryStore::for_bot(&app.config.home, &chef);
+        let names = |tools: &[Arc<dyn Tool>]| tools.iter().map(|tool| tool.name().to_string()).collect::<Vec<_>>();
+        let make = |shape: TurnShape| {
+            let trigger = Trigger { message_id: String::new(), routine: None, event: None };
+            turn_tools(app, &job, &chef, &dm, shape, &trigger, &store, &[], Arc::new(std::sync::atomic::AtomicBool::new(false)))
+        };
+
+        let usual = make(TurnShape::default());
+        let usual_names = names(&usual.tools);
+        for name in ["message_bot", "coding_agent", "memory_update", "recall", "bash", CODEMODE_TOOL_NAME] {
+            assert!(usual_names.iter().any(|n| n == name), "{name} in {usual_names:?}");
+        }
+        for name in ["create_bot", "finish_setup", "project_context"] {
+            assert!(!usual_names.iter().any(|n| n == name), "{name} in {usual_names:?}");
+        }
+        assert!(usual.full_tools.is_none());
+        assert_eq!(usual_names.last().map(String::as_str), Some(CODEMODE_TOOL_NAME), "codemode comes last");
+
+        let setup = make(TurnShape { setting_up: true, ..TurnShape::default() });
+        assert_eq!(names(&setup.tools), ["finish_setup", "recommend_plugins", "search_plugins", "ask_user", "memory_update"]);
+        assert_eq!(names(setup.full_tools.as_deref().unwrap()), usual_names, "a finished setup goes on with the usual tools");
+    }
+
+    /// The preview's notes are the ones every request of a turn in the chat ends with.
+    #[test]
+    fn the_prompt_preview_shows_what_a_turn_sends() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        let chef = bot("b1", "Chef");
+        let dm = chat("dm", "dm", None, &["b1"]);
+        app.state.lock().unwrap().bots.push(chef.clone());
+        app.state.lock().unwrap().chats.push(dm.clone());
+        MemoryStore::for_bot(&app.config.home, &chef).append_entry("The user ships on Fridays.", None, 0).unwrap();
+
+        let preview = prompt_preview(app, "b1", Some("dm")).unwrap();
+        let joined: String = preview["sections"].as_array().unwrap().iter().map(|section| section["text"].as_str().unwrap()).collect();
+        let job = Job::local("turn", "dm", "b1", "preview");
+        assert_eq!(joined, PromptInputs::for_turn(app, &chef, &dm, &job, false).system_prompt(app, &dm, &chef));
+
+        let hooks = turn_hooks(app, &chef, &dm, None);
+        let sent = futures::executor::block_on(hooks.transform_context(Vec::new(), &CancellationToken::new()));
+        let said: Vec<String> = sent
+            .iter()
+            .filter_map(|message| match message {
+                AgentMessage::User(user) => user.content[0].as_text().map(str::to_string),
+                _ => None,
+            })
+            .collect();
+        let shown: Vec<String> = preview["notes"].as_array().unwrap().iter().map(|note| note.as_str().unwrap().to_string()).collect();
+        let without_clock = |notes: &[String]| notes.iter().filter(|note| !note.starts_with("[It is now")).cloned().collect::<Vec<_>>();
+        assert!(shown.iter().any(|note| note.contains("The user ships on Fridays.")), "{shown:?}");
+        assert_eq!(without_clock(&shown), without_clock(&said));
     }
 }

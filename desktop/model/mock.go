@@ -484,6 +484,8 @@ func developerThread() []*Message {
 				Device:    "Workbench",
 				Settings:  []AgentSetting{{Name: "Model", Value: "Opus"}, {Name: "Effort", Value: "High"}, {Name: "Context", Value: "61k / 200k"}, {Name: "Cost", Value: "$0.38"}},
 				StartedAt: minutesAgo(11),
+				// What the CLI would say of how it stands.
+				Tone: AgentToneBusy, Busy: true, Context: &AgentContextUse{Used: 61_000, Size: 200_000}, Now: "Bash(bun test links)",
 			},
 		}}, minutesAgo(11)),
 		mockMessage(BotAuthor("bot-patch"), textBody("Claude Code is fixing the link in a worktree of its own. I'll check its test when it's done."), minutesAgo(11)),

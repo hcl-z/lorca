@@ -51,18 +51,18 @@ func TestTheAgentCardDecodesFromTheCLI(t *testing.T) {
 func TestTheAgentCardSaysHowItStands(t *testing.T) {
 	demoWindow(t)
 	p := &lightPalette
-	agent := &model.AgentRun{Kind: "claude", Task: "Fix it", Branch: "fix-it", State: model.AgentWorking, Device: "Workbench"}
+	agent := &model.AgentRun{Kind: "claude", Task: "Fix it", Branch: "fix-it", State: model.AgentWorking, Device: "Workbench", Tone: model.AgentToneBusy, Busy: true}
 	if got := agentPlace(agent); got != "fix-it · Workbench" {
 		t.Errorf("place %q", got)
 	}
 	if tint, words := agentLook(p, agent); tint != p.Accent || words != Lc("Working", "coding agent") || !agentBusy(agent) {
 		t.Errorf("working %v %q", tint, words)
 	}
-	agent.Asking = "msg-ask"
+	agent.Asking, agent.Tone, agent.Busy = "msg-ask", model.AgentToneAsk, false
 	if tint, words := agentLook(p, agent); tint != p.Orange || words != Lc("Needs you", "coding agent") || agentBusy(agent) {
 		t.Errorf("asking %v %q", tint, words)
 	}
-	agent.Asking, agent.State, agent.Outcome = "", model.AgentFailed, "Claude Code exited with code 1"
+	agent.Asking, agent.State, agent.Tone, agent.Outcome = "", model.AgentFailed, model.AgentToneFail, "Claude Code exited with code 1"
 	if tint, _ := agentLook(p, agent); tint != p.Red {
 		t.Errorf("failed %v", tint)
 	}
@@ -81,11 +81,11 @@ func TestTheAgentCardSaysHowItStands(t *testing.T) {
 
 // The facts the card reads from what the agent says of its session and its work.
 func TestTheAgentCardReadsItsContextItsStepAndItsPullRequest(t *testing.T) {
-	agent := &model.AgentRun{Settings: []model.AgentSetting{{Name: "Context", Value: "150k / 200k"}}, Output: "● Read(a)\n  ⎿ ok\n● Bash(bun test)\n  ⎿ 3 pass"}
+	agent := &model.AgentRun{Settings: []model.AgentSetting{{Name: "Context", Value: "150k / 200k"}}, Context: &model.AgentContextUse{Used: 150_000, Size: 200_000}, Now: "Bash(bun test)"}
 	if share, words, ok := agentContext(agent); !ok || share != 0.75 || words != "150k / 200k" {
 		t.Errorf("context %v %q %v", share, words, ok)
 	}
-	agent.Settings[0].Value = "1.5M / 1M"
+	agent.Context = &model.AgentContextUse{Used: 1_500_000, Size: 1_000_000}
 	if share, _, _ := agentContext(agent); share != 1 {
 		t.Errorf("a context past its size is full, not %v", share)
 	}
@@ -243,6 +243,7 @@ func TestTheCardOffersAWorkingAgentsModelAndEffort(t *testing.T) {
 	}
 	set(func(agent *model.AgentRun) {
 		agent.Settings = []model.AgentSetting{{Name: "Model", Value: "Opus"}, {Name: "Effort", Value: "High"}, {Name: "Context", Value: "34k / 200k"}}
+		agent.Context = &model.AgentContextUse{Used: 34_000, Size: 200_000}
 		agent.Controls = []model.AgentControl{
 			{What: "model", Name: "Model", Value: "opus", Choices: []model.AgentChoice{{Value: "sonnet", Name: "Sonnet"}, {Value: "opus", Name: "Opus"}}},
 			{What: "effort", Name: "Effort", Value: "high", Choices: []model.AgentChoice{{Value: "low", Name: "Low"}, {Value: "high", Name: "High"}}},

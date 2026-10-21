@@ -9,6 +9,7 @@ import { AppState, Platform, type AppStateStatus } from "react-native";
 import * as core from "../../modules/lorca-core";
 import { t } from "../i18n";
 import { exactAnswer, ExactNumber, ExactObject, stringifyExact } from "./exactJson";
+import { decodeEvent } from "./events";
 import { reviewEditParams } from "./reviewEdit";
 import { editedText, rerunnable } from "./rerun";
 import type { AskAnswer } from "./ask";
@@ -166,78 +167,81 @@ class Engine {
 
   // MARK: - Events in
 
-  private apply(event: string, data: any) {
-    switch (event) {
+  private apply(name: string, data: unknown) {
+    const event = decodeEvent(name, data);
+    if (!event) return;
+    switch (event.kind) {
       case "attention.changed":
-        useStore.setState({ attention: data });
+        useStore.setState({ attention: event.view });
         break;
       case "snapshot":
-        replaceSnapshot(data as Snapshot);
+        replaceSnapshot(event.snapshot);
         break;
       case "tasks.changed":
-        acceptDurableTask((data as { task: DurableTask }).task);
+        acceptDurableTask(event.task);
         break;
       case "budgets.changed":
-        setBudgets((data as { budgets: BudgetState[] }).budgets);
+        setBudgets(event.budgets);
         break;
       case "reviews.changed":
-        acceptReview((data as { item: ReviewItem }).item);
+        acceptReview(event.item);
         break;
       case "projects.changed":
         // Only a group whose details listed its context follows it.
-        if (useStore.getState().projects[data.chat_id]) void this.loadProject(data.chat_id);
+        if (useStore.getState().projects[event.chatId]) void this.loadProject(event.chatId);
         break;
       case "roster.changed": {
-        const { removed } = applyRoster(data);
+        const { removed } = applyRoster(event.roster);
         for (const chatId of removed) removeChat(chatId);
         break;
       }
       case "message.added":
-      case "message.updated": {
-        const message = data.message as Message;
-        upsertMessage(message, event === "message.added");
+      case "message.updated":
+        upsertMessage(event.message, event.kind === "message.added");
         break;
-      }
       case "message.removed":
-        removeMessage(data.chat_id, data.message_id);
+        removeMessage(event.chatId, event.messageId);
         break;
       case "chat.removed":
-        removeChat(data.chat_id);
+        removeChat(event.chatId);
         break;
       case "job.started":
-        setRunning(data.job_id, { chatId: data.chat_id, botId: data.bot_id ?? "", routineId: data.routine_id ?? undefined });
+        setRunning(event.job.jobId, { chatId: event.job.chatId, botId: event.job.botId, routineId: event.job.routineId });
         break;
       case "job.finished":
-        setRunning(data.job_id, null);
-        endActivity(data.chat_id, data.bot_id ?? "");
-        if (!Object.values(useStore.getState().running).some((r) => r.chatId === data.chat_id)) this.noteSilence(data.chat_id);
+        setRunning(event.job.jobId, null);
+        endActivity(event.job.chatId, event.job.botId);
+        if (!Object.values(useStore.getState().running).some((r) => r.chatId === event.job.chatId)) this.noteSilence(event.job.chatId);
         break;
       case "job.thinking":
-        setThinking(data.chat_id, data.bot_id);
+        setThinking(event.chatId, event.botId);
         break;
       case "job.retry":
-        setRetry(data.chat_id, { attempt: data.attempt, max_attempts: data.max_attempts, delay_ms: data.delay_ms });
+        setRetry(event.chatId, { attempt: event.attempt, max_attempts: event.maxAttempts, delay_ms: event.delayMs });
         break;
       case "chat.usage":
-        setChatUsage(data.chat_id, data.usage as ChatUsage);
+        setChatUsage(event.chatId, event.usage);
         break;
       case "relay.status":
-        useStore.setState((s) => ({ relayConnected: !!data.connected, relayUpdateRequired: !!data.update_required, relayError: data.error ?? null, relayUrl: data.url ?? s.relayUrl }));
+        useStore.setState((s) => ({ relayConnected: event.connected, relayUpdateRequired: event.updateRequired, relayError: event.error, relayUrl: event.url ?? s.relayUrl }));
         break;
       case "provider.auth":
-        void this.openAuthPage(data.url, "provider", () => core.request("providers.auth.cancel"));
+        void this.openAuthPage(event.url, "provider", () => core.request("providers.auth.cancel"));
         break;
       case "plugin.auth":
-        void this.openAuthPage(data.url, data.sign_in, () => core.request("plugins.auth.cancel", { sign_in: data.sign_in }));
+        void this.openAuthPage(event.url, event.signIn, () => core.request("plugins.auth.cancel", { sign_in: event.signIn }));
         break;
       case "plugin.auth.done":
-        void this.closeAuthPage(data.sign_in);
+        void this.closeAuthPage(event.signIn);
         break;
       case "identity.changed":
-        if (!data.has_identity) resetStore();
+        if (!event.hasIdentity) resetStore();
         else useStore.setState({ paired: true });
         break;
-      default:
+      case "feedback.changed":
+      case "pair.posted":
+      case "pair.completed":
+      case "account.key_changed":
         break;
     }
   }

@@ -730,6 +730,28 @@ pub struct AgentRun {
     /// When it started, in Unix seconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub started_at: Option<f64>,
+    /// How it stands, which the apps tint it by: `ask` (it needs the user, or went quiet while it
+    /// works), `busy` (it is checked, starts, or works), `done` (idle), `fail`, or `quiet` (it
+    /// ended otherwise). Lorca fills it, with `busy`, `context`, and `now`, on every card it
+    /// sends the apps (`AgentRun::summarize`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub tone: String,
+    /// It is doing something now: the apps' dot breathes, and its time ticks.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub busy: bool,
+    /// How much of its context it has used, from its `Context` setting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<AgentContextUse>,
+    /// What it does now: its last tool's line, without the mark (`Bash(npm test)`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub now: Option<String>,
+}
+
+/// The tokens of its context a coding agent has used, of how many it has.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
+pub struct AgentContextUse {
+    pub used: u64,
+    pub size: u64,
 }
 
 /// One thing a coding agent's card shows about its session, as the agent names it: "Model" and
@@ -763,6 +785,42 @@ impl AgentRun {
     pub fn is_open(&self) -> bool {
         matches!(self.state.as_str(), "checking" | "asking" | "starting" | "working" | "idle")
     }
+
+    /// Fills what the apps read of how it stands from the rest of the card: `tone`, `busy`,
+    /// `context`, and `now`. A card stored or synced before these existed gets them too.
+    pub fn summarize(&mut self) {
+        let asks = self.question.is_some() || self.asking.is_some() || self.state == "asking";
+        let state = self.state.as_str();
+        self.tone = match state {
+            _ if asks || (self.stalled && state == "working") => "ask",
+            "starting" | "checking" | "working" => "busy",
+            "idle" => "done",
+            "failed" => "fail",
+            _ => "quiet",
+        }
+        .into();
+        self.busy = !asks && !self.stalled && matches!(state, "starting" | "working");
+        self.context = self.settings.iter().find(|setting| setting.name == "Context").and_then(|setting| {
+            let (used, size) = setting.value.split_once('/')?;
+            let (used, size) = (token_count(used)?, token_count(size)?);
+            (size > 0).then_some(AgentContextUse { used, size })
+        });
+        self.now = self.output.as_deref().and_then(|output| output.lines().rev().find_map(|line| line.trim().strip_prefix("● ").map(str::to_string)));
+    }
+}
+
+/// A token count as a card's `Context` setting writes it: "34k", "1.2M", or "512".
+fn token_count(text: &str) -> Option<u64> {
+    let text = text.trim();
+    let (number, scale) = match text.strip_suffix('k') {
+        Some(number) => (number, 1e3),
+        None => match text.strip_suffix('M') {
+            Some(number) => (number, 1e6),
+            None => (text, 1.0),
+        },
+    };
+    let value: f64 = number.trim().parse().ok()?;
+    (value >= 0.0).then(|| (value * scale).round() as u64)
 }
 
 /// What a coding agent's card asks the user: whether it may start or do something. What the
@@ -940,9 +998,12 @@ impl Message {
     pub fn for_app(&self) -> Message {
         let mut message = self.clone();
         match &mut message.body {
-            Body::Tool { detail, arguments, result, .. } => {
+            Body::Tool { detail, arguments, result, agent, .. } => {
                 *arguments = serde_json::Value::Null;
                 *result = None;
+                if let Some(agent) = agent {
+                    agent.summarize();
+                }
                 if detail.chars().count() > APP_TOOL_DETAIL_CHARS {
                     *detail = detail.chars().take(APP_TOOL_DETAIL_CHARS).collect();
                 }
@@ -1740,6 +1801,38 @@ mod app_view_tests {
         // A phone stores the app view; reading it again keeps the command.
         let Body::Permission { command, .. } = app.for_app().body else { panic!() };
         assert_eq!(command.as_deref(), Some("secret"));
+    }
+
+    /// The apps read how an agent stands off its card: its tone, whether it works now, how full
+    /// its context is, and what it does now.
+    #[test]
+    fn a_coding_agents_card_says_how_it_stands() {
+        let summarized = |mut agent: AgentRun| {
+            agent.summarize();
+            agent
+        };
+        let working = AgentRun { state: "working".into(), ..Default::default() };
+        let tone = |agent: AgentRun| summarized(agent).tone;
+        assert_eq!(tone(working.clone()), "busy");
+        assert!(summarized(working.clone()).busy);
+        assert_eq!(tone(AgentRun { stalled: true, ..working.clone() }), "ask");
+        assert!(!summarized(AgentRun { stalled: true, ..working.clone() }).busy);
+        assert_eq!(tone(AgentRun { asking: Some("card".into()), ..working.clone() }), "ask");
+        assert_eq!(tone(AgentRun { state: "checking".into(), ..Default::default() }), "busy");
+        assert!(!summarized(AgentRun { state: "checking".into(), ..Default::default() }).busy);
+        assert_eq!(tone(AgentRun { state: "idle".into(), ..Default::default() }), "done");
+        assert_eq!(tone(AgentRun { state: "failed".into(), ..Default::default() }), "fail");
+        assert_eq!(tone(AgentRun { state: "stopped".into(), ..Default::default() }), "quiet");
+
+        let setting = |value: &str| AgentSetting { name: "Context".into(), value: value.into() };
+        let context = |value: &str| summarized(AgentRun { settings: vec![setting(value)], ..Default::default() }).context;
+        assert_eq!(context("34k / 200k"), Some(AgentContextUse { used: 34_000, size: 200_000 }));
+        assert_eq!(context("900 / 1.2M"), Some(AgentContextUse { used: 900, size: 1_200_000 }));
+        assert_eq!(context("lots"), None);
+        assert_eq!(context("5 / 0"), None);
+
+        let output = "> fix it\n● Read(a.rs)\n  ⎿ ok\n● Bash(cargo test)\n  ⎿ 3 pass".to_string();
+        assert_eq!(summarized(AgentRun { output: Some(output), ..working }).now.as_deref(), Some("Bash(cargo test)"));
     }
 }
 

@@ -26,27 +26,62 @@ pub async fn ask(app: &Arc<App>, runner_id: &str, verb: &str, body: Value) -> Re
 
 /// `ask` for a verb the Runner takes longer to answer, waiting up to `timeout`.
 pub async fn ask_within(app: &Arc<App>, runner_id: &str, verb: &str, body: Value, timeout: Duration) -> Result<Value, String> {
-    let runner = app.device(runner_id).ok_or("That bot is assigned to a Runner this Device does not know yet.")?;
-    if runner.box_pubkey.is_empty() {
-        return Err(format!("{} has not shared its key yet.", runner.name));
+    let remote = app.remote.lock().unwrap().clone();
+    remote.ask(app, runner_id, verb, body, timeout).await
+}
+
+/// Where a verb about something on Runner `runner_id` runs: `here` on this Device when it is
+/// that Runner, else on the Runner, which answers the same verb from its `answer`, waiting up to
+/// `wait`.
+pub async fn on_runner(
+    app: &Arc<App>,
+    runner_id: &str,
+    verb: &str,
+    body: Value,
+    wait: Duration,
+    here: impl AsyncFnOnce(Value) -> Result<Value, String>,
+) -> Result<Value, String> {
+    if app.this_device_id().as_deref() == Some(runner_id) {
+        return here(body).await;
     }
-    if app.relay_url().is_none() {
-        return Err(format!("No relay is configured, so this Device cannot reach {}.", runner.name));
-    }
-    if !app.device_is_online(runner_id) {
-        return Err(format!("{} is offline.", runner.name));
-    }
-    let request = Request { id: format!("req-{}", uuid::Uuid::new_v4()), verb: verb.to_string(), body };
-    let ciphertext = crate::envelope::seal(app, "request", &runner, &request).map_err(|e| e.to_string())?;
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    app.pending_responses.lock().unwrap().insert(request.id.clone(), (runner.id.clone(), tx));
-    app.push_blob("request", Some(runner.id.clone()), ciphertext);
-    let answer = tokio::time::timeout(timeout, rx).await;
-    app.pending_responses.lock().unwrap().remove(&request.id);
-    match answer {
-        Ok(Ok(Response { error: Some(error), .. })) => Err(error),
-        Ok(Ok(Response { body, .. })) => Ok(body),
-        Ok(Err(_)) | Err(_) => Err(format!("{} did not answer in time.", runner.name)),
+    ask_within(app, runner_id, verb, body, wait).await
+}
+
+/// How this Device reaches another Runner with a question: over the relay (`Relay`), or, in
+/// tests, straight to another `App` (`tests::Direct`).
+#[async_trait::async_trait]
+pub trait Remote: Send + Sync {
+    async fn ask(&self, app: &Arc<App>, runner_id: &str, verb: &str, body: Value, timeout: Duration) -> Result<Value, String>;
+}
+
+/// A `request` envelope signed and sealed to the Runner through the relay, and its `response`.
+pub struct Relay;
+
+#[async_trait::async_trait]
+impl Remote for Relay {
+    async fn ask(&self, app: &Arc<App>, runner_id: &str, verb: &str, body: Value, timeout: Duration) -> Result<Value, String> {
+        let runner = app.device(runner_id).ok_or("That bot is assigned to a Runner this Device does not know yet.")?;
+        if runner.box_pubkey.is_empty() {
+            return Err(format!("{} has not shared its key yet.", runner.name));
+        }
+        if app.relay_url().is_none() {
+            return Err(format!("No relay is configured, so this Device cannot reach {}.", runner.name));
+        }
+        if !app.device_is_online(runner_id) {
+            return Err(format!("{} is offline.", runner.name));
+        }
+        let request = Request { id: format!("req-{}", uuid::Uuid::new_v4()), verb: verb.to_string(), body };
+        let ciphertext = crate::envelope::seal(app, "request", &runner, &request).map_err(|e| e.to_string())?;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        app.pending_responses.lock().unwrap().insert(request.id.clone(), (runner.id.clone(), tx));
+        app.push_blob("request", Some(runner.id.clone()), ciphertext);
+        let answer = tokio::time::timeout(timeout, rx).await;
+        app.pending_responses.lock().unwrap().remove(&request.id);
+        match answer {
+            Ok(Ok(Response { error: Some(error), .. })) => Err(error),
+            Ok(Ok(Response { body, .. })) => Ok(body),
+            Ok(Err(_)) | Err(_) => Err(format!("{} did not answer in time.", runner.name)),
+        }
     }
 }
 
@@ -234,4 +269,60 @@ fn local_bot(app: &Arc<App>, bot_id: &str) -> Result<crate::model::Bot, String> 
         return Err(format!("{} runs on {runner}, not here.", bot.name));
     }
     Ok(bot)
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    use crate::config::Config;
+
+    /// Another Device's question answered straight by the Runner's own `App`, as its `answer`
+    /// would over the relay.
+    pub(crate) struct Direct {
+        pub(crate) runner_id: String,
+        pub(crate) runner: Arc<App>,
+        pub(crate) asked: std::sync::Mutex<Vec<String>>,
+    }
+
+    #[async_trait::async_trait]
+    impl Remote for Direct {
+        async fn ask(&self, _app: &Arc<App>, runner_id: &str, verb: &str, body: Value, _timeout: Duration) -> Result<Value, String> {
+            self.asked.lock().unwrap().push(verb.to_string());
+            if runner_id != self.runner_id {
+                return Err(format!("{runner_id} is offline."));
+            }
+            answer(&self.runner, "asker", &Request { id: "req".into(), verb: verb.into(), body }).await
+        }
+    }
+
+    struct Scratch(Arc<App>, std::path::PathBuf);
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.1);
+        }
+    }
+
+    fn scratch() -> Scratch {
+        let home = std::env::temp_dir().join(format!("lorca-requests-{}", uuid::Uuid::new_v4()));
+        Scratch(App::load(Config { home: home.clone(), port: 0 }).unwrap(), home)
+    }
+
+    /// A verb about another Runner goes to it and comes back with its answer; one about this
+    /// Device runs here and asks nobody.
+    #[tokio::test]
+    async fn a_verb_runs_on_the_runner_it_is_about() {
+        let (asker, runner) = (scratch(), scratch());
+        crate::profile::store(&runner.0.config.home).write_index("The user ships on Fridays.\n", None).unwrap();
+        let direct = Arc::new(Direct { runner_id: "workbench".into(), runner: runner.0.clone(), asked: Default::default() });
+        *asker.0.remote.lock().unwrap() = direct.clone();
+
+        let answer = crate::api::dispatch(&asker.0, "profile", json!({ "runner_id": "workbench" })).await.unwrap();
+        assert!(answer["text"].as_str().unwrap().contains("ships on Fridays"), "{answer}");
+        assert_eq!(answer["runner_id"], "workbench");
+        assert_eq!(*direct.asked.lock().unwrap(), ["profile.read"]);
+
+        let here = on_runner(&asker.0, "elsewhere", "profile.read", json!({}), REQUEST_TIMEOUT, async |_| Ok(json!("here"))).await;
+        assert_eq!(here.unwrap_err(), "elsewhere is offline.");
+        assert_eq!(direct.asked.lock().unwrap().len(), 2, "a Runner that is not this Device is asked");
+    }
 }

@@ -1436,19 +1436,20 @@ mod runner {
 /// Runs an `mcp.*` verb on `runner_id`: here when it is this Device or none is named, else as a
 /// request sealed to that Runner, so the apps manage another computer's servers.
 pub async fn on_runner(app: &std::sync::Arc<crate::app::App>, runner_id: Option<&str>, verb: &str, body: Value) -> Result<Value, String> {
-    if let Some(runner_id) = runner_id.filter(|id| app.this_device_id().as_deref() != Some(*id)) {
-        let wait = if verb == "mcp.reconnect" { RECONNECT_WAIT } else { crate::requests::REQUEST_TIMEOUT };
-        return crate::requests::ask_within(app, runner_id, verb, body, wait).await;
-    }
-    #[cfg(feature = "runner")]
-    {
-        serve_request(app, verb, &body).await
-    }
-    #[cfg(not(feature = "runner"))]
-    {
-        let _ = (verb, body);
-        Err("This Device does not run bots, so it has no MCP servers.".into())
-    }
+    let here = async |body: Value| {
+        #[cfg(feature = "runner")]
+        {
+            serve_request(app, verb, &body).await
+        }
+        #[cfg(not(feature = "runner"))]
+        {
+            let _ = body;
+            Err("This Device does not run bots, so it has no MCP servers.".into())
+        }
+    };
+    let Some(runner_id) = runner_id else { return here(body).await };
+    let wait = if verb == "mcp.reconnect" { RECONNECT_WAIT } else { crate::requests::REQUEST_TIMEOUT };
+    crate::requests::on_runner(app, runner_id, verb, body, wait, here).await
 }
 
 /// `mcp.parse`: the servers pasted JSON describes, for the apps' JSON field and `lorca mcp`.

@@ -11,17 +11,12 @@ import { agentIsRunning, type AgentRun, type Chat, type Message } from "./model"
 export type AgentTone = "ask" | "busy" | "done" | "fail" | "quiet";
 
 export function agentTone(agent: AgentRun): AgentTone {
-  if (agent.question || agent.asking || agent.state === "asking") return "ask";
-  if (agent.stalled && agent.state === "working") return "ask";
-  if (agent.state === "starting" || agent.state === "checking" || agent.state === "working") return "busy";
-  if (agent.state === "idle") return "done";
-  if (agent.state === "failed") return "fail";
-  return "quiet";
+  return agent.tone ?? "quiet";
 }
 
 /// It is doing something now: its dot breathes, and its time ticks.
 export function agentBusy(agent: AgentRun): boolean {
-  return !agent.question && !agent.asking && (agent.state === "starting" || agent.state === "working") && !agent.stalled;
+  return !!agent.busy;
 }
 
 /// How long ago it started, "42s", "4m", or "1h 12m"; nothing without a start.
@@ -38,25 +33,10 @@ export function agentSetting(agent: AgentRun, name: string): string {
   return agent.settings?.find((setting) => setting.name === name)?.value ?? "";
 }
 
-/// "34k", "1.2M", or "512" as a number; -1 when it is none of them.
-export function tokenCount(text: string): number {
-  let words = text.trim();
-  let scale = 1;
-  if (words.endsWith("k")) [scale, words] = [1e3, words.slice(0, -1)];
-  else if (words.endsWith("M")) [scale, words] = [1e6, words.slice(0, -1)];
-  const n = Number(words);
-  return words === "" || Number.isNaN(n) ? -1 : n * scale;
-}
-
-/// How much of its context it has used, from "34k / 200k": the share, capped at 1, and the words.
+/// How much of its context it has used: the share, capped at 1, and its words ("34k / 200k").
 export function agentContext(agent: AgentRun): { share: number; words: string } | null {
-  const words = agentSetting(agent, "Context");
-  const [used, size] = words.split("/");
-  if (size === undefined) return null;
-  const u = tokenCount(used);
-  const s = tokenCount(size);
-  if (s <= 0 || u < 0) return null;
-  return { share: Math.min(u / s, 1), words: words.trim() };
+  if (!agent.context || agent.context.size <= 0) return null;
+  return { share: Math.min(agent.context.used / agent.context.size, 1), words: agentSetting(agent, "Context").trim() };
 }
 
 /// A model's name as a cell has room for: without the provider a gateway puts before it, and
@@ -80,12 +60,7 @@ export function pullRequestName(link: string): string {
 
 /// What it does now: its last tool's line, without the mark.
 export function agentNow(agent: AgentRun): string {
-  const lines = (agent.output ?? "").split("\n");
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i].trim();
-    if (line.startsWith("● ")) return line.slice(2);
-  }
-  return "";
+  return agent.now ?? "";
 }
 
 /// Its last `count` lines with something on them, while it works.

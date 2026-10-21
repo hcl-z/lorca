@@ -785,13 +785,11 @@ pub async fn dispatch(app: &Arc<App>, method: &str, body: Value) -> Result<Value
             serde_json::from_value(body["envelope"].clone()).map_err(|e| e.to_string())?;
         return forward(app, &route, &event).map_err(|e| e.to_string());
     }
-    if let Some(runner) = body["runner_id"]
-        .as_str()
-        .filter(|id| app.this_device_id().as_deref() != Some(id))
-    {
-        return crate::requests::ask(app, runner, method, body.clone()).await;
+    let here = async |body: Value| serve(app, method, &body).map_err(|e| e.to_string());
+    match body["runner_id"].as_str().map(str::to_string) {
+        Some(runner) => crate::requests::on_runner(app, &runner, method, body, crate::requests::REQUEST_TIMEOUT, here).await,
+        None => here(body).await,
     }
-    serve(app, method, &body).map_err(|e| e.to_string())
 }
 
 /// Verify and durably queue ciphertext on the gateway; no plaintext enters its relay outbox.

@@ -23,11 +23,7 @@ fn opt_string(params: &Value, key: &str) -> Option<String> {
 /// A question about what lives on a bot's Runner: answered here when this is that Runner, else
 /// asked of it through the relay.
 async fn on_bots_runner(app: &Arc<App>, bot: &crate::model::Bot, verb: &str, body: Value) -> Result<Value, String> {
-    if app.this_device_id().as_deref() == Some(bot.runner_id.as_str()) {
-        requests::answer_here(app, verb, &body)
-    } else {
-        requests::ask(app, &bot.runner_id, verb, body).await
-    }
+    requests::on_runner(app, &bot.runner_id, verb, body, requests::REQUEST_TIMEOUT, async |body| requests::answer_here(app, verb, &body)).await
 }
 
 fn parse_permissions(params: &Value) -> Result<Option<crate::permissions::BotPermissions>, String> {
@@ -439,10 +435,11 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
             let text = opt_string(&params, "text");
             let chat = app.chat(&chat_id).ok_or("Unknown chat")?;
             let bot = chat.meta.bot_ids.first().and_then(|id| app.bot(id)).ok_or("The chat has no bot")?;
-            if app.this_device_id().as_deref() == Some(bot.runner_id.as_str()) {
-                return runtime::rerun_user_message(app, &chat_id, &message_id, text.as_deref()).map(|message| json!({ "message": message.for_app() }));
-            }
-            requests::ask(app, &bot.runner_id, "chats.rerun", json!({ "chat_id": chat_id, "message_id": message_id, "text": text })).await
+            let body = json!({ "chat_id": chat_id, "message_id": message_id, "text": text });
+            requests::on_runner(app, &bot.runner_id, "chats.rerun", body, requests::REQUEST_TIMEOUT, async |_| {
+                runtime::rerun_user_message(app, &chat_id, &message_id, text.as_deref()).map(|message| json!({ "message": message.for_app() }))
+            })
+            .await
         }
         // A message the direct chat's turn holds for its next step: read now. Here when the bot
         // runs here, else sealed to its Runner.
@@ -472,11 +469,7 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
             let bot = app.bot(&string(&params, "bot_id")?).ok_or("Unknown bot")?;
             let runner = app.device(&bot.runner_id).map(|d| d.name).unwrap_or_else(|| "its Runner".into());
             let here = app.this_device_id().as_deref() == Some(bot.runner_id.as_str());
-            let mut overview = if here {
-                requests::memory_read(app, &bot.id)?
-            } else {
-                requests::ask(app, &bot.runner_id, "memory.read", json!({ "bot_id": bot.id })).await?
-            };
+            let mut overview = requests::on_runner(app, &bot.runner_id, "memory.read", json!({ "bot_id": bot.id }), requests::REQUEST_TIMEOUT, async |_| requests::memory_read(app, &bot.id)).await?;
             overview["bot_id"] = json!(bot.id);
             overview["here"] = json!(here);
             overview["runner"] = json!(runner);
@@ -486,11 +479,8 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
             let bot = app.bot(&string(&params, "bot_id")?).ok_or("Unknown bot")?;
             let text = params["text"].as_str().ok_or("missing text")?;
             let expected_hash = opt_string(&params, "expected_hash");
-            if app.this_device_id().as_deref() == Some(bot.runner_id.as_str()) {
-                requests::memory_write(app, &bot.id, text, expected_hash.as_deref())
-            } else {
-                requests::ask(app, &bot.runner_id, "memory.write", json!({ "bot_id": bot.id, "text": text, "expected_hash": expected_hash })).await
-            }
+            let body = json!({ "bot_id": bot.id, "text": text, "expected_hash": expected_hash });
+            requests::on_runner(app, &bot.runner_id, "memory.write", body, requests::REQUEST_TIMEOUT, async |_| requests::memory_write(app, &bot.id, text, expected_hash.as_deref())).await
         }
         // What a bot's next turn sends as its system prompt, section by section, with the notes
         // that follow the transcript. Built on the bot's Runner, which holds its memory; it runs
@@ -513,11 +503,7 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
             let runner_id = opt_string(&params, "runner_id").or_else(|| app.this_device_id()).ok_or("No Runner")?;
             let verb = if method == "profile" { "profile.read" } else { "profile.write" };
             let body = json!({ "text": params["text"], "expected_hash": opt_string(&params, "expected_hash") });
-            let mut answer = if app.this_device_id().as_deref() == Some(runner_id.as_str()) {
-                requests::answer_here(app, verb, &body)?
-            } else {
-                requests::ask(app, &runner_id, verb, body).await?
-            };
+            let mut answer = requests::on_runner(app, &runner_id, verb, body, requests::REQUEST_TIMEOUT, async |body| requests::answer_here(app, verb, &body)).await?;
             answer["runner_id"] = json!(runner_id);
             answer["runner"] = json!(app.device(&runner_id).map(|d| d.name));
             Ok(answer)
@@ -728,16 +714,16 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
             let id = string(&params, "id")?;
             let routine = app.routine(&id).ok_or("Unknown routine")?;
             let runner = app.bot(&routine.bot_id).map(|bot| bot.runner_id).ok_or("Unknown bot")?;
-            if app.this_device_id().as_deref() != Some(runner.as_str()) {
-                return crate::requests::ask(app, &runner, "routines.regenerate_key", json!({ "id": id })).await;
-            }
-            #[cfg(feature = "runner")]
-            {
-                crate::routine_events::regenerate_key(app, &id).await?;
-                Ok(json!({ "routine": app.routine(&id).map(|routine| app.routine_out(&routine)) }))
-            }
-            #[cfg(not(feature = "runner"))]
-            Err("Only a Runner keeps a routine's webhook.".into())
+            requests::on_runner(app, &runner, "routines.regenerate_key", json!({ "id": id }), requests::REQUEST_TIMEOUT, async |_| {
+                #[cfg(feature = "runner")]
+                {
+                    crate::routine_events::regenerate_key(app, &id).await?;
+                    Ok(json!({ "routine": app.routine(&id).map(|routine| app.routine_out(&routine)) }))
+                }
+                #[cfg(not(feature = "runner"))]
+                Err("Only a Runner keeps a routine's webhook.".into())
+            })
+            .await
         }
         // A routine on events that waits on the user's setup subscribes again on its Runner,
         // asked by an app the user came back to.
@@ -745,16 +731,16 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
             let id = string(&params, "id")?;
             let routine = app.routine(&id).ok_or("Unknown routine")?;
             let runner = app.bot(&routine.bot_id).map(|bot| bot.runner_id).ok_or("Unknown bot")?;
-            if app.this_device_id().as_deref() != Some(runner.as_str()) {
-                return crate::requests::ask(app, &runner, "routines.subscribe", json!({ "id": id })).await;
-            }
-            #[cfg(feature = "runner")]
-            {
-                crate::routine_events::subscribe_now(app, &id).await?;
-                Ok(json!({ "routine": app.routine(&id).map(|routine| app.routine_out(&routine)) }))
-            }
-            #[cfg(not(feature = "runner"))]
-            Err("Only a Runner subscribes a routine.".into())
+            requests::on_runner(app, &runner, "routines.subscribe", json!({ "id": id }), requests::REQUEST_TIMEOUT, async |_| {
+                #[cfg(feature = "runner")]
+                {
+                    crate::routine_events::subscribe_now(app, &id).await?;
+                    Ok(json!({ "routine": app.routine(&id).map(|routine| app.routine_out(&routine)) }))
+                }
+                #[cfg(not(feature = "runner"))]
+                Err("Only a Runner subscribes a routine.".into())
+            })
+            .await
         }
         // The link a user follows to set a relay's receiver up for this account, such as the
         // Lorca GitHub App's install.
@@ -972,11 +958,13 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
             let Author::Bot { bot_id } = &message.author else { return Err("That row has no command waiting".into()) };
             let bot = app.bot(bot_id).ok_or("Unknown bot")?;
             let body = json!({ "chat_id": chat_id, "message_id": message_id, "text": params["text"], "enter": params["enter"] });
-            if app.this_device_id().as_deref() == Some(bot.runner_id.as_str()) {
+            requests::on_runner(app, &bot.runner_id, method, body, requests::REQUEST_TIMEOUT, async |body| {
                 #[cfg(feature = "runner")]
                 return crate::shell::serve(app, method, &body).await;
-            }
-            requests::ask(app, &bot.runner_id, method, body).await
+                #[cfg(not(feature = "runner"))]
+                return { let _ = body; Err("This Device does not run commands.".into()) };
+            })
+            .await
         }
 
         // A coding agent's card: its transcript, Stop, and an answer to what it asks. Here when the
@@ -988,11 +976,13 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
             let Author::Bot { bot_id } = &message.author else { return Err("That row has no coding agent".into()) };
             let bot = app.bot(bot_id).ok_or("Unknown bot")?;
             let body = json!({ "chat_id": chat_id, "message_id": message_id, "values": params["values"], "decline": params["decline"], "what": params["what"], "value": params["value"], "since": params["since"] });
-            if app.this_device_id().as_deref() == Some(bot.runner_id.as_str()) {
+            requests::on_runner(app, &bot.runner_id, method, body, requests::REQUEST_TIMEOUT, async |body| {
                 #[cfg(feature = "runner")]
                 return crate::coding::serve(app, method, &body).await;
-            }
-            requests::ask(app, &bot.runner_id, method, body).await
+                #[cfg(not(feature = "runner"))]
+                return { let _ = body; Err("This Device does not run coding agents.".into()) };
+            })
+            .await
         }
 
         // Read one API key on demand for the local settings editor. Snapshots and events

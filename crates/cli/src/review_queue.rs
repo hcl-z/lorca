@@ -542,15 +542,9 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
     } else {
         get(app, params["id"].as_str().ok_or("missing id")?)?.runner_id
     };
-    if app.this_device_id().as_deref() != Some(&runner) {
-        return crate::requests::ask(app, &runner, method, params).await;
-    }
-    serve(
-        app,
-        method,
-        &params,
-        &app.this_device_id().unwrap_or_default(),
-    )
+    crate::requests::on_runner(app, &runner, method, params, crate::requests::REQUEST_TIMEOUT, async |params| {
+        serve(app, method, &params, &app.this_device_id().unwrap_or_default()).await
+    })
     .await
 }
 

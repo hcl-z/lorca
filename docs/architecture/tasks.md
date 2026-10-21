@@ -56,7 +56,7 @@ The goal, owner, next step, and acceptance criteria are a form, locked to edits 
 
 ## API and terminal
 
-Bootstrap includes `tasks`; `tasks.changed { task }` publishes persisted changes.
+Bootstrap includes `tasks`; `tasks.changed { task }` publishes persisted changes. Both apps hold each task at the newest revision they have from a snapshot, an event, or a reply: a later snapshot for the same identity keeps a held task that is newer or that it does not list, since it can be older than what a reply or an event delivered.
 
 - `tasks.list { chat_id?, owner_bot_id?, state? }` returns locally synced records.
 - `tasks.get { id, refresh? }` reads one record; `refresh: true` asks a remote authority.

@@ -478,10 +478,12 @@ impl Agents {
             pull_request: record.pull_request,
             device,
             started_at: Some(record.started_at),
+            ..AgentRun::default()
         };
         run.task = clean(run.task);
         redactions.option(&mut run.output);
         redactions.option(&mut run.outcome);
+        run.summarize();
         run
     }
 

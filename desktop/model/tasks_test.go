@@ -53,7 +53,7 @@ func TestTaskEventsAndRepliesDoNotLoseNewerOwnership(t *testing.T) {
 	raw, _ := json.Marshal(struct {
 		Task DurableTask `json:"task"`
 	}{newer})
-	s.handle("tasks.changed", raw)
+	handleFrame(t, s, "tasks.changed", raw)
 	if s.AcceptDurableTask(first) {
 		t.Fatal("accepted stale reply")
 	}

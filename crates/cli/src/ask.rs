@@ -53,10 +53,11 @@ impl Tool for AskUser {
             "type": "object",
             "properties": {
                 "question": { "type": "string", "description": "The question, one sentence in the user's language" },
+                // Two to six, which `parse` checks with a reason the model acts on: a model that
+                // sent none under a schema bound repeated the call as it was.
                 "options": {
                     "type": "array",
-                    "minItems": MIN_OPTIONS,
-                    "maxItems": MAX_OPTIONS,
+                    "description": "2 to 6 options, each { label, description? }",
                     "items": {
                         "type": "object",
                         "properties": {
@@ -159,7 +160,11 @@ fn parse(args: &Value) -> Result<AskQuestion, String> {
         })
         .collect::<Result<_, String>>()?;
     if !(MIN_OPTIONS..=MAX_OPTIONS).contains(&options.len()) {
-        return Err(format!("Give {MIN_OPTIONS} to {MAX_OPTIONS} options."));
+        return Err(format!(
+            "Give {MIN_OPTIONS} to {MAX_OPTIONS} options, each {{ \"label\": \"…\" }} in `options`; this call had {}. A question with no answers \
+             to offer is not for ask_user: write it in your reply instead, and the user's answer comes as their next message.",
+            options.len()
+        ));
     }
     let mut labels: Vec<String> = options.iter().map(|option| option.label.to_lowercase()).collect();
     labels.sort();

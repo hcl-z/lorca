@@ -54,7 +54,9 @@ func TestE2EAgainstCLI(t *testing.T) {
 			Data json.RawMessage `json:"data"`
 		}
 		_ = json.Unmarshal(frame, &payload)
-		enqueue(func() { store.HandleEvent(name, payload.Data) })
+		if event, ok := model.DecodeEvent(name, payload.Data); ok {
+			enqueue(func() { store.HandleEvent(event) })
+		}
 	}
 	client.onState = func(state string) {
 		enqueue(func() {
