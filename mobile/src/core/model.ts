@@ -433,6 +433,12 @@ export interface AgentRun {
   device?: string;
   /** When it started, in Unix seconds. */
   started_at?: number;
+  /// How it stands, as the core reads it off the card (`AgentRun::summarize`): the tint of its
+  /// state, whether it is doing something now, how full its context is, and its last tool's line.
+  tone?: "ask" | "busy" | "done" | "fail" | "quiet";
+  busy?: boolean;
+  context?: { used: number; size: number };
+  now?: string;
 }
 
 /// A setting of a running coding agent that its card lets be changed: `what` is how `coding.set`

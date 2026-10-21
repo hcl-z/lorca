@@ -1747,6 +1747,39 @@ type AgentRun struct {
 	// Controls are the settings of a running agent that can be changed now, each with what the
 	// agent offers.
 	Controls []AgentControl
+	// Tone, Busy, Context, and Now are how it stands, as the CLI reads it off the card: the tint
+	// of its state, whether it is doing something now, how full its context is, and its last
+	// tool's line.
+	Tone    AgentTone
+	Busy    bool
+	Context *AgentContextUse
+	Now     string
+}
+
+// AgentTone is the tint of how a coding agent stands.
+type AgentTone string
+
+const (
+	// AgentToneAsk: it needs the user, or went quiet while it works.
+	AgentToneAsk AgentTone = "ask"
+	// AgentToneBusy: it is checked, starts, or works.
+	AgentToneBusy AgentTone = "busy"
+	// AgentToneDone: it is done with what it was asked.
+	AgentToneDone AgentTone = "done"
+	AgentToneFail AgentTone = "fail"
+	// AgentToneQuiet: it ended otherwise.
+	AgentToneQuiet AgentTone = "quiet"
+)
+
+// AgentContextUse is the tokens of its context it has used, of how many it has.
+type AgentContextUse struct{ Used, Size uint64 }
+
+// Share is how much of it is used, at most all of it.
+func (u AgentContextUse) Share() float32 {
+	if u.Size == 0 {
+		return 0
+	}
+	return float32(min(float64(u.Used)/float64(u.Size), 1))
 }
 
 // AgentSetting is one of them: "Model" and "Opus".

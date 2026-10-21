@@ -1,16 +1,13 @@
 import { expect, test } from "bun:test";
-import { agentContext, agentNow, agentSince, agentTail, agentTone, latestPlan, modelShortName, outputSpans, pullRequestName, runningAgents, tokenCount } from "./agentKit";
+import { agentContext, agentNow, agentSince, agentTail, agentTone, latestPlan, modelShortName, outputSpans, pullRequestName, runningAgents } from "./agentKit";
 import type { AgentRun, Chat } from "./model";
 
 const agent = (more: Partial<AgentRun>): AgentRun => ({ id: "agent-1", kind: "claude", task: "Fix the link", state: "working", ...more });
 
-test("an agent's tone follows what it needs: the user, time, nothing, or a look at why it failed", () => {
-  expect(agentTone(agent({}))).toBe("busy");
-  expect(agentTone(agent({ stalled: true }))).toBe("ask");
-  expect(agentTone(agent({ asking: "card-1" }))).toBe("ask");
-  expect(agentTone(agent({ state: "idle" }))).toBe("done");
-  expect(agentTone(agent({ state: "failed" }))).toBe("fail");
-  expect(agentTone(agent({ state: "stopped" }))).toBe("quiet");
+// The core decides the tone (`AgentRun::summarize`); a card without one reads as quiet.
+test("an agent's tone is the core's", () => {
+  expect(agentTone(agent({ tone: "ask" }))).toBe("ask");
+  expect(agentTone(agent({}))).toBe("quiet");
 });
 
 test("how long it has worked reads in seconds, minutes, then hours", () => {
@@ -22,11 +19,10 @@ test("how long it has worked reads in seconds, minutes, then hours", () => {
 });
 
 test("its context reads as a share of the window, and its model without the gateway", () => {
-  expect(tokenCount("1.2M")).toBe(1_200_000);
-  expect(tokenCount("x")).toBe(-1);
-  const used = agentContext(agent({ settings: [{ name: "Context", value: "34k / 200k" }] }));
+  const used = agentContext(agent({ settings: [{ name: "Context", value: "34k / 200k" }], context: { used: 34_000, size: 200_000 } }));
   expect(used?.share).toBeCloseTo(0.17);
   expect(used?.words).toBe("34k / 200k");
+  expect(agentContext(agent({ context: { used: 3, size: 2 } }))?.share).toBe(1);
   expect(agentContext(agent({ settings: [{ name: "Context", value: "lots" }] }))).toBeNull();
   expect(modelShortName("openrouter/anthropic/claude-sonnet[1M]")).toBe("claude-sonnet");
   expect(pullRequestName("https://github.com/acme/shop/pull/7")).toBe("acme/shop #7");
@@ -34,7 +30,7 @@ test("its context reads as a share of the window, and its model without the gate
 });
 
 test("what it does now is its last tool's line, and its tail only while it works", () => {
-  const working = agent({ output: "> Fix the link\n● Read docs/index.md\n  ⎿ 40 lines\n● Bash npm test\n" });
+  const working = agent({ output: "> Fix the link\n● Read docs/index.md\n  ⎿ 40 lines\n● Bash npm test\n", now: "Bash npm test" });
   expect(agentNow(working)).toBe("Bash npm test");
   expect(agentTail(working, 2)).toEqual(["  ⎿ 40 lines", "● Bash npm test"]);
   expect(agentTail({ ...working, state: "idle" }, 2)).toEqual([]);

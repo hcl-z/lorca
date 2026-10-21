@@ -522,22 +522,9 @@ fn announce(app: &App, bot_id: &str, store: &Store) {
 pub async fn on_runner(app: &Arc<App>, method: &str, params: Value) -> Result<Value, String> {
     let bot_id = params["bot_id"].as_str().ok_or("missing bot_id")?;
     let bot = app.bot(bot_id).ok_or("Unknown bot")?;
-    if app.this_device_id().as_deref() != Some(&bot.runner_id) {
-        return crate::requests::ask_within(
-            app,
-            &bot.runner_id,
-            method,
-            params,
-            std::time::Duration::from_secs(150),
-        )
-        .await;
-    }
-    serve(
-        app,
-        method,
-        &params,
-        &app.this_device_id().unwrap_or_default(),
-    )
+    crate::requests::on_runner(app, &bot.runner_id, method, params, std::time::Duration::from_secs(150), async |params| {
+        serve(app, method, &params, &app.this_device_id().unwrap_or_default()).await
+    })
     .await
 }
 pub async fn serve(

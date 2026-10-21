@@ -196,15 +196,16 @@ func (a *appDelegate) cliEvent(name string, frame []byte) {
 		Data json.RawMessage `json:"data"`
 	}
 	_ = json.Unmarshal(frame, &payload)
-	post(func() { store.HandleEvent(name, payload.Data) })
-	if name != "identity.changed" && name != "snapshot" {
+	event, ok := model.DecodeEvent(name, payload.Data)
+	if !ok {
 		return
 	}
-	var identity struct {
-		HasIdentity *bool `json:"has_identity"`
-	}
-	if json.Unmarshal(payload.Data, &identity) == nil && identity.HasIdentity != nil {
-		a.identityChanged(*identity.HasIdentity)
+	post(func() { store.HandleEvent(event) })
+	switch event := event.(type) {
+	case model.SnapshotEvent:
+		a.identityChanged(event.Snapshot.HasIdentity)
+	case model.IdentityChangedEvent:
+		a.identityChanged(event.HasIdentity)
 	}
 }
 

@@ -201,7 +201,7 @@ type Store struct {
 	startupTimer        *time.Timer
 	bootstrapGeneration int
 	isBootstrapping     bool
-	bootstrapEvents     []pendingEvent
+	bootstrapEvents     []WireEvent
 	isApplyingBootstrap bool
 	listeners           []func(Event)
 
@@ -230,11 +230,6 @@ type Store struct {
 	// mockBrowserEngine is the demo's Browser setting.
 	mockBrowserEngine string
 	mockSecrets       []mockSecret
-}
-
-type pendingEvent struct {
-	name string
-	data json.RawMessage
 }
 
 // NewStore makes the store. `post` runs a function on the main thread.
@@ -409,7 +404,7 @@ func (s *Store) bootstrap(generation int) {
 		s.isApplyingBootstrap = true
 		s.apply(snapshot)
 		for _, event := range s.bootstrapEvents {
-			s.handle(event.name, event.data)
+			s.handle(event)
 		}
 		s.bootstrapEvents = nil
 		s.isApplyingBootstrap = false
@@ -531,240 +526,89 @@ func (s *Store) apply(snapshot WireSnapshot) {
 // MARK: - Events from the CLI
 
 // HandleEvent takes an event frame's name and data from the CLI.
-func (s *Store) HandleEvent(name string, data json.RawMessage) {
+// HandleEvent applies an event from the CLI. While a bootstrap snapshot is on its way, events
+// wait and apply after it, in the order they came.
+func (s *Store) HandleEvent(event WireEvent) {
 	if s.IsMock {
 		return
 	}
 	if s.isBootstrapping {
-		s.bootstrapEvents = append(s.bootstrapEvents, pendingEvent{name, data})
+		s.bootstrapEvents = append(s.bootstrapEvents, event)
 		return
 	}
-	s.handle(name, data)
+	s.handle(event)
 }
 
-func decode[T any](data json.RawMessage) (T, bool) {
-	var value T
-	if err := json.Unmarshal(data, &value); err != nil {
-		log.Printf("event: %v", err)
-		return value, false
-	}
-	return value, true
-}
-
-func (s *Store) handle(name string, data json.RawMessage) {
-	switch name {
-	case "projects.changed":
-		if payload, ok := decode[struct {
-			ChatID string `json:"chat_id"`
-		}](data); ok {
-			s.emit(Event{Kind: EventProjectContextChanged, ChatID: payload.ChatID})
-		}
-	case "attention.changed":
-		if view, ok := decode[AttentionView](data); ok {
-			s.applyAttention(view)
-		}
-	case "reviews.changed":
-		if event, ok := decode[struct {
-			Item ReviewItem `json:"item"`
-		}](data); ok && event.Item.ID != "" && event.Item.Version > 0 {
+func (s *Store) handle(event WireEvent) {
+	switch event := event.(type) {
+	case ProjectContextChangedEvent:
+		s.emit(Event{Kind: EventProjectContextChanged, ChatID: event.ChatID})
+	case AttentionChangedEvent:
+		s.applyAttention(event.View)
+	case ReviewChangedEvent:
+		if event.Item.ID != "" && event.Item.Version > 0 {
 			s.upsertReview(event.Item)
 		}
-	case "tasks.changed":
-		if event, ok := decode[struct {
-			Task DurableTask `json:"task"`
-		}](data); ok {
-			s.AcceptDurableTask(event.Task)
-		}
-	case "snapshot":
-		if snapshot, ok := decode[WireSnapshot](data); ok {
-			s.apply(snapshot)
-		}
-
-	case "feedback.changed":
-		if payload, ok := decode[struct {
-			BotID string `json:"bot_id"`
-		}](data); ok {
-			s.emit(Event{Kind: EventFeedbackChanged, BotID: payload.BotID})
-		}
-
-	case "roster.changed":
-		roster, ok := decode[WireRosterChanged](data)
-		if !ok {
-			return
-		}
-		s.Devices = s.Devices[:0:0]
-		for _, device := range roster.Devices {
-			s.Devices = append(s.Devices, ToDevice(device))
-		}
-		s.Bots = s.Bots[:0:0]
-		for _, bot := range roster.Bots {
-			s.Bots = append(s.Bots, ToBot(bot))
-		}
-		if roster.Routines != nil {
-			s.Routines = s.Routines[:0:0]
-			for _, routine := range roster.Routines {
-				s.Routines = append(s.Routines, ToRoutine(routine))
-			}
-		}
-		if roster.SharedLinks != nil {
-			s.SharedLinks = roster.SharedLinks
-		}
-		if roster.Sections != nil {
-			s.Sections = ToSections(roster.Sections)
-		}
-		if roster.AutoReview != nil {
-			s.AutoReview = ToAutoReview(roster.AutoReview)
-		}
-		if roster.Providers != nil {
-			s.Providers = ToProviders(roster.Providers)
-		}
-		if roster.Models != nil {
-			s.Models = ToModels(roster.Models)
-		}
-		var changed []string
-		chats := make([]*Chat, 0, len(roster.Chats))
-		for _, summary := range roster.Chats {
-			existing := s.Chat(summary.ID)
-			chat := ToChat(summary, existing)
-			if existing == nil {
-				chat.Messages = nil
-			} else if !slices.Equal(existing.BotIDs, chat.BotIDs) || existing.CustomTitle != chat.CustomTitle {
-				changed = append(changed, chat.ID)
-			}
-			chats = append(chats, chat)
-		}
-		s.Chats = chats
-		s.sortChats()
-		s.emit(Event{Kind: EventRosterChanged})
-		s.emit(Event{Kind: EventChatsChanged})
-		for _, id := range changed {
-			s.emit(Event{Kind: EventChatChanged, ChatID: id})
-		}
-
-	case "message.added", "message.updated":
-		payload, ok := decode[struct {
-			ChatID  string      `json:"chat_id"`
-			Message WireMessage `json:"message"`
-		}](data)
-		if !ok {
-			return
-		}
-		if _, ok := s.retryNotes[payload.ChatID]; ok {
-			delete(s.retryNotes, payload.ChatID)
-			s.emit(Event{Kind: EventRespondingChanged, ChatID: payload.ChatID})
+	case TaskChangedEvent:
+		s.AcceptDurableTask(event.Task)
+	case SnapshotEvent:
+		s.apply(event.Snapshot)
+	case FeedbackChangedEvent:
+		s.emit(Event{Kind: EventFeedbackChanged, BotID: event.BotID})
+	case RosterChangedEvent:
+		s.applyRoster(event.Roster)
+	case MessageEvent:
+		if _, ok := s.retryNotes[event.ChatID]; ok {
+			delete(s.retryNotes, event.ChatID)
+			s.emit(Event{Kind: EventRespondingChanged, ChatID: event.ChatID})
 		}
 		// The thinking bot's next message (a tool call, a reply) is where its thinking went.
-		botID := str(payload.Message.Author.BotID)
-		if name == "message.added" && botID != "" && s.thinkingBots[payload.ChatID] == botID {
-			delete(s.thinkingBots, payload.ChatID)
+		botID := str(event.Message.Author.BotID)
+		if event.IsNew && botID != "" && s.thinkingBots[event.ChatID] == botID {
+			delete(s.thinkingBots, event.ChatID)
 		}
-		s.upsert(ToMessage(payload.Message), payload.ChatID)
-
-	case "message.removed":
-		payload, ok := decode[struct {
-			ChatID    string `json:"chat_id"`
-			MessageID string `json:"message_id"`
-		}](data)
-		chat := s.Chat(payload.ChatID)
-		if !ok || chat == nil {
+		s.upsert(ToMessage(event.Message), event.ChatID)
+	case MessageRemovedEvent:
+		chat := s.Chat(event.ChatID)
+		if chat == nil {
 			return
 		}
-		chat.Messages = slices.DeleteFunc(slices.Clone(chat.Messages), func(m *Message) bool { return m.ID == payload.MessageID })
-		delete(s.commandStarts, payload.MessageID)
-		s.emit(Event{Kind: EventMessageRemoved, ChatID: payload.ChatID, MessageID: payload.MessageID})
-		s.noteOutput(nil, payload.MessageID, payload.ChatID)
-
-	case "chat.removed":
-		payload, ok := decode[struct {
-			ChatID string `json:"chat_id"`
-		}](data)
-		if !ok {
-			return
-		}
-		s.Chats = slices.DeleteFunc(slices.Clone(s.Chats), func(c *Chat) bool { return c.ID == payload.ChatID })
-		s.runningJobs = slices.DeleteFunc(s.runningJobs, func(job runningJob) bool { return job.chatID == payload.ChatID })
-		delete(s.outputMessages, payload.ChatID)
-		delete(s.staleOutputs, payload.ChatID)
+		chat.Messages = slices.DeleteFunc(slices.Clone(chat.Messages), func(m *Message) bool { return m.ID == event.MessageID })
+		delete(s.commandStarts, event.MessageID)
+		s.emit(Event{Kind: EventMessageRemoved, ChatID: event.ChatID, MessageID: event.MessageID})
+		s.noteOutput(nil, event.MessageID, event.ChatID)
+	case ChatRemovedEvent:
+		s.Chats = slices.DeleteFunc(slices.Clone(s.Chats), func(c *Chat) bool { return c.ID == event.ChatID })
+		s.runningJobs = slices.DeleteFunc(s.runningJobs, func(job runningJob) bool { return job.chatID == event.ChatID })
+		delete(s.outputMessages, event.ChatID)
+		delete(s.staleOutputs, event.ChatID)
 		s.emit(Event{Kind: EventChatsChanged})
-
-	case "job.started":
-		job, ok := decode[WireJobEvent](data)
-		if !ok {
-			return
+	case JobEvent:
+		if event.Finished {
+			s.finishJob(event.Job)
+		} else {
+			s.startJob(event.Job)
 		}
-		// A snapshot may already list it.
-		s.runningJobs = slices.DeleteFunc(s.runningJobs, func(running runningJob) bool {
-			return running.id == "pending:"+job.ChatID || running.id == job.JobID
-		})
-		s.runningJobs = append(s.runningJobs, runningJob{id: job.JobID, chatID: job.ChatID, botID: job.BotID, routineID: str(job.RoutineID)})
-		if _, ok := s.jobStarts[job.JobID]; !ok {
-			s.jobStarts[job.JobID] = time.Now()
-		}
-		s.emit(Event{Kind: EventRespondingChanged, ChatID: job.ChatID})
-		s.emit(Event{Kind: EventChatsChanged})
-
-	case "job.finished":
-		job, ok := decode[WireJobEvent](data)
-		if !ok {
-			return
-		}
-		s.runningJobs = slices.DeleteFunc(s.runningJobs, func(running runningJob) bool { return running.id == job.JobID })
-		delete(s.retryNotes, job.ChatID)
-		if job.BotID == "" || s.thinkingBots[job.ChatID] == job.BotID {
-			delete(s.thinkingBots, job.ChatID)
-		}
-		s.emit(Event{Kind: EventRespondingChanged, ChatID: job.ChatID})
-		s.emit(Event{Kind: EventChatsChanged})
-		startedAt, seen := s.jobStarts[job.JobID]
-		delete(s.jobStarts, job.JobID)
-		if seen && job.BotID != "" {
-			s.emit(Event{Kind: EventTurnFinished, ChatID: job.ChatID, BotID: job.BotID, StartedAt: startedAt})
-		}
-
-	case "job.retry":
-		retry, ok := decode[WireJobRetry](data)
-		if !ok {
-			return
-		}
+	case JobRetryEvent:
+		retry := event.Retry
 		seconds := max(1, (retry.DelayMS+500)/1000)
 		s.retryNotes[retry.ChatID] = L("Retrying (%d of %d) in %d s", retry.Attempt, retry.MaxAttempts, seconds)
 		s.emit(Event{Kind: EventRespondingChanged, ChatID: retry.ChatID})
-
-	case "job.thinking":
-		job, ok := decode[struct {
-			ChatID string `json:"chat_id"`
-			BotID  string `json:"bot_id"`
-		}](data)
-		if !ok {
+	case JobThinkingEvent:
+		s.thinkingBots[event.ChatID] = event.BotID
+		s.emit(Event{Kind: EventRespondingChanged, ChatID: event.ChatID})
+	case ChatUsageEvent:
+		chat := s.Chat(event.ChatID)
+		if chat == nil {
 			return
 		}
-		s.thinkingBots[job.ChatID] = job.BotID
-		s.emit(Event{Kind: EventRespondingChanged, ChatID: job.ChatID})
-
-	case "chat.usage":
-		payload, ok := decode[struct {
-			ChatID string        `json:"chat_id"`
-			Usage  WireChatUsage `json:"usage"`
-		}](data)
-		chat := s.Chat(payload.ChatID)
-		if !ok || chat == nil {
-			return
-		}
-		chat.Usage = ToUsage(payload.Usage)
-		s.emit(Event{Kind: EventChatChanged, ChatID: payload.ChatID})
-	case "budgets.changed":
-		if payload, ok := decode[struct {
-			Budgets []BudgetState `json:"budgets"`
-		}](data); ok {
-			s.Budgets = slices.Clone(payload.Budgets)
-			s.emit(Event{Kind: EventBudgetsChanged})
-		}
-
-	case "relay.status":
-		status, ok := decode[WireRelayStatus](data)
-		if !ok {
-			return
-		}
+		chat.Usage = ToUsage(event.Usage)
+		s.emit(Event{Kind: EventChatChanged, ChatID: event.ChatID})
+	case BudgetsChangedEvent:
+		s.Budgets = slices.Clone(event.Budgets)
+		s.emit(Event{Kind: EventBudgetsChanged})
+	case RelayStatusEvent:
+		status := event.Status
 		s.RelayConnected = status.Connected
 		s.RelayUpdateRequired = flag(status.UpdateRequired)
 		s.RelayError = ""
@@ -775,26 +619,104 @@ func (s *Store) handle(name string, data json.RawMessage) {
 			s.RelayURL = *status.URL
 		}
 		s.emit(Event{Kind: EventRosterChanged})
-
-	case "identity.changed":
-		payload, ok := decode[struct {
-			HasIdentity bool `json:"has_identity"`
-		}](data)
-		if !ok {
-			return
-		}
-		s.HasIdentity = &payload.HasIdentity
-		if !payload.HasIdentity {
+	case IdentityChangedEvent:
+		s.HasIdentity = &event.HasIdentity
+		if !event.HasIdentity {
 			s.applyAttention(DefaultAttention())
 		}
 		s.emit(Event{Kind: EventIdentityChanged})
+	case OtherEvent:
+	}
+}
+
+// applyRoster replaces the Devices, bots, routines, and chat metadata; chats keep the messages
+// the store has.
+func (s *Store) applyRoster(roster WireRosterChanged) {
+	s.Devices = s.Devices[:0:0]
+	for _, device := range roster.Devices {
+		s.Devices = append(s.Devices, ToDevice(device))
+	}
+	s.Bots = s.Bots[:0:0]
+	for _, bot := range roster.Bots {
+		s.Bots = append(s.Bots, ToBot(bot))
+	}
+	if roster.Routines != nil {
+		s.Routines = s.Routines[:0:0]
+		for _, routine := range roster.Routines {
+			s.Routines = append(s.Routines, ToRoutine(routine))
+		}
+	}
+	if roster.SharedLinks != nil {
+		s.SharedLinks = roster.SharedLinks
+	}
+	if roster.Sections != nil {
+		s.Sections = ToSections(roster.Sections)
+	}
+	if roster.AutoReview != nil {
+		s.AutoReview = ToAutoReview(roster.AutoReview)
+	}
+	if roster.Providers != nil {
+		s.Providers = ToProviders(roster.Providers)
+	}
+	if roster.Models != nil {
+		s.Models = ToModels(roster.Models)
+	}
+	var changed []string
+	chats := make([]*Chat, 0, len(roster.Chats))
+	for _, summary := range roster.Chats {
+		existing := s.Chat(summary.ID)
+		chat := ToChat(summary, existing)
+		if existing == nil {
+			chat.Messages = nil
+		} else if !slices.Equal(existing.BotIDs, chat.BotIDs) || existing.CustomTitle != chat.CustomTitle {
+			changed = append(changed, chat.ID)
+		}
+		chats = append(chats, chat)
+	}
+	s.Chats = chats
+	s.sortChats()
+	s.emit(Event{Kind: EventRosterChanged})
+	s.emit(Event{Kind: EventChatsChanged})
+	for _, id := range changed {
+		s.emit(Event{Kind: EventChatChanged, ChatID: id})
+	}
+}
+
+func (s *Store) startJob(job WireJobEvent) {
+	// A snapshot may already list it.
+	s.runningJobs = slices.DeleteFunc(s.runningJobs, func(running runningJob) bool {
+		return running.id == "pending:"+job.ChatID || running.id == job.JobID
+	})
+	s.runningJobs = append(s.runningJobs, runningJob{id: job.JobID, chatID: job.ChatID, botID: job.BotID, routineID: str(job.RoutineID)})
+	if _, ok := s.jobStarts[job.JobID]; !ok {
+		s.jobStarts[job.JobID] = time.Now()
+	}
+	s.emit(Event{Kind: EventRespondingChanged, ChatID: job.ChatID})
+	s.emit(Event{Kind: EventChatsChanged})
+}
+
+func (s *Store) finishJob(job WireJobEvent) {
+	s.runningJobs = slices.DeleteFunc(s.runningJobs, func(running runningJob) bool { return running.id == job.JobID })
+	delete(s.retryNotes, job.ChatID)
+	if job.BotID == "" || s.thinkingBots[job.ChatID] == job.BotID {
+		delete(s.thinkingBots, job.ChatID)
+	}
+	s.emit(Event{Kind: EventRespondingChanged, ChatID: job.ChatID})
+	s.emit(Event{Kind: EventChatsChanged})
+	startedAt, seen := s.jobStarts[job.JobID]
+	delete(s.jobStarts, job.JobID)
+	if seen && job.BotID != "" {
+		s.emit(Event{Kind: EventTurnFinished, ChatID: job.ChatID, BotID: job.BotID, StartedAt: startedAt})
 	}
 }
 
 func (s *Store) upsert(message *Message, chatID string) {
 	chat := s.Chat(chatID)
 	if chat == nil {
-		return
+		// Roster not here yet: the CLI keeps a message synced ahead of its chat under a placeholder
+		// and says so before any roster, so keep it the same way; the roster fills in the chat.
+		chat = &Chat{ID: chatID, Kind: ChatGroup, CustomTitle: L("Chat"), CreatedAt: message.CreatedAt}
+		s.Chats = append(slices.Clone(s.Chats), chat)
 	}
 	s.noteCommand(message, chatID)
 	s.noteOutput(message, "", chatID)

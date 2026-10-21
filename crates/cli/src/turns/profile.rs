@@ -1,22 +1,11 @@
 //! A bot's profile changing while its turn runs, and the notes its turns read where its chat
 //! says the profile changed.
 
-use std::sync::Arc;
-
 use lorca_agent::agent_loop::AgentContext;
 use lorca_agent::{AgentMessage, UserMessage};
 
-use super::{system_prompt, TurnHooks};
-use crate::memory::MemoryStore;
-use crate::model::{Bot, Chat, Job, Profile, ProfileChange, ProfileNotice};
-
-/// What the system prompt is made of besides the bot, to make it again mid-turn.
-pub(super) struct PromptInputs {
-    pub(super) chat: Chat,
-    pub(super) job: Job,
-    pub(super) store: MemoryStore,
-    pub(super) plugin_briefs: Arc<Vec<crate::plugins::mcp::PluginBrief>>,
-}
+use super::TurnHooks;
+use crate::model::{Bot, Profile, ProfileChange, ProfileNotice};
 
 impl TurnHooks {
     /// The system prompt made again when the bot's profile changed since it was made: by the
@@ -39,7 +28,7 @@ impl TurnHooks {
         }
         let inputs = &self.prompt_inputs;
         let chat = self.app.chat(&self.chat_id).unwrap_or_else(|| inputs.chat.clone());
-        context.system_prompt = system_prompt(&self.app, &chat, &bot, &inputs.job, &inputs.store, self.unattended, &inputs.plugin_briefs);
+        context.system_prompt = inputs.system_prompt(&self.app, &chat, &bot);
         let finished_setup = before.setting_up && !now.setting_up;
         if let (true, Some(tools)) = (finished_setup, &self.full_tools) {
             context.tools = tools.clone();

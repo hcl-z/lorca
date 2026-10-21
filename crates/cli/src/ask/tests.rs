@@ -129,7 +129,9 @@ async fn skip_stop_and_a_new_message_end_the_wait() {
 fn a_question_needs_distinct_options_and_an_audience() {
     let bad = |args: Value| parse(&args).unwrap_err();
     assert_eq!(bad(json!({ "question": " ", "options": [] })), "question is required");
-    assert_eq!(bad(json!({ "question": "Q", "options": [{ "label": "One" }] })), "Give 2 to 6 options.");
+    let few = bad(json!({ "question": "Q", "options": [{ "label": "One" }] }));
+    assert!(few.starts_with("Give 2 to 6 options, each { \"label\": \"…\" } in `options`; this call had 1."), "{few}");
+    assert!(bad(json!({ "question": "Q", "options": [] })).contains("write it in your reply instead"));
     assert_eq!(bad(json!({ "question": "Q", "options": [{ "label": "One" }, { "label": " one " }] })), "Each option needs a label of its own.");
     assert_eq!(bad(json!({ "question": "Q", "options": [{ "label": "A" }, { "label": "B" }], "recommended": 2 })), "recommended is the place of one of the options, from 0.");
     assert!(parse(&question()).is_ok());
