@@ -73,9 +73,12 @@ if (existsSync(join(PROJECT, "package.json"))) {
   const jsi = "/node_modules/expo-modules-jsi/apple"
   await $`rsync -a --delete --exclude /ios --exclude /android --exclude /.expo --exclude ${`${jsi}/.*`} --exclude ${`${jsi}/Products`} ${`${MOBILE}/`} ${`${PROJECT}/`}`
 } else {
-  // -c clones on APFS, so node_modules costs next to nothing to copy.
-  await rm(PROJECT, { recursive: true, force: true })
+  // -c clones on APFS, so node_modules costs next to nothing to copy. An ios/ already there holds
+  // the pods the release workflow's cache put back, which the pod install below uses again.
   await mkdir(PROJECT, { recursive: true })
+  for (const name of await readdir(PROJECT)) {
+    if (name !== "ios") await rm(join(PROJECT, name), { recursive: true, force: true })
+  }
   for (const name of await readdir(MOBILE)) {
     if (!["ios", "android", ".expo"].includes(name)) await $`cp -cR ${join(MOBILE, name)} ${PROJECT}`
   }

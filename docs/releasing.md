@@ -7,8 +7,8 @@ repository's own.
 
 | Product | Tag | Workflow | Doc |
 | --- | --- | --- | --- |
-| The CLI, for macOS, Linux, and Windows | `cli-v<version>` | [`release-cli.yml`](../.github/workflows/release-cli.yml) | [Releasing the CLI](releasing-cli.md) |
-| The desktop app, for Windows, Linux, and macOS | `desktop-v<version>` | [`release-desktop.yml`](../.github/workflows/release-desktop.yml) | [Releasing the desktop app](releasing-desktop.md) |
+| The CLI, for macOS, Linux, and Windows | `cli-v<version>` | [`release-cli-desktop.yml`](../.github/workflows/release-cli-desktop.yml) | [Releasing the CLI](releasing-cli.md) |
+| The desktop app, for Windows, Linux, and macOS | `desktop-v<version>` | [`release-cli-desktop.yml`](../.github/workflows/release-cli-desktop.yml) | [Releasing the desktop app](releasing-desktop.md) |
 | The phone app: an Android APK and an iPhone `.ipa` | `mobile-v<version>` | [`release-mobile.yml`](../.github/workflows/release-mobile.yml) | [Releasing the phone app](releasing-mobile.md) |
 
 ## Cutting a release
@@ -18,8 +18,8 @@ repository's own.
 2. From a clean `main`, run:
 
    ```sh
-   bun run release 1.0.17          # sets the version, commits "Release 1.0.17", tags it
-   bun run release 1.0.17 --push   # the same, then pushes main and the three tags
+   bun run release 1.0.17          # sets the version, commits "Release 1.0.17"
+   bun run release 1.0.17 --push   # the same, then pushes main and starts the release workflows on it
    ```
 
    The version is set in the root [`Cargo.toml`](../Cargo.toml) (the CLI, with `Cargo.lock`), the
@@ -27,9 +27,11 @@ repository's own.
    [`mobile/app.config.ts`](../mobile/app.config.ts). `--dry-run` says what would change and
    `bun run release --check` whether the four agree. The command refuses a version that is not newer
    than every current one, a missing changelog section, a dirty tree, and a tag that exists, here
-   or on `origin`.
-3. Each tag starts its workflow. GitHub starts no workflow when a push carries more than three tags,
-   so the command pushes the tags one at a time.
+   or on `origin`. Without `--push` it prints the push and the `gh workflow run` commands.
+3. `release-cli-desktop.yml` and `release-mobile.yml` run on `main`'s new commit and draft the three
+   releases there; each tag is made when its draft is published. A run on `main`, not on a tag,
+   saves its Rust, Gradle, and Xcode caches where the next release restores them: a cache saved on
+   a tag is seen by no other tag.
 4. When the workflows are done, publish the drafts: the CLI's as the latest release, the others not.
 
    ```sh

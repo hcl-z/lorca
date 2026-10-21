@@ -8,18 +8,20 @@ holds, for each platform, the installer (`Lorca Setup <version>.exe`, the Debian
 macOS disk image `Lorca <version>.dmg`), the app as an archive (`lorca-<version>-windows-amd64.tar.gz`), delta updates from the last three versions,
 the Linux `install.sh`, and `update-<platform>.json`, the manifest the app checks. Installed apps
 accept only archives and deltas signed with the update key, whose public half is
-`updates.publicKey` in [`desktop/mygo.config.ts`](../desktop/mygo.config.ts). A tag builds Windows
-x64, Linux x64, Linux arm64, and macOS on Apple silicon on GitHub Actions into a draft release:
+`updates.publicKey` in [`desktop/mygo.config.ts`](../desktop/mygo.config.ts). A run of the release
+workflow on `main` builds Windows x64, Linux x64, Linux arm64, and macOS on Apple silicon on GitHub
+Actions into a draft release:
 
 ```sh
-git tag desktop-v0.1.0 && git push origin desktop-v0.1.0
+gh workflow run release-cli-desktop.yml --repo hcl-z/lorca --ref main
 ```
 
 - Updater: [`desktop/updater.go`](../desktop/updater.go). **Check for Updates…** in File and Help,
   and the Updates rows in Settings › General.
 - Configuration: `updates` in [`desktop/mygo.config.ts`](../desktop/mygo.config.ts).
 - Release: [`scripts/desktop.ts`](../scripts/desktop.ts), which runs `go tool mygo build -upload`, and
-  [`.github/workflows/release-desktop.yml`](../.github/workflows/release-desktop.yml). MyGo's
+  [`.github/workflows/release-cli-desktop.yml`](../.github/workflows/release-cli-desktop.yml), which
+  releases the CLI from the same jobs ([Releasing the CLI](releasing-cli.md)). MyGo's
   [auto-updates guide](https://github.com/egoist/mygo/blob/main/docs/updates.md) covers what it
   signs and uploads.
 
@@ -57,12 +59,12 @@ CLI and the phone app, and its notes are the version's section of the root
 [`CHANGELOG.md`](../CHANGELOG.md) (`updates.changelog`): the section becomes the notes of the
 release and of the update window, and the release stops without it.
 
-1. Run `bun run release <version>` ([Releasing](releasing.md)). It sets the version, commits, and
-   tags the commit `desktop-v<version>`; with `--push` it pushes the tag. You can also run
-   **Release desktop** by hand from the Actions tab on the branch to release
-   (`gh workflow run release-desktop.yml --ref main`), which drafts the release on its commit;
-   publishing the draft makes the tag. A run on a commit other than the one an existing
-   `desktop-v<version>` tag names is refused.
+1. Run `bun run release <version>` ([Releasing](releasing.md)). It sets the version and commits;
+   with `--push` it pushes `main` and starts **Release CLI and desktop** on it. You can also run
+   the workflow by hand from the Actions tab on the branch to release
+   (`gh workflow run release-cli-desktop.yml --repo hcl-z/lorca --ref main`). It drafts the release
+   on its commit, and publishing the draft makes the tag. A run on a commit other than the one an
+   existing `desktop-v<version>` tag names is refused.
 2. When the workflow is done, check the draft `desktop-v<version>` and publish it without making
    it the latest release:
 
@@ -73,13 +75,15 @@ release and of the update window, and the release stops without it.
    On the release's page, untick **Set as the latest release** before **Publish release**. The
    apps find it by its tag.
 
-The **Release desktop** workflow checks that the tag names the version in `desktop/mygo.config.ts`,
-drafts the release with the changelog's section as its notes (not as the latest release), then
-builds `windows/amd64`, `linux/amd64`, and `linux/arm64` side by side on Ubuntu and `darwin/arm64`
-on a macOS runner, one `bun run release-desktop <platform>` each: cargo-zigbuild builds the Linux
-and Windows CLIs, cargo the macOS one, NSIS the Windows installer, and MyGo signs the macOS app
-ad hoc and makes its disk image. A platform that fails leaves the others to finish; re-run its job, which uploads into
-the same draft. A version already published is refused.
+The **Release CLI and desktop** workflow names the release after `desktop/mygo.config.ts`, drafts
+it with the changelog's section as its notes (not as the latest release), then builds
+`windows/amd64`, `linux/amd64`, and `linux/arm64` side by side on Ubuntu and `darwin/arm64` on a
+macOS runner. Each platform's job builds the CLI's release first, then runs
+`bun run release-desktop <platform>`, whose CLI build takes the dependencies the first one compiled:
+cargo-zigbuild builds the Linux and Windows CLIs, cargo the macOS one, NSIS the Windows installer,
+and MyGo signs the macOS app ad hoc and makes its disk image. Each job's Rust cache is saved on
+`main` for the next release. A platform that fails leaves the others to finish; re-run its job,
+which uploads into the same draft. A version already published is refused.
 
 `bun run release-desktop [platforms]` releases from this computer too, into the same draft.
 Platforms are MyGo's, comma separated; the default is this computer's, or `darwin/arm64`,

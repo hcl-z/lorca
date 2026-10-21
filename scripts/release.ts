@@ -1,15 +1,16 @@
 // Cut a release of the CLI, the desktop app, and the phone app, which share one version.
 //
-//   bun run release 1.0.17              set the version everywhere, commit, and tag it locally
-//   bun run release 1.0.17 --push       the same, then push the branch and the tags one by one
+//   bun run release 1.0.17              set the version everywhere and commit it
+//   bun run release 1.0.17 --push       the same, then push the branch and start the release workflows on it
 //   bun run release 1.0.17 --dry-run    say what would change; change nothing
 //   bun run release --check             say whether the versions agree
 //
 // The version lives in the root Cargo.toml (the CLI), the root package.json, desktop/mygo.config.ts
 // (the desktop app), and mobile/app.config.ts (the phone app). CHANGELOG.md needs a `## [<version>]`
-// section, which is the notes of all three releases. Each release has its own workflow, started by
-// its tag: cli-v<version>, desktop-v<version>, and mobile-v<version>. GitHub starts no workflow for
-// a push of more than three tags, and the tags go one at a time here so none is missed.
+// section, which is the notes of all three releases. Two workflows draft them on the branch's commit:
+// release-cli-desktop.yml the CLI's and the desktop app's, release-mobile.yml the phone app's. The
+// tags cli-v<version>, desktop-v<version>, and mobile-v<version> appear when the drafts are
+// published. Runs on the branch, not on a tag, share their caches with the next release.
 // docs/releasing.md has the steps.
 import { $ } from "bun"
 import { color, log, ROOT } from "./common.ts"
@@ -75,11 +76,19 @@ const remote = (await $`git ls-remote --tags origin ${tags.map((tag) => `refs/ta
 if (remote) die(`already tagged on origin: ${remote.split("\n").map((line) => line.split("refs/tags/")[1]).join(", ")}`)
 
 const branch = (await $`git branch --show-current`.text()).trim()
+if (!branch) die("HEAD is detached: release from a branch, which the workflows run on")
+/** The workflows that draft the releases, each started on the branch. */
+const WORKFLOWS = ["release-cli-desktop.yml", "release-mobile.yml"]
 if (flags.has("--dry-run")) {
-  log(`${color.bold("would")} set ${HOLDERS.map(({ file }) => file).join(", ")} to ${version}, commit on ${branch}, and tag ${tags.join(", ")}${flags.has("--push") ? ", then push them" : ""}`)
+  log(`${color.bold("would")} set ${HOLDERS.map(({ file }) => file).join(", ")} to ${version} and commit on ${branch}${flags.has("--push") ? `, then push it and run ${WORKFLOWS.join(" and ")} on it` : ""}`)
   process.exit(0)
 }
 if ((await $`git status --porcelain`.text()).trim()) die("the working tree has changes: commit or stash them first")
+if (flags.has("--push") && !Bun.which("gh")) die("--push starts the workflows with the GitHub CLI, gh, which is missing")
+// The workflows run in the repository the branch is pushed to: gh alone may pick another remote.
+const origin = (await $`git remote get-url origin`.text()).trim()
+const repo = origin.match(/github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?$/)?.[1]
+if (!repo) die(`origin is ${origin}, not a GitHub repository`)
 
 // ---- 1. the version, everywhere
 // A failure puts the files back, so a refused release leaves the tree as it found it.
@@ -97,20 +106,17 @@ try {
   die(`could not set ${version}: ${error instanceof Error ? error.message : error}`)
 }
 
-// ---- 2. the commit and the tags
+// ---- 2. the commit
 await $`git add ${files}`
 await $`git commit -q -m ${`Release ${version}`}`
-for (const tag of tags) await $`git tag ${tag}`
-log(`${color.green("committed")} Release ${version} on ${branch}, tagged ${tags.join(", ")}`)
+log(`${color.green("committed")} Release ${version} on ${branch}`)
 
-// ---- 3. the push
+// ---- 3. the push and the workflows
+const runs = WORKFLOWS.map((workflow) => `gh workflow run ${workflow} --repo ${repo} --ref ${branch}`)
 if (!flags.has("--push")) {
-  console.log(`  git push origin ${branch}\n${tags.map((tag) => `  git push origin ${tag}`).join("\n")}`)
+  console.log([`git push origin ${branch}`, ...runs].map((line) => `  ${line}`).join("\n"))
   process.exit(0)
 }
 await $`git push origin ${branch}`
-for (const tag of tags) {
-  await $`git push origin ${`refs/tags/${tag}`}`
-  await Bun.sleep(5000)
-}
-log(`${color.green("pushed")} ${tags.join(", ")}: the release workflows are running`)
+for (const workflow of WORKFLOWS) await $`gh workflow run ${workflow} --repo ${repo} --ref ${branch}`
+log(`${color.green("pushed")} Release ${version}: ${WORKFLOWS.join(" and ")} are drafting ${tags.join(", ")}`)

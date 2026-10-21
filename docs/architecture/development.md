@@ -23,7 +23,7 @@ lorca/
   mobile/              # Expo app for iOS and Android: a paired Device over the core (modules/lorca-core)
   web/                 # the site
   scripts/             # bun scripts: the one-command release, the desktop and phone dev loops and builds, their releases, string and doc checks
-  .github/workflows/   # release-cli.yml, release-desktop.yml, and release-mobile.yml: release builds; test.yml: every app's and crate's tests on each pull request; docs.yml: the doc check
+  .github/workflows/   # release-cli-desktop.yml and release-mobile.yml: release builds; test.yml: every app's and crate's tests on each pull request; docs.yml: the doc check
 ```
 
 ## Production and development installs

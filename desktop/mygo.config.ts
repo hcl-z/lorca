@@ -5,7 +5,7 @@ export default ({ command }: { command: string }) => ({
   name: "Lorca",
   identifier: "app.lorca",
   // The app's own version, apart from the Mac app's (the root package.json's). `bun run
-  // release-desktop` and the Release desktop workflow read it here.
+  // release-desktop` and the Release CLI and desktop workflow read it here.
   version: "1.0.26",
   icon: command === "dev" ? "assets/icon-dev.png" : "assets/icon.png",
   out: "build",
