@@ -8,7 +8,6 @@
 // the buttons and rows that use it already call.
 
 import { MenuView, type MenuAction, type MenuComponentProps, type MenuComponentRef } from "@expo/ui/community/menu";
-import { SymbolView } from "expo-symbols";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Modal, Platform, ScrollView, StyleSheet, Text, useWindowDimensions, View, type ImageSourcePropType } from "react-native";
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
@@ -24,27 +23,27 @@ const EDGE = 12;
 const GAP = 6;
 const CARD_PADDING = 8;
 
-/// Material Symbols for the app's Android action icons, which arrive as XML drawables that only
-/// Compose can draw.
-const MATERIAL = new Map<ImageSourcePropType, string>([
-  [AndroidIcons.photos, "photo_library"],
-  [AndroidIcons.camera, "photo_camera"],
-  [AndroidIcons.folder, "folder"],
-  [AndroidIcons.newFolder, "create_new_folder"],
-  [AndroidIcons.group, "group"],
-  [AndroidIcons.personAdd, "person_add"],
-  [AndroidIcons.workflow, "account_tree"],
-  [AndroidIcons.download, "download"],
-  [AndroidIcons.pin, "push_pin"],
-  [AndroidIcons.read, "done_all"],
-  [AndroidIcons.delete, "delete"],
-  [AndroidIcons.mute, "notifications_off"],
-  [AndroidIcons.unmute, "notifications"],
-  [AndroidIcons.hide, "visibility_off"],
-  [AndroidIcons.show, "visibility"],
-  [AndroidIcons.copy, "content_copy"],
+/// The app's icons for its Android action images, which arrive as XML drawables that only the
+/// native menus draw.
+const ICONS = new Map<ImageSourcePropType, string>([
+  [AndroidIcons.photos, "photo.on.rectangle"],
+  [AndroidIcons.camera, "camera.fill"],
+  [AndroidIcons.folder, "folder.fill"],
+  [AndroidIcons.newFolder, "folder.badge.plus"],
+  [AndroidIcons.group, "person.2.fill"],
+  [AndroidIcons.personAdd, "person.badge.plus"],
+  [AndroidIcons.workflow, "point.3.connected.trianglepath.dotted"],
+  [AndroidIcons.download, "square.and.arrow.down"],
+  [AndroidIcons.pin, "pin"],
+  [AndroidIcons.read, "checkmark.circle"],
+  [AndroidIcons.delete, "trash"],
+  [AndroidIcons.mute, "bell.slash"],
+  [AndroidIcons.unmute, "bell"],
+  [AndroidIcons.hide, "eye.slash"],
+  [AndroidIcons.show, "eye"],
+  [AndroidIcons.copy, "doc.on.doc"],
   [AndroidIcons.link, "link"],
-  [AndroidIcons.send, "send"],
+  [AndroidIcons.send, "paperplane"],
 ]);
 
 export const PopupMenu = forwardRef<MenuComponentRef, MenuComponentProps>(function PopupMenu(props, ref) {
@@ -223,7 +222,7 @@ function PopupCard({ anchor, actions, onClose }: { anchor: Anchor; actions: Menu
                   accessibilityState={{ disabled, checked: action.state === "on" ? true : undefined }}
                 >
                   {icon ? (
-                    <SymbolView name={{ ios: "circle", android: icon as never }} size={22} tintColor={action.attributes?.destructive ? p.red : p.secondaryLabel} resizeMode="scaleAspectFit" style={styles.icon} />
+                    <Symbol name={icon} size={22} color={action.attributes?.destructive ? p.red : p.secondaryLabel} />
                   ) : hasIcon ? (
                     <View style={styles.icon} />
                   ) : null}
@@ -242,7 +241,7 @@ function PopupCard({ anchor, actions, onClose }: { anchor: Anchor; actions: Menu
 }
 
 function iconOf(action: MenuAction): string | undefined {
-  return typeof action.image === "string" ? undefined : MATERIAL.get(action.image as ImageSourcePropType);
+  return typeof action.image === "string" ? undefined : ICONS.get(action.image as ImageSourcePropType);
 }
 
 const styles = StyleSheet.create({

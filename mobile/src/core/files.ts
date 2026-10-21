@@ -241,3 +241,16 @@ export function decodeHead(bytes: Uint8Array): string | undefined {
   }
   return undefined;
 }
+
+/// Where an HTML page shown in the viewer believes it is: an https origin the app does not trust,
+/// which resolves to nothing, so the page reads no file and calls nothing of the app's.
+export const PREVIEW_ORIGIN = "https://preview.lorca.invalid/";
+
+/// What the viewer does with a navigation a previewed page asks for: its own address, a blank page,
+/// and the anchors within it load; a web or mail link the user opened goes to the browser; anything
+/// else is cancelled.
+export function previewNavigation(url: string, allowed: string, clicked: boolean): "load" | "open" | "block" {
+  if (!url || url === "about:blank" || url === allowed || url.startsWith(`${allowed}#`)) return "load";
+  if (clicked && /^(https?:\/\/[^/]|mailto:)/i.test(url) && !url.startsWith(PREVIEW_ORIGIN)) return "open";
+  return "block";
+}

@@ -25,7 +25,7 @@ import { alert } from "../../src/ui/alert";
 import { Markdown } from "../../src/ui/Markdown";
 import { CloseToolbar } from "../../src/ui/navigation";
 import { Symbol } from "../../src/ui/Symbol";
-import { AgentAskRow, CardButton } from "../../src/ui/transcript";
+import { AgentAskRow, CardButton, DECISION_ICONS } from "../../src/ui/transcript";
 import { accentColor, usePalette } from "../../src/ui/theme";
 
 /// How often the transcript is asked for again while it is on screen.
@@ -240,7 +240,7 @@ function CardQuestion({ agent, message, who }: { agent: AgentRun; message: Messa
         {q.reason ? <Text style={{ color: p.secondaryLabel, fontSize: 13, lineHeight: 18 }}>{q.reason}</Text> : null}
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
           {decisions.map(([label, decision], index) => (
-            <CardButton key={decision} label={label} primary={index === 0} onPress={() => void decide(decision)} />
+            <CardButton key={decision} label={label} icon={DECISION_ICONS[decision]} primary={index === 0} onPress={() => void decide(decision)} />
           ))}
         </View>
         {q.rule ? <Text style={{ color: p.secondaryLabel, fontSize: 12, lineHeight: 16 }}>{t("Always allow adds the rule “{rule}”.", { rule: q.rule })}</Text> : null}

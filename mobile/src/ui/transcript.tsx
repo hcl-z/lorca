@@ -28,6 +28,7 @@ import { OutputCard } from "./outputs";
 import { BotAvatar, ContactAvatar } from "./Avatar";
 import { daySeparator, firstLine, workingActivity } from "./format";
 import { Markdown } from "./Markdown";
+import { Button } from "./Button";
 import { Symbol } from "./Symbol";
 import { usePaneWidth } from "./layout";
 import { accentColor, Font, usePalette } from "./theme";
@@ -501,25 +502,11 @@ export const NoticeRow = memo(function NoticeRow({ row }: { row: Extract<Row, { 
 /// Access… opens the bot's Access, and Dismiss puts the request away; neither runs the call. In a
 /// group the card sits in the bubbles' column, the bot's avatar beside its bottom edge.
 /// One of a card's choices: ink for the first, gray for the rest.
-export function CardButton({ label, primary = false, disabled = false, onPress }: { label: string; primary?: boolean; disabled?: boolean; onPress: () => void }) {
-  const p = usePalette();
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      accessibilityRole="button"
-      accessibilityState={{ disabled }}
-      style={({ pressed }) => [
-        styles.cardButton,
-        primary ? { backgroundColor: p.ink } : { backgroundColor: p.fill, borderWidth: StyleSheet.hairlineWidth, borderColor: p.cardBorder },
-        { opacity: disabled ? 0.45 : pressed ? 0.75 : 1 },
-      ]}
-    >
-      <Text style={[styles.cardButtonText, { color: primary ? p.inkText : p.label }]} numberOfLines={1}>
-        {label}
-      </Text>
-    </Pressable>
-  );
+/// The icon of each decision a card offers.
+export const DECISION_ICONS: Record<string, string> = { allow: "checkmark", always: "checkmark.seal", deny: "xmark", access: "key.fill" };
+
+export function CardButton({ label, icon, primary = false, disabled = false, onPress }: { label: string; icon?: string; primary?: boolean; disabled?: boolean; onPress: () => void }) {
+  return <Button title={label} icon={icon} kind={primary ? "primary" : "secondary"} disabled={disabled} onPress={onPress} style={styles.cardButton} />;
 }
 
 export const PermissionRow = memo(function PermissionRow({ row, isGroup, onDecide, onFill }: { row: Extract<Row, { type: "permission" }>; isGroup: boolean; onDecide: (message: Message, decision: "allow" | "always" | "deny") => void; onFill: (message: Message) => void }) {
@@ -565,7 +552,7 @@ function SecretRow({ row, isGroup, onDecide, onFill }: { row: Extract<Row, { typ
         {pending ? (
           <>
             <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
-              <CardButton label={t("Fill In")} primary onPress={() => onFill(row.message)} />
+              <CardButton label={t("Fill In")} icon="key.fill" primary onPress={() => onFill(row.message)} />
               <CardButton label={t("Not now")} onPress={() => onDecide(row.message, "deny")} />
             </View>
             <Text style={[styles.ruleNote, { color: p.secondaryLabel }]}>{t("Saved on {runner}. {who} never sees it.", { runner, who })}</Text>
@@ -704,6 +691,7 @@ const AskRow = memo(function AskRow({ row, isGroup, onDecide }: { row: Extract<R
               <CardButton
                 key={decision}
                 label={label}
+                icon={DECISION_ICONS[decision]}
                 primary={index === 0}
                 onPress={() =>
                   decision === "access"
@@ -830,7 +818,7 @@ const QuestionRow = memo(function QuestionRow({ row, ask, isGroup, onDecide }: {
             </View>
             {problem ? <Text style={[styles.reasonText, { color: p.red }]}>{problem}</Text> : null}
             <View style={styles.cardButtons}>
-              {ask.multiple || writing ? <CardButton label={t("Submit")} primary disabled={busy || !canSubmit} onPress={() => send(ask.multiple ? picked : [], writing ? other : "")} /> : null}
+              {ask.multiple || writing ? <CardButton label={t("Submit")} icon="paperplane" primary disabled={busy || !canSubmit} onPress={() => send(ask.multiple ? picked : [], writing ? other : "")} /> : null}
               <CardButton label={t("Skip")} disabled={busy} onPress={() => onDecide(row.message, "deny")} />
             </View>
           </>
@@ -990,7 +978,7 @@ export const AgentAskRow = memo(function AgentAskRow({ row, ask, isGroup }: { ro
             })}
             {problem ? <Text style={[styles.reasonText, { color: p.red }]}>{problem}</Text> : null}
             <View style={styles.cardButtons}>
-              {!agentAsk.sendsOnPick(ask, draft) ? <CardButton label={t("Submit")} primary disabled={busy || !ready} onPress={() => send(draft)} /> : null}
+              {!agentAsk.sendsOnPick(ask, draft) ? <CardButton label={t("Submit")} icon="paperplane" primary disabled={busy || !ready} onPress={() => send(draft)} /> : null}
               <CardButton label={t("Decline")} disabled={busy} onPress={() => act(() => engine.declineAgentAsk(row.message.chat_id, ask.row_id))} />
             </View>
           </>
@@ -1222,14 +1210,14 @@ export const CommandRow = memo(function CommandRow({
         {run.state === "asking" ? (
           <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
             {choices.map(([label, decision], index) => (
-              <CardButton key={decision} label={label} primary={index === 0} onPress={() => onDecide(row.message, decision)} />
+              <CardButton key={decision} label={label} icon={DECISION_ICONS[decision]} primary={index === 0} onPress={() => onDecide(row.message, decision)} />
             ))}
           </View>
         ) : null}
         {run.state === "asking" && run.rule ? <Text style={[styles.ruleNote, { color: p.secondaryLabel }]}>{t("Always allow adds the rule “{rule}”.", { rule: run.rule })}</Text> : null}
         {run.state === "waiting" && takesInput ? (
           <View style={{ flexDirection: "row", marginTop: 4 }}>
-            <CardButton label={t("Answer")} primary onPress={() => onAnswer(row.message)} />
+            <CardButton label={t("Answer")} icon="square.and.pencil" primary onPress={() => onAnswer(row.message)} />
           </View>
         ) : null}
       </View>
@@ -1348,7 +1336,7 @@ export const AgentRow = memo(function AgentRow({
             {asks.reason ? <Text style={[styles.reasonText, { color: p.secondaryLabel }]}>{asks.reason}</Text> : null}
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
               {decisions.map(([label, decision], index) => (
-                <CardButton key={decision} label={label} primary={index === 0} onPress={() => onDecide(row.message, decision)} />
+                <CardButton key={decision} label={label} icon={DECISION_ICONS[decision]} primary={index === 0} onPress={() => onDecide(row.message, decision)} />
               ))}
             </View>
             {asks.rule ? <Text style={[styles.ruleNote, { color: p.secondaryLabel }]}>{t("Always allow adds the rule “{rule}”.", { rule: asks.rule })}</Text> : null}
@@ -1511,8 +1499,7 @@ const styles = StyleSheet.create({
   otherInput: { flex: 1, fontSize: 15, paddingVertical: 0, minHeight: 20 },
   recommended: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
   recommendedText: { fontSize: 11, fontWeight: "600" },
-  cardButton: { flex: 1, minHeight: 40, borderRadius: 10, paddingHorizontal: 10, alignItems: "center", justifyContent: "center" },
-  cardButtonText: { fontSize: 15, fontWeight: "600" },
+  cardButton: { flex: 1, paddingHorizontal: 10 },
   innerCard: { borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, gap: 6 },
   choiceButton: { paddingHorizontal: 12, paddingVertical: 9, borderRadius: 8 },
   agentCard: { gap: 12, paddingBottom: 10 },

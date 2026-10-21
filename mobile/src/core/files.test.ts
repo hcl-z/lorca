@@ -75,3 +75,16 @@ test("decodeHead drops a split character and refuses bytes that are not text", (
   expect(decodeHead(bytes.subarray(0, 2))).toBe("h");
   expect(decodeHead(new Uint8Array([0xff, 0xfe, 0x00, 0x80, 0xff]))).toBeUndefined();
 });
+
+test("previewNavigation keeps a page where it is", () => {
+  const { PREVIEW_ORIGIN, previewNavigation } = require("./files");
+  expect(previewNavigation(PREVIEW_ORIGIN, PREVIEW_ORIGIN, false)).toBe("load");
+  expect(previewNavigation(`${PREVIEW_ORIGIN}#section`, PREVIEW_ORIGIN, true)).toBe("load");
+  expect(previewNavigation("about:blank", PREVIEW_ORIGIN, false)).toBe("load");
+  expect(previewNavigation("https://example.com/docs", PREVIEW_ORIGIN, true)).toBe("open");
+  expect(previewNavigation("mailto:a@b.c", PREVIEW_ORIGIN, true)).toBe("open");
+  expect(previewNavigation("https://example.com/ads", PREVIEW_ORIGIN, false)).toBe("block");
+  expect(previewNavigation(`${PREVIEW_ORIGIN}other.html`, PREVIEW_ORIGIN, true)).toBe("block");
+  expect(previewNavigation("file:///etc/hosts", PREVIEW_ORIGIN, true)).toBe("block");
+  expect(previewNavigation("javascript:alert(1)", PREVIEW_ORIGIN, true)).toBe("block");
+});
