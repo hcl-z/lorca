@@ -8,6 +8,16 @@ phone app's.
 
 ## [Unreleased]
 
+## [1.0.26]
+
+- Coding agents on the phone look and work as they do on the desktop. The agent's card has its mark, a state pill that ticks while it works, its console, and its model and effort as menus beside how full its context is and what it has cost. The transcript opens as a full sheet with the task, workspace, plan, and pull request, a timeline, and command output in color. Agents at work in any chat show as small cards over the composer, each with Stop.
+- The phone shows HTML pages in the app, and on iPhone a PDF, with no access to the app, cookies, or files. A link you follow opens in the browser. Audio and video play in place.
+- The phone draws the desktop's icons on iPhone and Android, and its cards share one button style.
+- How a coding agent stands (needs you, working, done, failed), how full its context is, and what it does now are worked out once by the CLI, so the desktop and the phone always agree.
+- The phone keeps a task it just heard about when an older snapshot arrives, and the desktop keeps a message that arrives before its chat does.
+- The preview of what a bot sends (the inspector's Prompt row and `lorca prompt`) now shows the task and attention notes too.
+- A bot that asks you to choose without listing the choices is told to list them or to ask in its message instead, rather than trying the same card over and over. A new bot setting itself up asks its open questions in its messages.
+
 ## [1.0.25]
 
 - Coding agents run over the Agent Client Protocol: Claude Code and Codex through adapters pinned to your own CLI, pi, Gemini, and any other ACP agent, all handled the same way. Terminal panes and `lorca coding hook` are gone. A question the agent asks shows on a card of its own in the chat, and you or the bot answer it there. On the desktop, the agent's card shows its model, effort, mode, how full its context is, and what it has cost, with its pull request one click away. Its transcript reads as a timeline, and each running agent has a floating window that fills the app when clicked.
