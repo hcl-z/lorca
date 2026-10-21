@@ -1,0 +1,23 @@
+scripts/phone-icons.ts
+  s_d88a6c780361ee::t_456d5d919ef2c5 1-45
+mobile/src/ui/Button.tsx
+  s_d88a6c780361ee::t_9b62c10c9f2b83 1-80
+mobile/src/ui/PageView.tsx
+  s_d88a6c780361ee::t_ac0e56155ea8dd 1-101,103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.50-trip",
+  "base_commit_sha": "e3d2e5ce363e11e57052b16293fde967c3fc5dcb",
+  "prompts": {},
+  "sessions": {
+    "s_d88a6c780361ee": {
+      "agent_id": {
+        "tool": "chengxiaobang",
+        "id": "s_q8v7hw1q5f2f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
