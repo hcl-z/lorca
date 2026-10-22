@@ -8,7 +8,7 @@ use lorca_agent::{BeforeToolCallContext, BeforeToolCallResult, Tool, ToolError, 
 use serde_json::{json, Value};
 use tokio_util::sync::CancellationToken;
 
-use super::{find_program, is_kind, kinds, name, workspace, Start, KINDS};
+use super::{find_program, is_kind, kinds, name, workspace, Start};
 use crate::app::App;
 use crate::model::{AgentQuestion, Bot};
 use crate::plugins::mcp::Decision;
@@ -29,8 +29,8 @@ pub struct CodingAgentTool {
     pub event: Option<crate::event_triggers::EventTask>,
 }
 
-const DESCRIPTION: &str = "Hand a coding job to a coding agent on your Runner and supervise it: Claude Code or Codex, or when you name one \
-an agent that speaks ACP (Gemini CLI, OpenCode, Kimi Code, GitHub Copilot, Cursor, Kiro, pi; pi runs its commands without asking, so none of them is reviewed). `start` runs one on `prompt` \
+const DESCRIPTION: &str = "Hand a coding job to a coding agent on your Runner and supervise it: one of the agents that speak ACP listed in the \
+Runner's agents.json, such as Claude Code or Codex (an agent that runs its commands without asking, such as pi, has none of them reviewed). `start` runs one on `prompt` \
 in a git worktree of `folder` (default: your working directory): a new worktree on a branch of its own, or the one `worktree` names, \
 so it never edits the user's checkout; a folder that is not a repository is worked in as it is. It returns the agent's id at once and works on its own; you get a turn when it is done, \
 stalls, or exits, with its last message and the outputs Lorca published from its work (its diff and its pull request), \
@@ -58,7 +58,7 @@ impl Tool for CodingAgentTool {
             "type": "object",
             "properties": {
                 "action": { "type": "string", "enum": ["start", "read", "send", "stop", "list", "commands", "answer", "set"] },
-                "agent": { "type": "string", "enum": kinds(), "description": "start: which agent. Default: Claude Code when it is installed, else Codex. The others run only when named, and only when installed on this Runner." },
+                "agent": { "type": "string", "enum": kinds(&self.app), "description": "start: which agent. Default: the first one installed on this Runner, in the order its agents.json lists them. One that is not installed cannot start." },
                 "prompt": { "type": "string", "description": "start: the job, as you would put it to an engineer." },
                 "folder": { "type": "string", "description": "start: the repository or folder to work in, absolute, ~/…, or relative to your working directory." },
                 "worktree": { "type": "string", "description": "start: the worktree to work in, by name, made from the repository's current commit if new. Default: a new one named after the job." },
@@ -99,7 +99,7 @@ impl Tool for CodingAgentTool {
                 let record = agent.record();
                 let skipped = if skipped > 0 { format!("[{skipped} earlier lines left out]\n") } else { String::new() };
                 let text = if text.trim().is_empty() { "(nothing new)".to_string() } else { text };
-                format!("{} ({}) is {}.\n{skipped}{text}", name(&record.kind), record.id, standing(&agent))
+                format!("{} ({}) is {}.\n{skipped}{text}", name(app, &record.kind), record.id, standing(&agent))
             }
             Some("send") => {
                 let agent = agent()?;
@@ -110,10 +110,10 @@ impl Tool for CodingAgentTool {
                 let agent = agent()?;
                 let record = agent.record();
                 if !matches!(record.state.as_str(), "starting" | "working" | "idle" | "asking") {
-                    format!("{} ({}) had already ended: {}.", name(&record.kind), record.id, state_words(&record))
+                    format!("{} ({}) had already ended: {}.", name(app, &record.kind), record.id, state_words(&record))
                 } else {
                     super::stop(app, &agent, "Stopped by the bot");
-                    format!("Stopped {} ({}).", name(&record.kind), record.id)
+                    format!("Stopped {} ({}).", name(app, &record.kind), record.id)
                 }
             }
             Some("list") => {
@@ -126,7 +126,7 @@ impl Tool for CodingAgentTool {
                             Some(branch) => format!("{} on {branch}", super::home_relative(&record.folder)),
                             None => super::home_relative(&record.folder),
                         };
-                        format!("- {} {}: {} in {place}: “{}”", record.id, name(&record.kind), standing(agent), record.task)
+                        format!("- {} {}: {} in {place}: “{}”", record.id, name(app, &record.kind), standing(agent), record.task)
                     })
                     .collect();
                 if rows.is_empty() { "You have started no coding agents in this chat.".into() } else { rows.join("\n") }
@@ -136,10 +136,10 @@ impl Tool for CodingAgentTool {
                 let record = agent.record();
                 let driver = agent
                     .driver()
-                    .ok_or_else(|| ToolError(format!("{} ({}) is not running, so it lists no commands. Send it a message to start it again on its session.", name(&record.kind), record.id)))?;
+                    .ok_or_else(|| ToolError(format!("{} ({}) is not running, so it lists no commands. Send it a message to start it again on its session.", name(app, &record.kind), record.id)))?;
                 let commands = driver.commands().await;
                 if commands.is_empty() {
-                    format!("{} ({}) offers no commands.", name(&record.kind), record.id)
+                    format!("{} ({}) offers no commands.", name(app, &record.kind), record.id)
                 } else {
                     let rows: Vec<String> = commands
                         .iter()
@@ -148,7 +148,7 @@ impl Tool for CodingAgentTool {
                             if about.trim().is_empty() { format!("- {command}") } else { format!("- {command}: {}", about.trim()) }
                         })
                         .collect();
-                    format!("{} ({}) offers these. Run one by sending it as a message, with its arguments after it:\n{}", name(&record.kind), record.id, rows.join("\n"))
+                    format!("{} ({}) offers these. Run one by sending it as a message, with its arguments after it:\n{}", name(app, &record.kind), record.id, rows.join("\n"))
                 }
             }
             Some("answer") => {
@@ -156,11 +156,11 @@ impl Tool for CodingAgentTool {
                 let record = agent.record();
                 if args["decline"] == true {
                     super::decline(app, &agent, true).map_err(ToolError)?;
-                    format!("Declined the question of {} ({}). It goes on without an answer.", name(&record.kind), record.id)
+                    format!("Declined the question of {} ({}). It goes on without an answer.", name(app, &record.kind), record.id)
                 } else {
                     let given = super::bot_answers(&agent, &args).map_err(ToolError)?;
                     let shown = super::answer_form(app, &agent, &given, true).map_err(ToolError)?;
-                    format!("Answered {} ({}): {shown}. It goes on.", name(&record.kind), record.id)
+                    format!("Answered {} ({}): {shown}. It goes on.", name(app, &record.kind), record.id)
                 }
             }
             Some("set") => {
@@ -217,7 +217,7 @@ impl CodingAgentTool {
         let app = &self.app;
         let prompt = args["prompt"].as_str().map(str::trim).filter(|prompt| !prompt.is_empty()).ok_or("start needs a prompt")?;
         let message_id = app.coding_agents.row(&self.chat_id, call_id).ok_or("This call has no card in the chat")?;
-        let (kind, program) = pick(args["agent"].as_str()).await?;
+        let (kind, program) = pick(app, args["agent"].as_str()).await?;
         // Only the bot's own command secrets, which must be saved already.
         let secrets = secret_names(args)?;
         if !secrets.is_empty() {
@@ -260,33 +260,37 @@ impl CodingAgentTool {
         };
         Ok(format!(
             "Started {} ({id}) in {place}. It works on its own; you get a turn when it is done, stalls, or exits. Meanwhile coding_agent read {id} shows its transcript, send gives it a follow-up, and stop ends it.",
-            name(&kind)
+            name(app, &kind)
         ))
     }
 }
 
-/// The agent the bot asked for, or the one installed: Claude Code first.
-async fn pick(asked: Option<&str>) -> Result<(String, PathBuf), String> {
+/// The agent the bot asked for, or the first installed in the order `agents.json` lists them.
+async fn pick(app: &App, asked: Option<&str>) -> Result<(String, PathBuf), String> {
     let asked = asked.map(str::trim).filter(|kind| !kind.is_empty());
+    let listed = kinds(app);
+    if listed.is_empty() {
+        return Err("This Runner's agents.json lists no coding agent. Ask the user to install one (such as Claude Code or Codex) and add it there with `lorca agent add`.".into());
+    }
     if let Some(kind) = asked {
-        if !is_kind(kind) {
-            return Err(format!("agent is one of {}", kinds().join(", ")));
+        if !is_kind(app, kind) {
+            return Err(format!("agent is one of {}", listed.join(", ")));
         }
-        if let Some(program) = find_program(kind).await {
+        if let Some(program) = find_program(app, kind).await {
             return Ok((kind.to_string(), program));
         }
     }
-    for kind in KINDS {
-        if let Some(program) = find_program(kind).await {
+    for kind in &listed {
+        if let Some(program) = find_program(app, kind).await {
             return match asked {
-                Some(asked) => Err(format!("{} is not installed on this Runner; {} is.", name(asked), name(kind))),
-                None => Ok((kind.to_string(), program)),
+                Some(asked) => Err(format!("{} is not installed on this Runner; {} is.", name(app, asked), name(app, kind))),
+                None => Ok((kind.clone(), program)),
             };
         }
     }
     match asked {
-        Some(asked) => Err(format!("{} is not installed on this Runner, and neither are Claude Code or Codex. Ask the user to install it and sign in to it there.", name(asked))),
-        None => Err("Neither Claude Code nor Codex is installed on this Runner. Ask the user to install one (claude.com/claude-code or developers.openai.com/codex) and sign in to it there.".into()),
+        Some(asked) => Err(format!("{} is not installed on this Runner, and neither is any other agent in its agents.json. Ask the user to install it and sign in to it there.", name(app, asked))),
+        None => Err(format!("None of the agents in this Runner's agents.json ({}) is installed. Ask the user to install one and sign in to it there.", listed.join(", "))),
     }
 }
 
@@ -362,14 +366,14 @@ pub async fn review_start(app: &Arc<App>, bot: &Bot, chat_id: &str, trigger: &Tr
     let runner_name = app.device(&bot.runner_id).map(|device| device.name).unwrap_or_else(|| "this Runner".into());
     // The agent that will start: the one asked for, else the one installed. One that cannot start
     // is the call's to report.
-    let Ok((kind, _)) = pick(ctx.args["agent"].as_str()).await else { return None };
+    let Ok((kind, _)) = pick(app, ctx.args["agent"].as_str()).await else { return None };
     update(&|card| {
         card.state = "checking".into();
         card.kind = kind.clone();
-        card.name = name(&kind).to_string();
+        card.name = name(app, &kind);
         card.device = Some(runner_name.clone());
     });
-    let who = name(&kind).to_string();
+    let who = name(app, &kind);
     let folder = ctx.args["folder"].as_str().filter(|folder| !folder.trim().is_empty()).unwrap_or("the bot's working directory");
     let mut description = format!(
         "Start {who}, a coding agent that edits files and runs commands as the user on {runner_name}, in {folder} (a new git worktree of it when it is a repository). It works on the prompt on its own until it is done; each command it runs is reviewed again before it runs."

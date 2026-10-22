@@ -9,7 +9,8 @@
 //!
 //! Every agent is driven through [`driver::Driver`], by the one driver in [`acp`].
 
-pub(crate) mod acp;
+pub mod acp;
+pub mod agents_json;
 pub(crate) mod driver;
 pub(crate) mod entries;
 pub(crate) mod lines;
@@ -35,22 +36,20 @@ use driver::{Approval, Ask, Driver, Event, FieldKind};
 
 pub use tool::{review_start, CodingAgentTool};
 
-/// The coding agents a bot gets without asking for one, in the order the first installed is
-/// used, by the name the bot and the apps use.
-pub const KINDS: [&str; 2] = ["claude", "codex"];
-
-/// Every coding agent a bot can ask for: those above, then the others.
-pub fn kinds() -> Vec<&'static str> {
-    acp::SPECS.iter().map(|spec| spec.kind).collect()
+/// Every coding agent a bot can ask for, as `agents.json` lists them; with none named, the first
+/// installed is used.
+pub fn kinds(app: &App) -> Vec<String> {
+    app.agents.lock().unwrap().specs().map(|spec| spec.kind.clone()).collect()
 }
 
-pub fn is_kind(kind: &str) -> bool {
-    acp::spec(kind).is_some()
+pub fn is_kind(app: &App, kind: &str) -> bool {
+    app.agents.lock().unwrap().spec(kind).is_some()
 }
 
 /// The program that starts agent `kind` on this Runner, when it can start here.
-pub(crate) async fn find_program(kind: &str) -> Option<PathBuf> {
-    acp::find(acp::spec(kind)?).await
+pub(crate) async fn find_program(app: &App, kind: &str) -> Option<PathBuf> {
+    let spec = app.agents.lock().unwrap().spec(kind)?;
+    acp::find(&spec).await
 }
 
 /// Working with nothing new for this long reads as stalled: the bot hears it, once.
@@ -72,9 +71,14 @@ const READ_LINES: usize = 200;
 /// Ended agents are forgotten this long after they ended.
 const FORGET_AFTER: f64 = 30.0 * 24.0 * 3600.0;
 
-/// The agent's name in what Lorca writes: "Claude Code", "Codex".
-pub fn name(kind: &str) -> &'static str {
-    acp::spec(kind).map_or("Claude Code", |spec| spec.name)
+/// The agent's name in what Lorca writes: "Claude Code", "Codex"; its kind once `agents.json`
+/// no longer lists it.
+pub fn name(app: &App, kind: &str) -> String {
+    match app.agents.lock().unwrap().spec(kind) {
+        Some(spec) => spec.name.clone(),
+        None if kind.is_empty() => "a coding agent".into(),
+        None => kind.to_string(),
+    }
 }
 
 /// `~/dev/lorca` for a folder in the home folder.
@@ -447,7 +451,7 @@ impl Agents {
         let asking = record.ask_card.clone().filter(|_| open);
         let mut run = AgentRun {
             id: record.id,
-            name: name(&record.kind).to_string(),
+            name: name(app, &record.kind).to_string(),
             settings: record.settings.into_iter().map(|(name, value)| crate::model::AgentSetting { name, value }).collect(),
             controls: match (open, agent.driver()) {
                 (true, Some(driver)) => driver
@@ -757,7 +761,7 @@ async fn launch(app: &Arc<App>, agent: &Arc<Agent>, program: &Path, prompt: &str
         true => Vec::new(),
         false => crate::secrets::CommandSecrets { app: app.clone(), bot_id: record.bot_id.clone() }.variables(&record.secrets)?,
     };
-    let spec = acp::spec(&record.kind).ok_or_else(|| format!("{} is not an agent this Lorca runs.", record.kind))?;
+    let spec = app.agents.lock().unwrap().spec(&record.kind).ok_or_else(|| format!("{} is not in this Runner's agents.json. Add it with `lorca agent add {}`.", record.kind, record.kind))?;
     let prompt = without_secrets(app, prompt.to_string());
     let (tx, rx) = mpsc::unbounded_channel();
     let generation = agent.generation.fetch_add(1, Ordering::SeqCst) + 1;
@@ -787,12 +791,12 @@ pub(crate) async fn send(app: &Arc<App>, agent: &Arc<Agent>, text: &str, interru
         *agent.active_at.lock().unwrap() = Instant::now();
         let busy = matches!(record.state.as_str(), "working" | "starting");
         return Ok(match (busy, interrupt) {
-            (true, false) => format!("Sent. {} takes it up once it is done with what it is doing.", name(&record.kind)),
-            (true, true) => format!("Sent. {} stopped what it was doing to take it up.", name(&record.kind)),
-            _ => format!("Sent. {} is working on it.", name(&record.kind)),
+            (true, false) => format!("Sent. {} takes it up once it is done with what it is doing.", name(app, &record.kind)),
+            (true, true) => format!("Sent. {} stopped what it was doing to take it up.", name(app, &record.kind)),
+            _ => format!("Sent. {} is working on it.", name(app, &record.kind)),
         });
     }
-    let program = find_program(&record.kind).await.ok_or_else(|| format!("{} is no longer installed on this Runner.", name(&record.kind)))?;
+    let program = find_program(app, &record.kind).await.ok_or_else(|| format!("{} is no longer installed on this Runner.", name(app, &record.kind)))?;
     if !record.folder.is_dir() {
         return Err(format!("{} is gone, so it cannot go on there.", home_relative(&record.folder)));
     }
@@ -806,7 +810,7 @@ pub(crate) async fn send(app: &Arc<App>, agent: &Arc<Agent>, text: &str, interru
     match launch(app, agent, &program, text, record.session.as_deref(), &[]).await {
         Ok(()) => {
             save(app);
-            Ok(format!("{} started again on its session and is working on it.", name(&record.kind)))
+            Ok(format!("{} started again on its session and is working on it.", name(app, &record.kind)))
         }
         Err(error) => {
             {
@@ -1109,7 +1113,7 @@ pub fn wake_cue(app: &App, job: &crate::model::Job) -> Option<String> {
         (record.clone(), news)
     };
     save(app);
-    let who = format!("{} ({})", name(&record.kind), record.id);
+    let who = format!("{} ({})", name(app, &record.kind), record.id);
     let place = match &record.branch {
         Some(branch) => format!("in {} on branch {branch}", home_relative(&record.folder)),
         None => format!("in {}", home_relative(&record.folder)),
@@ -1181,7 +1185,7 @@ async fn approve(app: &Arc<App>, agent: &Arc<Agent>, approval: Approval) -> Resu
         }
     };
     let record = agent.record();
-    let who = name(&record.kind);
+    let who = name(app, &record.kind);
     let Some(bot) = app.bot(&record.bot_id) else { return Err("Its bot is gone.".into()) };
     if crate::permissions::check_tool(app, &bot, "bash").is_err() {
         return Err("Shell commands are off for the bot that started you, so nothing may run. Stop and say what you needed.".into());
@@ -1388,7 +1392,7 @@ fn ask_card(app: &App, record: &Record, ask: &Ask) -> Message {
         })
         .collect();
     let message = clean(ask.message.trim());
-    let who = name(&record.kind);
+    let who = name(app, &record.kind);
     let summary = format!("{who} asks: {}", message.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or("a question"));
     Message::new(
         &record.chat_id,
@@ -1654,9 +1658,9 @@ fn ask_fields(ask: &Ask) -> String {
 pub(crate) async fn set_options(app: &Arc<App>, agent: &Arc<Agent>, wants: &[(String, String)]) -> Result<String, String> {
     let record = agent.record();
     if !matches!(record.state.as_str(), "starting" | "working" | "idle") {
-        return Err(format!("{} ({}) has ended, so its settings stay as they were. Send it a message to start it again on its session first.", name(&record.kind), record.id));
+        return Err(format!("{} ({}) has ended, so its settings stay as they were. Send it a message to start it again on its session first.", name(app, &record.kind), record.id));
     }
-    let driver = agent.driver().ok_or_else(|| format!("{} ({}) is not running. Send it a message to start it again on its session first.", name(&record.kind), record.id))?;
+    let driver = agent.driver().ok_or_else(|| format!("{} ({}) is not running. Send it a message to start it again on its session first.", name(app, &record.kind), record.id))?;
     driver.configure(wants).await?;
     app.coding_agents.sync(app, agent);
     save(app);
@@ -1666,7 +1670,7 @@ pub(crate) async fn set_options(app: &Arc<App>, agent: &Arc<Agent>, wants: &[(St
         .map(|control| format!("{}: {}", control.name, control.choices.iter().find(|(value, _)| *value == control.value).map_or(control.value.as_str(), |(_, name)| name.as_str())))
         .collect::<Vec<_>>()
         .join(", ");
-    Ok(format!("Set. {} ({}) now has {now}.", name(&record.kind), record.id))
+    Ok(format!("Set. {} ({}) now has {now}.", name(app, &record.kind), record.id))
 }
 
 /// `coding.transcript`, `coding.stop`, `coding.set`, and `coding.answer` for a card on this Runner, from the

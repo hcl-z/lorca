@@ -730,7 +730,7 @@ fn transcript_lines(app: &App, messages: &[Message]) -> Vec<String> {
                 proposal = None;
                 lines.push(format!("({}: a scheduled run started, with nobody watching)", one_line(text)));
             }
-            (Author::Bot { bot_id }, Body::Tool { is_running: false, .. } | Body::Permission { .. }) => lines.extend(action_line(&name(bot_id), message)),
+            (Author::Bot { bot_id }, Body::Tool { is_running: false, .. } | Body::Permission { .. }) => lines.extend(action_line(app, &name(bot_id), message)),
             _ => {}
         }
     }
@@ -738,7 +738,7 @@ fn transcript_lines(app: &App, messages: &[Message]) -> Vec<String> {
 }
 
 /// One earlier action of a bot's, with how it ended.
-fn action_line(bot: &str, message: &Message) -> Option<String> {
+fn action_line(app: &App, bot: &str, message: &Message) -> Option<String> {
     let line = match &message.body {
         Body::Tool { name: tool, summary, run, arguments, result, is_error, agent, .. } => match (run, agent) {
             (Some(run), _) => {
@@ -752,7 +752,7 @@ fn action_line(bot: &str, message: &Message) -> Option<String> {
                 format!("{bot} ran: {} → {ended}", one_line(command))
             }
             (None, Some(agent)) => {
-                let who = if crate::coding::is_kind(&agent.kind) { crate::coding::name(&agent.kind) } else { "a coding agent" };
+                let who = if crate::coding::is_kind(app, &agent.kind) { crate::coding::name(app, &agent.kind) } else { "a coding agent".to_string() };
                 let branch = agent.branch.as_deref().map(|branch| format!(" on branch {branch}")).unwrap_or_default();
                 format!("{bot} started {who} in {}{branch}: {} → {}", agent.folder, one_line(&agent.task), state_word(&agent.state))
             }
@@ -1056,6 +1056,8 @@ mod tests {
 
         let home = std::env::temp_dir().join(format!("lorca-review-request-{}", uuid::Uuid::new_v4()));
         let app = App::load(crate::config::Config { home: home.clone(), port: 0 }).unwrap();
+        // A coding agent goes by the name agents.json gives it.
+        crate::coding::agents_json::write_templates(&app);
         app.state.lock().unwrap().devices.push(Device {
             id: "runner".into(), name: "MacBook Air".into(), model: String::new(), os: "macos".into(), os_version: String::new(),
             box_pubkey: String::new(), plugins: Vec::new(), channels: Vec::new(), version: String::new(), update: None, updated_at: 0,

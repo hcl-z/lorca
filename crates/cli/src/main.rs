@@ -66,6 +66,12 @@ enum Command {
         #[usage(subcommand)]
         command: McpCommand,
     },
+    /// Manage this computer's coding agents: agents.json in Lorca's folder, which says how each
+    /// agent a bot can start runs over ACP.
+    Agent {
+        #[usage(subcommand)]
+        command: AgentCommand,
+    },
     /// Runner event subscriptions and encrypted gateway delivery.
     Events {
         #[usage(subcommand)]
@@ -325,6 +331,55 @@ enum McpCommand {
 }
 
 #[derive(Subcommands, Debug)]
+enum AgentCommand {
+    /// List the agents in agents.json, where each one's programs are, and whether it can start.
+    List,
+    /// Show an agent's settings and whether it can start here.
+    Get { kind: String },
+    /// Add an agent: the name bots ask for it by, and how it starts.
+    ///
+    ///   lorca agent add gemini --name "Gemini CLI" --arg=--acp
+    ///   lorca agent add dsh --arg=--profile --arg acp
+    ///   lorca agent add claude --name "Claude Code" --adapter-package @agentclientprotocol/claude-agent-acp@0.94.0 --adapter-binary-env CLAUDE_CODE_EXECUTABLE --safe-mode default
+    #[usage(verbatim_doc_comment)]
+    Add {
+        /// The name bots ask for it by, such as gemini.
+        kind: String,
+        /// What Lorca calls it, such as "Gemini CLI"; its kind when unset.
+        #[usage(long)]
+        name: Option<String>,
+        /// A program it may be installed as; repeat it for more. Its kind when unset.
+        #[usage(long, var)]
+        bin: Vec<String>,
+        /// An argument that starts its ACP mode (an adapter's, after its package); repeat it for more.
+        #[usage(long, var, allow_hyphen_values)]
+        arg: Vec<String>,
+        /// The npm package, pinned to a version, that npx runs for a CLI without an ACP mode.
+        #[usage(long)]
+        adapter_package: Option<String>,
+        /// The adapter's variable that names the installed CLI, such as CLAUDE_CODE_EXECUTABLE.
+        #[usage(long)]
+        adapter_binary_env: Option<String>,
+        /// An environment variable for the adapter, as KEY=value. Repeat it for more.
+        #[usage(long, var)]
+        adapter_env: Vec<String>,
+        /// The value of its mode setting under which it asks before it acts, such as default.
+        #[usage(long)]
+        safe_mode: Option<String>,
+    },
+    /// Add an agent from its JSON, as agents.json writes an entry.
+    AddJson {
+        kind: String,
+        /// One agent's JSON, such as {"name": "Gemini CLI", "bins": ["gemini"], "args": ["--acp"]}.
+        json: String,
+    },
+    /// Remove an agent. Bots can no longer start it; one that runs goes on.
+    Remove { kind: String },
+    /// Read agents.json again after editing it by hand, so the running lorca serve takes the change.
+    Reload,
+}
+
+#[derive(Subcommands, Debug)]
 enum ProfileCommand {
     /// The profile as every bot reads it, with its budget.
     Show,
@@ -395,7 +450,7 @@ async fn main() -> anyhow::Result<()> {
     };
     // `lorca mcp` and `lorca chats` say how each step went in their own words; the log keeps to
     // warnings.
-    let quiet = matches!(command, Command::Mcp { .. } | Command::Marketplace { .. } | Command::Models { .. } | Command::Chats { .. } | Command::Tasks { .. } | Command::Traces { .. });
+    let quiet = matches!(command, Command::Mcp { .. } | Command::Agent { .. } | Command::Marketplace { .. } | Command::Models { .. } | Command::Chats { .. } | Command::Tasks { .. } | Command::Traces { .. });
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| if quiet { "lorca=warn,lorca_agent=warn".into() } else { "lorca=info,lorca_agent=info".into() }))
         .with_target(false)
@@ -427,6 +482,9 @@ async fn main() -> anyhow::Result<()> {
             }
             // The coding agents the last run left: their cards and handles stay, and one in a
             // terminal host is followed again.
+            // The coding agents a bot can start: agents.json, written from what is installed
+            // here when there is none.
+            lorca::coding::agents_json::ensure(&app).await;
             lorca::coding::load(&app);
             lorca::coding::wake_unheard(&app);
             #[cfg(unix)]
@@ -519,6 +577,7 @@ async fn main() -> anyhow::Result<()> {
             let app = app.clone();
             tokio::spawn(async move { mcp(&app, command).await }).await?
         }
+        Command::Agent { command } => agent(&app, command).await,
         Command::Marketplace { command: MarketplaceCommand::Reload } => reload(&app, "marketplace.reload", lorca::marketplace::enable, "marketplace").await,
         Command::Models { command: ModelsCommand::Reload } => reload(&app, "models.reload", lorca::catalog::enable, "model catalog").await,
         Command::Chats { command } => chats(&app, command).await,
@@ -934,6 +993,138 @@ async fn mcp(app: &std::sync::Arc<App>, command: McpCommand) -> anyhow::Result<(
         }
         McpCommand::Import { file } => mcp_import(app, file).await,
     }
+}
+
+async fn agent(app: &std::sync::Arc<App>, command: AgentCommand) -> anyhow::Result<()> {
+    use serde_json::json;
+    match command {
+        AgentCommand::List => {
+            let (list, _) = mcp_call(app, "agents.list", json!({})).await?;
+            print_agent_list(&list);
+            // A script can tell that something needs looking at.
+            if list["error"].is_string() || list["agents"].as_array().is_none_or(|agents| agents.is_empty() || agents.iter().any(|agent| agent["problem"].is_string())) {
+                std::process::exit(1);
+            }
+            Ok(())
+        }
+        AgentCommand::Get { kind } => {
+            let (got, _) = mcp_call(app, "agents.get", json!({ "kind": kind })).await?;
+            print_agent(&got["agent"]);
+            Ok(())
+        }
+        AgentCommand::Add { kind, name, bin, arg, adapter_package, adapter_binary_env, adapter_env, safe_mode } => {
+            let mut env = Vec::new();
+            for variable in &adapter_env {
+                let (name, value) = variable.split_once('=').ok_or_else(|| anyhow::anyhow!("An environment variable is KEY=value, not {variable:?}."))?;
+                env.push((name.trim().to_string(), value.to_string()));
+            }
+            let config = lorca::coding::agents_json::entry_of(name.as_deref(), kind.trim(), &bin, &arg, adapter_package.as_deref(), adapter_binary_env.as_deref(), &env, safe_mode.as_deref()).map_err(|e| anyhow::anyhow!(e))?;
+            agent_add(app, &kind, config).await
+        }
+        AgentCommand::AddJson { kind, json } => {
+            let config: serde_json::Value = serde_json::from_str(&json).map_err(|e| anyhow::anyhow!("That is not valid JSON: {e}."))?;
+            agent_add(app, &kind, config).await
+        }
+        AgentCommand::Remove { kind } => {
+            mcp_call(app, "agents.remove", json!({ "kind": kind })).await?;
+            println!("Removed {kind}. Bots can no longer start it.");
+            Ok(())
+        }
+        AgentCommand::Reload => {
+            let (list, live) = mcp_call(app, "agents.reload", json!({})).await?;
+            if live {
+                println!("lorca serve read agents.json again.");
+            } else {
+                println!("lorca serve is not running; it reads agents.json when it starts.");
+            }
+            if let Some(error) = list["error"].as_str() {
+                anyhow::bail!("{error}");
+            }
+            Ok(())
+        }
+    }
+}
+
+async fn agent_add(app: &std::sync::Arc<App>, kind: &str, config: serde_json::Value) -> anyhow::Result<()> {
+    let (saved, _) = mcp_call(app, "agents.add", serde_json::json!({ "kind": kind, "config": config })).await?;
+    println!("Added {kind} to {}.", saved["path"].as_str().unwrap_or("agents.json"));
+    println!("{}", agent_outcome(&saved["agent"]));
+    Ok(())
+}
+
+/// Whether an agent can start here, and if not, why.
+fn agent_outcome(agent: &serde_json::Value) -> String {
+    let kind = agent["kind"].as_str().unwrap_or("The agent");
+    if let Some(problem) = agent["problem"].as_str() {
+        return format!("✘ {problem}");
+    }
+    if agent["can_start"] == true {
+        return format!("✔ {kind} can start here.");
+    }
+    let installed = agent["bins"].as_array().into_iter().flatten().any(|bin| bin["path"].is_string());
+    let bins: Vec<&str> = agent["bins"].as_array().into_iter().flatten().filter_map(|bin| bin["bin"].as_str()).collect();
+    match (installed, agent["adapter"] == true) {
+        (true, true) => format!("✘ {kind} cannot start: its adapter runs with npx, which is not on PATH."),
+        _ => format!("✘ {kind} cannot start: {} is not on PATH.", bins.join(" or ")),
+    }
+}
+
+fn print_agent_list(list: &serde_json::Value) {
+    let path = list["path"].as_str().unwrap_or("agents.json");
+    let agents = list["agents"].as_array().cloned().unwrap_or_default();
+    if let Some(error) = list["error"].as_str() {
+        println!("✘ {error}\n");
+        println!("No coding agents are set up yet, so bots cannot start one. Fix {path}, or replace it with {{\"agents\": {{}}}} and add one with `lorca agent add <kind>`.");
+        return;
+    }
+    if agents.is_empty() {
+        println!("No coding agents are set up in {path} yet, so bots cannot start one. Install one (such as Claude Code or Codex) and add it with `lorca agent add <kind>`.");
+        return;
+    }
+    println!("{path}\n");
+    let width = agents.iter().filter_map(|a| a["kind"].as_str()).map(|k| k.chars().count()).max().unwrap_or(0);
+    let states: Vec<String> = agents.iter().map(agent_state).collect();
+    let state_width = states.iter().map(|s| s.chars().count()).max().unwrap_or(0).min(40);
+    for (agent, state) in agents.iter().zip(&states) {
+        let kind = agent["kind"].as_str().unwrap_or_default();
+        let bins: Vec<String> = agent["bins"].as_array().into_iter().flatten().map(|bin| format!("{}{}", bin["bin"].as_str().unwrap_or_default(), if bin["path"].is_string() { "" } else { " (not on PATH)" })).collect();
+        println!("  {kind:<width$}  {state:<state_width$}  {}", bins.join(", "));
+    }
+}
+
+fn agent_state(agent: &serde_json::Value) -> String {
+    if agent["problem"].is_string() {
+        "✘ cannot read its entry".into()
+    } else if agent["can_start"] == true {
+        "✔ can start".into()
+    } else {
+        "✘ cannot start".into()
+    }
+}
+
+fn print_agent(agent: &serde_json::Value) {
+    let config = &agent["config"];
+    println!("{}", agent["kind"].as_str().unwrap_or_default());
+    let row = |label: &str, value: &str| println!("  {label:<10} {value}");
+    if let Some(name) = config["name"].as_str() {
+        row("Name", name);
+    }
+    for bin in agent["bins"].as_array().into_iter().flatten() {
+        let at = bin["path"].as_str().map_or("not on PATH".to_string(), str::to_string);
+        row("Program", &format!("{} ({at})", bin["bin"].as_str().unwrap_or_default()));
+    }
+    let args: Vec<&str> = config["args"].as_array().into_iter().flatten().filter_map(|arg| arg.as_str()).collect();
+    if !args.is_empty() {
+        row("Args", &args.join(" "));
+    }
+    if let Some(package) = config["adapter"]["package"].as_str() {
+        row("Adapter", &format!("npx -y {package}, told the CLI in {}", config["adapter"]["binary_env"].as_str().unwrap_or_default()));
+        for (name, value) in config["adapter"]["env"].as_object().into_iter().flatten() {
+            row("Env", &format!("{name}={}", masked(name, value.as_str().unwrap_or_default())));
+        }
+    }
+    row("Safe mode", config["safe_mode"].as_str().unwrap_or("none: left as the agent starts"));
+    row("State", &agent_outcome(agent));
 }
 
 /// Connects a server, or takes the connection it has, and answers how it stands, with its tools.

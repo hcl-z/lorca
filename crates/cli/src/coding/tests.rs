@@ -6,6 +6,7 @@
 #![cfg(unix)]
 
 use super::*;
+use agents_json::AgentsFile;
 use crate::model::{Bot, Chat, ChatMeta, MessageState};
 use crate::plugins::mcp::Decision;
 use lorca_agent::Tool;
@@ -241,6 +242,7 @@ async fn setup() -> Scratch {
     workspace::git(&repo, &["add", "."]).await.unwrap();
     workspace::git(&repo, &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"]).await.unwrap();
     programs();
+    agents_json::write_templates(&app);
     Scratch { app, home, bot, repo }
 }
 
@@ -685,11 +687,65 @@ async fn a_record_from_before_the_adapters_took_over_loads_under_the_new_names()
     assert_eq!(app.coding_agents.find("chat", "b1", "agent-old").unwrap().record().kind, "codex");
 }
 
-#[test]
-fn every_agent_has_a_kind_and_a_name() {
-    assert!(is_kind("claude") && is_kind("codex") && is_kind("kiro") && !is_kind("emacs"));
-    assert_eq!(kinds()[..2], ["claude", "codex"], "the two a bot gets by default come first");
-    assert_eq!((name("claude"), name("codex"), name("gemini")), ("Claude Code", "Codex", "Gemini CLI"));
+#[tokio::test]
+async fn every_agent_has_a_kind_and_a_name() {
+    let scratch = setup().await;
+    let app = &scratch.app;
+    assert!(is_kind(app, "claude") && is_kind(app, "codex") && is_kind(app, "kiro") && is_kind(app, "dsh") && !is_kind(app, "emacs"));
+    assert_eq!(kinds(app)[..2], ["claude", "codex"], "the file's order is the order a bot's default is picked in");
+    assert_eq!((name(app, "claude"), name(app, "codex"), name(app, "gemini")), ("Claude Code".to_string(), "Codex".to_string(), "Gemini CLI".to_string()));
+    assert_eq!(name(app, "gone"), "gone", "one the file no longer lists goes by its kind");
+}
+
+/// With no agents.json, the first start writes one with the agents installed here; after that the
+/// file stands, and an agent the user removed does not come back.
+#[tokio::test]
+async fn agents_json_is_written_once_from_what_is_installed() {
+    let scratch = setup().await;
+    let app = &scratch.app;
+    let path = app.config.agents_path();
+    std::fs::remove_file(&path).unwrap();
+    agents_json::reload(app);
+    assert!(kinds(app).is_empty());
+    agents_json::ensure(app).await;
+    let written: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    for kind in ["claude", "codex", "gemini", "kimi"] {
+        assert!(written["agents"][kind].is_object(), "{kind} is installed, so it is written");
+    }
+    assert_eq!(written["agents"]["claude"]["adapter"]["package"], "@agentclientprotocol/claude-agent-acp@0.94.0");
+    assert!(find_program(app, "claude").await.is_some());
+
+    agents_json::remove(app, "codex").unwrap();
+    agents_json::ensure(app).await;
+    assert!(!is_kind(app, "codex"), "a removed agent stays removed");
+    assert!(AgentsFile::read(&path).entry("codex").is_none());
+
+    // A broken file is not written over, and lists no agent.
+    std::fs::write(&path, "{ not json").unwrap();
+    agents_json::ensure(app).await;
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "{ not json");
+    assert!(kinds(app).is_empty());
+    let listed = agents_json::serve_request(app, "agents.list", &json!({})).await.unwrap();
+    assert!(listed["error"].as_str().unwrap().contains("not valid JSON"));
+    assert!(agents_json::add(app, "x", &json!({ "name": "X", "bins": ["x"] })).unwrap_err().contains("Fix the file first"));
+}
+
+/// `agents.*` adds, shows, and removes an agent, refusing an entry that cannot start.
+#[tokio::test]
+async fn agents_are_added_and_removed_by_request() {
+    let scratch = setup().await;
+    let app = &scratch.app;
+    let added = agents_json::serve_request(app, "agents.add", &json!({ "kind": "mine", "config": { "name": "Mine", "bins": ["gemini"], "args": ["--acp"] } })).await.unwrap();
+    assert_eq!((added["agent"]["kind"].as_str(), added["agent"]["can_start"].as_bool()), (Some("mine"), Some(true)));
+    assert_eq!(name(app, "mine"), "Mine");
+    let missing = agents_json::serve_request(app, "agents.add", &json!({ "kind": "bad", "config": { "name": "Bad", "bins": ["x"], "adapter": { "binary_env": "X" } } })).await.unwrap_err();
+    assert!(missing.contains("adapter has no package"), "{missing}");
+    assert!(agents_json::serve_request(app, "agents.add", &json!({ "kind": "mine", "config": { "name": "Mine", "bins": ["x"] } })).await.unwrap_err().contains("already has mine"));
+    let got = agents_json::serve_request(app, "agents.get", &json!({ "kind": "dsh" })).await.unwrap();
+    assert_eq!(got["agent"]["config"]["args"], json!(["--profile", "acp"]));
+    agents_json::serve_request(app, "agents.remove", &json!({ "kind": "mine" })).await.unwrap();
+    assert!(!is_kind(app, "mine"));
+    assert!(agents_json::serve_request(app, "agents.remove", &json!({ "kind": "mine" })).await.is_err());
 }
 
 #[tokio::test]

@@ -55,6 +55,11 @@ impl Config {
         self.home.join("mcp.json")
     }
 
+    /// The coding agents a bot can start, and how each starts over ACP.
+    pub fn agents_path(&self) -> PathBuf {
+        self.home.join("agents.json")
+    }
+
     /// The last model catalog fetched, with what the next check sends back.
     pub fn catalog_path(&self) -> PathBuf {
         self.home.join("catalog.json")
