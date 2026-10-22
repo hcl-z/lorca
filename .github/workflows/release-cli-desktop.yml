@@ -1,0 +1,364 @@
+# Releases the lorca CLI and the app in desktop/ from one build per platform. `bun run release`
+# starts it on main, and a run by hand does the same for the commit it runs on; the tags cli-vX.Y.Z
+# and desktop-vX.Y.Z appear when the drafts are published. Running on main keeps each platform's
+# Rust cache where the next release reads it, and the desktop app's CLI builds on the CLI release's
+# dependencies in the same job.
+#
+# The CLI, the version in Cargo.toml, is built with LORCA_SELF_UPDATE=1 for macOS, Linux, and
+# Windows; lorca-cli.json, the manifest lorca update reads, is written and signed with the
+# CLI_UPDATE_SIGNING_KEY secret; the builds are installed with the site's install scripts on each
+# system and the manifest checked from each; and the release cli-vX.Y.Z is drafted with the
+# archives and the manifest. Once it is published, install-cli.sh and install-cli.ps1 download from
+# it, and every CLI they installed updates to it. A CLI release already published is left alone.
+#
+# The desktop app, the version in desktop/mygo.config.ts, is released as desktop-vX.Y.Z, not the
+# repository's latest release, which stays the CLI's; the apps find the newest desktop-v release
+# through the GitHub API. Its release is drafted with the version's section of CHANGELOG.md as its
+# notes, then each platform runs `bun run release-desktop <platform>`: the app's CLI, then
+# `go tool mygo build -upload`, which builds the app and its installer, signs the macOS app ad hoc
+# (no certificate, no notarization), signs the update archive and deltas with the update key, and
+# uploads them to the draft. Publishing the draft, once every platform is there, makes it the update
+# apps see. docs/releasing-cli.md and docs/releasing-desktop.md have the steps.
+name: Release CLI and desktop
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run at a time, so two runs never draft or upload to the same release.
+concurrency:
+  group: release-cli-desktop
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      cli-version: ${{ steps.names.outputs.cli-version }}
+      cli-tag: ${{ steps.names.outputs.cli-tag }}
+      cli-published: ${{ steps.names.outputs.cli-published }}
+      desktop-version: ${{ steps.names.outputs.desktop-version }}
+      desktop-tag: ${{ steps.names.outputs.desktop-tag }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - id: names
+        name: Name the releases after Cargo.toml and desktop/mygo.config.ts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cli=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "lorca") | .version')
+          desktop=$(bun -e 'console.log((await import("./desktop/mygo.config.ts")).default({ command: "build" }).version)')
+          # A release takes the tag that exists, so the builds have to come from its commit. For a
+          # tag that does not exist, gh fails and prints the API's error body.
+          if tagged=$(gh api "repos/$GITHUB_REPOSITORY/commits/cli-v$cli" --jq .sha 2>/dev/null) && [[ $tagged != "$GITHUB_SHA" ]]; then
+            echo "::error::cli-v$cli already tags $tagged: run this on that commit, or bump the version in Cargo.toml"
+            exit 1
+          fi
+          if tagged=$(gh api "repos/$GITHUB_REPOSITORY/commits/desktop-v$desktop" --jq .sha 2>/dev/null) && [[ $tagged != "$GITHUB_SHA" ]]; then
+            echo "::error::desktop-v$desktop already tags $tagged: run this on that commit, or bump \"version\" in desktop/mygo.config.ts"
+            exit 1
+          fi
+          # This job's token cannot see drafts; the publish job looks for one.
+          if [[ $(gh release view "cli-v$cli" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null) == false ]]; then
+            echo "::notice::cli-v$cli is already published, so only the desktop app is built"
+            echo "cli-published=true" >> "$GITHUB_OUTPUT"
+          fi
+          {
+            echo "cli-version=$cli"
+            echo "cli-tag=cli-v$cli"
+            echo "desktop-version=$desktop"
+            echo "desktop-tag=desktop-v$desktop"
+          } >> "$GITHUB_OUTPUT"
+
+  # The desktop builds upload into one draft, which this job makes first; each would make its own.
+  draft:
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - name: Draft ${{ needs.version.outputs.desktop-tag }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.desktop-tag }}
+          VERSION: ${{ needs.version.outputs.desktop-version }}
+        run: |
+          if ! state=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq 'if .isDraft then "draft" else "published" end' 2>/dev/null); then
+            state=none
+          fi
+          case $state in
+            published)
+              echo "::error::$TAG is already published: bump \"version\" in desktop/mygo.config.ts"
+              exit 1
+              ;;
+            draft)
+              # An earlier run's draft takes these builds, from this commit.
+              echo "::notice::the draft $TAG takes these builds"
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA"
+              ;;
+            none)
+              bun -e '
+                import { extractReleaseNotes } from "./scripts/changelog.ts"
+                const notes = extractReleaseNotes(await Bun.file("CHANGELOG.md").text(), process.env.VERSION)
+                if (!notes) {
+                  console.error(`::error::CHANGELOG.md has no "## [${process.env.VERSION}]" section`)
+                  process.exit(1)
+                }
+                await Bun.write("notes.md", notes + "\n")
+              '
+              # Not the latest release, which stays the CLI's. On the commit this run builds, where
+              # publishing the draft makes the tag.
+              gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --latest=false --target "$GITHUB_SHA" --title "Lorca for Windows, Linux, and macOS $VERSION" --notes-file notes.md
+              ;;
+          esac
+
+  build:
+    name: build ${{ matrix.platform }}
+    needs: [version, draft]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      # A platform that fails leaves the others to finish their uploads.
+      fail-fast: false
+      matrix:
+        include:
+          # MyGo builds Windows and Linux from Linux without cgo, and zig, through cargo-zigbuild,
+          # builds their CLIs: static (musl) for Linux, so one runs on any distribution. The macOS
+          # app needs a Mac, which signs it ad hoc and makes its disk image; it is for Apple silicon.
+          - { platform: windows/amd64, name: windows-x86_64, target: x86_64-pc-windows-gnu, os: ubuntu-latest }
+          - { platform: linux/amd64, name: linux-x86_64, target: x86_64-unknown-linux-musl, os: ubuntu-latest }
+          - { platform: linux/arm64, name: linux-aarch64, target: aarch64-unknown-linux-musl, os: ubuntu-latest }
+          - { platform: darwin/arm64, name: macos-aarch64, target: aarch64-apple-darwin, os: macos-26 }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: mlugg/setup-zig@v2
+        if: runner.os == 'Linux'
+        with:
+          version: 0.16.0
+      - uses: taiki-e/install-action@v2
+        if: runner.os == 'Linux'
+        with:
+          tool: cargo-zigbuild
+      # The registry and the built dependencies, kept between runs on main. The cache key names the
+      # runner's OS but not the target, and three of the builds run on Linux.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: desktop/go.mod
+          cache-dependency-path: desktop/go.sum
+      - uses: oven-sh/setup-bun@v2
+      # makensis, which mygo build needs for the Windows installer on Linux.
+      - name: Install NSIS
+        if: startsWith(matrix.platform, 'windows/')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends nsis
+      - name: Build the CLI
+        if: needs.version.outputs.cli-published != 'true'
+        env:
+          # A release build replaces itself with later releases (`lorca update`).
+          LORCA_SELF_UPDATE: "1"
+          TARGET: ${{ matrix.target }}
+        run: |
+          if [[ $RUNNER_OS == macOS ]]; then
+            # The Mac's own build, where `bun run release-desktop` builds the app's CLI too, so the
+            # second build takes the first one's dependencies.
+            cargo build --release --locked -p lorca
+            echo "CLI_DIR=target/release" >> "$GITHUB_ENV"
+          else
+            cargo zigbuild --release --locked -p lorca --target "$TARGET"
+            echo "CLI_DIR=target/$TARGET/release" >> "$GITHUB_ENV"
+          fi
+      - name: Pack the CLI
+        if: needs.version.outputs.cli-published != 'true'
+        env:
+          TARGET: ${{ matrix.target }}
+          NAME: ${{ matrix.name }}
+        run: |
+          mkdir dist
+          # The binary alone at the archive's root, and its checksum beside the archive.
+          if [[ $TARGET == *windows* ]]; then
+            archive=lorca-cli-$NAME.zip
+            zip -jX "dist/$archive" "$CLI_DIR/lorca.exe"
+          else
+            archive=lorca-cli-$NAME.tar.gz
+            # bsdtar on the Mac adds AppleDouble files and xattr headers, which GNU tar warns about.
+            flags=(--format ustar)
+            if [[ $RUNNER_OS == macOS ]]; then flags+=(--no-mac-metadata); fi
+            tar "${flags[@]}" -czf "dist/$archive" -C "$CLI_DIR" lorca
+          fi
+          cd dist && shasum -a 256 "$archive" > "$archive.sha256"
+      - uses: actions/upload-artifact@v7
+        if: needs.version.outputs.cli-published != 'true'
+        with:
+          name: lorca-cli-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error
+      # The app's CLI does not update itself, the app does, so it is built again without
+      # LORCA_SELF_UPDATE, which recompiles the lorca crate alone.
+      - name: Build and upload the app
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          # gh uploads with it, and mygo build reads the GitHub API with it for delta updates.
+          GH_TOKEN: ${{ github.token }}
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+        run: bun run release-desktop "$PLATFORM"
+
+  manifest:
+    needs: [version, build]
+    if: needs.version.outputs.cli-published != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Write and sign lorca-cli.json
+        env:
+          KEY: ${{ secrets.CLI_UPDATE_SIGNING_KEY }}
+          VERSION: ${{ needs.version.outputs.cli-version }}
+        run: |
+          if [[ -z $KEY ]]; then
+            echo "::error::the CLI_UPDATE_SIGNING_KEY secret is missing: docs/releasing-cli.md"
+            exit 1
+          fi
+          umask 077
+          printf '%s\n' "$KEY" > "$RUNNER_TEMP/key.pem"
+          trap 'rm -f "$RUNNER_TEMP/key.pem"' EXIT
+          # The key has to be the one the CLI trusts, or no CLI would take the release.
+          public=$(openssl pkey -in "$RUNNER_TEMP/key.pem" -pubout -outform DER | tail -c 32 | base64 -w0)
+          if ! grep -qF "\"$public\"" crates/cli/src/update.rs; then
+            echo "::error::CLI_UPDATE_SIGNING_KEY is not a key that KEYS in crates/cli/src/update.rs trusts ($public)"
+            exit 1
+          fi
+          cd dist
+          builds='{}'
+          for archive in lorca-cli-*.tar.gz lorca-cli-*.zip; do
+            name=${archive#lorca-cli-}
+            name=${name%.tar.gz}
+            name=${name%.zip}
+            builds=$(jq -c --arg name "$name" --arg file "$archive" --arg sha256 "$(sha256sum "$archive" | cut -d' ' -f1)" --argjson size "$(stat -c %s "$archive")" \
+              '.[$name] = { file: $file, sha256: $sha256, size: $size }' <<<"$builds")
+          done
+          mkdir ../manifest
+          jq -n --arg version "$VERSION" --argjson builds "$builds" '{ kind: "lorca-cli", version: $version, builds: $builds }' > ../manifest/lorca-cli.json
+          cd ../manifest
+          openssl pkeyutl -sign -inkey "$RUNNER_TEMP/key.pem" -rawin -in lorca-cli.json -out lorca-cli.sig.bin
+          base64 -w0 lorca-cli.sig.bin > lorca-cli.json.sig
+          rm lorca-cli.sig.bin
+          cat lorca-cli.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: lorca-cli-manifest
+          path: manifest/*
+          if-no-files-found: error
+
+  test:
+    name: install on ${{ matrix.os }}
+    needs: [version, manifest]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      # The builds, served where a release serves them: <releases>/latest/download/<file>.
+      LORCA_DOWNLOAD_URL: http://127.0.0.1:8000
+      WANT: lorca ${{ needs.version.outputs.cli-version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: site/latest/download
+          merge-multiple: true
+      - name: Install with install-cli.sh, twice
+        if: runner.os != 'Windows'
+        run: |
+          python3 -m http.server --bind 127.0.0.1 --directory site 8000 &
+          for _ in $(seq 50); do curl -fs -o /dev/null "$LORCA_DOWNLOAD_URL/" && break; sleep 0.2; done
+          sh web/public/install-cli.sh
+          # The second run is an update over the first.
+          sh web/public/install-cli.sh
+          version=$(~/.local/bin/lorca --version)
+          if [[ "$version" != "$WANT" ]]; then echo "::error::lorca --version says $version"; exit 1; fi
+          # The build reads the signed manifest beside the archives, and is the release it names.
+          checked=$(~/.local/bin/lorca update --check)
+          if [[ "$checked" != "$WANT is the latest." ]]; then echo "::error::lorca update --check says $checked"; exit 1; fi
+      - name: Install with install-cli.ps1 in Windows PowerShell, then again in PowerShell 7
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Start-Process python -ArgumentList '-m', 'http.server', '--bind', '127.0.0.1', '--directory', 'site', '8000' -WindowStyle Hidden
+          foreach ($try in 1..50) {
+            try { Invoke-WebRequest "$env:LORCA_DOWNLOAD_URL/" -UseBasicParsing | Out-Null; break } catch { Start-Sleep -Milliseconds 200 }
+          }
+          # The way people run it: the script's text through Invoke-Expression.
+          powershell -NoProfile -Command 'Get-Content -Raw web/public/install-cli.ps1 | Invoke-Expression'
+          if ($LASTEXITCODE -ne 0) { throw 'the install in Windows PowerShell failed' }
+          Get-Content -Raw web/public/install-cli.ps1 | Invoke-Expression
+          $version = lorca --version
+          if ($version -ne $env:WANT) { throw "lorca --version says $version" }
+          $checked = lorca update --check
+          if ($checked -ne "$env:WANT is the latest.") { throw "lorca update --check says $checked" }
+          $userPath = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment').GetValue('Path')
+          if ($userPath -notlike "*$HOME\.local\bin*") { throw "the user PATH lacks .local\bin: $userPath" }
+
+  publish:
+    needs: [version, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Draft ${{ needs.version.outputs.cli-tag }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.cli-tag }}
+          VERSION: ${{ needs.version.outputs.cli-version }}
+        run: |
+          if ! state=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq 'if .isDraft then "draft" else "published" end' 2>/dev/null); then
+            state=none
+          fi
+          case $state in
+            published)
+              echo "::notice::$TAG was published while this ran, so it stays as it is"
+              ;;
+            draft)
+              # An earlier run's draft takes these builds, and keeps its title and notes.
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA"
+              gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+              ;;
+            none)
+              cat > notes.md <<'EOF'
+          Install:
+
+          ```sh
+          curl -fsSL https://lorca.app/install-cli.sh | sh    # macOS and Linux
+          irm https://lorca.app/install-cli.ps1 | iex         # Windows, in PowerShell
+          ```
+
+          A CLI installed this way updates itself; `lorca update` installs this release now.
+          EOF
+              gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Lorca CLI $VERSION" --notes-file notes.md
+              ;;
+            *)
+              echo "::error::gh release view said $state for $TAG"
+              exit 1
+              ;;
+          esac

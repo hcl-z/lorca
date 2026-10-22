@@ -7,10 +7,10 @@ certificate is involved. The version is `version` in
 it was made, in UTC, as its build number; Android orders its builds by a versionCode made from the
 version (1.2.3 is 1002003), so each Android release is a new version.
 
-A tag builds both on GitHub Actions:
+A run of the release workflow on `main` builds both on GitHub Actions:
 
 ```sh
-git tag mobile-v1.0.1 && git push origin mobile-v1.0.1
+gh workflow run release-mobile.yml --repo hcl-z/lorca --ref main
 ```
 
 - Workflow: [`.github/workflows/release-mobile.yml`](../.github/workflows/release-mobile.yml).
@@ -104,17 +104,18 @@ with the certificate's SHA-256 above, once the developer account is verified.
 ## Cutting a release
 
 1. Run `bun run release <version>` ([Releasing](releasing.md)): it sets `version` in
-   [`mobile/app.config.ts`](../mobile/app.config.ts) with the CLI's and the desktop app's, and tags
-   the commit `mobile-v<version>`. The version's section of the root
-   [`CHANGELOG.md`](../CHANGELOG.md) becomes the release's notes and the update alert's text, and
-   the release stops without it.
-2. The tag starts the workflow, or run **Release phone app** by hand from the Actions tab, which
-   drafts the release on the commit it runs on; publishing the draft makes the tag. A run on a
-   commit other than the one an existing `mobile-v<version>` tag names is refused, and so is a
-   version whose release is already published.
+   [`mobile/app.config.ts`](../mobile/app.config.ts) with the CLI's and the desktop app's, and
+   commits. The version's section of the root [`CHANGELOG.md`](../CHANGELOG.md) becomes the
+   release's notes and the update alert's text, and the release stops without it.
+2. With `--push` it pushes `main` and starts the workflow on it; you can also run
+   **Release phone app** by hand from the Actions tab. It drafts the release on the commit it runs
+   on, and publishing the draft makes the tag. A run on a commit other than the one an existing
+   `mobile-v<version>` tag names is refused, and so is a version whose release is already
+   published.
 3. The workflow drafts `mobile-v<version>`, then builds the Android APK on Ubuntu and the iPhone
-   `.ipa` on a macOS runner side by side, each uploading into the draft. Check the draft, then
-   publish it without making it the latest release:
+   `.ipa` on a macOS runner side by side, each uploading into the draft. Runs on `main` keep the
+   Rust core's build, Gradle's caches, and for iOS Xcode's compilation cache and the installed pods
+   for the next release. Check the draft, then publish it without making it the latest release:
 
    ```sh
    gh release edit mobile-v1.0.1 --draft=false --latest=false
@@ -126,8 +127,8 @@ with the certificate's SHA-256 above, once the developer account is verified.
 A run by hand can release one platform:
 
 ```sh
-gh workflow run release-mobile.yml -f platforms=iOS
-gh workflow run release-mobile.yml -f platforms=Android
+gh workflow run release-mobile.yml --repo hcl-z/lorca --ref main -f platforms=iOS
+gh workflow run release-mobile.yml --repo hcl-z/lorca --ref main -f platforms=Android
 ```
 
 ## From a Mac

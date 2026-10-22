@@ -1,5 +1,5 @@
 //! Keeps a CLI installed with the site's script current, as MyGo's updater keeps the desktop
-//! app and the CLI it carries. Only the builds `release-cli.yml` makes replace themselves
+//! app and the CLI it carries. Only the CLI builds `release-cli-desktop.yml` makes replace themselves
 //! ([`SELF_UPDATING`]); the apps' bundles, the dev loop's builds, and `cargo build`'s never do.
 //!
 //! Each `cli-v` release carries `lorca-cli.json`, the version and each build's archive with its
@@ -27,7 +27,7 @@ use crate::app::App;
 use crate::config::{self, VERSION};
 use crate::model::UpdateStatus;
 
-/// Set by `release-cli.yml` when it builds a release: such a CLI replaces itself.
+/// Set by `release-cli-desktop.yml` when it builds a CLI release: such a CLI replaces itself.
 pub const SELF_UPDATING: bool = option_env!("LORCA_SELF_UPDATE").is_some();
 
 /// The public halves of the keys that sign `lorca-cli.json`, base64. A new key is added here a

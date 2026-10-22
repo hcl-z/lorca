@@ -24,9 +24,10 @@ lorca-cli.json.sig                an Ed25519 signature of lorca-cli.json
 
 A CLI installed this way updates itself from the latest release, and installs only a
 `lorca-cli.json` signed by a key it trusts ([Updates and the service](architecture/runtime.md#updates-and-the-service)).
-[`.github/workflows/release-cli.yml`](../.github/workflows/release-cli.yml) builds, signs, tests,
-and drafts them. It writes the release with the workflow's own token and signs with the
-`CLI_UPDATE_SIGNING_KEY` secret.
+[`.github/workflows/release-cli-desktop.yml`](../.github/workflows/release-cli-desktop.yml) builds,
+signs, tests, and drafts them, in the same jobs that build the desktop app
+([Releasing the desktop app](releasing-desktop.md)). It writes the release with the workflow's own
+token and signs with the `CLI_UPDATE_SIGNING_KEY` secret.
 
 ## Update key
 
@@ -52,11 +53,11 @@ in the field trust the new one before it signs; then set the secret to the new k
 
 The CLI is released with the desktop and phone apps, under one version: `bun run release <version>`
 sets it in the root [`Cargo.toml`](../Cargo.toml) (`lorca --version` prints it), commits it with
-`Cargo.lock`, and tags the commit `cli-v<version>` ([Releasing](releasing.md)). The tag starts the
-workflow; it can also run by hand on a commit:
+`Cargo.lock`, and with `--push` starts the workflow on `main` ([Releasing](releasing.md)). It can
+also run by hand on a branch:
 
 ```sh
-gh workflow run release-cli.yml
+gh workflow run release-cli-desktop.yml --repo hcl-z/lorca --ref main
 ```
 
 When the workflow is done, publish the draft on GitHub, with **Set as the latest release**
@@ -65,13 +66,15 @@ the repo's latest.
 
 The workflow:
 
-1. names the release `cli-v<version>` after the `lorca` crate. It refuses a pushed tag that says
-   another version, and a tag that already exists on another commit, since a release takes the
-   tag's commit. When that release is already published, it stops there;
+1. names the release `cli-v<version>` after the `lorca` crate. It refuses a tag that already
+   exists on another commit, since a release takes the tag's commit. When that release is already
+   published, it builds only the desktop app;
 2. builds `lorca` with `--release --locked` and `LORCA_SELF_UPDATE=1`, which makes a build that
    updates itself: `cargo build` on a macOS runner for the Mac, and `cargo zigbuild` on Linux for
    Linux (musl) and Windows (`x86_64-pc-windows-gnu`). Each binary goes alone into
-   `lorca-cli-<os>-<cpu>.tar.gz` (`.zip` for Windows) with a `.sha256` beside it;
+   `lorca-cli-<os>-<cpu>.tar.gz` (`.zip` for Windows) with a `.sha256` beside it. The same job then
+   builds the desktop app, whose CLI, built without `LORCA_SELF_UPDATE`, recompiles only the
+   `lorca` crate. Each platform's Rust cache is saved on `main` and restored by the next release;
 3. writes `lorca-cli.json` from the archives and signs it with `CLI_UPDATE_SIGNING_KEY`, after
    checking that the key's public half is in `KEYS`; it stops when the secret is missing;
 4. serves the archives and the manifest the way a release does on Linux, macOS, and Windows
@@ -86,7 +89,8 @@ The workflow:
 Publishing the draft releases the update: every CLI installed with the scripts finds it within a
 day and restarts into it once its bots are idle.
 
-Runs go one at a time. To rebuild a published release, delete it and its tag first.
+Runs go one at a time. A desktop build that fails holds back the CLI's draft, which waits for every
+platform's job. To rebuild a published release, delete it and its tag first.
 
 A release needs no deploy of the site. A change to the scripts ships with `bun run web:deploy`;
 `web/public/_headers` serves them as UTF-8 text.

@@ -289,7 +289,7 @@ pub struct App {
     pub workflow_editing: tokio::sync::Mutex<()>,
     /// Checks for a newer model catalog.
     pub catalog: crate::catalog::Updates,
-    /// Checks for a newer release of the CLI itself, which a build from `release-cli.yml`
+    /// Checks for a newer release of the CLI itself, which a build from `release-cli-desktop.yml`
     /// installs over its own binary.
     #[cfg(feature = "cli")]
     pub updates: crate::update::Updater,
