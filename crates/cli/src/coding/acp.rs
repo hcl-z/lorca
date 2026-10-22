@@ -4,8 +4,8 @@
 //! one at a time, writes the agent's updates into the transcript, and decides what the agent
 //! asks permission for. The agent runs its own tools: Lorca offers it no file system and no
 //! terminal, so it asks only what its own settings make it ask, and every ask goes through
-//! Auto-review as a command's does. Claude Code and Codex are driven through adapters that wrap
-//! the CLI the user has installed; the others speak ACP themselves.
+//! Auto-review as a command's does. An agent whose CLI does not speak ACP (Claude Code, Codex)
+//! is driven through an adapter that wraps the CLI the user has installed.
 
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -34,72 +34,36 @@ use super::lines;
 use super::process::{self, Process};
 
 /// An agent Lorca drives over ACP: the name in `coding_agent`'s `agent`, what it is called, and
-/// how it starts. The differences between agents live here and nowhere else.
-pub(crate) struct Spec {
-    pub kind: &'static str,
-    pub name: &'static str,
-    /// The programs it may be installed as. For an agent behind an adapter, the CLI it wraps.
-    pub bins: &'static [&'static str],
-    /// The arguments that start its ACP mode.
-    pub args: &'static [&'static str],
+/// how it starts, as the Runner's `agents.json` says ([`super::agents_json`]). The differences
+/// between agents live there and nowhere else.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Spec {
+    pub kind: String,
+    pub name: String,
+    /// The programs it may be installed as, at least one. For an agent behind an adapter, the
+    /// CLI it wraps.
+    pub bins: Vec<String>,
+    /// The arguments that start its ACP mode; behind an adapter, the adapter's, after its package.
+    pub args: Vec<String>,
     pub adapter: Option<Adapter>,
     /// The value of its `mode` setting under which it asks before it acts.
-    pub safe_mode: Option<&'static str>,
+    pub safe_mode: Option<String>,
 }
 
-/// A CLI that does not speak ACP, driven through an adapter run with `npx`: a package pinned to
-/// the version Lorca was tried with, told which installed CLI to use.
-pub(crate) struct Adapter {
-    pub package: &'static str,
+/// A CLI that does not speak ACP, driven through an adapter run with `npx`: a package, pinned to
+/// a version in `agents.json`, told which installed CLI to use.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Adapter {
+    pub package: String,
     /// The adapter's variable naming the CLI to run, so it uses the user's install and sign-in
     /// and not a copy of its own.
-    pub binary_env: &'static str,
-    pub env: &'static [(&'static str, &'static str)],
-}
-
-/// The agents Lorca drives over ACP, in the order they are listed.
-pub(crate) const SPECS: &[Spec] = &[
-    Spec {
-        kind: "claude",
-        name: "Claude Code",
-        bins: &["claude"],
-        args: &[],
-        adapter: Some(Adapter { package: "@agentclientprotocol/claude-agent-acp@0.94.0", binary_env: "CLAUDE_CODE_EXECUTABLE", env: &[] }),
-        safe_mode: Some("default"),
-    },
-    Spec {
-        kind: "codex",
-        name: "Codex",
-        bins: &["codex"],
-        args: &[],
-        adapter: Some(Adapter { package: "@agentclientprotocol/codex-acp@2.2.2", binary_env: "CODEX_PATH", env: &[] }),
-        safe_mode: Some("workspace-write"),
-    },
-    Spec { kind: "gemini", name: "Gemini CLI", bins: &["gemini"], args: &["--acp"], adapter: None, safe_mode: None },
-    Spec { kind: "opencode", name: "OpenCode", bins: &["opencode"], args: &["acp"], adapter: None, safe_mode: None },
-    Spec { kind: "kimi", name: "Kimi Code", bins: &["kimi"], args: &["acp"], adapter: None, safe_mode: None },
-    Spec { kind: "copilot", name: "GitHub Copilot", bins: &["copilot"], args: &["--acp", "--stdio"], adapter: None, safe_mode: None },
-    Spec { kind: "cursor", name: "Cursor", bins: &["cursor-agent", "agent"], args: &["acp"], adapter: None, safe_mode: None },
-    Spec { kind: "kiro", name: "Kiro", bins: &["kiro-cli"], args: &["acp"], adapter: None, safe_mode: None },
-    // pi has no ACP mode of its own; its adapter runs `pi --mode rpc`. pi asks before nothing, so
-    // none of its commands or edits reaches Lorca to decide.
-    Spec {
-        kind: "pi",
-        name: "pi",
-        bins: &["pi"],
-        args: &[],
-        adapter: Some(Adapter { package: "pi-acp@0.0.34", binary_env: "PI_ACP_PI_COMMAND", env: &[] }),
-        safe_mode: None,
-    },
-];
-
-pub(crate) fn spec(kind: &str) -> Option<&'static Spec> {
-    SPECS.iter().find(|spec| spec.kind == kind)
+    pub binary_env: String,
+    pub env: Vec<(String, String)>,
 }
 
 /// Where the CLI is installed, under whichever program name it goes by.
 async fn find_cli(spec: &Spec) -> Option<PathBuf> {
-    for bin in spec.bins {
+    for bin in &spec.bins {
         if let Some(path) = process::find(bin).await {
             return Some(path);
         }
@@ -111,7 +75,7 @@ async fn find_cli(spec: &Spec) -> Option<PathBuf> {
 /// one behind an adapter, whose CLI must be installed too.
 pub(crate) async fn find(spec: &Spec) -> Option<PathBuf> {
     let cli = find_cli(spec).await?;
-    match spec.adapter {
+    match &spec.adapter {
         Some(_) => process::find("npx").await,
         None => Some(cli),
     }
@@ -264,7 +228,7 @@ impl Driver for Acp {
 
 /// What a run needs to open its session.
 struct Setup {
-    spec: &'static Spec,
+    spec: Arc<Spec>,
     folder: PathBuf,
     /// The first prompt.
     first: String,
@@ -279,7 +243,7 @@ struct Setup {
 /// Starts `spec` in `folder` on `prompt`, or resumes `session` with it when the agent can, with
 /// `config` set again. It answers once the session is open.
 pub(crate) async fn start(
-    spec: &'static Spec,
+    spec: Arc<Spec>,
     program: &Path,
     folder: &Path,
     prompt: &str,
@@ -292,12 +256,12 @@ pub(crate) async fn start(
     let mut variables = variables.to_vec();
     let args: Vec<String> = match &spec.adapter {
         Some(adapter) => {
-            let cli = find_cli(spec).await.ok_or_else(|| format!("{} is not installed on this Runner.", spec.name))?;
-            variables.push((adapter.binary_env.into(), cli.into_os_string()));
-            variables.extend(adapter.env.iter().map(|(name, value)| ((*name).into(), (*value).into())));
-            vec!["-y".to_string(), adapter.package.to_string()]
+            let cli = find_cli(&spec).await.ok_or_else(|| format!("{} is not installed on this Runner.", spec.name))?;
+            variables.push((adapter.binary_env.clone().into(), cli.into_os_string()));
+            variables.extend(adapter.env.iter().map(|(name, value)| (name.into(), value.into())));
+            ["-y".to_string(), adapter.package.clone()].into_iter().chain(spec.args.iter().cloned()).collect()
         }
-        None => spec.args.iter().map(|arg| arg.to_string()).collect(),
+        None => spec.args.clone(),
     };
     let (process, stdout, exit) = process::spawn(program, &args, folder, &variables).await?;
     let stdin = process.take_stdin().await.ok_or("No stdin")?;
@@ -306,17 +270,18 @@ pub(crate) async fn start(
     let (ready, mut waiting) = oneshot::channel();
     let ready: Ready = Arc::new(Mutex::new(Some(ready)));
     let shared = Arc::new(Shared::default());
+    let limit = if spec.adapter.is_some() { ADAPTER_SETUP_TIMEOUT } else { SETUP_TIMEOUT };
+    let name = spec.name.clone();
     let setup = Setup { spec, folder: folder.to_path_buf(), first: prompt.to_string(), resume: session.map(str::to_string), config: config.to_vec(), wants: wants.to_vec() };
     tokio::spawn(run(setup, transport, events, receiver, shared.clone(), ready, exit));
-    let limit = if spec.adapter.is_some() { ADAPTER_SETUP_TIMEOUT } else { SETUP_TIMEOUT };
     let opened = match tokio::time::timeout(limit, &mut waiting).await {
         Ok(Ok(opened)) => opened,
-        Ok(Err(_)) => Err(format!("{} stopped before it was ready", spec.name)),
+        Ok(Err(_)) => Err(format!("{name} stopped before it was ready")),
         Err(_) => {
             process.stop();
             let _ = tokio::time::timeout(Duration::from_secs(3), waiting).await;
             let said = shared.last_words.lock().unwrap().take().map(|said| format!(" ({said})")).unwrap_or_default();
-            Err(format!("{} did not answer ACP within {} seconds{said}. Its version may be too old to speak it; update it and start again.", spec.name, limit.as_secs()))
+            Err(format!("{name} did not answer ACP within {} seconds{said}. Its version may be too old to speak it; update it and start again.", limit.as_secs()))
         }
     };
     if let Err(error) = opened {
@@ -329,7 +294,7 @@ pub(crate) async fn start(
 /// One run of the agent's process: its connection, then how it ended. A run that never opened its
 /// session tells `start` why, and nothing else.
 async fn run(setup: Setup, transport: Transport, events: Events, commands: mpsc::UnboundedReceiver<Command>, shared: Arc<Shared>, ready: Ready, exit: oneshot::Receiver<process::Exit>) {
-    let name = setup.spec.name;
+    let name = setup.spec.name.clone();
     let result = drive(setup, transport, events.clone(), commands, shared.clone(), ready.clone()).await;
     let exit = exit.await.ok();
     let said = exit.as_ref().and_then(|exit| exit.said.clone());
@@ -362,9 +327,9 @@ async fn run(setup: Setup, transport: Transport, events: Events, commands: mpsc:
 async fn drive(setup: Setup, transport: Transport, events: Events, mut commands: mpsc::UnboundedReceiver<Command>, shared: Arc<Shared>, ready: Ready) -> Result<(), String> {
     let Setup { spec, folder, first, resume, mut config, wants } = setup;
     let updates = (events.clone(), shared.clone(), folder.clone());
-    let asks = (events.clone(), shared.clone(), folder.clone());
+    let asks = (events.clone(), shared.clone(), folder.clone(), spec.clone());
     let questions = (events.clone(), shared.clone());
-    let failing = shared.clone();
+    let failing = (shared.clone(), spec.clone());
     Client
         .builder()
         .on_receive_notification(
@@ -377,9 +342,9 @@ async fn drive(setup: Setup, transport: Transport, events: Events, mut commands:
         )
         .on_receive_request(
             async move |request: RequestPermissionRequest, responder, _cx| {
-                let (events, shared, folder) = asks.clone();
+                let (events, shared, folder, spec) = asks.clone();
                 tokio::spawn(async move {
-                    let outcome = decide(spec, &request, &events, &shared, &folder).await;
+                    let outcome = decide(&spec, &request, &events, &shared, &folder).await;
                     let _ = responder.respond(RequestPermissionResponse::new(outcome));
                 });
                 Ok(())
@@ -440,11 +405,11 @@ async fn drive(setup: Setup, transport: Transport, events: Events, mut commands:
             };
             let options = opening["configOptions"].clone();
             *shared.stage.lock().unwrap() = "options";
-            config.extend(requested(spec, &options, &wants).map_err(|error| agent_client_protocol::Error::new(-32602, error))?);
+            config.extend(requested(&spec, &options, &wants).map_err(|error| agent_client_protocol::Error::new(-32602, error))?);
             *shared.stage.lock().unwrap() = "session";
             *shared.opening.lock().unwrap() = opening;
             let mut applied: Vec<(String, String)> = Vec::new();
-            for (id, value) in settings(spec, &options, &config) {
+            for (id, value) in settings(&spec, &options, &config) {
                 let request = SetSessionConfigOptionRequest::new(session.clone(), SessionConfigId::new(Arc::<str>::from(id.as_str())), value.as_str());
                 match connection.send_request(request).block_task().await {
                     Ok(_) => applied.push((id, value)),
@@ -486,7 +451,7 @@ async fn drive(setup: Setup, transport: Transport, events: Events, mut commands:
                 tokio::select! {
                     result = async { running.as_mut().unwrap().await }, if running.is_some() => {
                         running = None;
-                        let said = turn_ended(spec, &events, &shared, result, std::mem::take(&mut interrupting));
+                        let said = turn_ended(&spec, &events, &shared, result, std::mem::take(&mut interrupting));
                         if queue.is_empty() {
                             let _ = events.send(Event::Idle(said));
                         }
@@ -499,7 +464,7 @@ async fn drive(setup: Setup, transport: Transport, events: Events, mut commands:
                         }
                         Some(Command::Send { text, .. }) => queue.push_back(text),
                         Some(Command::Set { wants, reply }) => {
-                            let _ = reply.send(set_options(spec, &connection, &session, &shared, &events, &wants).await);
+                            let _ = reply.send(set_options(&spec, &connection, &session, &shared, &events, &wants).await);
                         }
                         // The agent cancels what it does and frees the session; the process is
                         // stopped once this answers.
@@ -517,7 +482,7 @@ async fn drive(setup: Setup, transport: Transport, events: Events, mut commands:
             Ok(())
         })
         .await
-        .map_err(|error| setup_error(spec, *failing.stage.lock().unwrap(), &error.to_string()))
+        .map_err(|error| setup_error(&failing.1, *failing.0.stage.lock().unwrap(), &error.to_string()))
 }
 
 /// How long the agent has to take a setting while it runs.
@@ -526,7 +491,7 @@ const SET_TIMEOUT: Duration = Duration::from_secs(20);
 /// Changes the session's model or effort as it runs: what is asked for is found among what the
 /// session offers (`requested`), set one at a time, and then the card and the settings kept for a
 /// resumed session catch up.
-async fn set_options(spec: &'static Spec, connection: &ConnectionTo<Peer>, session: &SessionId, shared: &Shared, events: &Events, wants: &[(String, String)]) -> Result<(), String> {
+async fn set_options(spec: &Spec, connection: &ConnectionTo<Peer>, session: &SessionId, shared: &Shared, events: &Events, wants: &[(String, String)]) -> Result<(), String> {
     let options = shared.opening.lock().unwrap()["configOptions"].clone();
     let todo = requested(spec, &options, wants)?;
     let mut done: Vec<String> = Vec::new();
@@ -1288,7 +1253,7 @@ fn requested(spec: &Spec, options: &Value, wants: &[(String, String)]) -> Result
 fn settings(spec: &Spec, options: &Value, recorded: &[(String, String)]) -> Vec<(String, String)> {
     let offered = || options.as_array().into_iter().flatten();
     let mut wanted: Vec<(String, String)> = Vec::new();
-    if let Some(safe) = spec.safe_mode {
+    if let Some(safe) = &spec.safe_mode {
         if let Some(id) = offered().find(|option| option["category"] == "mode").and_then(|option| option["id"].as_str()) {
             wanted.push((id.to_string(), safe.to_string()));
         }
@@ -1427,7 +1392,7 @@ fn setup_error(spec: &Spec, stage: &str, error: &str) -> String {
         // What the bot asked for at the start, which the agent cannot take.
         "options" => error,
         "initialize" => format!("{} did not answer ACP: {error}. Its version may be too old to speak it; update it and start again.", spec.name),
-        "session" if needs_sign_in(&error) => format!("{} needs you to sign in. Run `{}` once in a terminal, sign in there, and start it again.", spec.name, spec.bins[0]),
+        "session" if needs_sign_in(&error) => format!("{} needs you to sign in. Run `{}` once in a terminal, sign in there, and start it again.", spec.name, spec.bins.first().map_or(spec.kind.as_str(), String::as_str)),
         "session" => format!("{} could not open a session: {error}", spec.name),
         _ => error,
     }
@@ -1442,7 +1407,7 @@ fn needs_sign_in(error: &str) -> bool {
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::collections::HashSet;
+    use crate::coding::agents_json::{template_spec, template_specs};
 
     #[test]
     fn a_permission_request_becomes_what_lorca_decides() {
@@ -1500,7 +1465,7 @@ mod tests {
 
     #[test]
     fn what_the_bot_asks_for_is_found_by_name_and_refused_with_what_is_offered() {
-        let spec = spec("claude").unwrap();
+        let spec = &*template_spec("claude");
         let options = json!([
             { "id": "mode", "name": "Mode", "category": "mode", "currentValue": "default", "options": [{ "value": "default", "name": "Default" }, { "value": "plan", "name": "Plan" }, { "value": "bypassPermissions", "name": "Bypass" }] },
             { "id": "model", "name": "Model", "category": "model", "currentValue": "default", "options": [{ "value": "default", "name": "Default (recommended)" }, { "group": "g", "options": [{ "value": "sonnet", "name": "Sonnet" }, { "value": "opus", "name": "Opus" }] }] },
@@ -1697,7 +1662,7 @@ mod tests {
 
     #[test]
     fn a_session_is_set_to_ask_first_and_keeps_what_an_earlier_run_chose() {
-        let codex = spec("codex").unwrap();
+        let codex = &*template_spec("codex");
         let options = json!([
             { "id": "mode", "category": "mode", "currentValue": "agent", "options": [{ "value": "read-only" }, { "value": "workspace-write" }, { "value": "agent" }] },
             { "id": "model", "category": "model", "currentValue": "auto/default", "options": [{ "group": "g", "name": "G", "options": [{ "value": "auto/fast" }, { "value": "auto/default" }] }] },
@@ -1706,7 +1671,7 @@ mod tests {
         let recorded = [("mode".to_string(), "workspace-write".to_string()), ("model".to_string(), "auto/fast".to_string()), ("model".to_string(), "gone".to_string())];
         assert_eq!(settings(codex, &options, &recorded[..2]), [("mode".to_string(), "workspace-write".to_string()), ("model".to_string(), "auto/fast".to_string())]);
         assert_eq!(settings(codex, &options, &recorded[2..]).len(), 1, "a value the session does not accept is not set");
-        let gemini = spec("gemini").unwrap();
+        let gemini = &*template_spec("gemini");
         assert!(settings(gemini, &options, &[]).is_empty(), "an agent without a safe mode is left as it is");
         let applied = [("mode".to_string(), "workspace-write".to_string())];
         assert_eq!(snapshot(&options, &applied), [("mode".to_string(), "workspace-write".to_string()), ("model".to_string(), "auto/default".to_string())]);
@@ -1741,7 +1706,7 @@ mod tests {
 
     #[test]
     fn a_failed_start_says_which_step_and_what_to_do() {
-        let claude = spec("claude").unwrap();
+        let claude = &*template_spec("claude");
         assert!(setup_error(claude, "initialize", "connection closed").contains("too old"));
         assert!(setup_error(claude, "session", "Authentication required").contains("sign in"));
         assert!(setup_error(claude, "session", "Internal error").contains("could not open a session"));
@@ -1761,13 +1726,13 @@ mod tests {
     async fn real_agents_answer_the_handshake_and_a_prompt() {
         let folder = std::env::temp_dir().join(format!("lorca-acp-real-{}", std::process::id()));
         std::fs::create_dir_all(&folder).unwrap();
-        for spec in SPECS.iter().filter(|spec| chosen(spec)) {
-            let Some(program) = find(spec).await else {
+        for spec in template_specs().into_iter().filter(|spec| chosen(spec)) {
+            let Some(program) = find(&spec).await else {
                 println!("{}: not installed", spec.kind);
                 continue;
             };
             let (tx, mut rx) = mpsc::unbounded_channel();
-            let driver = match start(spec, &program, &folder, "Reply with exactly: ok", None, &[], &[], &[], tx).await {
+            let driver = match start(spec.clone(), &program, &folder, "Reply with exactly: ok", None, &[], &[], &[], tx).await {
                 Ok(driver) => driver,
                 Err(error) => {
                     println!("{}: could not start: {error}", spec.kind);
@@ -1810,8 +1775,8 @@ mod tests {
     #[ignore = "talks to the agents installed on this machine"]
     async fn real_agents_write_a_file_when_allowed() {
         let mut failures = Vec::new();
-        for spec in SPECS.iter().filter(|spec| chosen(spec)) {
-            let Some(program) = find(spec).await else {
+        for spec in template_specs().into_iter().filter(|spec| chosen(spec)) {
+            let Some(program) = find(&spec).await else {
                 println!("{}: not installed", spec.kind);
                 continue;
             };
@@ -1819,7 +1784,7 @@ mod tests {
             std::fs::create_dir_all(&folder).unwrap();
             let (tx, mut rx) = mpsc::unbounded_channel();
             let prompt = "Create a file named ok.txt in the current folder whose content is exactly: ok";
-            let driver = match start(spec, &program, &folder, prompt, None, &[], &[], &[], tx).await {
+            let driver = match start(spec.clone(), &program, &folder, prompt, None, &[], &[], &[], tx).await {
                 Ok(driver) => driver,
                 Err(error) => {
                     println!("{}: could not start: {error}", spec.kind);
@@ -1845,7 +1810,7 @@ mod tests {
             let wrote = std::fs::read_to_string(folder.join("ok.txt")).map(|text| text.trim() == "ok").unwrap_or(false);
             println!("{}: finished {}; asked {asked:?}; wrote ok.txt: {wrote}", spec.kind, finished.is_ok());
             if !wrote {
-                failures.push(spec.kind);
+                failures.push(spec.kind.clone());
             }
             driver.stop().await;
             let _ = std::fs::remove_dir_all(&folder);
@@ -1854,14 +1819,9 @@ mod tests {
     }
 
     #[test]
-    fn the_agents_are_found_by_their_kind() {
-        assert_eq!(spec("gemini").map(|spec| spec.args), Some(&["--acp"][..]));
-        assert_eq!(spec("claude").map(|spec| spec.name), Some("Claude Code"));
-        assert_eq!(spec("codex").map(|spec| spec.name), Some("Codex"));
-        let kinds: HashSet<_> = SPECS.iter().map(|spec| spec.kind).collect();
-        assert_eq!(kinds.len(), SPECS.len());
+    fn the_templates_ask_first_where_they_can() {
         // Claude Code and Codex are set to ask first; pi asks before nothing.
-        assert!(SPECS.iter().filter(|spec| spec.adapter.is_some() && spec.kind != "pi").all(|spec| spec.safe_mode.is_some()), "an agent behind an adapter asks first");
-        assert_eq!(spec("pi").and_then(|spec| spec.adapter.as_ref()).map(|adapter| adapter.binary_env), Some("PI_ACP_PI_COMMAND"));
+        assert!(template_specs().iter().filter(|spec| spec.adapter.is_some() && spec.kind != "pi").all(|spec| spec.safe_mode.is_some()), "an agent behind an adapter asks first");
+        assert_eq!(template_spec("pi").adapter.as_ref().map(|adapter| adapter.binary_env.as_str()), Some("PI_ACP_PI_COMMAND"));
     }
 }

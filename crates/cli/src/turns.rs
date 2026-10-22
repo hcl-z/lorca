@@ -1552,7 +1552,7 @@ impl TurnState {
                 // agent at work, what it asks, how it ended.
                 let starts_agent = tool_name == "coding_agent" && args["action"] == "start";
                 let agent = starts_agent.then(|| crate::model::AgentRun {
-                    kind: args["agent"].as_str().filter(|kind| crate::coding::is_kind(kind)).unwrap_or("").to_string(),
+                    kind: args["agent"].as_str().filter(|kind| crate::coding::is_kind(&self.app, kind)).unwrap_or("").to_string(),
                     task: args["prompt"].as_str().unwrap_or("").lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or("").chars().take(200).collect(),
                     state: "starting".into(),
                     started_at: Some(crate::config::now_secs()),

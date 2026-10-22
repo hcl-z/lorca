@@ -864,6 +864,13 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
             let runner_id = string(&params, "runner_id")?;
             crate::plugins::on_runner(app, &runner_id, "plugins.sign_out", json!({ "plugin_id": string(&params, "plugin_id")?, "server": params["server"] })).await
         }
+        // This Runner's agents.json: the coding agents a bot can start.
+        "agents.list" | "agents.get" | "agents.add" | "agents.remove" | "agents.reload" => {
+            #[cfg(feature = "runner")]
+            return crate::coding::agents_json::serve_request(app, method, &params).await;
+            #[cfg(not(feature = "runner"))]
+            return Err("This Device does not run coding agents.".into());
+        }
         // A Runner's mcp.json: its servers, here or through a sealed request to that Runner.
         // `mcp.parse` reads pasted JSON on this Device.
         "mcp.parse" => crate::plugins::mcp_json::parse_reply(params["text"].as_str().unwrap_or_default()),

@@ -279,6 +279,9 @@ pub struct App {
     /// The coding agents the bots run on this Runner.
     #[cfg(feature = "runner")]
     pub coding_agents: crate::coding::Agents,
+    /// `agents.json` as this Runner last read it: the coding agents a bot can start.
+    #[cfg(feature = "runner")]
+    pub agents: Mutex<crate::coding::agents_json::AgentsFile>,
     /// What this Runner has installed, with the secrets kept apart.
     pub plugins: Mutex<crate::plugins::Store>,
     /// This Runner's channels as its machine blob advertises them, and its accounts' readers.
@@ -328,6 +331,8 @@ impl App {
         let credentials = Credentials::load(&config);
         let plugins = crate::plugins::Store::load(&config);
         let marketplace = crate::marketplace::Updates::load(&config);
+        #[cfg(feature = "runner")]
+        let agents = crate::coding::agents_json::AgentsFile::read(&config.agents_path());
         let store = LocalStore::open(&config.database_path())?;
         let mut state = store.load_state()?;
         for bot in &mut state.bots {
@@ -396,6 +401,8 @@ impl App {
             shell_sessions: crate::shell::Sessions::default(),
             #[cfg(feature = "runner")]
             coding_agents: crate::coding::Agents::default(),
+            #[cfg(feature = "runner")]
+            agents: Mutex::new(agents),
             plugins: Mutex::new(plugins),
             channels: crate::channels::Channels::default(),
             marketplace,
