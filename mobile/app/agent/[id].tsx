@@ -13,6 +13,7 @@
 
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { memo, useCallback, useRef, useState, type ReactNode } from "react";
+import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { type AgentEntry, type AgentTool, mergeAgentEntries, toolFailed, toolRunning } from "../../src/core/agentEntries";
 import { agentBusy, agentSince, latestPlan, outputSpans, type OutputSpan } from "../../src/core/agentKit";
@@ -47,7 +48,7 @@ export default function AgentScreen() {
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Record<number, boolean>>({});
   const [stopping, setStopping] = useState(false);
-  const scroll = useRef<ScrollView>(null);
+  const scroll = useRef<FlashListRef<AgentEntry>>(null);
   const atEnd = useRef(true);
 
   useFocusEffect(
@@ -97,9 +98,16 @@ export default function AgentScreen() {
     <View style={styles.screen}>
       <Stack.Screen options={{ title: agent ? agentName(agent) : t("Transcript") }} />
       <CloseToolbar label={Platform.OS === "android" ? t("Close") : t("Done")} onClose={() => router.dismiss()} />
-      <ScrollView
+      {/* A long run's transcript holds hundreds of entries: the list draws those near the screen,
+          the overview over them and what the agent asks under them. */}
+      <FlashList
         ref={scroll}
-        contentContainerStyle={[styles.content, { width: column + 32, alignSelf: "center" }]}
+        data={entries}
+        keyExtractor={(entry) => String(entry.seq)}
+        getItemType={(entry) => (entry.tool ? "tool" : entry.kind)}
+        extraData={open}
+        drawDistance={800}
+        contentContainerStyle={{ ...styles.content, paddingHorizontal: 16 + (width - column - 32) / 2 }}
         contentInsetAdjustmentBehavior="automatic"
         scrollEventThrottle={64}
         onScroll={(e) => {
@@ -109,39 +117,46 @@ export default function AgentScreen() {
         onContentSizeChange={() => {
           if (atEnd.current) scroll.current?.scrollToEnd({ animated: false });
         }}
-      >
-        {agent && message ? <Overview agent={agent} message={message} entries={entries} stopping={stopping} onStop={stop} /> : null}
-        <View style={{ height: 6 }} />
-        {entries.length > 0 ? (
-          entries.map((entry, at) => (
-            <EntryRow
-              key={entry.seq}
-              entry={entry}
-              kind={agent?.kind ?? ""}
-              who={who}
-              // The rail runs on to the next entry with a node.
-              rail={at + 1 < entries.length && entries[at + 1].kind !== "sent" && entries[at + 1].kind !== "log"}
-              open={isOpen(entry, at)}
-              width={column - NODE - 12}
-              onToggle={toggle}
-            />
-          ))
-        ) : text ? (
-          <View style={[styles.code, { backgroundColor: p.code }]}>
-            <Text selectable style={[styles.mono, { color: p.label }]}>
-              {text}
-            </Text>
-          </View>
-        ) : (
-          <Text style={{ color: p.secondaryLabel }}>{error ?? (text === "" ? t("Nothing yet") : t("Loading…"))}</Text>
+        ListHeaderComponent={
+          <>
+            {agent && message ? <Overview agent={agent} message={message} entries={entries} stopping={stopping} onStop={stop} /> : null}
+            <View style={{ height: 6 }} />
+          </>
+        }
+        renderItem={({ item: entry, index: at }) => (
+          <EntryRow
+            entry={entry}
+            kind={agent?.kind ?? ""}
+            who={who}
+            // The rail runs on to the next entry with a node.
+            rail={at + 1 < entries.length && entries[at + 1].kind !== "sent" && entries[at + 1].kind !== "log"}
+            open={isOpen(entry, at)}
+            width={column - NODE - 12}
+            onToggle={toggle}
+          />
         )}
-        {askCard?.body.kind === "permission" && askCard.body.agent_ask ? (
-          <View style={{ marginTop: 8, marginHorizontal: -12 }}>
-            <AgentAskRow row={{ key: askCard.id, type: "permission", message: askCard, body: askCard.body, bot, groupStart: false }} ask={askCard.body.agent_ask} isGroup={false} />
-          </View>
-        ) : null}
-        {agent && message ? <CardQuestion agent={agent} message={message} who={who} /> : null}
-      </ScrollView>
+        ListEmptyComponent={
+          text ? (
+            <View style={[styles.code, { backgroundColor: p.code }]}>
+              <Text selectable style={[styles.mono, { color: p.label }]}>
+                {text}
+              </Text>
+            </View>
+          ) : (
+            <Text style={{ color: p.secondaryLabel }}>{error ?? (text === "" ? t("Nothing yet") : t("Loading…"))}</Text>
+          )
+        }
+        ListFooterComponent={
+          <>
+            {askCard?.body.kind === "permission" && askCard.body.agent_ask ? (
+              <View style={{ marginTop: 8, marginHorizontal: -12 }}>
+                <AgentAskRow row={{ key: askCard.id, type: "permission", message: askCard, body: askCard.body, bot, groupStart: false }} ask={askCard.body.agent_ask} isGroup={false} />
+              </View>
+            ) : null}
+            {agent && message ? <CardQuestion agent={agent} message={message} who={who} /> : null}
+          </>
+        }
+      />
     </View>
   );
 }
