@@ -881,7 +881,12 @@ fn model_short_name(name: &str) -> &str {
 fn pull_request_name(link: &str) -> Option<String> {
     let path = link.strip_prefix("https://").or_else(|| link.strip_prefix("http://")).unwrap_or(link);
     let parts: Vec<&str> = path.trim_end_matches('/').split('/').collect();
-    (parts.len() >= 5 && matches!(parts[3], "pull" | "pulls" | "merge_requests")).then(|| format!("{}/{} #{}", parts[1], parts[2], parts[4]))
+    // The repository is what lies between the host and the marker: a GitLab group may nest, and
+    // GitLab puts `-` before the marker.
+    let at = parts.iter().position(|part| matches!(*part, "pull" | "pulls" | "merge_requests"))?;
+    let number = parts.get(at + 1).filter(|number| !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()))?;
+    let repo: Vec<&str> = parts[1..at].iter().copied().filter(|part| *part != "-").collect();
+    (repo.len() >= 2).then(|| format!("{} #{number}", repo.join("/")))
 }
 
 /// A token count as a card's `Context` setting writes it: "34k", "1.2M", or "512".
@@ -1944,6 +1949,9 @@ mod app_view_tests {
         let pr = |link: &str| summarized(AgentRun { pull_request: Some(link.into()), ..Default::default() }).pull_request_name;
         assert_eq!(pr("https://github.com/acme/shop/pull/7").as_deref(), Some("acme/shop #7"));
         assert_eq!(pr("https://gitlab.com/acme/shop/merge_requests/12/").as_deref(), Some("acme/shop #12"));
+        assert_eq!(pr("https://gitlab.com/acme/web/shop/-/merge_requests/12").as_deref(), Some("acme/web/shop #12"));
+        assert_eq!(pr("https://github.com/acme/shop/pull/7/files").as_deref(), Some("acme/shop #7"));
+        assert_eq!(pr("https://github.com/acme/pull/7"), None);
         assert_eq!(pr("https://example.com/x"), None);
 
         let output = "a\n\nb\nc\n  \nd\ne\nf\n".to_string();
