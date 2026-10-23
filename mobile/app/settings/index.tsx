@@ -13,6 +13,7 @@ import { deviceLanguage, languageNames, languages, setAppLanguage, t, useLanguag
 import { FieldRow, MenuRow, Row, Section, ToggleRow, type MenuChoice } from "../../src/ui/forms";
 import { lastSeen } from "../../src/ui/format";
 import { Symbol } from "../../src/ui/Symbol";
+import { TimingSection } from "../../src/ui/TimingSection";
 import { usePalette } from "../../src/ui/theme";
 import { deviceSymbol } from "../../src/ui/devices";
 import { CloseToolbar } from "../../src/ui/navigation";
@@ -444,6 +445,8 @@ export default function SettingsScreen() {
             />
           </Section>
         )}
+
+        <TimingSection />
 
         <Section>
           <Row

@@ -1,4 +1,5 @@
 import { FlashList } from "@shopify/flash-list";
+import { chatOpening, markLaunch } from "../core/timing";
 import { type MenuAction, type MenuComponentRef } from "@expo/ui/community/menu";
 import { haptic } from "./haptics";
 import { PopupMenu } from "./PopupMenu";
@@ -150,6 +151,7 @@ export function ChatsScreen({ sidebar = false }: { sidebar?: boolean }) {
   latest.current = { sidebar, openChatId };
   const openChat = useCallback((chat: Chat) => {
     const { sidebar, openChatId } = latest.current;
+    if (chat.id !== openChatId) chatOpening();
     if (!sidebar) return router.push(`/chat/${chat.id}`);
     if (chat.id === openChatId) return;
     if (openChatId) router.replace(`/chat/${chat.id}`);
@@ -297,6 +299,7 @@ export function ChatsScreen({ sidebar = false }: { sidebar?: boolean }) {
             </View>
           }
           renderItem={renderItem}
+          onLoad={() => chats.length && markLaunch("listDrawn")}
           onRefresh={() => {
             haptic.refresh();
             engine.notify();

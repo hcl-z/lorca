@@ -3,6 +3,7 @@
 // Every call is one request over the JSON API the desktop app speaks to the CLI; the Rust
 // core does the keys, the relay, jobs, rooms, and questions to Runners.
 
+import { markLaunch } from "./timing";
 import type { AgentTranscriptPage } from "./agentEntries";
 import * as WebBrowser from "expo-web-browser";
 import { AppState, Platform, type AppStateStatus } from "react-native";
@@ -92,6 +93,7 @@ class Engine {
     this.bootstraps += 1;
     try {
       await core.start(coreHome(), hostFacts());
+      markLaunch("coreStarted");
       AppState.addEventListener("change", (status) => this.onAppState(status));
       // Read after every store update, including the roster's unread count that follows a
       // message event, a backlog snapshot, and returning to a chat already mounted on screen.
@@ -113,6 +115,7 @@ class Engine {
     this.bootstraps += 1;
     try {
       replaceSnapshot(await core.request<Snapshot>("bootstrap"));
+      markLaunch("snapshotApplied");
     } finally {
       this.bootstraps -= 1;
       if (!this.bootstraps) this.applyHeld();
