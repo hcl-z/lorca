@@ -48,12 +48,9 @@ func agentPlace(agent *model.AgentRun) string {
 	return strings.Join(parts, " · ")
 }
 
-// agentOutput is its last lines with something on them, while it works.
+// agentOutput is its last lines with something on them, while it works, as the CLI keeps them.
 func agentOutput(agent *model.AgentRun) string {
-	if agent.Question != nil || (agent.State != model.AgentStarting && agent.State != model.AgentWorking) {
-		return ""
-	}
-	return outputText(agent.Output)
+	return strings.Join(agent.Tail, "\n")
 }
 
 func agentNote(agent *model.AgentRun) string {
@@ -225,8 +222,8 @@ func agentFacts(c *ui.Context, p *palette, agent *model.AgentRun, chatID, messag
 							return
 						}
 						value := setting.Value
-						if setting.Name == "Model" {
-							value = modelShortName(value)
+						if setting.Name == "Model" && agent.Model != "" {
+							value = agent.Model
 						}
 						ui.Text(c, value).FontSize(12.5).FontWeight(500).TextColor(p.Label).SingleLine().Tooltip(setting.Value)
 					})
@@ -265,20 +262,6 @@ func agentFacts(c *ui.Context, p *palette, agent *model.AgentRun, chatID, messag
 	})
 }
 
-// modelShortName is a model's name as a cell has room for: without the provider a gateway puts
-// before it, and without the context hints after it ("…/claude-sonnet[1M]" reads "claude-sonnet").
-func modelShortName(name string) string {
-	name = name[strings.LastIndex(name, "/")+1:]
-	for strings.HasSuffix(name, "]") {
-		at := strings.LastIndex(name, "[")
-		if at <= 0 {
-			break
-		}
-		name = name[:at]
-	}
-	return name
-}
-
 // agentEnding is what the card says once there is nothing to decide: the question it asks in the
 // chat, why it failed, or the pull request it opened.
 func agentEnding(c *ui.Context, p *palette, agent *model.AgentRun, chatID string) {
@@ -298,7 +281,7 @@ func agentEnding(c *ui.Context, p *palette, agent *model.AgentRun, chatID string
 		pr := ui.ButtonBase(c.Key("pr")).Row().Gap(6).Margin(10, 0, 0, 0).Height(26).Padding(0, 10, 0, 8).Radius(radiusSM).Background(p.Green.Alpha(0.1)).Border(0.5, p.Green.Alpha(0.25)).AlignItems(ui.Center).Cursor(ui.CursorPointer).Label(L("Open the pull request")).Tooltip(agent.PullRequest)
 		pr.Children(func() {
 			symbol(c, "arrow.triangle.pull", 12, 2).TextColor(p.Green)
-			ui.Text(c, pullRequestName(agent.PullRequest)).FontSize(12).FontWeight(600).TextColor(p.Label)
+			ui.Text(c, pullRequestName(agent)).FontSize(12).FontWeight(600).TextColor(p.Label)
 			symbol(c, "arrow.up.right", 10, 2).TextColor(p.Label3)
 		})
 		if pr.Clicked() {
@@ -307,11 +290,10 @@ func agentEnding(c *ui.Context, p *palette, agent *model.AgentRun, chatID string
 	}
 }
 
-// pullRequestName is "acme/shop #7" for a pull request's link.
-func pullRequestName(link string) string {
-	parts := strings.Split(strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(link, "https://"), "http://"), "/"), "/")
-	if len(parts) >= 5 && (parts[3] == "pull" || parts[3] == "pulls" || parts[3] == "merge_requests") {
-		return parts[1] + "/" + parts[2] + " #" + parts[4]
+// pullRequestName is "acme/shop #7", as the CLI names its pull request, else "Pull request".
+func pullRequestName(agent *model.AgentRun) string {
+	if agent.PullRequestName != "" {
+		return agent.PullRequestName
 	}
 	return L("Pull request")
 }

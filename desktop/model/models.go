@@ -1747,13 +1747,18 @@ type AgentRun struct {
 	// Controls are the settings of a running agent that can be changed now, each with what the
 	// agent offers.
 	Controls []AgentControl
-	// Tone, Busy, Context, and Now are how it stands, as the CLI reads it off the card: the tint
-	// of its state, whether it is doing something now, how full its context is, and its last
-	// tool's line.
-	Tone    AgentTone
-	Busy    bool
-	Context *AgentContextUse
-	Now     string
+	// Tone, Busy, Context, Now, StatusKey, Model, PullRequestName, and Tail are how it stands, as
+	// the CLI reads it off the card: the tint of its state, whether it is doing something now, how
+	// full its context is, its last tool's line, the key of its pill's words, its model's short
+	// name, its pull request's name, and its last lines while it works.
+	Tone            AgentTone
+	Busy            bool
+	Context         *AgentContextUse
+	Now             string
+	StatusKey       string
+	Model           string
+	PullRequestName string
+	Tail            []string
 }
 
 // AgentTone is the tint of how a coding agent stands.
@@ -1870,32 +1875,30 @@ func (a *AgentRun) Place() string {
 	return a.Folder
 }
 
-// Status is how it stands, in a word or two.
+// Status is how it stands, in a word or two, by the CLI's key for it.
 func (a *AgentRun) Status() string {
-	switch a.State {
-	case AgentChecking, AgentStarting:
+	switch a.StatusKey {
+	case "starting":
 		return Lc("Starting", "coding agent")
-	case AgentAsking:
+	case "needs_you":
 		return Lc("Needs you", "coding agent")
-	case AgentWorking:
-		if a.Stalled {
-			return Lc("Quiet", "coding agent")
-		}
+	case "working":
 		return Lc("Working", "coding agent")
-	case AgentIdle:
+	case "quiet":
+		return Lc("Quiet", "coding agent")
+	case "done":
 		return Lc("Done", "coding agent")
-	case AgentExited:
+	case "ended":
 		return Lc("Ended", "coding agent")
-	case AgentFailed:
+	case "failed":
 		return Lc("Failed", "coding agent")
-	case AgentDenied:
-		if a.Held {
-			return Lc("Held by Auto-review", "coding agent")
-		}
+	case "held":
+		return Lc("Held by Auto-review", "coding agent")
+	case "not_allowed":
 		return Lc("Not allowed", "coding agent")
-	case AgentExpired:
+	case "no_answer":
 		return Lc("No answer", "coding agent")
-	case AgentDismissed:
+	case "dismissed":
 		return Lc("Dismissed", "coding agent")
 	}
 	return Lc("Stopped", "coding agent")
