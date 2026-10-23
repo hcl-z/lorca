@@ -4,7 +4,9 @@ import { useEffect, useMemo } from "react";
 import { Platform, useColorScheme } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
+import * as Application from "expo-application";
 import { engine } from "../src/core/engine";
+import { enableTiming } from "../src/core/timing";
 import { useStore } from "../src/core/store";
 import { startUpdateChecks } from "../src/core/updates";
 import { useStackScreenOptions } from "../src/ui/navigation";
@@ -12,6 +14,9 @@ import { HostPaletteContext } from "@expo/ui/jetpack-compose";
 import { AlertHost } from "../src/ui/alert";
 import { UpdateProgress } from "../src/ui/UpdateProgress";
 import { useMaterialPalette, usePalette } from "../src/ui/theme";
+
+// Lorca Dev keeps the timing figures Settings shows (src/core/timing.ts).
+if (Application.applicationId === "app.lorca.dev") enableTiming();
 
 export default function RootLayout() {
   const ready = useStore((s) => s.ready);

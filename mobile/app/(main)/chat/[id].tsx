@@ -38,6 +38,7 @@ import {
   useStore,
   useWorkingBots,
 } from "../../../src/core/store";
+import { chatShown, scrollBegan, scrollEnded } from "../../../src/core/timing";
 import { t, useLanguage } from "../../../src/i18n";
 import { AvatarCluster } from "../../../src/ui/Avatar";
 import { Composer } from "../../../src/ui/Composer";
@@ -190,6 +191,7 @@ export default function ChatScreen() {
   const reveal = useSharedValue(0);
   const setRevealed = useCallback(
     (shown: boolean) => {
+      if (shown) chatShown();
       reveal.value = shown ? 1 : 0;
     },
     [reveal],
@@ -572,6 +574,7 @@ export default function ChatScreen() {
     restTimer.current = null;
     userScrolling.current = true;
     dragging.current = true;
+    scrollBegan();
     beginDrag();
   }, [beginDrag]);
   // A fling's momentum starts right after the drag ends; without one, the drag's end is the rest.
@@ -581,6 +584,7 @@ export default function ChatScreen() {
     restTimer.current = setTimeout(() => {
       restTimer.current = null;
       userScrolling.current = false;
+      scrollEnded();
     }, 50);
   }, []);
   const onMomentumScrollBegin = useCallback(() => {
@@ -591,6 +595,7 @@ export default function ChatScreen() {
   const onMomentumScrollEnd = useCallback(() => {
     if (dragging.current || restTimer.current) return;
     userScrolling.current = false;
+    scrollEnded();
   }, []);
   const onScrollToTop = useCallback(() => {
     following.current = false;

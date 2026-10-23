@@ -2,6 +2,7 @@
 // core's events (engine.ts applies them), the way the macOS app's AppStore mirrors the CLI. The
 // core keeps the truth on disk; nothing here is persisted except the phone's own prefs.
 
+import { messageArrived } from "./timing";
 import { useMemo } from "react";
 import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
@@ -391,6 +392,7 @@ export function upsertMessage(message: Message, isNew = true): { added: boolean 
     return { chats, statuses, retries, thinking, pendingTasks };
   });
   if (started) setTimeout(() => useStore.setState((s) => ({ pendingTasks: omit(s.pendingTasks, message.id) })), TASK_DELAY_MS);
+  if (added && isNew) messageArrived(message.created_at);
   return { added };
 }
 
