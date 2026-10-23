@@ -1,0 +1,26 @@
+docs/architecture/coding-agents.md
+  s_723135a9291b14::t_3b222938168559 77
+mobile/app/agent/[id].tsx
+  s_723135a9291b14::t_60289365b10abf 15,86,126,258-260
+  s_723135a9291b14::t_702d42b279881d 294,298
+mobile/src/core/agentEntries.ts
+  s_723135a9291b14::t_60289365b10abf 54-55,57-59
+mobile/src/core/agentEntries.test.ts
+  s_723135a9291b14::t_60289365b10abf 12-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "583c5cc59c7df73fc826ba8d8e4f9107da58fa52",
+  "prompts": {},
+  "sessions": {
+    "s_723135a9291b14": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bcda4714-abdb-439e-84a7-4d54fd4205f7",
+        "model": "claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
