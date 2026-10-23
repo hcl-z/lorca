@@ -1,0 +1,38 @@
+mobile/src/ui/MemoryEditor.tsx
+  s_723135a9291b14::t_014b266db42a53 1-113,115-117
+  s_723135a9291b14::t_de374bbcea5e14 114
+mobile/app/chat-info/_layout.tsx
+  s_cae344fce4ee15::t_d78316b6a31978 20
+  s_723135a9291b14::t_97169809af08c0 6-7,50-53
+mobile/app/chat-info/[id].tsx
+  s_723135a9291b14::t_516bfb918a7e29 195
+mobile/src/core/memory.test.ts
+  s_723135a9291b14::t_ba0a7043b5d71a 1-26
+mobile/app/chat-info/profile/[id].tsx
+  s_723135a9291b14::t_de374bbcea5e14 1-25
+mobile/app/chat-info/memory/[id].tsx
+  s_723135a9291b14::t_de374bbcea5e14 1-135
+docs/architecture/phone-app.md
+  s_723135a9291b14::t_03ca14dd1a87c1 23
+  s_cae344fce4ee15::t_baae0df4b670ac 28
+  s_cae344fce4ee15::t_3304eb9d506182 32
+  s_bb39bd918705fe::t_e0a248cd316323 27
+mobile/src/i18n/zh.ts
+  s_abac14095ad7d6::t_f8bb0cc8f9ccf7 1024-1030
+  s_cae344fce4ee15::t_cd8e9901498fec 1031-1047
+  s_723135a9291b14::t_8258b52bd49263 1048-1074
+docs/architecture/memory.md
+  s_723135a9291b14::t_09e097332d2bf2 49
+mobile/app/chat-info/memory/edit.tsx
+  s_723135a9291b14::t_de374bbcea5e14 1-25
+mobile/src/core/memory.ts
+  s_723135a9291b14::t_ba0a7043b5d71a 1-115
+mobile/app/chat-info/prompt/[id].tsx
+  s_723135a9291b14::t_de374bbcea5e14 1-88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "c8025e85f592baefa9eb2cdcb28baa2aa106f618",
+  "prompts": {}
+}
