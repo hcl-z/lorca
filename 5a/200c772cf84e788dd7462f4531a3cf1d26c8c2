@@ -1,0 +1,29 @@
+docs/architecture/phone-app.md
+  s_723135a9291b14::t_3c946b47311573 23
+mobile/src/core/mcp.ts
+  s_723135a9291b14::t_d6aec8424cff28 1-109
+mobile/src/i18n/zh.ts
+  s_723135a9291b14::t_cd9d03ad7c156c 1048-1061
+mobile/src/core/mcp.test.ts
+  s_723135a9291b14::t_13fdb140adf7f7 1-39
+docs/architecture/mcp-servers.md
+  s_723135a9291b14::t_4a874c3a7e2483 48
+mobile/app/settings/device/[id].tsx
+  s_723135a9291b14::t_51fee47fc047bd 2,7,21-22,75-76,167,179-180,228-328
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "5a200c772cf84e788dd7462f4531a3cf1d26c8c2",
+  "prompts": {},
+  "sessions": {
+    "s_723135a9291b14": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bcda4714-abdb-439e-84a7-4d54fd4205f7",
+        "model": "claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
