@@ -1,9 +1,8 @@
-import { FlashList, type FlashListRef } from "@shopify/flash-list";
+import { LegendList, type LegendListRef } from "@legendapp/list/react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import {
-  forwardRef,
   memo,
   useCallback,
   useEffect,
@@ -11,7 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { type NativeScrollEvent, type NativeSyntheticEvent, PixelRatio, Platform, type ScrollViewProps, StyleSheet, Text, View } from "react-native";
+import { Platform, type ScrollViewProps, StyleSheet, Text, View } from "react-native";
 import { Pressable } from "../../../src/ui/Pressable";
 import {
   KeyboardChatScrollView,
@@ -21,7 +20,7 @@ import {
 import Animated, {
   runOnJS,
   useAnimatedReaction,
-  useAnimatedStyle,
+  useDerivedValue,
   useSharedValue,
   ZoomIn,
   ZoomOut,
@@ -76,13 +75,13 @@ const FOCUS_GROWTH_GUESS = 36;
 /// How far from the end the transcript is scrolled before the jump-to-bottom disc shows.
 const JUMP_DISTANCE = 160;
 const JUMP_DISC = 36;
-/// How near the end a scroll the user lets go of has to rest for the transcript to keep following.
-const FOLLOW_DISTANCE = 24;
-/// How near the computed end a scroll offset counts as there. Android rounds the composer's
-/// space to whole pixels.
-const END_TOLERANCE = Platform.OS === "ios" ? 1 : 2;
 /** How far past the viewport, in points, the transcript keeps its rows drawn. */
 const DRAW_DISTANCE = 1000;
+/** A typical row's height before it is measured: a bubble of a line or two. */
+const ESTIMATED_ROW = 72;
+/// The transcript follows its end while the reader rests within this share of the screen of it.
+const FOLLOW_THRESHOLD = 0.1;
+const SCROLL_OWNS_ANCHOR_SPACE = { anchoredEndSpaceOwnerInternal: "scroll" } as object;
 const ANDROID_BAR_HEIGHT = 56;
 const ANDROID_FADE_HEIGHT = 24;
 
@@ -101,15 +100,16 @@ export default function ChatScreen() {
   const isWorking = useIsWorking(id);
   const hasTasks = useRunningTasks(id).length > 0;
   const status = useStore((s) => s.statuses[id] ?? null);
-  const listRef = useRef<FlashListRef<Row>>(null);
+  const listRef = useRef<LegendListRef>(null);
   // The composer floats over the transcript and rides the keyboard (KeyboardFoot). The
   // list is never resized: the chat scroll view keeps a bottom inset for the composer and adds
   // the keyboard's height to it frame by frame, lifting the last messages with the keys.
   // `blankSpace` is the inset with the keyboard closed (the composer with its home-indicator
-  // padding); `extraContentPadding` is the composer's height above the keys once it is open.
+  // padding, or the space under an anchored message); `extraContentPadding` is the composer's
+  // height above the keys once it is open.
   // Composer bar (46) + its wrap padding (8) + home-indicator padding + the gap, as in onLayout.
   const composerGuess = 54 + COMPOSER_GAP + Math.max(insets.bottom, 8);
-  const composerBlank = useSharedValue(composerGuess);
+  const composerSpace = useSharedValue(composerGuess);
   const composerExtra = useSharedValue(composerGuess - insets.bottom);
   // Focusing the composer makes it taller just as the keyboard starts to move. The scroll view
   // answers a change of `extraContentPadding` by scrolling from the offset it last saw, which at
@@ -137,15 +137,12 @@ export default function ChatScreen() {
       : compact + focusGrowth.current;
   }, [composerExtraTarget]);
   const keyboardMoving = useSharedValue(false);
-  // Sending hides the keyboard; once it is down, an anchored message is put back under the
-  // header in case the keyboard's own unwinding moved it.
+  // What the composer grew by on a focus is learned once the keyboard has come to rest.
   const keyboardEndRef = useRef<(height: number) => void>(() => {});
   const keyboardEnded = useCallback(
     (height: number) => keyboardEndRef.current(height),
     [],
   );
-  // The keyboard takes over the scroll position: the pin that holds a just-opened chat at its
-  // end would otherwise scroll the keyboard's lift straight back.
   const keyboardStartRef = useRef<(height: number) => void>(() => {});
   const keyboardStarted = useCallback(
     (height: number) => keyboardStartRef.current(height),
@@ -173,417 +170,51 @@ export default function ChatScreen() {
       if (!keyboardMoving.value) composerExtra.value = extra;
     },
   );
-  // Opening a chat: FlashList lays the last rows out from the bottom, but their measured heights,
-  // the composer's inset and the header inset all land over the next few frames, and the composer
-  // inset reaches the native scroll view a frame after JS sets it. So the end is computed here
-  // from the content height, the viewport and the composer inset rather than read from the
-  // scroll view, and the list stays invisible until a scroll event confirms it sits there.
-  // Until the user drags (or the list has been quiet for a moment after its first load), every
-  // change re-pins it.
-  const settling = useRef(true);
-  const pinQueued = useRef(false);
-  const pinIssued = useRef(false);
-  const loaded = useRef(false);
-  // True while the last thing that happened was a scroll event landing on the computed end.
-  const confirmed = useRef(false);
-  const lastOffset = useRef<number | null>(null);
-  // The reveal is a shared value: showing the list costs no render of the screen.
-  const reveal = useSharedValue(0);
-  const setRevealed = useCallback(
-    (shown: boolean) => {
-      if (shown) chatShown();
-      reveal.value = shown ? 1 : 0;
-    },
-    [reveal],
-  );
-  const revealStyle = useAnimatedStyle(() => ({ opacity: reveal.value }));
-  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const revealTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const layoutHeight = useRef(0);
-  const contentHeight = useRef(0);
-  const topInset = Platform.OS === "ios" ? headerHeight : 0;
-  const topInsetRef = useRef(topInset);
-  topInsetRef.current = topInset;
-  // Where a sent message comes to rest: under the header. Android's chat bar floats over the
-  // list without an inset, so there the message stops where the first row starts, below the bar.
-  const anchorTopRef = useRef(topInset);
-  anchorTopRef.current =
-    Platform.OS === "ios" ? topInset : visibleHeaderHeight + 8;
-  // FlashList pads a transcript shorter than the list up to the list's full height, so the rows
-  // start from the bottom. That padding knows nothing of the header and composer insets, which
-  // would leave a short chat scrollable by their sum. The top inset gives the padding back: it
-  // shrinks by the padding, down to the point where the only offset left is the end.
-  const [insetTop, setInsetTop] = useState(topInset);
-  // Sending a message anchors it under the header: the space below the transcript grows until
-  // the rows from that message on fill the viewport, and gives way as the reply comes in. The
-  // end of the scroll range then keeps the message at the top, so nothing moves while the reply
-  // streams. Once the reply outgrows the viewport the anchor lets go and the list follows its end.
-  const composerSpace = useRef(composerGuess);
-  const anchorKey = useRef<string | null>(null);
-  const anchorTarget = useRef<number | null>(null);
-  const [anchored, setAnchored] = useState(false);
-  const anchoredRef = useRef(anchored);
-  anchoredRef.current = anchored;
-  // A transcript shorter than the list sits on FlashList's bottom-up padding, which shrinks as
-  // rows come in: every row would move up with each piece of the reply, a frame ahead of any
-  // scroll that answers it. While a message is anchored the padding is held by a header of a
-  // fixed height instead, so the rows stay where they are and only the space below them changes.
-  // The top inset hides the header like the padding; it stays until the chat is left.
-  const [spacer, setSpacer] = useState(0);
-  const spacerRef = useRef(0);
-  // A chat opened empty has nothing to lay out from the bottom, and the first rows it gets come
-  // from a send: FlashList would spend their first 100 ms scrolling to the last row, against the
-  // anchor. There the rows start under the header, where the sent message belongs anyway.
-  const opened = useRef({ id, empty: !chat || chat.messages.length === 0 });
-  if (opened.current.id !== id)
-    opened.current = { id, empty: !chat || chat.messages.length === 0 };
-  const fromBottom = !(Platform.OS === "ios" && opened.current.empty);
-  const fromBottomRef = useRef(fromBottom);
-  fromBottomRef.current = fromBottom;
-  /// What FlashList pads above the rows of a transcript shorter than the list.
-  const paddingOf = useCallback((list: FlashListRef<Row>) => {
-    if (!fromBottomRef.current) return 0;
-    return Math.max(
-      0,
-      list.getWindowSize().height -
-        list.getChildContainerDimensions().height -
-        list.getFirstItemOffset(),
-    );
-  }, []);
-  const rowsRef = useRef<Row[]>([]);
-  // The keyboard leaving after a send writes the scroll offset too, and the scroll view clamps
-  // it whenever its insets change; either can stop the scroll to the anchor short. For a moment
-  // after the anchor or its space has changed, unless the user scrolls or the keyboard lifts the
-  // reply, an offset that comes to rest off the anchor is sent there again.
-  const anchorTouched = useRef(false);
-  const anchorLifted = useRef(false);
-  const anchorWatch = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const anchorWatchUntil = useRef(0);
-  const watchAnchor = useCallback((renew = false) => {
-    if (renew) anchorWatchUntil.current = Date.now() + 1500;
-    if (Date.now() > anchorWatchUntil.current) return;
-    if (anchorWatch.current) clearTimeout(anchorWatch.current);
-    anchorWatch.current = setTimeout(() => {
-      anchorWatch.current = null;
-      const target = anchorTarget.current;
-      if (!anchorKey.current || target === null || lastOffset.current === null)
-        return;
-      if (anchorTouched.current || anchorLifted.current) return;
-      if (Math.abs(lastOffset.current - target) <= 1) return;
-      listRef.current?.scrollToOffset({ offset: target, animated: true });
-    }, 120);
-  }, []);
-  const releaseAnchor = useCallback(() => {
-    anchorKey.current = null;
-    anchorTarget.current = null;
-    if (anchorWatch.current) clearTimeout(anchorWatch.current);
-    anchorWatch.current = null;
-    setAnchored(false);
-  }, []);
-  // The space under the transcript with the keyboard down: the composer's, or the padding the
-  // scroll view keeps for the expanded composer when that is the larger.
-  const restingSpace = useCallback(
-    () => Math.max(composerSpace.current, composerExtraTarget.value),
-    [composerExtraTarget],
-  );
-  // The space under an anchored message travels to the scroll view through the UI thread, the
-  // rows it was computed from through a React commit, and either can land first. Too little
-  // space for the rows on screen, even for a frame, and the scroll view clamps its offset: the
-  // message drops. Too much shows nothing. So once an anchor has its space, the space only
-  // shrinks, and only after the rows that call for it have had time to land; when the rows under
-  // the anchor get shorter (the working row leaves), a footer inside the list takes up the
-  // difference, in the same commit as the rows.
-  // What was last handed over is kept here: reading the shared value back asks the UI thread,
-  // which may not have seen the write yet.
-  const blankSet = useRef(composerGuess);
-  const blankPending = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const anchorSpaced = useRef(false);
-  const [hold, setHold] = useState(0);
-  const holdRef = useRef(0);
-  const setBlank = useCallback(
-    (blank: number) => {
-      if (blankPending.current) clearTimeout(blankPending.current);
-      blankPending.current = null;
-      const apply = (value: number) => {
-        blankSet.current = value;
-        composerBlank.value = value;
-        if (anchorKey.current) watchAnchor(true);
-      };
-      let slack = 0;
-      if (
-        Platform.OS !== "ios" ||
-        !anchorKey.current ||
-        !anchorSpaced.current
-      ) {
-        anchorSpaced.current = anchorKey.current !== null;
-        apply(blank);
-      } else if (blank > blankSet.current) {
-        slack = blank - blankSet.current;
-      } else if (blank < blankSet.current) {
-        blankPending.current = setTimeout(() => {
-          blankPending.current = null;
-          apply(blank);
-        }, 50);
-      }
-      if (Math.abs(slack - holdRef.current) > 0.5) {
-        holdRef.current = slack;
-        setHold(slack);
-        if (anchorKey.current) watchAnchor(true);
-      }
-    },
-    [composerBlank, watchAnchor],
-  );
-  const blankFor = useCallback(() => {
-    const list = listRef.current;
-    const key = anchorKey.current;
-    if (!list || !key || layoutHeight.current === 0) return restingSpace();
-    const index = rowsRef.current.findIndex((row) => row.key === key);
-    const layout = index < 0 ? undefined : list.getLayout(index);
-    // The sent message has not reached the list yet: keep what is there.
-    if (!layout) return null;
-    const tail = list.getChildContainerDimensions().height - layout.y;
-    const blank = layoutHeight.current - anchorTopRef.current - tail;
-    if (blank <= restingSpace()) {
-      releaseAnchor();
-      return restingSpace();
-    }
-    return blank;
-  }, [releaseAnchor, restingSpace]);
-  const topInsetFor = useCallback(() => {
-    const list = listRef.current;
-    if (Platform.OS !== "ios") return 0;
-    if (!list || layoutHeight.current === 0 || contentHeight.current === 0)
-      return topInsetRef.current;
-    // The anchor's header is dead space above the first row, as the padding is.
-    const padding = list.getFirstItemOffset() + paddingOf(list);
-    const end =
-      contentHeight.current + blankSet.current - layoutHeight.current;
-    return Math.round(
-      Math.min(
-        topInsetRef.current,
-        Math.max(topInsetRef.current - padding, -end),
-      ),
-    );
-  }, [paddingOf]);
-  const endOffsetRef = useRef<() => number>(() => 0);
-  const syncInsetTop = useCallback(() => {
-    const blank = blankFor();
-    if (blank !== null) setBlank(blank);
-    setInsetTop(topInsetFor());
-    const list = listRef.current;
-    if (!list || !anchorKey.current) return;
-    const index = rowsRef.current.findIndex(
-      (row) => row.key === anchorKey.current,
-    );
-    const layout = index < 0 ? undefined : list.getLayout(index);
-    if (!layout) return;
-    let target = endOffsetRef.current();
-    if (Platform.OS === "ios") {
-      // Where the message sits under the header, from the list's own layout: the content height
-      // reaches JS an event later than the rows it counts.
-      const offset = list.getFirstItemOffset();
-      const padding = paddingOf(list);
-      target = offset + padding + layout.y - topInsetRef.current;
-      // The header takes over what FlashList pads, in whole pixels so none of it is left over.
-      const scale = PixelRatio.get();
-      const taken = Math.ceil((offset + padding) * scale) / scale;
-      if (
-        layout.isHeightMeasured &&
-        padding > 0 &&
-        taken > spacerRef.current
-      ) {
-        spacerRef.current = taken;
-        setSpacer(taken);
-      }
-    }
-    // The end moves only when the rows above the anchor are measured anew.
-    if (
-      anchorTarget.current !== null &&
-      Math.abs(anchorTarget.current - target) <= 1
-    )
-      return;
-    anchorTarget.current = target;
-    // Rows above the anchor are measured as the user scrolls up to them: one who has scrolled
-    // since the send stays where they are.
-    if (anchorTouched.current) return;
-    if (Platform.OS === "ios") {
-      list.scrollToOffset({ offset: target, animated: true });
-      watchAnchor(true);
-    } else list.scrollToEnd({ animated: true });
-  }, [blankFor, paddingOf, setBlank, topInsetFor, watchAnchor]);
-  const endOffset = useCallback(
-    () =>
-      Math.max(
-        -topInsetFor(),
-        contentHeight.current + blankSet.current - layoutHeight.current,
-      ),
-    [topInsetFor],
-  );
-  endOffsetRef.current = endOffset;
-  // Where the transcript rests right now: with the keyboard up its end sits above the composer
-  // on the keys, whatever space an anchored message holds below it.
-  const keyboardHeight = useRef(0);
-  const restingEnd = useCallback(() => {
-    if (keyboardHeight.current === 0) return endOffset();
-    return Math.max(
-      -topInsetFor(),
-      contentHeight.current +
-        keyboardHeight.current +
-        composerExtraTarget.value -
-        layoutHeight.current,
-    );
-  }, [composerExtraTarget, endOffset, topInsetFor]);
+  // Where the rows start and where a sent message comes to rest: under the header on iOS, below
+  // Android's chat bar (which floats over the list) with a little room. The space is the list's
+  // own top padding, so a transcript shorter than the screen is not scrollable by it.
+  const topPad = Platform.OS === "ios" ? headerHeight : visibleHeaderHeight + 8;
+  // Sending a message anchors it under the header: LegendList keeps space below the rows from that
+  // message on until they fill the viewport (`anchoredEndSpace`), and the space gives way as the
+  // reply comes in, so nothing moves while it lands. Once the reply outgrows the viewport the
+  // space is gone and the list follows its end. The space reaches the scroll view as its
+  // `blankSpace`, a floor under the keyboard's lift: a keyboard that fits in it lifts nothing.
+  const [anchorKey, setAnchorKey] = useState<string | null>(null);
+  const anchorReady = useRef<string | null>(null);
+  const anchorSpace = useSharedValue(0);
+  const blankSpace = useDerivedValue(() => Math.max(anchorSpace.value, composerSpace.value));
+  useEffect(() => {
+    setAnchorKey(null);
+    anchorReady.current = null;
+    anchorSpace.value = 0;
+  }, [id, anchorSpace]);
   // The jump-to-bottom disc floats over the composer while the end is out of reach.
   const [awayFromEnd, setAwayFromEnd] = useState(false);
+  // Older pages load only once the chat has opened at its end.
+  const loaded = useRef(false);
+  useEffect(() => {
+    setAwayFromEnd(false);
+    loaded.current = false;
+  }, [id]);
   const [composerHeight, setComposerHeight] = useState(
     composerGuess - COMPOSER_GAP,
   );
-  // Once settled, the transcript follows its end as content arrives, until the user scrolls
-  // away: from a drag (or the fling after it) that comes to rest off the end, nothing moves
-  // the list until they scroll back down, jump to the end, or send. While their finger or
-  // fling is still on it, nothing follows either.
-  const following = useRef(true);
-  const userScrolling = useRef(false);
-  const dragging = useRef(false);
+  const measureEnd = useCallback(() => {
+    const state = listRef.current?.getState();
+    if (!state || state.scrollLength === 0) return;
+    setAwayFromEnd(state.contentLength - state.scrollLength - state.scroll > JUMP_DISTANCE);
+  }, []);
+  // Lorca Dev counts missed frames from a drag's start to the scroll's rest (src/core/timing.ts):
+  // a fling's momentum starts right after the drag ends, so a drag without one rests a beat later.
   const restTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const jumpToEnd = useCallback(() => {
-    following.current = true;
-    userScrolling.current = false;
-    if (Platform.OS === "ios")
-      listRef.current?.scrollToOffset({ offset: restingEnd(), animated: true });
-    else listRef.current?.scrollToEnd({ animated: true });
-  }, [restingEnd]);
-  // The space under an anchored message swallows the keyboard: the scroll view sees room below
-  // the content and lifts nothing, so the keys would cover a reply that reaches under them. With
-  // the keyboard up the end of the transcript goes above the composer instead, unless everything
-  // from the anchor on fits there anyway; with the keyboard down the anchor takes over again.
-  const liftAnchored = (height: number) => {
-    const list = listRef.current;
-    const key = anchorKey.current;
-    if (!list || !key || Platform.OS !== "ios") return;
-    const index = rowsRef.current.findIndex((row) => row.key === key);
-    const layout = index < 0 ? undefined : list.getLayout(index);
-    if (!layout) return;
-    const covered = height + composerExtraTarget.value;
-    const tail = list.getChildContainerDimensions().height - layout.y;
-    if (tail <= layoutHeight.current - topInsetRef.current - covered) return;
-    anchorLifted.current = true;
-    list.scrollToOffset({
-      offset: contentHeight.current + covered - layoutHeight.current,
-      animated: true,
-    });
-  };
-  keyboardEndRef.current = (height) => {
-    keyboardHeight.current = height;
-    // The composer has expanded by now: what it grew by is what the next focus will need.
-    const grown = composerActual.current - composerCompact.current;
-    if (height > 0 && compactAtKeyboardStart.current && grown > 1)
-      focusGrowth.current = grown;
-    publishComposerExtra();
-    if (!anchorKey.current) return;
-    if (height > 0) return liftAnchored(height);
-    anchorLifted.current = false;
-    anchorTarget.current = null;
-    syncInsetTop();
-  };
-  // Android lays the list out ahead of the events that report it: FlashList can grow the content
-  // above the last rows, which throws them far below the composer until the next pin, while the
-  // last scroll event JS saw still sits on the computed end. So before the list shows, the end
-  // of the content is measured on screen: a marker after the last row has to rest at the
-  // composer's space above the list's bottom edge, or higher.
-  const transcriptRef = useRef<View>(null);
-  const footRef = useRef<View>(null);
-  const foot = useMemo(
-    () => <View ref={footRef} collapsable={false} style={styles.foot} />,
-    [],
-  );
-  const verifyEndRef = useRef<(done: (atEnd: boolean) => void) => void>(() => {});
-  verifyEndRef.current = (done) => {
-    const list = transcriptRef.current;
-    const marker = footRef.current;
-    if (!list || !marker || endOffset() <= 0) return done(true);
-    list.measureInWindow((_x, top) => {
-      marker.measureInWindow((_mx, y) => {
-        done(y - top <= layoutHeight.current - blankSet.current + 4);
-      });
-    });
-  };
-  const pinToBottomRef = useRef<() => void>(() => {});
-  const unconfirm = useCallback(() => {
-    confirmed.current = false;
-    if (revealTimer.current) clearTimeout(revealTimer.current);
-    revealTimer.current = null;
-  }, []);
-  // Shows the list once it has been quiet for a few frames after a confirmed pin: FlashList
-  // can re-lay the content out under an offset that was right an instant earlier.
-  const scheduleReveal = useCallback(() => {
-    if (revealTimer.current) clearTimeout(revealTimer.current);
-    revealTimer.current = setTimeout(() => {
-      revealTimer.current = null;
-      if (!confirmed.current || !loaded.current) return;
-      if (Platform.OS !== "android") return setRevealed(true);
-      verifyEndRef.current((atEnd) => {
-        if (!settling.current) return;
-        if (atEnd && confirmed.current) return setRevealed(true);
-        unconfirm();
-        pinToBottomRef.current();
-      });
-    }, 50);
-  }, [setRevealed, unconfirm]);
-  const confirm = useCallback(() => {
-    confirmed.current = true;
-    scheduleReveal();
-  }, [scheduleReveal]);
-  const pinToBottom = useCallback(() => {
-    if (!settling.current || pinQueued.current) return;
-    pinQueued.current = true;
-    requestAnimationFrame(() => {
-      pinQueued.current = false;
-      if (!settling.current) return;
-      if (layoutHeight.current === 0 || contentHeight.current === 0) return;
-      pinIssued.current = true;
-      const offset = endOffset();
-      // Already there: the native side skips the no-op scroll, so no event will confirm it.
-      const already =
-        lastOffset.current !== null &&
-        Math.abs(lastOffset.current - offset) <= END_TOLERANCE;
-      if (already) confirm();
-      else unconfirm();
-      // The offset rather than scrollToEnd, which FlashList does in two scrolls a tick apart.
-      // On Android the composer's space is the scroll view's bottom padding and lands a frame
-      // or more after JS sets it: a pin sent before then is clamped short, under the composer,
-      // and the scroll event sends another.
-      listRef.current?.scrollToOffset({ offset, animated: false });
-    });
-  }, [confirm, endOffset, unconfirm]);
-  pinToBottomRef.current = pinToBottom;
-  const stopSettling = useCallback(() => {
-    settling.current = false;
-    setRevealed(true);
-    if (settleTimer.current) clearTimeout(settleTimer.current);
-    settleTimer.current = null;
-    if (revealTimer.current) clearTimeout(revealTimer.current);
-    revealTimer.current = null;
-  }, []);
-  const beginDrag = useCallback(() => {
-    anchorTouched.current = true;
-    stopSettling();
-  }, [stopSettling]);
   const onScrollBeginDrag = useCallback(() => {
     if (restTimer.current) clearTimeout(restTimer.current);
     restTimer.current = null;
-    userScrolling.current = true;
-    dragging.current = true;
     scrollBegan();
-    beginDrag();
-  }, [beginDrag]);
-  // A fling's momentum starts right after the drag ends; without one, the drag's end is the rest.
+  }, []);
   const onScrollEndDrag = useCallback(() => {
-    dragging.current = false;
-    if (restTimer.current) clearTimeout(restTimer.current);
     restTimer.current = setTimeout(() => {
       restTimer.current = null;
-      userScrolling.current = false;
       scrollEnded();
     }, 50);
   }, []);
@@ -591,143 +222,49 @@ export default function ChatScreen() {
     if (restTimer.current) clearTimeout(restTimer.current);
     restTimer.current = null;
   }, []);
-  // Scrolls sent from here end with this event too, so it does not end a drag.
-  const onMomentumScrollEnd = useCallback(() => {
-    if (dragging.current || restTimer.current) return;
-    userScrolling.current = false;
-    scrollEnded();
+  useEffect(() => () => {
+    if (restTimer.current) clearTimeout(restTimer.current);
   }, []);
-  const onScrollToTop = useCallback(() => {
-    following.current = false;
-    beginDrag();
-  }, [beginDrag]);
-  // FlashList's own catch-up is off (it scrolls to the end on any change near the bottom, even
-  // under a dragging finger); the end is followed here instead, and only by a reader who stayed.
-  // A reader left behind gets the jump-to-bottom disc once the end has moved far enough below
-  // them; FlashList's offset already counts its correction for a page loaded above.
-  const followEnd = useCallback(() => {
-    const list = listRef.current;
-    if (!list || settling.current || anchoredRef.current) return;
-    if (following.current && !userScrolling.current)
-      return list.scrollToEnd({ animated: true });
-    const offset = list.getAbsoluteLastScrollOffset();
-    const toEnd =
-      Platform.OS === "ios"
-        ? restingEnd() - offset
-        : contentHeight.current - layoutHeight.current - offset;
-    setAwayFromEnd(toEnd > JUMP_DISTANCE);
-  }, [restingEnd]);
-  keyboardStartRef.current = (height) => {
+  const jumpToEnd = useCallback(() => {
+    void listRef.current?.scrollToEnd({ animated: true });
+  }, []);
+  keyboardEndRef.current = (height) => {
+    // The composer has expanded by now: what it grew by is what the next focus will need.
+    const grown = composerActual.current - composerCompact.current;
+    if (height > 0 && compactAtKeyboardStart.current && grown > 1)
+      focusGrowth.current = grown;
+    publishComposerExtra();
+  };
+  keyboardStartRef.current = () => {
     compactAtKeyboardStart.current =
       composerActual.current <= composerCompact.current + 1;
-    if (settling.current) stopSettling();
-    if (height > 0) liftAnchored(height);
   };
-  useEffect(() => {
-    settling.current = true;
-    pinIssued.current = false;
-    loaded.current = false;
-    confirmed.current = false;
-    lastOffset.current = null;
-    releaseAnchor();
-    spacerRef.current = 0;
-    setSpacer(0);
-    holdRef.current = 0;
-    setHold(0);
-    setRevealed(false);
-    setAwayFromEnd(false);
-    following.current = true;
-    userScrolling.current = false;
-    dragging.current = false;
-    // A chat with nothing to measure (or a load that never reports) still has to show up.
-    const fallback = setTimeout(() => setRevealed(true), 800);
-    return () => {
-      clearTimeout(fallback);
-      if (blankPending.current) clearTimeout(blankPending.current);
-      blankPending.current = null;
-      if (restTimer.current) clearTimeout(restTimer.current);
-      restTimer.current = null;
-      stopSettling();
-    };
-  }, [id, releaseAnchor, stopSettling]);
-  const onScroll = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-      const distance =
-        Platform.OS === "ios"
-          ? restingEnd() - contentOffset.y
-          : contentSize.height - layoutMeasurement.height - contentOffset.y;
-      setAwayFromEnd(!settling.current && distance > JUMP_DISTANCE);
-      // Measured to the computed end on both platforms: Android's content size leaves out the
-      // composer's space.
-      if (userScrolling.current)
-        following.current = restingEnd() - contentOffset.y <= FOLLOW_DISTANCE;
-      lastOffset.current = contentOffset.y;
-      if (anchorKey.current && Platform.OS === "ios") watchAnchor();
-      if (!settling.current) return;
-      // Only a pin can confirm: the list's own first scroll can sit at the computed end by
-      // coincidence while the content height is still unknown.
-      if (!pinIssued.current) return;
-      if (Math.abs(contentOffset.y - endOffset()) <= END_TOLERANCE) {
-        confirm();
-      } else {
-        unconfirm();
-        pinToBottom();
-      }
-    },
-    [confirm, endOffset, pinToBottom, restingEnd, unconfirm],
-  );
-  useEffect(() => {
-    unconfirm();
-    syncInsetTop();
-    pinToBottom();
-  }, [anchored, headerHeight, insetTop, pinToBottom, syncInsetTop, unconfirm]);
-  // The transcript runs under the transparent header on both platforms. On iOS the insets are
-  // explicit rather than automatic: the automatic behavior would add the home
-  // indicator's safe area under the composer's inset, which already covers it, leaving a strip
-  // of dead scroll past the last message that the native scroll-to-end never reaches.
-  const ChatScroll = useMemo(
-    () =>
-      forwardRef<any, ScrollViewProps>(function ChatScroll(props, ref) {
-        return (
-          <KeyboardChatScrollView
-            ref={ref}
-            {...props}
-            blankSpace={composerBlank}
-            extraContentPadding={composerExtra}
-            applyWorkaroundForContentInsetHitTestBug
-          />
-        );
-      }),
-    [composerBlank, composerExtra],
+  // The transcript's scroll view is the keyboard-controller's chat scroll view, as in LegendList's
+  // own KeyboardAwareLegendList, with the composer's resting space under the anchor's as its floor.
+  // Its insets are reported back to the list, which counts them in where its end is.
+  const reportInset = useCallback((inset: { top: number; bottom: number; left: number; right: number }) => {
+    listRef.current?.reportContentInset(inset);
+  }, []);
+  const ChatScroll = useCallback(
+    (props: ScrollViewProps) => (
+      <KeyboardChatScrollView
+        {...props}
+        blankSpace={blankSpace}
+        extraContentPadding={composerExtra}
+        onContentInsetChange={reportInset}
+        applyWorkaroundForContentInsetHitTestBug
+      />
+    ),
+    [blankSpace, composerExtra, reportInset],
   );
 
-  // Everything FlashList is handed is kept stable across renders: a fresh rows array or
-  // renderItem makes it diff the data and re-render every mounted row.
-  const contentInset = useMemo(() => ({ top: insetTop }), [insetTop]);
-  const head = useMemo(
-    () => (spacer > 0 ? <View style={{ height: spacer }} /> : null),
-    [spacer],
-  );
-  const slack = useMemo(
-    () => (hold > 0 ? <View style={{ height: hold }} /> : null),
-    [hold],
-  );
   // The scroll view ends the bar's track where its bottom padding starts, which includes the
   // gap kept above the composer; the bar itself runs down to the composer.
   const scrollIndicatorInsets = useMemo(
-    () => ({ top: topInset, bottom: -COMPOSER_GAP }),
-    [topInset],
+    () => ({ top: Platform.OS === "ios" ? headerHeight : 0, bottom: -COMPOSER_GAP }),
+    [headerHeight],
   );
-  const maintainVisibleContentPosition = useMemo(
-    () => ({
-      startRenderingFromBottom: fromBottom,
-      // Its catch-up flag outlives a switch to -1 and fires on the next change, so it is never
-      // on: the open pins and followEnd keep the end.
-      autoscrollToBottomThreshold: -1,
-    }),
-    [fromBottom],
-  );
+  const contentContainerStyle = useMemo(() => ({ paddingTop: topPad }), [topPad]);
 
   useFocusEffect(useCallback(() => {
     useStore.setState({ openChatId: id });
@@ -738,14 +275,41 @@ export default function ChatScreen() {
   }, [id]));
 
   // The rows carry words, so a new language builds them again.
-  // Rows that did not change keep their identity, and so does the list when none did: FlashList
-  // diffs its data on every new array, and scrolls to the end on one near the bottom.
+  // Rows that did not change keep their identity, and so does the list when none did: LegendList
+  // diffs its data on every new array.
   const sharedRows = useRef<Row[]>([]);
+  const rowsRef = useRef<Row[]>([]);
   const rows = useMemo(() => {
     const next = chat ? buildRows(chat, bots, workingBotIds, isWorking, status) : [];
     return (sharedRows.current = shareRows(sharedRows.current, next));
   }, [chat, bots, workingBotIds, isWorking, status, language]);
   rowsRef.current = rows;
+  const anchorIndex = anchorKey ? rows.findIndex((row) => row.key === anchorKey) : -1;
+  const anchoredEndSpace = useMemo(
+    () =>
+      anchorIndex < 0
+        ? undefined
+        : {
+            anchorIndex,
+            anchorOffset: topPad,
+            onSizeChanged: (size: number) => {
+              anchorSpace.value = size;
+            },
+            // Once the sent message and everything after it are measured, the list goes to the
+            // end its space makes, which puts the message under the header.
+            onReady: ({ anchorKey: key }: { anchorKey: string | undefined }) => {
+              if (!key || anchorReady.current === key) return;
+              anchorReady.current = key;
+              void listRef.current?.scrollToEnd({ animated: true });
+            },
+          },
+    [anchorIndex, anchorSpace, topPad],
+  );
+  // Rows that arrive or grow move the end: the disc shows once it is far enough below the reader.
+  useEffect(() => {
+    const frame = requestAnimationFrame(measureEnd);
+    return () => cancelAnimationFrame(frame);
+  }, [rows, measureEnd]);
   // Keyed on the member list, not the chat, which changes with every streamed piece of a reply.
   const botIds = chat?.bot_ids;
   const members = useMemo(
@@ -815,32 +379,19 @@ export default function ChatScreen() {
         engine.rerun(id, messageId, text).catch((error) => alert(t("Couldn't send the edit"), error instanceof Error ? error.message : String(error)));
         return;
       }
-      // Before the message reaches the list: FlashList notes "near the end" on a commit
-      // made while its catch-up is on, and scrolls to the end on the change after it.
-      setAnchored(true);
       const replyTo = replying?.messageID;
       setReplying(null);
-      const sent = engine
+      engine
         .sendMessage(id, text, files, mentions, replyTo)
-        .then((message) => {
-          stopSettling();
-          following.current = true;
-          anchorKey.current = message.id;
-          anchorTarget.current = null;
-          anchorTouched.current = false;
-          anchorLifted.current = false;
-          anchorSpaced.current = false;
-          syncInsetTop();
+        .then((message) => setAnchorKey(message.id))
+        .catch((error) => {
+          alert(
+            t("Could not send"),
+            error instanceof Error ? error.message : String(error),
+          );
         });
-      sent.catch((error) => {
-        if (!anchorKey.current) releaseAnchor();
-        alert(
-          t("Could not send"),
-          error instanceof Error ? error.message : String(error),
-        );
-      });
     },
-    [editing, id, replying, releaseAnchor, stopSettling, syncInsetTop],
+    [editing, id, replying],
   );
   /// The message a reply's quote names, brought into view with its bubble pulsing. One on a page
   /// not loaded yet stays where it is.
@@ -962,81 +513,63 @@ export default function ChatScreen() {
         top={insets.top}
       />
       <View style={{ flex: 1 }}>
-        <Animated.View ref={transcriptRef} style={[styles.transcript, revealStyle]}>
-        <SoftScrollEdgeView
-          style={styles.transcript}
-          onLayout={(e) => {
-            const resized = e.nativeEvent.layout.height !== layoutHeight.current;
-            if (resized) unconfirm();
-            layoutHeight.current = e.nativeEvent.layout.height;
-            syncInsetTop();
-            pinToBottom();
-            if (resized) followEnd();
-          }}
-        >
-          <FlashList
-            renderScrollComponent={ChatScroll}
+        <SoftScrollEdgeView style={styles.transcript}>
+          <LegendList
+            // A chat of its own: another chat's measured rows and position say nothing here.
+            key={id}
             ref={listRef}
+            renderScrollComponent={ChatScroll}
             data={rows}
+            renderItem={renderItem}
+            // Items draw again when their row or this changes; the row callbacks and the pulsing
+            // quote live in renderItem.
+            extraData={renderItem}
             keyExtractor={(row) => row.key}
             getItemType={(row) => row.type}
+            estimatedItemSize={ESTIMATED_ROW}
+            // The chat opens at its last message, with no scroll to get there, and a transcript
+            // shorter than the screen sits at its bottom, above the composer.
+            initialScrollAtEnd
+            alignItemsAtEnd
+            // Arriving rows and rows that grow keep a reader at the end there, never under a
+            // finger on the list; one who has scrolled up stays put and gets the disc.
+            maintainScrollAtEnd={{ animated: true }}
+            maintainScrollAtEndThreshold={FOLLOW_THRESHOLD}
+            // A page loaded above keeps the rows on screen where they are.
+            maintainVisibleContentPosition={{ data: true }}
+            anchoredEndSpace={anchoredEndSpace}
+            // The space is the scroll view's inset (`blankSpace`), not padding in the list, as in
+            // LegendList's KeyboardAwareLegendList; the prop is LegendList's internal one for it.
+            {...SCROLL_OWNS_ANCHOR_SPACE}
             contentInsetAdjustmentBehavior="never"
-            contentInset={contentInset}
+            contentContainerStyle={contentContainerStyle}
             // The insets here already account for the header and the composer; iOS would add the
             // safe area to the scroll bar's track again and keep it short of both ends.
             automaticallyAdjustsScrollIndicatorInsets={false}
             scrollIndicatorInsets={scrollIndicatorInsets}
-            onCommitLayoutEffect={syncInsetTop}
-            // The space under an anchored message reaches the native scroll view a frame after
-            // JS sets it; a scroll sent meanwhile would be clamped to the range without it.
-            scrollToOverflowEnabled
             // Rows are laid out ahead of the viewport so a quick flick finds them drawn: the
             // default 250 leaves bare background at the edge when the rows' heights are still
-            // being measured. Detaching offscreen views (Android's default for a scroll view)
-            // would blank a recycled row until it is attached again.
+            // being measured. LegendList never detaches offscreen views, which would blank a
+            // row until it is attached again.
             drawDistance={DRAW_DISTANCE}
-            removeClippedSubviews={false}
             keyboardDismissMode="interactive"
-            maintainVisibleContentPosition={maintainVisibleContentPosition}
-            contentContainerStyle={{
-              // Android's chat bar is transparent too: the first rows begin below it, then
-              // naturally scroll beneath it. UIKit gets the same spacing from contentInset.
-              paddingTop: Platform.OS === "ios" ? 0 : visibleHeaderHeight + 8,
-            }}
             onLoad={() => {
               loaded.current = true;
-              pinToBottom();
-              if (confirmed.current) scheduleReveal();
-              if (settleTimer.current) clearTimeout(settleTimer.current);
-              settleTimer.current = setTimeout(stopSettling, 1500);
+              chatShown();
             }}
-            onContentSizeChange={(_w, h) => {
-              const changed = h !== contentHeight.current;
-              if (changed) unconfirm();
-              contentHeight.current = h;
-              syncInsetTop();
-              pinToBottom();
-              if (changed) followEnd();
-            }}
-            // Nearing the first message: the page before it. Not while the list is still
-            // finding the end after opening.
+            // Nearing the first message: the page before it, once the chat has opened at its end.
             onStartReached={() => {
-              if (!settling.current) void engine.loadOlder(id);
+              if (loaded.current) void engine.loadOlder(id);
             }}
             onStartReachedThreshold={1}
-            onScroll={onScroll}
+            onScroll={measureEnd}
             scrollEventThrottle={16}
             onScrollBeginDrag={onScrollBeginDrag}
             onScrollEndDrag={onScrollEndDrag}
             onMomentumScrollBegin={onMomentumScrollBegin}
-            onMomentumScrollEnd={onMomentumScrollEnd}
-            onScrollToTop={onScrollToTop}
-            renderItem={renderItem}
-            ListHeaderComponent={head}
-            ListFooterComponent={Platform.OS === "android" ? foot : slack}
+            onMomentumScrollEnd={scrollEnded}
           />
         </SoftScrollEdgeView>
-        </Animated.View>
         <KeyboardFoot
           style={[styles.jump, { bottom: composerHeight + 10 }]}
           tuck={insets.bottom}
@@ -1069,14 +602,11 @@ export default function ChatScreen() {
           onLayout={(e) => {
             setComposerHeight(e.nativeEvent.layout.height);
             const blank = e.nativeEvent.layout.height + COMPOSER_GAP;
-            if (blank !== composerSpace.current) unconfirm();
-            composerSpace.current = blank;
+            composerSpace.value = blank;
             const extra = blank - insets.bottom;
             composerActual.current = extra;
             composerCompact.current = Math.min(composerCompact.current, extra);
             publishComposerExtra();
-            syncInsetTop();
-            pinToBottom();
           }}
         >
           <RunningAgents />
@@ -1186,7 +716,6 @@ const ChatHeader = memo(function ChatHeader({ id, title, members, service, worki
 
 const styles = StyleSheet.create({
   transcript: { flex: 1 },
-  foot: { height: 0 },
   missing: { flex: 1, alignItems: "center", justifyContent: "center" },
   androidHeader: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 100 },
   androidHeaderControls: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16 },
