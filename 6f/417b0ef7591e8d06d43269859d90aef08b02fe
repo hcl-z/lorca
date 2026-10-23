@@ -1,0 +1,23 @@
+mobile/modules/lorca-core/MarkdownView.tsx
+  s_723135a9291b14::t_428f8fcb0b1f36 4-5,42-92,98-100,102-103,107-109
+mobile/src/ui/markdownSizes.test.ts
+  s_723135a9291b14::t_76acb03feea4d1 1-36
+docs/architecture/phone-ui.md
+  s_723135a9291b14::t_a268d707455703 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "6f417b0ef7591e8d06d43269859d90aef08b02fe",
+  "prompts": {},
+  "sessions": {
+    "s_723135a9291b14": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bcda4714-abdb-439e-84a7-4d54fd4205f7",
+        "model": "claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
