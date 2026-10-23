@@ -110,8 +110,13 @@ pub struct PluginStatus {
 
 impl Device {
     pub fn is_runner(&self) -> bool {
-        matches!(self.os.as_str(), "macos" | "linux" | "windows")
+        is_runner_os(&self.os)
     }
+}
+
+/// A Device with this `os` is a Runner: a computer, not a phone or a tablet.
+pub fn is_runner_os(os: &str) -> bool {
+    matches!(os, "macos" | "linux" | "windows")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
