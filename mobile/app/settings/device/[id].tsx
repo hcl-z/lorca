@@ -1,10 +1,10 @@
 // One Device, slid in from its row in Settings inside the same sheet: the bots assigned to it,
-// its plugins when it is a Runner, and the machine itself, with whether `lorca service` keeps an
+// its plugins and the MCP servers of its mcp.json when it is a Runner, and the machine itself, with whether `lorca service` keeps an
 // online Runner's CLI running.
 
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { engine } from "../../../src/core/engine";
 import { deviceName, isBotDM, isRunner, isStandaloneRunner, providerLabel, type Device, type SavedSecret, type UpdateStatus } from "../../../src/core/model";
 import { deviceIsOnline, useStore } from "../../../src/core/store";
@@ -18,7 +18,8 @@ import { secretPlace } from "../../../src/ui/secrets";
 import { pluginStateWord } from "../../../src/ui/plugins";
 import { lastSeen } from "../../../src/ui/format";
 import { Symbol } from "../../../src/ui/Symbol";
-import { Font, usePalette } from "../../../src/ui/theme";
+import { accentColor, Font, usePalette } from "../../../src/ui/theme";
+import { isRemote, mcpAddress, mcpList, mcpState, reconnectMcp, setMcpEnabled, type McpFile, type McpServer, type McpTone } from "../../../src/core/mcp";
 import { alert, prompt } from "../../../src/ui/alert";
 
 const OS_NAMES: Record<string, string> = { macos: "macOS", linux: "Linux", windows: "Windows", ios: "iOS", ipados: "iPadOS", android: "Android" };
@@ -48,7 +49,6 @@ export default function DeviceScreen() {
   const seen = useStore((s) => s.device_seen[id]);
   const allBots = useStore((s) => s.bots);
   const providers = useStore((s) => s.providers);
-  const chats = useStore((s) => s.chats);
   const relayConnected = useStore((s) => s.relayConnected);
   const relayUpdateRequired = useStore((s) => s.relayUpdateRequired);
   const relayUrl = useStore((s) => s.relayUrl);
@@ -71,6 +71,8 @@ export default function DeviceScreen() {
     };
   }, [id, standaloneRunner, online, isThis]);
 
+  const mcp = useMcpFile(runner && online ? device : undefined);
+
   if (!device) return null;
   const shown = standaloneRunner && service?.id === device.id && online ? service : undefined;
   const bots = allBots.filter((b) => b.runner_id === device.id);
@@ -78,7 +80,8 @@ export default function DeviceScreen() {
   const relay = relayUrl?.replace(/^https?:\/\//, "");
 
   function openChat(botId: string) {
-    const dm = chats.find((c) => isBotDM(c) && c.bot_ids[0] === botId);
+    // Read at the tap: the screen needs no chat to draw, so no message elsewhere draws it again.
+    const dm = useStore.getState().chats.find((c) => isBotDM(c) && c.bot_ids[0] === botId);
     if (!dm) return;
     router.dismissAll();
     router.push(`/chat/${dm.id}`);
@@ -161,7 +164,7 @@ export default function DeviceScreen() {
             {(device.plugins ?? []).length === 0 ? (
               <Row title={t("No plugins installed")} />
             ) : (
-              (device.plugins ?? []).map((plugin) =>
+              (device.plugins ?? []).filter((plugin) => !mcp.file?.servers.some((server) => server.id === plugin.id)).map((plugin) =>
                 // A named account (Gmail · Work) opens its own screen; its name already says which.
                 plugin.account_name ? (
                   <Row key={plugin.id} title={plugin.name} detail={pluginStateWord(plugin)} icon={plugin.icon ?? "puzzlepiece.extension"} chevron onPress={() => router.push({ pathname: "/settings/account/[id]", params: { id: plugin.id, runner: device.id } })} />
@@ -172,6 +175,8 @@ export default function DeviceScreen() {
             )}
           </Section>
         )}
+
+        {runner && <McpSection device={device} online={online} mcp={mcp} />}
 
         {runner && <SecretsSection device={device} />}
 
@@ -217,6 +222,110 @@ export default function DeviceScreen() {
         )}
       </ScrollView>
     </>
+  );
+}
+
+type McpState = { file?: McpFile; error?: string; reload: () => void; replace: (server: McpServer) => void };
+
+/// A Runner's mcp.json as it last answered, asked again whenever its plugins' states change in the
+/// roster (a server that connects, fails, or is turned on), as the desktop apps' section does.
+function useMcpFile(device: Device | undefined): McpState {
+  const [file, setFile] = useState<McpFile>();
+  const [error, setError] = useState<string>();
+  const loads = useRef(0);
+  const runnerId = device?.id;
+  const states = (device?.plugins ?? []).map((plugin) => `${plugin.id}:${plugin.state}:${plugin.detail ?? ""}`).join("|");
+  const reload = useCallback(() => {
+    if (!runnerId) return;
+    const ask = ++loads.current;
+    mcpList(runnerId)
+      .then((fresh) => ask === loads.current && (setFile(fresh), setError(undefined)))
+      .catch((e: unknown) => ask === loads.current && setError(e instanceof Error ? e.message : String(e)));
+  }, [runnerId]);
+  useEffect(() => {
+    setFile(undefined);
+    setError(undefined);
+  }, [runnerId]);
+  useEffect(reload, [reload, states]);
+  const replace = useCallback((server: McpServer) => setFile((old) => old && { ...old, servers: old.servers.map((s) => (s.name === server.name ? server : s)) }), []);
+  return { file, error, reload, replace };
+}
+
+/// The servers of the Runner's mcp.json, below its plugins: each with how it stands, its command
+/// line or URL, and a switch; a tap on one that is on offers Reconnect. Adding or editing a server
+/// stays on a computer. Hidden while the Runner is offline or the file holds none.
+function McpSection({ device, online, mcp }: { device: Device; online: boolean; mcp: McpState }) {
+  useLanguage();
+  const p = usePalette();
+  const [busy, setBusy] = useState<string>();
+  const tones: Record<McpTone, string> = {
+    red: accentColor("red", p.dark),
+    orange: accentColor("orange", p.dark),
+    green: accentColor("green", p.dark),
+    accent: accentColor("blue", p.dark),
+    secondary: p.secondaryLabel as string,
+    tertiary: p.tertiaryLabel as string,
+  };
+  const { file, error } = mcp;
+  if (!online || (!file && !error) || (file && file.servers.length === 0 && !file.error)) return null;
+
+  function toggle(server: McpServer, on: boolean) {
+    mcp.replace({ ...server, enabled: on });
+    setMcpEnabled(device.id, server.name, on)
+      .catch((e: unknown) => alert(on ? t("Couldn't turn {name} on", { name: server.name }) : t("Couldn't turn {name} off", { name: server.name }), e instanceof Error ? e.message : String(e)))
+      .finally(mcp.reload);
+  }
+
+  function reconnect(server: McpServer) {
+    setBusy(server.name);
+    reconnectMcp(device.id, server.name)
+      .catch((e: unknown) => alert(t("Couldn't reconnect {name}", { name: server.name }), e instanceof Error ? e.message : String(e)))
+      .finally(() => {
+        setBusy(undefined);
+        mcp.reload();
+      });
+  }
+
+  function offer(server: McpServer) {
+    const { text } = mcpState(server);
+    alert(server.name, [text, server.config?.description].filter(Boolean).join("\n\n") || undefined, [
+      { text: t("Reconnect"), onPress: () => reconnect(server) },
+      { text: t("Cancel"), style: "cancel" },
+    ]);
+  }
+
+  return (
+    <Section title={t("MCP Servers")} footer={t("Servers added to mcp.json on {name}. Add or edit one in Lorca on a computer, or with the lorca mcp command.", { name: deviceName(device) })}>
+      {error && !file ? <Row title={error} /> : null}
+      {file?.error ? <Row title={t("{error} Lorca keeps the servers it read before.", { error: file.error })} subtitleLines={3} /> : null}
+      {(file?.servers ?? []).map((server) => {
+        const state = mcpState(server);
+        const live = server.enabled && !server.problem;
+        return (
+          <Row
+            key={server.name}
+            title={server.name}
+            subtitle={[busy === server.name ? t("Connecting…") : state.text, mcpAddress(server.config)].filter(Boolean).join(" · ")}
+            subtitleLines={2}
+            leading={<Symbol name={server.config && isRemote(server.config) ? "globe" : "terminal"} size={20} color={live ? tones[state.tone] : p.tertiaryLabel} />}
+            accessory={
+              server.problem ? undefined : busy === server.name ? (
+                <ActivityIndicator />
+              ) : (
+                <Switch
+                  value={server.enabled}
+                  onValueChange={(on) => toggle(server, on)}
+                  accessibilityLabel={server.enabled ? t("Turn {name} off", { name: server.name }) : t("Turn {name} on", { name: server.name })}
+                  trackColor={Platform.OS === "android" ? { false: p.fill, true: p.secondaryFill } : { false: p.fill, true: p.dark ? "#636366" : p.ink }}
+                  thumbColor={Platform.OS === "android" ? p.tint : undefined}
+                />
+              )
+            }
+            onPress={live && !busy ? () => offer(server) : undefined}
+          />
+        );
+      })}
+    </Section>
   );
 }
 

@@ -1,6 +1,7 @@
 // The phone's view of the account: what the core last said. Pure data and reducers fed by the
 // core's events (engine.ts applies them), the way the macOS app's AppStore mirrors the CLI. The
-// core keeps the truth on disk; nothing here is persisted except the phone's own prefs.
+// core keeps the truth on disk; the store keeps the phone's own prefs, and a copy of what it shows
+// for the next launch to start from (startupCache.ts).
 
 import { messageArrived } from "./timing";
 import { useMemo } from "react";
@@ -211,7 +212,8 @@ export function replaceSnapshot(snapshot: {
   const running: Record<string, Running> = {};
   for (const turn of snapshot.running_turns ?? []) running[turn.job_id] = { chatId: turn.chat_id, botId: turn.bot_id, routineId: turn.routine_id ?? undefined };
   const busy = new Set(Object.values(running).map((r) => r.chatId));
-  const { thinking, retries, tasks: held, identityId } = useStore.getState();
+  const { thinking, retries, tasks: held, identityId, chats: before } = useStore.getState();
+  const loaded = new Map(before.map((chat) => [chat.id, chat]));
   useStore.setState({
     ready: true,
     paired: snapshot.has_identity,
@@ -228,7 +230,7 @@ export function replaceSnapshot(snapshot: {
     // them, so a resync does not throw an open transcript back to the last page.
     chats: snapshot.chats.map((c) => {
       const messages = c.messages ?? [];
-      const old = useStore.getState().chats.find((o) => o.id === c.id);
+      const old = loaded.get(c.id);
       const at = old && messages.length ? old.messages.findIndex((m) => m.id === messages[0].id) : -1;
       const kept = at > 0 ? { messages: [...old!.messages.slice(0, at), ...messages], has_more: old!.has_more } : { messages };
       return { ...c, ...kept, unread_count: c.unread_count ?? 0 };
@@ -363,24 +365,28 @@ export function upsertMessage(message: Message, isNew = true): { added: boolean 
   let previous: Message | undefined;
   let started = false;
   useStore.setState((s) => {
-    let chats = s.chats;
-    if (!chats.some((c) => c.id === message.chat_id)) {
-      // Roster not here yet: keep the message under a placeholder until it is.
-      chats = [...chats, { id: message.chat_id, kind: "group", title: t("Chat"), bot_ids: [], is_pinned: false, created_at: message.created_at, messages: [], unread_count: 0 }];
-    }
-    chats = chats.map((chat) => {
-      if (chat.id !== message.chat_id) return chat;
-      const index = chat.messages.findIndex((m) => m.id === message.id);
-      previous = chat.messages[index];
-      if (index < 0) {
-        added = true;
-        return { ...chat, messages: [...chat.messages, message] };
-      }
-      if (JSON.stringify(chat.messages[index]) === JSON.stringify(message)) return chat;
+    let at = s.chats.findIndex((c) => c.id === message.chat_id);
+    // Roster not here yet: keep the message under a placeholder until it is.
+    const chat: Chat = at >= 0 ? s.chats[at] : { id: message.chat_id, kind: "group", title: t("Chat"), bot_ids: [], is_pinned: false, created_at: message.created_at, messages: [], unread_count: 0 };
+    // From the end: a new message goes there, and an update is mostly of a recent one.
+    const index = lastIndex(chat.messages, (m) => m.id === message.id);
+    previous = chat.messages[index];
+    let next = chat;
+    if (index < 0) {
+      added = true;
+      next = { ...chat, messages: [...chat.messages, message] };
+    } else if (JSON.stringify(previous) !== JSON.stringify(message)) {
       const messages = chat.messages.slice();
       messages[index] = message;
-      return { ...chat, messages };
-    });
+      next = { ...chat, messages };
+    }
+    // Only the chat that changed is a new object; every other keeps its identity.
+    let chats = s.chats;
+    if (next !== chat || at < 0) {
+      chats = s.chats.slice();
+      if (at < 0) at = chats.push(next) - 1;
+      else chats[at] = next;
+    }
     // A bot that spoke is no longer "stopped without replying".
     const statuses = message.author.kind === "bot" && message.body.kind === "text" && s.statuses[message.chat_id] ? omit(s.statuses, message.chat_id) : s.statuses;
     const retries = omit(s.retries, message.chat_id);
@@ -476,6 +482,11 @@ export function setStatus(chatId: string, text: string | null) {
     else delete next[chatId];
     return { statuses: next };
   });
+}
+
+function lastIndex<T>(list: T[], match: (item: T) => boolean): number {
+  for (let i = list.length - 1; i >= 0; i--) if (match(list[i])) return i;
+  return -1;
 }
 
 function omit<T>(record: Record<string, T>, key: string): Record<string, T> {

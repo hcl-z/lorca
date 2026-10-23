@@ -51,9 +51,12 @@ export function toolFailed(tool: AgentTool): boolean {
 /// after the rest, and none from before the first the Runner keeps.
 export function mergeAgentEntries(have: AgentEntry[], page: AgentTranscriptPage): AgentEntry[] {
   const bySeq = new Map(have.map((entry) => [entry.seq, entry]));
-  for (const entry of page.entries ?? []) bySeq.set(entry.seq, entry);
+  // An entry at the revision held keeps its object, so its row is not drawn again.
+  for (const entry of page.entries ?? []) if (bySeq.get(entry.seq)?.rev !== entry.rev) bySeq.set(entry.seq, entry);
   const first = page.first ?? 0;
-  return [...bySeq.values()].filter((entry) => entry.seq >= first).sort((a, b) => a.seq - b.seq);
+  const next = [...bySeq.values()].filter((entry) => entry.seq >= first).sort((a, b) => a.seq - b.seq);
+  // A refresh that brought nothing new keeps the list itself.
+  return next.length === have.length && next.every((entry, at) => entry === have[at]) ? have : next;
 }
 
 /// A command's output as plain text: its colors and every other control sequence dropped, and a

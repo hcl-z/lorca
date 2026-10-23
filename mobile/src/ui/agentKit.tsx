@@ -8,7 +8,7 @@ import { Image } from "expo-image";
 import { useEffect, useState, type ReactNode } from "react";
 import { ActivityIndicator, Linking, Platform, StyleSheet, Text, View } from "react-native";
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming, cancelAnimation } from "react-native-reanimated";
-import { agentBusy, agentContext, agentSetting, agentSince, agentTone, modelShortName, pullRequestName, type AgentTone } from "../core/agentKit";
+import { agentBusy, agentContext, agentSetting, agentSince, agentTone, type AgentTone } from "../core/agentKit";
 import { engine } from "../core/engine";
 import { agentName, agentPlace, type AgentRun } from "../core/model";
 import { t, tc } from "../i18n";
@@ -83,37 +83,35 @@ export function useNow(live: boolean): number {
   return now;
 }
 
-/// How a coding agent stands, in a word or two.
-export function agentStatus(agent: AgentRun): string {
-  switch (agent.state) {
-    case "checking":
+/// The words of its pill: how it stands, in a word or two, by the core's key for it
+/// (`AgentRun::summarize`), "Needs you" while it asks.
+export function agentWords(agent: AgentRun): string {
+  switch (agent.status) {
     case "starting":
       return tc("Starting", "coding agent");
-    case "asking":
+    case "needs_you":
       return tc("Needs you", "coding agent");
     case "working":
-      return agent.stalled ? tc("Quiet", "coding agent") : tc("Working", "coding agent");
-    case "idle":
+      return tc("Working", "coding agent");
+    case "quiet":
+      return tc("Quiet", "coding agent");
+    case "done":
       return tc("Done", "coding agent");
-    case "exited":
+    case "ended":
       return tc("Ended", "coding agent");
     case "failed":
       return tc("Failed", "coding agent");
-    case "denied":
-      return agent.held ? tc("Held by Auto-review", "coding agent") : tc("Not allowed", "coding agent");
-    case "expired":
+    case "held":
+      return tc("Held by Auto-review", "coding agent");
+    case "not_allowed":
+      return tc("Not allowed", "coding agent");
+    case "no_answer":
       return tc("No answer", "coding agent");
     case "dismissed":
       return tc("Dismissed", "coding agent");
     default:
       return tc("Stopped", "coding agent");
   }
-}
-
-/// The words of its pill: how it stands, "Needs you" while it asks.
-export function agentWords(agent: AgentRun): string {
-  if (agent.question || agent.asking) return tc("Needs you", "coding agent");
-  return agentStatus(agent);
 }
 
 /// How it stands: a capsule in its state's tint, with a dot that breathes while it works, and how
@@ -272,7 +270,7 @@ export function SpecStrip({ agent, chatId, messageId }: { agent: AgentRun; chatI
         <View style={{ flexDirection: "row" }}>
           {cells.map((setting, i) => {
             const control = agent.controls?.find((each) => each.name === setting.name);
-            const value = setting.name === "Model" ? modelShortName(control ? (control.choices.find((choice) => choice.value === control.value)?.name ?? setting.value) : setting.value) : setting.value;
+            const value = setting.name === "Model" ? (agent.model ?? setting.value) : setting.value;
             const cell = (
               <View style={styles.cellInner}>
                 <Text style={[styles.cellLabel, { color: p.tertiaryLabel }]} numberOfLines={1}>
@@ -338,7 +336,7 @@ export function SpecStrip({ agent, chatId, messageId }: { agent: AgentRun; chatI
 }
 
 /// The pull request it opened, as a green button that opens it.
-export function PullRequestButton({ link }: { link: string }) {
+export function PullRequestButton({ link, name }: { link: string; name?: string }) {
   const p = usePalette();
   const green = accentColor("green", p.dark);
   return (
@@ -350,7 +348,7 @@ export function PullRequestButton({ link }: { link: string }) {
     >
       <Symbol name="arrow.triangle.pull" size={14} color={green} />
       <Text style={{ color: p.label, fontSize: 14, fontWeight: "600" }} numberOfLines={1}>
-        {pullRequestName(link) || t("Pull request")}
+        {name || t("Pull request")}
       </Text>
       <Symbol name="arrow.up.right" size={11} color={p.tertiaryLabel} />
     </Pressable>

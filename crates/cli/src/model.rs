@@ -110,8 +110,13 @@ pub struct PluginStatus {
 
 impl Device {
     pub fn is_runner(&self) -> bool {
-        matches!(self.os.as_str(), "macos" | "linux" | "windows")
+        is_runner_os(&self.os)
     }
+}
+
+/// A Device with this `os` is a Runner: a computer, not a phone or a tablet.
+pub fn is_runner_os(os: &str) -> bool {
+    matches!(os, "macos" | "linux" | "windows")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -745,7 +750,26 @@ pub struct AgentRun {
     /// What it does now: its last tool's line, without the mark (`Bash(npm test)`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub now: Option<String>,
+    /// How it stands, as the key of the words its pill says, which the apps translate:
+    /// `starting`, `needs_you`, `working`, `quiet`, `done`, `ended`, `failed`, `held`,
+    /// `not_allowed`, `no_answer`, `dismissed`, or `stopped`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub status: String,
+    /// Its model's name as a cell has room for: without a gateway's prefix and the context hints
+    /// after it ("openrouter/claude-sonnet[1M]" reads "claude-sonnet").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Its pull request's name, "acme/shop #7", when `pull_request` is a pull request's link.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pull_request_name: Option<String>,
+    /// Its last lines with something on them, at most `AGENT_TAIL_LINES`, while it starts or works
+    /// and asks nothing: what the consoles show.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tail: Vec<String>,
 }
+
+/// How many of its last lines a coding agent's console shows.
+pub const AGENT_TAIL_LINES: usize = 5;
 
 /// The tokens of its context a coding agent has used, of how many it has.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
@@ -787,7 +811,8 @@ impl AgentRun {
     }
 
     /// Fills what the apps read of how it stands from the rest of the card: `tone`, `busy`,
-    /// `context`, and `now`. A card stored or synced before these existed gets them too.
+    /// `context`, `now`, `status`, `model`, `pull_request_name`, and `tail`. A card stored or
+    /// synced before these existed gets them too.
     pub fn summarize(&mut self) {
         let asks = self.question.is_some() || self.asking.is_some() || self.state == "asking";
         let state = self.state.as_str();
@@ -806,7 +831,62 @@ impl AgentRun {
             (size > 0).then_some(AgentContextUse { used, size })
         });
         self.now = self.output.as_deref().and_then(|output| output.lines().rev().find_map(|line| line.trim().strip_prefix("● ").map(str::to_string)));
+        self.status = match state {
+            _ if self.question.is_some() || self.asking.is_some() => "needs_you",
+            "checking" | "starting" => "starting",
+            "asking" => "needs_you",
+            "working" if self.stalled => "quiet",
+            "working" => "working",
+            "idle" => "done",
+            "exited" => "ended",
+            "failed" => "failed",
+            "denied" if self.held => "held",
+            "denied" => "not_allowed",
+            "expired" => "no_answer",
+            "dismissed" => "dismissed",
+            _ => "stopped",
+        }
+        .into();
+        // The model as the card shows it: the name of the choice in force where it can change,
+        // else the agent's own word for it.
+        self.model = self.settings.iter().find(|setting| setting.name == "Model").map(|setting| {
+            let control = self.controls.iter().find(|control| control.name == setting.name);
+            let name = control.and_then(|control| control.choices.iter().find(|choice| choice.value == control.value)).map_or(setting.value.as_str(), |choice| choice.name.as_str());
+            model_short_name(name).to_string()
+        });
+        self.pull_request_name = self.pull_request.as_deref().and_then(pull_request_name);
+        self.tail = match (&self.output, self.question.is_none() && matches!(state, "starting" | "working")) {
+            (Some(output), true) => {
+                let lines: Vec<&str> = output.lines().filter(|line| !line.trim().is_empty()).collect();
+                lines[lines.len().saturating_sub(AGENT_TAIL_LINES)..].iter().map(|line| line.to_string()).collect()
+            }
+            _ => Vec::new(),
+        };
     }
+}
+
+/// A model's name without the provider a gateway puts before it and the context hints after it.
+fn model_short_name(name: &str) -> &str {
+    let mut short = &name[name.rfind('/').map_or(0, |at| at + 1)..];
+    while short.ends_with(']') {
+        match short.rfind('[') {
+            Some(at) if at > 0 => short = &short[..at],
+            _ => break,
+        }
+    }
+    short
+}
+
+/// "acme/shop #7" for a pull request's link on GitHub, GitLab, or a host like them.
+fn pull_request_name(link: &str) -> Option<String> {
+    let path = link.strip_prefix("https://").or_else(|| link.strip_prefix("http://")).unwrap_or(link);
+    let parts: Vec<&str> = path.trim_end_matches('/').split('/').collect();
+    // The repository is what lies between the host and the marker: a GitLab group may nest, and
+    // GitLab puts `-` before the marker.
+    let at = parts.iter().position(|part| matches!(*part, "pull" | "pulls" | "merge_requests"))?;
+    let number = parts.get(at + 1).filter(|number| !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()))?;
+    let repo: Vec<&str> = parts[1..at].iter().copied().filter(|part| *part != "-").collect();
+    (repo.len() >= 2).then(|| format!("{} #{number}", repo.join("/")))
 }
 
 /// A token count as a card's `Context` setting writes it: "34k", "1.2M", or "512".
@@ -1832,7 +1912,51 @@ mod app_view_tests {
         assert_eq!(context("5 / 0"), None);
 
         let output = "> fix it\n● Read(a.rs)\n  ⎿ ok\n● Bash(cargo test)\n  ⎿ 3 pass".to_string();
-        assert_eq!(summarized(AgentRun { output: Some(output), ..working }).now.as_deref(), Some("Bash(cargo test)"));
+        assert_eq!(summarized(AgentRun { output: Some(output), ..working.clone() }).now.as_deref(), Some("Bash(cargo test)"));
+    }
+
+    /// The apps say how it stands, its model, its pull request, and its last lines as the CLI
+    /// reads them, so they keep no rules of their own for them.
+    #[test]
+    fn a_coding_agents_card_names_its_status_model_pull_request_and_tail() {
+        let summarized = |mut agent: AgentRun| {
+            agent.summarize();
+            agent
+        };
+        let status = |agent: AgentRun| summarized(agent).status;
+        let working = AgentRun { state: "working".into(), ..Default::default() };
+        assert_eq!(status(working.clone()), "working");
+        assert_eq!(status(AgentRun { stalled: true, ..working.clone() }), "quiet");
+        assert_eq!(status(AgentRun { asking: Some("card".into()), ..working.clone() }), "needs_you");
+        assert_eq!(status(AgentRun { state: "checking".into(), ..Default::default() }), "starting");
+        assert_eq!(status(AgentRun { state: "denied".into(), held: true, ..Default::default() }), "held");
+        assert_eq!(status(AgentRun { state: "denied".into(), ..Default::default() }), "not_allowed");
+        assert_eq!(status(AgentRun { state: "exited".into(), ..Default::default() }), "ended");
+        assert_eq!(status(AgentRun { state: "something new".into(), ..Default::default() }), "stopped");
+
+        let model = AgentSetting { name: "Model".into(), value: "openrouter/anthropic/claude-sonnet[1M]".into() };
+        assert_eq!(summarized(AgentRun { settings: vec![model.clone()], ..Default::default() }).model.as_deref(), Some("claude-sonnet"));
+        // Where it can change, the card shows the name of the choice in force.
+        let control = AgentControl {
+            what: "model".into(),
+            name: "Model".into(),
+            value: "opus".into(),
+            choices: vec![AgentChoice { value: "opus".into(), name: "gateway/claude-opus[200k]".into() }],
+        };
+        assert_eq!(summarized(AgentRun { settings: vec![model], controls: vec![control], ..Default::default() }).model.as_deref(), Some("claude-opus"));
+        assert_eq!(summarized(AgentRun::default()).model, None);
+
+        let pr = |link: &str| summarized(AgentRun { pull_request: Some(link.into()), ..Default::default() }).pull_request_name;
+        assert_eq!(pr("https://github.com/acme/shop/pull/7").as_deref(), Some("acme/shop #7"));
+        assert_eq!(pr("https://gitlab.com/acme/shop/merge_requests/12/").as_deref(), Some("acme/shop #12"));
+        assert_eq!(pr("https://gitlab.com/acme/web/shop/-/merge_requests/12").as_deref(), Some("acme/web/shop #12"));
+        assert_eq!(pr("https://github.com/acme/shop/pull/7/files").as_deref(), Some("acme/shop #7"));
+        assert_eq!(pr("https://github.com/acme/pull/7"), None);
+        assert_eq!(pr("https://example.com/x"), None);
+
+        let output = "a\n\nb\nc\n  \nd\ne\nf\n".to_string();
+        assert_eq!(summarized(AgentRun { output: Some(output.clone()), ..working.clone() }).tail, ["b", "c", "d", "e", "f"]);
+        assert!(summarized(AgentRun { output: Some(output), state: "idle".into(), ..Default::default() }).tail.is_empty());
     }
 }
 

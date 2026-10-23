@@ -8,6 +8,16 @@ phone app's.
 
 ## [Unreleased]
 
+## [1.0.27]
+
+- The phone opens faster: a launch shows your chats as you last saw them while the account loads, the first chat you open measures only messages it has not drawn before, and a message that arrives changes only its own chat on screen.
+- The phone's conversation opens at its newest message, stays with the newest while a reply comes in, keeps your place when older messages load above, and settles a message you send just under the header.
+- The phone's Attention sheet and a coding agent's timeline stay smooth with hundreds of rows.
+- On the phone you can edit a bot's memory and what its Runner knows about you, undo what a bot remembered from a chat, and see the prompt its next turn sends.
+- A Runner's screen on the phone lists its MCP servers, turns each on or off, and reconnects one.
+- A coding agent's card names its pull request for GitLab merge requests in nested groups too, and the desktop and the phone read its status and model from the CLI.
+- Coming back after time away no longer reloads the whole account when only other Devices' turns moved, and a phone no longer re-sends its own details on every launch.
+
 ## [1.0.26]
 
 - Coding agents on the phone look and work as they do on the desktop. The agent's card has its mark, a state pill that ticks while it works, its console, and its model and effort as menus beside how full its context is and what it has cost. The transcript opens as a full sheet with the task, workspace, plan, and pull request, a timeline, and command output in color. Agents at work in any chat show as small cards over the composer, each with Stop.

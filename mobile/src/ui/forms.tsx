@@ -35,6 +35,28 @@ export function Section({ title, footer, children, style }: { title?: string; fo
   );
 }
 
+/// One row of an inset group drawn as a list's own cell, for a group too long to draw whole: the
+/// group's side borders, its rounded top on the first row and bottom on the last, and the
+/// separator above every row after the first, so the cells read as one `Section`.
+export function SectionCell({ first, last, children }: { first: boolean; last: boolean; children: ReactNode }) {
+  const p = usePalette();
+  return (
+    <View style={[styles.cellRow, first && styles.cellFirst]}>
+      <View
+        style={[
+          styles.cellGroup,
+          { backgroundColor: p.cell, borderColor: p.cardBorder },
+          first && { borderTopWidth: StyleSheet.hairlineWidth, borderTopLeftRadius: 14, borderTopRightRadius: 14 },
+          last && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomLeftRadius: 14, borderBottomRightRadius: 14 },
+        ]}
+      >
+        {!first && <View style={[styles.separator, { backgroundColor: p.separator }]} />}
+        {children}
+      </View>
+    </View>
+  );
+}
+
 export interface MenuChoice {
   title: string;
   selected: boolean;
@@ -289,6 +311,9 @@ const styles = StyleSheet.create({
   footer: { fontSize: 13, marginHorizontal: 16, marginTop: 7, lineHeight: 18 },
   group: { borderRadius: 14, overflow: "hidden", borderWidth: StyleSheet.hairlineWidth },
   separator: { height: StyleSheet.hairlineWidth, marginLeft: 16 },
+  cellRow: { paddingHorizontal: 16 },
+  cellFirst: { paddingTop: Platform.OS === "android" ? 24 : 20 },
+  cellGroup: { overflow: "hidden", borderLeftWidth: StyleSheet.hairlineWidth, borderRightWidth: StyleSheet.hairlineWidth },
   row: { flexDirection: "row", alignItems: "center", minHeight: Platform.OS === "android" ? 56 : 44, paddingHorizontal: 16, paddingVertical: 10, gap: 12 },
   rowMultiline: { alignItems: "flex-start" },
   rowText: { flex: 1, gap: 2 },

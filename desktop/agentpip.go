@@ -181,7 +181,7 @@ func (m *mainWindow) agentWindow(c *ui.Context, r model.RunningAgent, st *pipSta
 				if agent.Task != "" {
 					ui.Text(c, agent.Task).FontSize(12).LineHeight(1.4).MaxLines(2).Tooltip(agent.Task)
 				}
-				if text := lastLines(agentOutput(agent), pipLines); text != "" {
+				if text := agentOutput(agent); text != "" {
 					consoleTail(c, text, pipLines, agentBusy(agent)).Margin(9, 0, 0, 0)
 				}
 				ui.Row(c).FillWidth().Gap(8).Margin(9, 0, 0, 0).AlignItems(ui.Center).Children(func() {
@@ -218,8 +218,7 @@ func (m *mainWindow) agentWindow(c *ui.Context, r model.RunningAgent, st *pipSta
 	})
 }
 
-// pipSettings is what the small window says of the session in one line: the model, without the
-// provider's prefix a gateway puts before its name, how hard it thinks, and the context in use; and
+// pipSettings is what the small window says of the session in one line: the model's short name, how hard it thinks, and the context in use; and
 // all of it for the tooltip.
 func pipSettings(agent *model.AgentRun) (short, full string) {
 	full = agent.SettingsLine()
@@ -227,7 +226,11 @@ func pipSettings(agent *model.AgentRun) (short, full string) {
 	for _, setting := range agent.Settings {
 		switch setting.Name {
 		case "Model":
-			parts = append(parts, setting.Value[strings.LastIndex(setting.Value, "/")+1:])
+			if agent.Model != "" {
+				parts = append(parts, agent.Model)
+			} else {
+				parts = append(parts, setting.Value)
+			}
 		case "Effort", "Context":
 			parts = append(parts, setting.Value)
 		}
@@ -370,7 +373,9 @@ func (m *mainWindow) agentSidebar(c *ui.Context, p *palette, r model.RunningAgen
 				})
 			}
 			if agent.PullRequest != "" {
-				section("pr", L("Pull request"), func() { agentEnding(c, p, &model.AgentRun{PullRequest: agent.PullRequest}, r.Chat.ID) })
+				section("pr", L("Pull request"), func() {
+					agentEnding(c, p, &model.AgentRun{PullRequest: agent.PullRequest, PullRequestName: agent.PullRequestName}, r.Chat.ID)
+				})
 			}
 		})
 	})

@@ -12,7 +12,8 @@
 // changed, and keeps to the end unless the user scrolled up to read.
 
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useRef, useState, type ReactNode } from "react";
+import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { type AgentEntry, type AgentTool, mergeAgentEntries, toolFailed, toolRunning } from "../../src/core/agentEntries";
 import { agentBusy, agentSince, latestPlan, outputSpans, type OutputSpan } from "../../src/core/agentKit";
@@ -47,7 +48,7 @@ export default function AgentScreen() {
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Record<number, boolean>>({});
   const [stopping, setStopping] = useState(false);
-  const scroll = useRef<ScrollView>(null);
+  const scroll = useRef<FlashListRef<AgentEntry>>(null);
   const atEnd = useRef(true);
 
   useFocusEffect(
@@ -83,6 +84,7 @@ export default function AgentScreen() {
   const lastTool = entries.reduce((last, entry, at) => (entry.tool && hasBody(entry.tool) ? at : last), -1);
   const isOpen = (entry: AgentEntry, at: number) => open[entry.seq] ?? (!!entry.tool && (toolRunning(entry.tool) || toolFailed(entry.tool) || at === lastTool));
   const column = Math.min(width, 760) - 32;
+  const toggle = useCallback((entry: AgentEntry, shown: boolean) => setOpen((was) => ({ ...was, [entry.seq]: !shown })), []);
   const stop = () => {
     if (!message || stopping) return;
     setStopping(true);
@@ -96,9 +98,16 @@ export default function AgentScreen() {
     <View style={styles.screen}>
       <Stack.Screen options={{ title: agent ? agentName(agent) : t("Transcript") }} />
       <CloseToolbar label={Platform.OS === "android" ? t("Close") : t("Done")} onClose={() => router.dismiss()} />
-      <ScrollView
+      {/* A long run's transcript holds hundreds of entries: the list draws those near the screen,
+          the overview over them and what the agent asks under them. */}
+      <FlashList
         ref={scroll}
-        contentContainerStyle={[styles.content, { width: column + 32, alignSelf: "center" }]}
+        data={entries}
+        keyExtractor={(entry) => String(entry.seq)}
+        getItemType={(entry) => (entry.tool ? "tool" : entry.kind)}
+        extraData={open}
+        drawDistance={800}
+        contentContainerStyle={{ ...styles.content, paddingHorizontal: 16 + (width - column - 32) / 2 }}
         contentInsetAdjustmentBehavior="automatic"
         scrollEventThrottle={64}
         onScroll={(e) => {
@@ -108,39 +117,46 @@ export default function AgentScreen() {
         onContentSizeChange={() => {
           if (atEnd.current) scroll.current?.scrollToEnd({ animated: false });
         }}
-      >
-        {agent && message ? <Overview agent={agent} message={message} entries={entries} stopping={stopping} onStop={stop} /> : null}
-        <View style={{ height: 6 }} />
-        {entries.length > 0 ? (
-          entries.map((entry, at) => (
-            <EntryRow
-              key={entry.seq}
-              entry={entry}
-              kind={agent?.kind ?? ""}
-              who={who}
-              // The rail runs on to the next entry with a node.
-              rail={at + 1 < entries.length && entries[at + 1].kind !== "sent" && entries[at + 1].kind !== "log"}
-              open={isOpen(entry, at)}
-              width={column - NODE - 12}
-              onToggle={() => setOpen((was) => ({ ...was, [entry.seq]: !isOpen(entry, at) }))}
-            />
-          ))
-        ) : text ? (
-          <View style={[styles.code, { backgroundColor: p.code }]}>
-            <Text selectable style={[styles.mono, { color: p.label }]}>
-              {text}
-            </Text>
-          </View>
-        ) : (
-          <Text style={{ color: p.secondaryLabel }}>{error ?? (text === "" ? t("Nothing yet") : t("Loading…"))}</Text>
+        ListHeaderComponent={
+          <>
+            {agent && message ? <Overview agent={agent} message={message} entries={entries} stopping={stopping} onStop={stop} /> : null}
+            <View style={{ height: 6 }} />
+          </>
+        }
+        renderItem={({ item: entry, index: at }) => (
+          <EntryRow
+            entry={entry}
+            kind={agent?.kind ?? ""}
+            who={who}
+            // The rail runs on to the next entry with a node.
+            rail={at + 1 < entries.length && entries[at + 1].kind !== "sent" && entries[at + 1].kind !== "log"}
+            open={isOpen(entry, at)}
+            width={column - NODE - 12}
+            onToggle={toggle}
+          />
         )}
-        {askCard?.body.kind === "permission" && askCard.body.agent_ask ? (
-          <View style={{ marginTop: 8, marginHorizontal: -12 }}>
-            <AgentAskRow row={{ key: askCard.id, type: "permission", message: askCard, body: askCard.body, bot, groupStart: false }} ask={askCard.body.agent_ask} isGroup={false} />
-          </View>
-        ) : null}
-        {agent && message ? <CardQuestion agent={agent} message={message} who={who} /> : null}
-      </ScrollView>
+        ListEmptyComponent={
+          text ? (
+            <View style={[styles.code, { backgroundColor: p.code }]}>
+              <Text selectable style={[styles.mono, { color: p.label }]}>
+                {text}
+              </Text>
+            </View>
+          ) : (
+            <Text style={{ color: p.secondaryLabel }}>{error ?? (text === "" ? t("Nothing yet") : t("Loading…"))}</Text>
+          )
+        }
+        ListFooterComponent={
+          <>
+            {askCard?.body.kind === "permission" && askCard.body.agent_ask ? (
+              <View style={{ marginTop: 8, marginHorizontal: -12 }}>
+                <AgentAskRow row={{ key: askCard.id, type: "permission", message: askCard, body: askCard.body, bot, groupStart: false }} ask={askCard.body.agent_ask} isGroup={false} />
+              </View>
+            ) : null}
+            {agent && message ? <CardQuestion agent={agent} message={message} who={who} /> : null}
+          </>
+        }
+      />
     </View>
   );
 }
@@ -203,7 +219,7 @@ function Overview({ agent, message, entries, stopping, onStop }: { agent: AgentR
       ) : null}
       {agent.pull_request ? (
         <Section title={t("Pull request")}>
-          <PullRequestButton link={agent.pull_request} />
+          <PullRequestButton link={agent.pull_request} name={agent.pull_request_name} />
         </Section>
       ) : null}
       <View style={[styles.rule, { backgroundColor: p.separator }]} />
@@ -254,7 +270,9 @@ function hasBody(tool: AgentTool): boolean {
 }
 
 /// One entry of the transcript: on the rail beside its node, or, for what was sent, a turn's start.
-function EntryRow({ entry, kind, who, rail, open, width, onToggle }: { entry: AgentEntry; kind: string; who: string; rail: boolean; open: boolean; width: number; onToggle: () => void }) {
+/// Drawn again only when its entry, its place, or whether it is open changes: the sheet refreshes
+/// every few seconds, and most refreshes change one entry or none.
+const EntryRow = memo(function EntryRow({ entry, kind, who, rail, open, width, onToggle }: { entry: AgentEntry; kind: string; who: string; rail: boolean; open: boolean; width: number; onToggle: (entry: AgentEntry, open: boolean) => void }) {
   const p = usePalette();
   const blue = accentColor("blue", p.dark);
   if (entry.kind === "sent") {
@@ -288,11 +306,11 @@ function EntryRow({ entry, kind, who, rail, open, width, onToggle }: { entry: Ag
         <Node entry={entry} kind={kind} />
       </View>
       <View style={styles.entryContent}>
-        <EntryContent entry={entry} open={open} width={width} onToggle={onToggle} />
+        <EntryContent entry={entry} open={open} width={width} onToggle={() => onToggle(entry, open)} />
       </View>
     </View>
   );
-}
+});
 
 /// An entry's place on the rail: the agent's tile for what it said, a tool's state, or a quiet mark
 /// of its kind.

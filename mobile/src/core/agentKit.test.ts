@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { agentContext, agentNow, agentSince, agentTail, agentTone, latestPlan, modelShortName, outputSpans, pullRequestName, runningAgents } from "./agentKit";
+import { agentContext, agentNow, agentSince, agentTail, agentTone, latestPlan, outputSpans, runningAgents } from "./agentKit";
 import type { AgentRun, Chat } from "./model";
 
 const agent = (more: Partial<AgentRun>): AgentRun => ({ id: "agent-1", kind: "claude", task: "Fix the link", state: "working", ...more });
@@ -18,22 +18,20 @@ test("how long it has worked reads in seconds, minutes, then hours", () => {
   expect(agentSince(agent({}), 5_000)).toBe("");
 });
 
-test("its context reads as a share of the window, and its model without the gateway", () => {
+test("its context reads as a share of the window", () => {
   const used = agentContext(agent({ settings: [{ name: "Context", value: "34k / 200k" }], context: { used: 34_000, size: 200_000 } }));
   expect(used?.share).toBeCloseTo(0.17);
   expect(used?.words).toBe("34k / 200k");
   expect(agentContext(agent({ context: { used: 3, size: 2 } }))?.share).toBe(1);
   expect(agentContext(agent({ settings: [{ name: "Context", value: "lots" }] }))).toBeNull();
-  expect(modelShortName("openrouter/anthropic/claude-sonnet[1M]")).toBe("claude-sonnet");
-  expect(pullRequestName("https://github.com/acme/shop/pull/7")).toBe("acme/shop #7");
-  expect(pullRequestName("https://example.com/x")).toBe("");
 });
 
-test("what it does now is its last tool's line, and its tail only while it works", () => {
-  const working = agent({ output: "> Fix the link\n● Read docs/index.md\n  ⎿ 40 lines\n● Bash npm test\n", now: "Bash npm test" });
+// The core reads what it does now and its last lines off its output (`AgentRun::summarize`).
+test("what it does now and its tail are the core's", () => {
+  const working = agent({ now: "Bash npm test", tail: ["  ⎿ 40 lines", "● Bash npm test"] });
   expect(agentNow(working)).toBe("Bash npm test");
-  expect(agentTail(working, 2)).toEqual(["  ⎿ 40 lines", "● Bash npm test"]);
-  expect(agentTail({ ...working, state: "idle" }, 2)).toEqual([]);
+  expect(agentTail(working)).toEqual(["  ⎿ 40 lines", "● Bash npm test"]);
+  expect(agentTail(agent({ output: "● Bash npm test" }))).toEqual([]);
 });
 
 test("the latest plan counts its steps done, and only open agents are at work", () => {

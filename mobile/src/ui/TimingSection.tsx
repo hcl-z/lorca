@@ -15,10 +15,11 @@ export function TimingSection() {
   const [, refresh] = useState(0);
   if (!timingEnabled) return null;
   const report = timingReport();
-  const { coreStarted, snapshotApplied, listDrawn } = report.launch;
+  const { cacheApplied, coreStarted, snapshotApplied, listDrawn } = report.launch;
   const ms = (value?: number) => (value === undefined ? "—" : `${value}ms`);
   return (
     <Section title="Timing (Lorca Dev)" footer="From this launch. Launch phases are ms since the JS bundle started.">
+      <Row title="Cache applied" detail={ms(cacheApplied)} />
       <Row title="Core started" detail={ms(coreStarted)} />
       <Row title="Snapshot applied" detail={ms(snapshotApplied)} />
       <Row title="Chat list drawn" detail={ms(listDrawn)} />

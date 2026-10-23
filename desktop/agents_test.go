@@ -51,7 +51,7 @@ func TestTheAgentCardDecodesFromTheCLI(t *testing.T) {
 func TestTheAgentCardSaysHowItStands(t *testing.T) {
 	demoWindow(t)
 	p := &lightPalette
-	agent := &model.AgentRun{Kind: "claude", Task: "Fix it", Branch: "fix-it", State: model.AgentWorking, Device: "Workbench", Tone: model.AgentToneBusy, Busy: true}
+	agent := &model.AgentRun{Kind: "claude", Task: "Fix it", Branch: "fix-it", State: model.AgentWorking, Device: "Workbench", Tone: model.AgentToneBusy, Busy: true, StatusKey: "working"}
 	if got := agentPlace(agent); got != "fix-it · Workbench" {
 		t.Errorf("place %q", got)
 	}
@@ -95,8 +95,11 @@ func TestTheAgentCardReadsItsContextItsStepAndItsPullRequest(t *testing.T) {
 	if got := agentNow(agent); got != "Bash(bun test)" {
 		t.Errorf("now %q", got)
 	}
-	if got := pullRequestName("https://github.com/acme/shop/pull/7"); got != "acme/shop #7" {
+	if got := pullRequestName(&model.AgentRun{PullRequestName: "acme/shop #7"}); got != "acme/shop #7" {
 		t.Errorf("pull request %q", got)
+	}
+	if got := pullRequestName(&model.AgentRun{PullRequest: "https://example.com/x"}); got != L("Pull request") {
+		t.Errorf("a link the CLI does not name %q", got)
 	}
 }
 
@@ -144,10 +147,12 @@ func TestRenderAgentCard(t *testing.T) {
 			agent.State, agent.Asking = model.AgentAsking, "msg-agent-ask"
 		}},
 		{"done", func(agent *model.AgentRun) {
-			agent.State, agent.PullRequest = model.AgentIdle, "https://github.com/acme/site/pull/412"
+			agent.State, agent.StatusKey, agent.Tone, agent.Busy, agent.Tail = model.AgentIdle, "done", model.AgentToneDone, false, nil
+			agent.PullRequest, agent.PullRequestName = "https://github.com/acme/site/pull/412", "acme/site #412"
 		}},
 		{"failed", func(agent *model.AgentRun) {
-			agent.State, agent.Outcome = model.AgentFailed, "Claude Code exited with code 1"
+			agent.State, agent.StatusKey, agent.Tone, agent.Busy, agent.Tail = model.AgentFailed, "failed", model.AgentToneFail, false, nil
+			agent.Outcome = "Claude Code exited with code 1"
 		}},
 	}
 	for _, state := range states {

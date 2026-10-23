@@ -4,11 +4,13 @@
 // press opens another of its chats or marks it resolved, and on a brief dismisses it. The ⋯ menu holds the notification
 // switches and the coordinator. Bots keep the list; the core sends it whole (`attention.changed`).
 
+import { useShallow } from "zustand/react/shallow";
 import { MenuView, type MenuAction, type MenuComponentRef } from "@expo/ui/community/menu";
 import * as Haptics from "expo-haptics";
 import { Stack, useRouter } from "expo-router";
 import { useRef, useState } from "react";
-import { Alert, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
+import { FlashList } from "@shopify/flash-list";
+import { Alert, Platform, StyleSheet, Text, View } from "react-native";
 import { request } from "../modules/lorca-core";
 import type { AttentionBrief, AttentionItem } from "../src/core/attention";
 import { chatTitle } from "../src/core/engine";
@@ -17,7 +19,7 @@ import { useBotMap, useStore } from "../src/core/store";
 import { t, useLanguage } from "../src/i18n";
 import { BotAvatar } from "../src/ui/Avatar";
 import { stamp } from "../src/ui/format";
-import { Section } from "../src/ui/forms";
+import { Section, SectionCell } from "../src/ui/forms";
 import { Pressable } from "../src/ui/Pressable";
 import { AndroidIcons, CloseToolbar } from "../src/ui/navigation";
 import { Symbol } from "../src/ui/Symbol";
@@ -48,7 +50,8 @@ export default function AttentionScreen() {
   const router = useRouter();
   const p = usePalette();
   const attention = useStore((s) => s.attention);
-  const chats = useStore((s) => s.chats);
+  // The chats the items name, not every chat: a message elsewhere leaves the sheet as it is.
+  const chats = useStore(useShallow((s) => s.chats.filter((chat) => s.attention.items.some((item) => item.sources.some((source) => source.chat_id === chat.id)) || s.reviews.some((review) => review.origin.chat_id === chat.id))));
   const reviews = useStore((s) => s.reviews);
   const open = (chatId: string) => router.dismissTo(`/chat/${chatId}`);
   const openReview = (review: ReviewItem) => {
@@ -71,25 +74,35 @@ export default function AttentionScreen() {
       <Stack.Screen options={{ title: t("Attention") }} />
       <CloseToolbar label={Platform.OS === "android" ? t("Close") : t("Done")} onClose={() => router.back()} />
       <OptionsMenu />
-      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content} onLayout={(e) => setWidth(e.nativeEvent.layout.width - 32)}>
-        {width > 0
-          ? attention.briefs.map((brief) => (
-              <Section key={brief.coordinator_bot_id}>
-                <BriefCell brief={brief} width={width} onPress={() => open(brief.chat_id)} />
-              </Section>
-            ))
-          : null}
-        {attention.items.length > 0 && width > 0 ? (
-          <Section>
-            {attention.items.map((item) => (
-              <ItemRow key={item.id} item={item} chats={sourceChats(item)} review={openReviewOf(item)} width={width} onOpen={open} onOpenReview={openReview} />
-            ))}
-          </Section>
-        ) : null}
-        {attention.items.length === 0 && attention.briefs.length === 0 ? (
-          <Text style={[styles.empty, { color: p.secondaryLabel }]}>{t("Nothing needs your attention")}</Text>
-        ) : null}
-      </ScrollView>
+      {/* The items are cells of one list, drawn near the screen as they scroll; the briefs, a
+          coordinator's each, sit over them. */}
+      <FlashList
+        data={width > 0 ? attention.items : []}
+        keyExtractor={(item) => item.id}
+        extraData={{ chats, reviews }}
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={styles.content}
+        onLayout={(e) => setWidth(e.nativeEvent.layout.width - 32)}
+        ListHeaderComponent={
+          width > 0 ? (
+            <>
+              {attention.briefs.map((brief) => (
+                <Section key={brief.coordinator_bot_id}>
+                  <BriefCell brief={brief} width={width} onPress={() => open(brief.chat_id)} />
+                </Section>
+              ))}
+            </>
+          ) : null
+        }
+        renderItem={({ item, index }) => (
+          <SectionCell first={index === 0} last={index === attention.items.length - 1}>
+            <ItemRow item={item} chats={sourceChats(item)} review={openReviewOf(item)} width={width} onOpen={open} onOpenReview={openReview} />
+          </SectionCell>
+        )}
+        ListEmptyComponent={
+          attention.briefs.length === 0 && attention.items.length === 0 ? <Text style={[styles.empty, { color: p.secondaryLabel }]}>{t("Nothing needs your attention")}</Text> : null
+        }
+      />
     </>
   );
 }
