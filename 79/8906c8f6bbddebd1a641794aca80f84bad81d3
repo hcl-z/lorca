@@ -1,0 +1,29 @@
+mobile/app/agent/[id].tsx
+  s_723135a9291b14::t_3f31b575f1df33 16,51,101-103,105-110,120-136,138-159
+mobile/src/ui/forms.tsx
+  s_723135a9291b14::t_8e4ed1383b659c 314-316
+  s_723135a9291b14::t_e5c1f32a20d099 38-59
+mobile/app/attention.tsx
+  s_723135a9291b14::t_984bcdc1db11a3 12-13,22,77-102,104-105
+  s_723135a9291b14::t_1e60f99d7dd3f3 103
+docs/architecture/attention.md
+  s_723135a9291b14::t_bd88ce320a73c8 48
+docs/architecture/coding-agents.md
+  s_723135a9291b14::t_bd88ce320a73c8 77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "798906c8f6bbddebd1a641794aca80f84bad81d3",
+  "prompts": {},
+  "sessions": {
+    "s_723135a9291b14": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bcda4714-abdb-439e-84a7-4d54fd4205f7",
+        "model": "claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
