@@ -1,0 +1,27 @@
+mobile/app.config.ts
+  s_723135a9291b14::t_eea668ba0a28c2 5
+desktop/mygo.config.ts
+  s_723135a9291b14::t_eea668ba0a28c2 9
+package.json
+  s_723135a9291b14::t_eea668ba0a28c2 4
+Cargo.lock
+  s_723135a9291b14::t_eea668ba0a28c2 2198,2256,2287,2296,2310,2318,2331,2364
+Cargo.toml
+  s_723135a9291b14::t_eea668ba0a28c2 20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "7e06957bb102c85b6c292b762aa840f569477b85",
+  "prompts": {},
+  "sessions": {
+    "s_723135a9291b14": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bcda4714-abdb-439e-84a7-4d54fd4205f7",
+        "model": "claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
