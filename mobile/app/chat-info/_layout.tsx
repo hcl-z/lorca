@@ -3,7 +3,8 @@
 // bots left for review, a plugin's named account, a channel, a
 // routine, and the limits of its turns, tasks, and routines, its skills (a skill, one of its
 // files, and Save as Skill), its workflow feedback (the list, a suggestion or change, and Give
-// Feedback), Share as Template, and the bot's Access (with a screen per plugin) sliding in inside
+// Feedback), Share as Template, the bot's Access (with a screen per plugin), and its Memory (MEMORY.md,
+// About You, and the prompt its next turn sends) sliding in inside
 // the one form sheet the root presents.
 
 import { Stack } from "expo-router";
@@ -46,6 +47,10 @@ export default function ChatInfoLayout() {
       <Stack.Screen name="share/[id]" />
       <Stack.Screen name="access/[id]" />
       <Stack.Screen name="access-plugin" />
+      <Stack.Screen name="memory/[id]" />
+      <Stack.Screen name="memory/edit" />
+      <Stack.Screen name="profile/[id]" />
+      <Stack.Screen name="prompt/[id]" />
     </Stack>
   );
 }
