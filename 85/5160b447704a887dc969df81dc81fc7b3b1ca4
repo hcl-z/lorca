@@ -1,0 +1,48 @@
+mobile/src/core/model.ts
+  s_723135a9291b14::t_0eafbca0823270 437-439,444-447,450-451
+desktop/model/wire.go
+  s_723135a9291b14::t_5d8afd2df40843 165-170,996
+desktop/model/mock.go
+  s_723135a9291b14::t_5d8afd2df40843 489-490
+docs/architecture/coding-agents.md
+  s_723135a9291b14::t_038718724925ab 69,77
+mobile/src/core/agentKit.test.ts
+  s_723135a9291b14::t_de136b29bdc567 2,21,29-31,33-34
+desktop/agentpip.go
+  s_723135a9291b14::t_5d8afd2df40843 184,229-233
+  s_723135a9291b14::t_13699e68264386 221
+  s_723135a9291b14::t_3bba542734d214 376-378
+crates/cli/src/model.rs
+  s_723135a9291b14::t_3b5adcf3182654 748-763,766-768,809-810,829-859,863-881,1905-1946
+mobile/src/ui/transcript.tsx
+  s_723135a9291b14::t_aaad2bedda8b72 1362
+  s_723135a9291b14::t_0eafbca0823270 1289
+desktop/model/models.go
+  s_723135a9291b14::t_5d8afd2df40843 1750-1761,1878,1880-1881,1883,1885,1887-1889,1891,1893,1895-1897,1899,1901
+mobile/src/core/agentKit.ts
+  s_723135a9291b14::t_0eafbca0823270 3-5,48-50
+mobile/src/ui/agentKit.tsx
+  s_723135a9291b14::t_0eafbca0823270 11,86-89,92,95-98,100,104-108,273,339,351
+desktop/agents.go
+  s_723135a9291b14::t_5d8afd2df40843 51,53,225-226,284,293-296
+desktop/agents_test.go
+  s_723135a9291b14::t_13699e68264386 54,98,101-103,150-151,154-155
+mobile/app/agent/[id].tsx
+  s_723135a9291b14::t_aaad2bedda8b72 206
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "855160b447704a887dc969df81dc81fc7b3b1ca4",
+  "prompts": {},
+  "sessions": {
+    "s_723135a9291b14": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bcda4714-abdb-439e-84a7-4d54fd4205f7",
+        "model": "claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
