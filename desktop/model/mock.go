@@ -486,6 +486,8 @@ func developerThread() []*Message {
 				StartedAt: minutesAgo(11),
 				// What the CLI would say of how it stands.
 				Tone: AgentToneBusy, Busy: true, Context: &AgentContextUse{Used: 61_000, Size: 200_000}, Now: "Bash(bun test links)",
+				StatusKey: "working", Model: "Opus",
+				Tail: []string{"● Edit(src/pages/download.astro)", "  ⎿ Updated 1 line", "● Bash(bun test links)", "  ⎿ 14 pass", "    0 fail"},
 			},
 		}}, minutesAgo(11)),
 		mockMessage(BotAuthor("bot-patch"), textBody("Claude Code is fixing the link in a worktree of its own. I'll check its test when it's done."), minutesAgo(11)),

@@ -434,12 +434,21 @@ export interface AgentRun {
   /** When it started, in Unix seconds. */
   started_at?: number;
   /// How it stands, as the core reads it off the card (`AgentRun::summarize`): the tint of its
-  /// state, whether it is doing something now, how full its context is, and its last tool's line.
+  /// state, whether it is doing something now, how full its context is, its last tool's line, the
+  /// key of its pill's words, its model's short name, its pull request's name, and its last lines
+  /// while it works.
   tone?: "ask" | "busy" | "done" | "fail" | "quiet";
   busy?: boolean;
   context?: { used: number; size: number };
   now?: string;
+  status?: AgentStatus;
+  model?: string;
+  pull_request_name?: string;
+  tail?: string[];
 }
+
+/// The key of the words an agent's pill says, which the app translates.
+export type AgentStatus = "starting" | "needs_you" | "working" | "quiet" | "done" | "ended" | "failed" | "held" | "not_allowed" | "no_answer" | "dismissed" | "stopped";
 
 /// A setting of a running coding agent that its card lets be changed: `what` is how `coding.set`
 /// names it (`model`, `effort`), `name` how the agent does ("Model").

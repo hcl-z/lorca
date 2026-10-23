@@ -1,7 +1,8 @@
 /// What every coding agent surface reads off its card, as the desktop's agent kit does: how it
 /// stands (its tone), how long it has been at it, its settings by name, how full its context is,
-/// its model's short name, its pull request's name, what it does now, its plan's progress, the
-/// agents at work in every chat, and a command's colored output as spans.
+/// what it does now and its last lines, its plan's progress, the agents at work in every chat, and
+/// a command's colored output as spans. The core summarizes the card (`AgentRun::summarize`):
+/// its model's short name and its pull request's name are on it as they are drawn.
 
 import type { AgentEntry } from "./agentEntries";
 import { agentIsRunning, type AgentRun, type Chat, type Message } from "./model";
@@ -39,37 +40,14 @@ export function agentContext(agent: AgentRun): { share: number; words: string } 
   return { share: Math.min(agent.context.used / agent.context.size, 1), words: agentSetting(agent, "Context").trim() };
 }
 
-/// A model's name as a cell has room for: without the provider a gateway puts before it, and
-/// without the context hints after it ("…/claude-sonnet[1M]" reads "claude-sonnet").
-export function modelShortName(name: string): string {
-  let short = name.slice(name.lastIndexOf("/") + 1);
-  while (short.endsWith("]")) {
-    const at = short.lastIndexOf("[");
-    if (at <= 0) break;
-    short = short.slice(0, at);
-  }
-  return short;
-}
-
-/// "acme/shop #7" for a pull request's link, or nothing when it is not one.
-export function pullRequestName(link: string): string {
-  const parts = link.replace(/^https?:\/\//, "").replace(/\/$/, "").split("/");
-  if (parts.length >= 5 && ["pull", "pulls", "merge_requests"].includes(parts[3])) return `${parts[1]}/${parts[2]} #${parts[4]}`;
-  return "";
-}
-
 /// What it does now: its last tool's line, without the mark.
 export function agentNow(agent: AgentRun): string {
   return agent.now ?? "";
 }
 
-/// Its last `count` lines with something on them, while it works.
-export function agentTail(agent: AgentRun, count: number): string[] {
-  if (agent.question || (agent.state !== "starting" && agent.state !== "working")) return [];
-  return (agent.output ?? "")
-    .split("\n")
-    .filter((line) => line.trim() !== "")
-    .slice(-count);
+/// Its last lines with something on them, while it works: the core's (`AGENT_TAIL_LINES`).
+export function agentTail(agent: AgentRun): string[] {
+  return agent.tail ?? [];
 }
 
 /// The steps of the latest plan in a transcript, and how many are done.

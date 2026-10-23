@@ -219,7 +219,7 @@ function Overview({ agent, message, entries, stopping, onStop }: { agent: AgentR
       ) : null}
       {agent.pull_request ? (
         <Section title={t("Pull request")}>
-          <PullRequestButton link={agent.pull_request} />
+          <PullRequestButton link={agent.pull_request} name={agent.pull_request_name} />
         </Section>
       ) : null}
       <View style={[styles.rule, { backgroundColor: p.separator }]} />

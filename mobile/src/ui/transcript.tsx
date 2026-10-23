@@ -1286,7 +1286,7 @@ export const AgentRow = memo(function AgentRow({
       setBusy(false);
     }
   };
-  const tail = agentTail(agent, 5);
+  const tail = agentTail(agent);
   const decisions: [string, "allow" | "always" | "deny"][] = asks?.rule
     ? [[t("Allow once"), "allow"], [t("Always allow"), "always"], [t("Deny"), "deny"]]
     : [[t("Allow once"), "allow"], [t("Deny"), "deny"]];
@@ -1359,7 +1359,7 @@ export const AgentRow = memo(function AgentRow({
             </Text>
           </Callout>
         ) : null}
-        {agent.pull_request ? <PullRequestButton link={agent.pull_request} /> : null}
+        {agent.pull_request ? <PullRequestButton link={agent.pull_request} name={agent.pull_request_name} /> : null}
         {agentStarted(agent) ? (
           <View style={[styles.agentFoot, { borderTopColor: p.separator }]}>
             {since ? <Text style={[styles.agentFootText, { color: p.tertiaryLabel }]}>{t("Started {time} ago", { time: since })}</Text> : null}

@@ -89,7 +89,8 @@ One doc per subject under `docs/architecture/`, each read in one pass: `bun run 
 | [Stop](docs/architecture/stopping.md) | What Stop ends: the turn's model call and tool calls, a call that never returns, commands and browser calls, the work it handed off on any Runner; what keeps running |
 | [Web links in messages](docs/architecture/links.md) | Source chips for http(s) links in the desktop app, and the CLI's `links.favicon` that fetches a site's icon |
 | [Terminal sessions](docs/architecture/terminal-sessions.md) | A bot's commands in terminals of their own: when a call returns, background commands, the command's card, answering and stopping, Running tasks |
-| [Coding agents](docs/architecture/coding-agents.md) | Claude Code, Codex, or another ACP agent a bot supervises on its Runner: worktrees, secrets, review of its commands, transcripts, follow-ups, outputs, wake-ups, the card and its window |
+| [Coding agents](docs/architecture/coding-agents.md) | An ACP agent (Claude Code, Codex) a bot runs on its Runner: worktrees, secrets, review, follow-ups |
+| [Coding agent cards](docs/architecture/agent-cards.md) | The card and its window |
 | [Questions](docs/architecture/questions.md) | A bot or its coding agent asking the user: `ask_user`, an agent's form, the card and its answer, each app |
 | [Secret requests](docs/architecture/secrets.md) | A password, key, or code a bot asks for on a card: sealed to and kept on its Runner, filled by name into Browser on its site or a command's environment, kept out of results and chats; managing them |
 | [Browser](docs/architecture/browser.md) | A bot's browser: ego (lite) or the Browser plugin, the Runner's setting, the Access switch, Stop |
