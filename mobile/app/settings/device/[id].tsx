@@ -48,7 +48,6 @@ export default function DeviceScreen() {
   const seen = useStore((s) => s.device_seen[id]);
   const allBots = useStore((s) => s.bots);
   const providers = useStore((s) => s.providers);
-  const chats = useStore((s) => s.chats);
   const relayConnected = useStore((s) => s.relayConnected);
   const relayUpdateRequired = useStore((s) => s.relayUpdateRequired);
   const relayUrl = useStore((s) => s.relayUrl);
@@ -78,7 +77,8 @@ export default function DeviceScreen() {
   const relay = relayUrl?.replace(/^https?:\/\//, "");
 
   function openChat(botId: string) {
-    const dm = chats.find((c) => isBotDM(c) && c.bot_ids[0] === botId);
+    // Read at the tap: the screen needs no chat to draw, so no message elsewhere draws it again.
+    const dm = useStore.getState().chats.find((c) => isBotDM(c) && c.bot_ids[0] === botId);
     if (!dm) return;
     router.dismissAll();
     router.push(`/chat/${dm.id}`);

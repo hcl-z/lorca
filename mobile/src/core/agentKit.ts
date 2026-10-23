@@ -81,16 +81,28 @@ export function latestPlan(entries: AgentEntry[]): { steps: { text: string; done
   return null;
 }
 
-/// The coding agents at work in every chat, the latest started first, each with its card's message.
-export function runningAgents(chats: Chat[]): { chat: Chat; message: Message; agent: AgentRun }[] {
-  const found: { chat: Chat; message: Message; agent: AgentRun }[] = [];
-  for (const chat of chats) {
+type Found = { chat: Chat; message: Message; agent: AgentRun };
+
+/// Each chat's running agents, by the chat object they were found in: the store gives a chat a new
+/// object only when it changed, so a message in one chat reads that chat's messages alone again.
+const foundIn = new WeakMap<Chat, Found[]>();
+
+function agentsIn(chat: Chat): Found[] {
+  let found = foundIn.get(chat);
+  if (!found) {
+    found = [];
     for (const message of chat.messages) {
       const agent = message.body.kind === "tool" ? message.body.agent : undefined;
       if (agent && agentIsRunning(agent)) found.push({ chat, message, agent });
     }
+    foundIn.set(chat, found);
   }
-  return found.sort((a, b) => (b.agent.started_at ?? 0) - (a.agent.started_at ?? 0));
+  return found;
+}
+
+/// The coding agents at work in every chat, the latest started first, each with its card's message.
+export function runningAgents(chats: Chat[]): Found[] {
+  return chats.flatMap(agentsIn).sort((a, b) => (b.agent.started_at ?? 0) - (a.agent.started_at ?? 0));
 }
 
 /// A span of a command's output in one color: an ANSI color by its number (0–15), a 256-color

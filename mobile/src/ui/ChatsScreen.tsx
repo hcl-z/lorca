@@ -1,4 +1,5 @@
 import { FlashList } from "@shopify/flash-list";
+import { useShallow } from "zustand/react/shallow";
 import { chatOpening, markLaunch } from "../core/timing";
 import { type MenuAction, type MenuComponentRef } from "@expo/ui/community/menu";
 import { haptic } from "./haptics";
@@ -48,7 +49,8 @@ export function ChatsScreen({ sidebar = false }: { sidebar?: boolean }) {
   const sections = useStore((s) => s.sections);
   const showsHidden = useStore((s) => s.showsHidden);
   const collapsesOthers = useStore((s) => s.collapsesOthers);
-  const running = useStore((s) => s.running);
+  // The chats with a turn in flight, not the turns: a turn's step changes nothing in the list.
+  const respondingIds = useStore(useShallow((s) => [...new Set(Object.values(s.running).map((r) => r.chatId))].sort()));
   const connecting = useConnecting();
   const updateRequired = useStore((s) => s.relayUpdateRequired);
   const relayError = useStore((s) => s.relayError);
@@ -143,7 +145,7 @@ export function ChatsScreen({ sidebar = false }: { sidebar?: boolean }) {
   }, [openChatId]);
 
   // Chats with a turn in flight: their rows read "Working…" in place of the preview.
-  const responding = useMemo(() => new Set(Object.values(running).map((r) => r.chatId)), [running]);
+  const responding = useMemo(() => new Set(respondingIds), [respondingIds]);
 
   // The rows are memoized, so what they call back stays the same function across renders; it
   // reads this render's state through the ref.

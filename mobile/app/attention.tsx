@@ -4,6 +4,7 @@
 // press opens another of its chats or marks it resolved, and on a brief dismisses it. The ⋯ menu holds the notification
 // switches and the coordinator. Bots keep the list; the core sends it whole (`attention.changed`).
 
+import { useShallow } from "zustand/react/shallow";
 import { MenuView, type MenuAction, type MenuComponentRef } from "@expo/ui/community/menu";
 import * as Haptics from "expo-haptics";
 import { Stack, useRouter } from "expo-router";
@@ -48,7 +49,8 @@ export default function AttentionScreen() {
   const router = useRouter();
   const p = usePalette();
   const attention = useStore((s) => s.attention);
-  const chats = useStore((s) => s.chats);
+  // The chats the items name, not every chat: a message elsewhere leaves the sheet as it is.
+  const chats = useStore(useShallow((s) => s.chats.filter((chat) => s.attention.items.some((item) => item.sources.some((source) => source.chat_id === chat.id)) || s.reviews.some((review) => review.origin.chat_id === chat.id))));
   const reviews = useStore((s) => s.reviews);
   const open = (chatId: string) => router.dismissTo(`/chat/${chatId}`);
   const openReview = (review: ReviewItem) => {

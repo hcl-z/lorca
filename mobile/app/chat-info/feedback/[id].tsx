@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { ScrollView } from "react-native";
 import { chatTitle } from "../../../src/core/engine";
 import { excludeNote, loadFeedback, setReviewEvery, suggestChanges, useFeedback } from "../../../src/core/feedback";
-import { useBotMap, useRoutines, useStore } from "../../../src/core/store";
+import { chatById, useBotMap, useRoutines } from "../../../src/core/store";
 import { t, tc, useLanguage } from "../../../src/i18n";
 import { alert } from "../../../src/ui/alert";
 import { kindSymbol, kindTitle, noteTitle, targetName, type FeedbackNote } from "../../../src/ui/feedback";
@@ -26,7 +26,6 @@ export default function FeedbackScreen() {
   const router = useRouter();
   const bot = useBotMap().get(id);
   const routines = useRoutines(id);
-  const chats = useStore((s) => s.chats);
   const feedback = useFeedback(id);
   const [looking, setLooking] = useState(false);
   const [foundNothing, setFoundNothing] = useState(false);
@@ -60,7 +59,7 @@ export default function FeedbackScreen() {
 
   /// Show in Chat, and the exclusions: the note's words, or everything from its chat.
   function showNote(note: FeedbackNote) {
-    const chat = chats.find((each) => each.id === note.chatId);
+    const chat = chatById(note.chatId);
     alert(noteTitle(f, note, routines), `${kindTitle(note.kind)} · ${stamp(new Date(note.createdAt * 1000))}`, [
       { text: t("Show in Chat"), onPress: () => router.dismissTo(`/chat/${note.chatId}`) },
       { text: t("Exclude"), style: "destructive", onPress: () => void act(t("Couldn't exclude it"), () => excludeNote(id, note, false)) },
