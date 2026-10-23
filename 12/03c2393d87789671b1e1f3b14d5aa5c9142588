@@ -1,0 +1,38 @@
+docs/architecture/development.md
+  s_723135a9291b14::t_0d25611d51c966 39
+mobile/src/core/timing.ts
+  s_723135a9291b14::t_fddabd7f662150 15-16
+mobile/modules/lorca-core/index.ts
+  s_723135a9291b14::t_a37bfd556a3976 55-56
+  s_723135a9291b14::t_68d9531df3ad3f 34-37,40-41,46
+mobile/src/core/engine.ts
+  s_723135a9291b14::t_fddabd7f662150 20,92-98,127,151-155,195,255-258,1323
+mobile/src/core/startupCache.ts
+  s_723135a9291b14::t_31120fef4bc3e6 1-93
+mobile/src/core/store.ts
+  s_723135a9291b14::t_fddabd7f662150 3-4
+mobile/src/core/startupCache.test.ts
+  s_723135a9291b14::t_171cc02382eb2f 1-94
+docs/architecture/phone-app.md
+  s_723135a9291b14::t_cb58846875da98 7
+mobile/src/ui/TimingSection.tsx
+  s_723135a9291b14::t_fddabd7f662150 18,22
+mobile/src/core/reading.test.ts
+  s_723135a9291b14::t_6b6dcf3d5e54f4 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "1203c2393d87789671b1e1f3b14d5aa5c9142588",
+  "prompts": {},
+  "sessions": {
+    "s_723135a9291b14": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bcda4714-abdb-439e-84a7-4d54fd4205f7",
+        "model": "claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
