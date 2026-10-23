@@ -9,7 +9,8 @@ use crate::keys::unb64;
 use crate::model::*;
 use crate::relay::{BlobIn, RelayError};
 
-/// A pull page at least this long is applied as a backlog: see `App::bulk_sync`.
+/// A pull page with at least this many messages new to this Device is applied as a backlog: see
+/// `App::bulk_sync` and `is_backlog`.
 const BULK_BLOBS: usize = 20;
 
 /// What a pull takes. `file` blobs are left out: a transcript fetches them by id when it
@@ -161,8 +162,10 @@ async fn session(app: &Arc<App>, failures: &mut u32) -> Result<(), RelayError> {
     {
         let mut state = app.state.lock().unwrap();
         // The other Devices dropped this one's turns when the relay last showed it offline;
-        // the first round lists them again.
-        state.machine_blob_hash = None;
+        // the first round lists them again. A phone runs no turns, so it lists nothing again.
+        if crate::model::is_runner_os(&machine_file.os) {
+            state.machine_blob_hash = None;
+        }
         // What landed while this Device was away is unread until the first pull ends.
         state.caught_up = false;
     }
@@ -411,9 +414,10 @@ async fn pull_blobs(app: &Arc<App>, url: &str, token: &str, machine_file: &crate
             }
             return Ok(());
         }
-        // A page this long is a backlog (a fresh pair replays the history): apply it quietly
-        // and tell the app once, instead of one event and one state write per message.
-        let bulk = blobs.len() >= BULK_BLOBS;
+        // A page with this many new messages is a backlog (a fresh pair replays the history):
+        // apply it quietly and tell the app once, instead of one event and one state write per
+        // message.
+        let bulk = is_backlog(app, &blobs);
         app.bulk_sync.store(bulk, Ordering::Relaxed);
         // A backlog's messages reach the app with its snapshot, and a turn's end must come
         // after the messages it ended with, so its results wait for that snapshot.
@@ -443,6 +447,21 @@ async fn pull_blobs(app: &Arc<App>, url: &str, token: &str, machine_file: &crate
         }
         release_held_if_due(app, machine_file);
     }
+}
+
+/// What a pull brings that reaches the app as one small event or none: a Device's metadata and
+/// turns, and the envelopes of jobs and requests between Devices.
+const LIGHT_KINDS: &[&str] = &["machine", "job", "job_cancel", "job_result", "request", "response", "key"];
+
+/// Whether a pull page is a backlog: messages and other records this Device has yet to apply.
+/// Its own uploads come back in its pulls and are skipped, and so are the light kinds, which a
+/// Runner writes as its turns move: a page of them after some time away is told event by event
+/// rather than as a snapshot of the whole account.
+fn is_backlog(app: &App, blobs: &[BlobIn]) -> bool {
+    let state = app.state.lock().unwrap();
+    let applied: std::collections::HashSet<&str> = state.applied_blob_ids.iter().map(String::as_str).collect();
+    let new = blobs.iter().filter(|blob| !LIGHT_KINDS.contains(&blob.kind.as_str()) && !applied.contains(blob.id.as_str()));
+    new.count() >= BULK_BLOBS
 }
 
 /// How long `sync.account` waits for the first pull of an account this Device just joined.
@@ -1528,5 +1547,24 @@ mod tests {
         assert_eq!(unknown(), [fresh.clone()]);
         app.state.lock().unwrap().listed_machines.remove(&fresh);
         assert!(unknown().is_empty(), "unpaired from another Device");
+    }
+
+    /// A page is a backlog by the records it brings that this Device has yet to apply: its own
+    /// uploads coming back, and the Devices' metadata and turns, are told event by event.
+    #[tokio::test]
+    async fn a_backlog_counts_only_messages_new_here() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        let blob = |kind: &str| BlobIn { id: uuid::Uuid::new_v4().to_string(), kind: kind.into(), recipient_machine_pubkey: None, seq: 1, ciphertext: String::new(), created_at: 0 };
+        let machines: Vec<BlobIn> = (0..40).map(|_| blob("machine")).chain((0..10).map(|_| blob("response"))).collect();
+        assert!(!is_backlog(app, &machines));
+
+        let messages: Vec<BlobIn> = (0..BULK_BLOBS - 1).map(|_| blob("chat")).chain([blob("task")]).collect();
+        assert!(is_backlog(app, &messages));
+        // Uploaded from here: applied already, so they come back as nothing new.
+        for blob in &messages[1..] {
+            remember_applied(&mut app.state.lock().unwrap(), &blob.id);
+        }
+        assert!(!is_backlog(app, &messages));
     }
 }

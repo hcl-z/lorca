@@ -335,9 +335,13 @@ impl App {
         }
         let chat_ids: Vec<String> = state.chats.iter().map(|chat| chat.meta.id.clone()).collect();
         store.retain_chats(&chat_ids)?;
-        // Upload this Device's metadata once per launch: a relay that changed or was reset
-        // since the last upload has no copy, and every newly paired Device needs one.
-        state.machine_blob_hash = None;
+        // A Runner uploads its metadata once per launch: a relay that changed or was reset since
+        // the last upload has no copy. A phone's changes only with what it says (its version, OS,
+        // name), which the hash catches; a relay that lost it does not know the phone either, and
+        // a Device that pairs gets the relay's latest copy.
+        if machine.as_ref().is_none_or(|file| crate::model::is_runner_os(&file.os)) {
+            state.machine_blob_hash = None;
+        }
         let (events, _) = broadcast::channel(512);
         let http = lorca_tls::client_builder().timeout(std::time::Duration::from_secs(60)).build()?;
 
@@ -2831,5 +2835,27 @@ mod tests {
 
         assert_eq!(read_mark_at(&messages, 0), messages.len());
         assert_eq!(read_mark_at(&messages, 9), 0);
+    }
+
+    /// A phone's metadata goes up again only when it changed: a launch alone sends nothing, while a
+    /// Runner lists its turns again on every launch.
+    #[test]
+    fn only_a_runner_uploads_its_metadata_on_every_launch() {
+        for (os, again) in [("ios", false), ("macos", true)] {
+            let home = std::env::temp_dir().join(format!("lorca-machine-blob-{}", uuid::Uuid::new_v4()));
+            let app = App::load(Config { home: home.clone(), port: 0 }).unwrap();
+            crate::identity::create(&app, Some("Device".into())).unwrap();
+            app.machine.lock().unwrap().as_mut().unwrap().os = os.into();
+            app.save_machine().unwrap();
+            app.push_machine_blob_if_changed();
+            app.save_state_now();
+            drop(app);
+
+            // The hash of the last upload is what keeps the next one back.
+            let relaunched = App::load(Config { home: home.clone(), port: 0 }).unwrap();
+            assert_eq!(relaunched.state.lock().unwrap().machine_blob_hash.is_none(), again, "{os}");
+            drop(relaunched);
+            let _ = std::fs::remove_dir_all(home);
+        }
     }
 }
