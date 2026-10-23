@@ -1,0 +1,42 @@
+mobile/src/core/timing.ts
+  s_723135a9291b14::t_dbd769bf44ee48 1-5,8,12-111
+  s_723135a9291b14::t_54567b772d0387 6-7,9-11
+mobile/src/ui/ChatsScreen.tsx
+  s_723135a9291b14::t_842cb65cc36c5c 2,154,302
+mobile/app/_layout.tsx
+  s_723135a9291b14::t_54567b772d0387 7,9,18-19
+package.json
+  s_723135a9291b14::t_d016af9d90ed5a 28
+mobile/src/core/store.ts
+  s_723135a9291b14::t_8a621967a33e4a 5
+  s_723135a9291b14::t_b4ea3d96a05193 395
+mobile/app/settings/index.tsx
+  s_723135a9291b14::t_54caa5a046ce91 16,449
+mobile/src/core/engine.ts
+  s_723135a9291b14::t_8a621967a33e4a 6,96,118
+docs/architecture/development.md
+  s_723135a9291b14::t_bfdb934f441ffc 35,39
+mobile/app/(main)/chat/[id].tsx
+  s_723135a9291b14::t_cc84a054969391 41,194,577,587,598
+mobile/src/core/timing.test.ts
+  s_723135a9291b14::t_dbd769bf44ee48 3,5-40
+  s_723135a9291b14::t_54567b772d0387 1-2,4
+mobile/src/ui/TimingSection.tsx
+  s_723135a9291b14::t_54caa5a046ce91 1-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "4a8f3b2e8bbc0f3f2f509f5dba26bfab2810dbe0",
+  "prompts": {},
+  "sessions": {
+    "s_723135a9291b14": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bcda4714-abdb-439e-84a7-4d54fd4205f7",
+        "model": "claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
