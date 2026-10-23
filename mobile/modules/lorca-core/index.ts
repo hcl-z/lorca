@@ -31,13 +31,19 @@ export interface Frame {
   data: unknown;
 }
 
+/// The core's start, once it is asked for: a screen drawn from the startup cache can ask before
+/// the core runs, and its request waits for the start rather than failing.
+let started: Promise<void> | null = null;
+
 /// Opens and loads the account off the JS thread; requests wait for it.
 export function start(home: string, facts: HostFacts): Promise<void> {
-  return native.start(home, facts.name, facts.os, facts.os_version, facts.model);
+  started = native.start(home, facts.name, facts.os, facts.os_version, facts.model);
+  return started;
 }
 
 /// One API call. Throws with the core's message when it answers with an error.
 export async function request<T = unknown>(method: string, params: unknown = {}): Promise<T> {
+  await started;
   const raw = await native.request(method, JSON.stringify(params ?? {}));
   const parsed = JSON.parse(raw) as { result?: T; error?: { message: string } };
   if (parsed.error) throw new Error(parsed.error.message);
@@ -46,7 +52,8 @@ export async function request<T = unknown>(method: string, params: unknown = {})
 
 /// One API call with `params` as JSON text, answered with the core's JSON text as it is: for a
 /// caller that must keep numbers past 2^53 exact, which `JSON.parse` would round.
-export function requestText(method: string, params: string): Promise<string> {
+export async function requestText(method: string, params: string): Promise<string> {
+  await started;
   return native.request(method, params);
 }
 

@@ -1,6 +1,7 @@
 // The phone's view of the account: what the core last said. Pure data and reducers fed by the
 // core's events (engine.ts applies them), the way the macOS app's AppStore mirrors the CLI. The
-// core keeps the truth on disk; nothing here is persisted except the phone's own prefs.
+// core keeps the truth on disk; the store keeps the phone's own prefs, and a copy of what it shows
+// for the next launch to start from (startupCache.ts).
 
 import { messageArrived } from "./timing";
 import { useMemo } from "react";
