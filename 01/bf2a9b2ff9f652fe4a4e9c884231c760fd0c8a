@@ -1,0 +1,19 @@
+crates/cli/src/model.rs
+  s_723135a9291b14::t_a3b7e0239123bc 884-889,1952-1954
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "01bf2a9b2ff9f652fe4a4e9c884231c760fd0c8a",
+  "prompts": {},
+  "sessions": {
+    "s_723135a9291b14": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bcda4714-abdb-439e-84a7-4d54fd4205f7",
+        "model": "claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
