@@ -17,6 +17,7 @@ import type { AskAnswer } from "./ask";
 import { hostFacts } from "./host";
 import { connectedProviders, isRunner, PROVIDER_KINDS, orderProjectEntries, providerConnectMethod, sectionName, withReviewModel, sameDraft, skillInputOf, skillRecordOf, skillSummaryOf, type SkillRow, type SkillView, type Section, type PlaybookContent, type PlaybookRecord, type PlaybookScope, type ProjectContext, type ProjectEntry, type ProjectKind, type ProjectSource, type Attachment, type AutoReview, type Bot, type BudgetLimits, type BudgetState, type CallLimits, type Chat, type ChatMeta, type ChatSearchResults, type ChatUsage, type CustomAPI, type CustomModel, type DurableTask, type Message, type MessageDraft, type ReviewItem, type PluginDetail, type PluginStatus, type ProviderKind, type ProviderStatus, type SavedSecret, routinesAwaitingSetup } from "./model";
 import { coreHome, loadPrefs, pathOf, wipePrefs } from "./prefs";
+import { clearCachedSnapshot, loadCachedSnapshot, saveCachedSnapshot } from "./startupCache";
 import type { SharedLink, TemplateContents, TemplateImportPreview, TemplateSelection } from "./templates";
 import { clearPushes, installPushHandlers, registerForPushes } from "./push";
 import {
@@ -88,6 +89,13 @@ class Engine {
     const prefs = loadPrefs();
     useStore.setState({ dictation_lang: prefs.dictation_lang, showsHidden: !!prefs.shows_hidden, collapsesOthers: !!prefs.collapses_others, appActive: active, activeSince: active ? Date.now() : 0 });
     core.onEvent((frame) => this.receive(frame));
+    // The account as the last launch left it draws the chat list while the core opens it; the
+    // first snapshot replaces it.
+    const cached = loadCachedSnapshot();
+    if (cached) {
+      replaceSnapshot(cached);
+      markLaunch("cacheApplied");
+    }
     // The core starts off the JS thread and emits as soon as it runs: what it says before the
     // first snapshot waits for it, as during any snapshot.
     this.bootstraps += 1;
@@ -116,6 +124,7 @@ class Engine {
     try {
       replaceSnapshot(await core.request<Snapshot>("bootstrap"));
       markLaunch("snapshotApplied");
+      saveCachedSnapshot(useStore.getState);
     } finally {
       this.bootstraps -= 1;
       if (!this.bootstraps) this.applyHeld();
@@ -139,7 +148,11 @@ class Engine {
   }
 
   private onAppState(status: AppStateStatus) {
-    if (status !== "active") return useStore.setState({ appActive: false });
+    if (status !== "active") {
+      // The app may not come back: what it shows now is what the next launch starts from.
+      useStore.setState({ appActive: false });
+      return saveCachedSnapshot(useStore.getState, { now: true });
+    }
     useStore.setState({ appActive: true, activeSince: Date.now() });
     // Back in the foreground: the sync socket may have died with the suspension.
     core.wake();
@@ -179,6 +192,7 @@ class Engine {
         break;
       case "snapshot":
         replaceSnapshot(event.snapshot);
+        saveCachedSnapshot(useStore.getState);
         break;
       case "tasks.changed":
         acceptDurableTask(event.task);
@@ -238,7 +252,10 @@ class Engine {
         void this.closeAuthPage(event.signIn);
         break;
       case "identity.changed":
-        if (!event.hasIdentity) resetStore();
+        if (!event.hasIdentity) {
+          resetStore();
+          clearCachedSnapshot();
+        }
         else useStore.setState({ paired: true });
         break;
       case "feedback.changed":
@@ -1303,6 +1320,7 @@ class Engine {
     await core.request("identity.forget");
     resetStore();
     wipePrefs();
+    clearCachedSnapshot();
   }
 }
 

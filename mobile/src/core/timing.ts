@@ -12,6 +12,8 @@ export function enableTiming() {
 
 /// A launch's phases, in ms since the JS bundle started.
 export interface Launch {
+  /// The startup cache drew the account, before the core had started.
+  cacheApplied?: number;
   coreStarted?: number;
   snapshotApplied?: number;
   listDrawn?: number;
