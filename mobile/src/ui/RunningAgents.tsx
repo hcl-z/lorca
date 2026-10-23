@@ -11,6 +11,7 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { agentNow, runningAgents } from "../core/agentKit";
 import { engine } from "../core/engine";
 import { agentName, type AgentRun, type Chat, type Message } from "../core/model";
+import { useShallow } from "zustand/react/shallow";
 import { useStore } from "../core/store";
 import { t, useLanguage } from "../i18n";
 import { AgentPill, AgentTile, ContextHairline, StopButton, alpha } from "./agentKit";
@@ -26,10 +27,11 @@ const CARD_MAX = 320;
 
 export const RunningAgents = memo(function RunningAgents() {
   useLanguage();
-  const chats = useStore((s) => s.chats);
+  // Re-rendered only when the agents at work change: a message elsewhere leaves the cards alone.
+  const running = useStore(useShallow((s) => runningAgents(s.chats).flatMap((each) => [each.chat, each.message])));
   const [hidden, setHidden] = useState<Record<string, true>>({});
   const pane = usePaneWidth();
-  const found = useMemo(() => runningAgents(chats).filter((each) => !hidden[each.message.id]), [chats, hidden]);
+  const found = useMemo(() => runningAgents(chatsOf(running)).filter((each) => !hidden[each.message.id]), [running, hidden]);
   if (found.length === 0) return null;
   const width = found.length === 1 ? Math.min(pane - 24, CARD_MAX * 1.4) : Math.min(pane - 56, CARD_MAX);
   return (
@@ -40,6 +42,13 @@ export const RunningAgents = memo(function RunningAgents() {
     </ScrollView>
   );
 });
+
+/// The chats of the agents at work, each once, from the pairs the selector keeps.
+function chatsOf(running: (Chat | Message)[]): Chat[] {
+  const chats = new Set<Chat>();
+  for (let i = 0; i < running.length; i += 2) chats.add(running[i] as Chat);
+  return [...chats];
+}
 
 function AgentFloat({ chat, message, agent, width, onClose }: { chat: Chat; message: Message; agent: AgentRun; width: number; onClose: () => void }) {
   const p = usePalette();
