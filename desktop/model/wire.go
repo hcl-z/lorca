@@ -653,6 +653,14 @@ type WireBotMemory struct {
 		Refused []string `json:"refused"`
 		Undone  bool     `json:"undone"`
 	} `json:"capture"`
+	Trace []WireMemoryTrace `json:"trace"`
+}
+
+type WireMemoryTrace struct {
+	At    int64  `json:"at"`
+	BotID string `json:"bot_id"`
+	Kind  string `json:"kind"`
+	Text  string `json:"text"`
 }
 
 // WirePrompt is `bots.prompt`: a bot's system prompt as named sections, with the notes a turn
@@ -1400,6 +1408,9 @@ func ToBotMemory(wire WireBotMemory) BotMemory {
 	}
 	if capture := wire.Capture; capture != nil {
 		memory.Capture = &CaptureRun{ID: capture.ID, At: capture.At, Added: capture.Added, Refused: capture.Refused, Undone: capture.Undone}
+	}
+	for _, tr := range wire.Trace {
+		memory.Trace = append(memory.Trace, MemoryTrace{At: tr.At, BotID: tr.BotID, Kind: tr.Kind, Text: tr.Text})
 	}
 	return memory
 }

@@ -1311,6 +1311,15 @@ type BotMemory struct {
 	Profile Profile
 	// The newest capture run that was not undone, if there is one.
 	Capture *CaptureRun
+	Trace   []MemoryTrace
+}
+
+// MemoryTrace is one human-readable memory event (desktop trace, 3 kinds).
+type MemoryTrace struct {
+	At    int64
+	BotID string
+	Kind  string // recalled | saved | superseded
+	Text  string
 }
 
 // Profile is the account's PROFILE.md on a Runner: what every bot there knows about the user.

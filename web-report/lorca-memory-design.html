@@ -1,0 +1,456 @@
+<title>Lorca 记忆 · 定版方案</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+:root{
+  --ground:#F6F1E6; --paper:#FFFDf8; --paper2:#F0EAD9; --ink:#16201E; --muted:#6B7A76; --rule:#E8E0C8;
+  --accent:#12372A; --accent2:#9A5B13; --accentSoft:#E3EEEA; --amberSoft:#FFF0D6; --ink2:#1B2A27;
+  --display:"Fraunces","Noto Sans SC",Georgia,serif;
+  --body:"IBM Plex Sans","Noto Sans SC",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box} html{scroll-behavior:smooth}
+body{margin:0;background:var(--ground);color:var(--ink);font:15px/1.72 var(--body);-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-underline-offset:2px}
+.wrap{max-width:1160px;margin:0 auto;padding:0 28px}
+.hero{padding:44px 0 26px;border-bottom:1px solid var(--rule)}
+.kicker{font:600 11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.kicker i{font-style:normal;border:1px solid var(--rule);background:var(--paper);padding:3px 8px;border-radius:999px}
+.hero h1{font-family:var(--display);font-weight:900;font-size:52px;line-height:.92;letter-spacing:-.04em;margin:14px 0 10px;max-width:19ch;text-wrap:balance}
+.hero h1 em{font-style:normal;color:var(--accent2)}
+.lede{font-size:17px;line-height:1.65;color:var(--muted);max-width:66ch;margin:0}
+.heroMeta{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+.heroMeta span{font:600 11px var(--mono);border:1px solid var(--rule);background:var(--paper);padding:7px 10px;border-radius:999px;color:var(--muted)}
+.readbar{margin-top:18px;background:var(--paper);border:1px solid var(--rule);border-radius:14px;padding:14px 16px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.readbar b{font:700 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.readbar a{font:600 13px var(--body);text-decoration:none;border:1px solid var(--rule);background:var(--paper2);padding:6px 10px;border-radius:999px}
+.layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:36px;padding:28px 0 80px}
+nav{position:sticky;top:18px;align-self:start}
+nav .label{font:700 11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:12px 0 8px}
+nav a{display:block;font-size:13px;line-height:1.45;padding:7px 10px;border-radius:10px;color:var(--muted);border:1px solid transparent;text-decoration:none}
+nav a.active,nav a:hover{color:var(--ink);background:var(--paper);border-color:var(--rule)}
+nav .small{font:400 11px var(--mono);color:var(--muted);padding:6px 10px;line-height:1.5}
+main{display:flex;flex-direction:column;gap:56px;min-width:0}
+section{display:flex;flex-direction:column;gap:16px}
+.eyebrow{font:700 11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:flex;gap:10px;align-items:center}
+.eyebrow::before{content:"";width:18px;height:2px;background:var(--accent);border-radius:999px}
+h2{font-family:var(--display);font-size:32px;line-height:1.05;letter-spacing:-.03em;margin:0;text-wrap:balance}
+h3{font-family:var(--display);font-size:19px;line-height:1.25;margin:0}
+p{margin:0;max-width:70ch} p.muted{color:var(--muted)}
+.callout{background:var(--paper);border:1px solid var(--rule);border-radius:16px;padding:18px 20px;display:flex;gap:14px}
+.badge{font:700 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;padding:4px 8px;border-radius:999px;border:1px solid var(--rule);align-self:flex-start;white-space:nowrap}
+.badge.ok{background:var(--accentSoft);color:var(--accent)} .badge.warn{background:var(--amberSoft);color:#7A2E2E}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.card{background:var(--paper);border:1px solid var(--rule);border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:10px}
+.card p{font-size:14px;color:var(--muted)} .card ul{margin:0;padding-left:18px;font-size:13.5px;color:var(--muted)}
+.tableWrap{overflow:auto;background:var(--paper);border:1px solid var(--rule);border-radius:16px}
+table{width:100%;min-width:880px;border-collapse:collapse;font-size:13.5px}
+th{font:700 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:left;padding:12px 14px;border-bottom:1px solid var(--rule);background:var(--paper2);white-space:nowrap}
+td{padding:12px 14px;border-bottom:1px solid var(--rule);vertical-align:top} tr:last-child td{border-bottom:0} td:first-child{font-weight:600}
+.score{display:inline-flex;gap:3px} .score i{width:14px;height:6px;border-radius:999px;background:var(--rule);display:inline-block} .score i.on{background:var(--accent)}
+pre{margin:0;background:var(--paper);border:1px solid var(--rule);border-radius:14px;padding:16px 18px;overflow:auto;font:12.5px/1.6 var(--mono)}
+code{font-family:var(--mono);font-size:.88em;background:var(--accentSoft);padding:1px 6px;border-radius:6px} pre code{background:none;padding:0}
+.figure{background:var(--paper);border:1px solid var(--rule);border-radius:16px;padding:16px;overflow:auto}
+.figure svg{display:block;min-width:860px;width:100%;height:auto} figcaption{font-size:12.5px;color:var(--muted);margin-top:10px}
+.note{font-size:13px;color:var(--muted);border-left:2px solid var(--accent2);padding:2px 0 2px 12px;max-width:70ch}
+.kv{display:grid;grid-template-columns:150px minmax(0,1fr);gap:8px 16px;font-size:13.5px}
+.kv dt{font:700 11px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding-top:3px} .kv dd{margin:0}
+.steps{counter-reset:step;list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+.steps li{position:relative;padding:16px 16px 16px 52px;background:var(--paper);border:1px solid var(--rule);border-radius:14px}
+.steps li::before{counter-increment:step;content:counter(step);position:absolute;left:14px;top:16px;width:26px;height:26px;border-radius:999px;background:var(--ink);color:var(--paper);display:grid;place-items:center;font:700 12px var(--mono)}
+.dev{border:1px solid var(--rule);border-radius:16px;overflow:hidden;background:var(--paper)}
+.devHead{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;background:var(--paper2);border-bottom:1px solid var(--rule);font:700 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.devBody{display:grid;grid-template-columns:300px minmax(0,1fr);min-height:360px}
+.devList{border-right:1px solid var(--rule);overflow:auto;max-height:440px}
+.devRow{padding:11px 12px;border-bottom:1px solid var(--rule);display:flex;flex-direction:column;gap:4px}
+.devRow b{font:600 13px var(--body)} .devRow span{font-size:12.5px;color:var(--muted)}
+.devRow.active{background:var(--accentSoft)}
+.devDetail{padding:14px;overflow:auto}
+.pill{font:600 11px var(--mono);padding:3px 8px;border-radius:999px;border:1px solid var(--rule);background:var(--paper2);white-space:nowrap;display:inline-flex;gap:6px;align-items:center}
+@media(max-width:980px){ .hero h1{font-size:40px} .layout{grid-template-columns:1fr} nav{display:none} .grid2,.grid3{grid-template-columns:1fr} .devBody{grid-template-columns:1fr} }
+</style>
+
+<div class="wrap hero">
+  <div class="kicker"><span>Lorca · 持久记忆 · 定版</span> <i>2026-10-26</i> <i>单 Rust 二进制 · 无向量</i> <i>桌面内置 · 默认开启</i></div>
+  <h1>让 bot <em>越用越懂你</em> 的<br>记忆方案</h1>
+  <p class="lede">在 Lorca 已有底座（<code>MEMORY.md / PROFILE.md / topic / log / capture / flush / recall</code>）上，只做三件事：<b>按相关性取</b>、<b>定期整理</b>、<b>从纠正里学做法</b>。并一次性修掉“个人信息总不更新”。</p>
+  <div class="heroMeta">
+    <span>读取：FTS5 · 无向量 · 可离线</span>
+    <span>存储：Markdown 明文即真相</span>
+    <span>画像：账号级加密同步</span>
+    <span>追踪：仅桌面 · 默认开启 · 3 种事件</span>
+  </div>
+  <div class="readbar">
+    <b>怎么读这篇</b>
+    <a href="#tldr">先看一句话结论</a>
+    <a href="#problem">再看为什么总不更新</a>
+    <a href="#impact">直接看要改哪些文件</a>
+    <a href="#devtools">只关心开发期怎么看</a>
+  </div>
+</div>
+
+<div class="wrap layout">
+<nav aria-label="目录">
+  <div class="label">导读</div>
+  <a href="#tldr">一句话结论</a>
+  <a href="#problem">1 · 问题在哪里</a>
+  <a href="#community">2 · 社区五种做法</a>
+  <a href="#score">3 · 打分与取舍</a>
+  <a href="#arch">4 · 架构四层</a>
+  <a href="#how-recall">5 · 召回怎么做</a>
+  <a href="#how-profile">6 · 画像必更新怎么做</a>
+  <a href="#lifecycle">7 · 一条记忆的一生</a>
+  <a href="#impact">8 · 要改哪些组件</a>
+  <a href="#devtools">9 · 开发期实时查看</a>
+  <a href="#ship">10 · 分步落地</a>
+  <div class="label" style="margin-top:14px">附录</div>
+  <a href="#caveats">不做的事</a>
+  <a href="#sources">来源</a>
+  <div class="small">文件：<code>web-report/lorca-memory-design.html</code><br>分支：<code>feat/memory-fts-p1</code> · 已搭 P1 骨架</div>
+</nav>
+
+<main>
+
+<section id="tldr">
+  <div class="eyebrow">一句话</div>
+  <h2>文件是唯一的真相，索引只是加速器</h2>
+  <div class="callout">
+    <div style="font-size:18px">◈</div>
+    <div>
+      <b>选型：文件 + FTS5 + 梦境整理 + 纠正沉淀为 skill</b>
+      <p class="muted" style="margin-top:6px">向 OpenClaw 借“无向量 FTS5”的可审计明文，向 Letta 借 sleep-time 的整理节拍，向 Graphiti 借 <code>valid_from / valid_to</code> 的有效期，向 Mem0 借“写入前先比对”。<b>画像类当轮即写并同步到所有设备</b>，普通记忆靠“被复用”来晋升。开发期在桌面里默认开启一块极简追踪面板。</p>
+    </div>
+  </div>
+  <div class="grid3">
+    <div class="card"><span class="badge ok">读取</span><h3>每轮按需召回</h3><p>保留 200 行 / 24KB 常驻；其余按当前用户消息做 FTS5 top-k，拼在 transcript 之后，不污染系统提示缓存。</p></div>
+    <div class="card"><span class="badge ok">整理</span><h3>每晚梦境</h3><p>按 复用次数 × 查询多样性 × 时近度 打分；矛盾自动 supersede；久未复用的归档。</p></div>
+    <div class="card"><span class="badge warn">学习</span><h3>从纠正里学做法</h3><p>同一类 <code>edited / rejected</code> 出现 2 次即提议 skill 或画像规则，走现有 <code>feedback.propose</code> 审阅。</p></div>
+  </div>
+</section>
+
+<section id="problem">
+  <div class="eyebrow">问题</div>
+  <h2>为什么以前总不更新</h2>
+  <div class="grid3">
+    <div class="card">
+      <span class="badge warn">根因 1 · 存错地方</span>
+      <h3>画像跟着机器，不跟着人</h3>
+      <p><code>PROFILE.md</code> 在 Runner 本地（<code>~/.lorca/memory/profile/</code>），<code>MEMORY.md</code> 跟着单个 bot。你以为教的是“你”，实际教的是“这台机器上的这个 bot”。</p>
+      <ul><li>Mac 上教的，手机上不认识</li><li>A bot 学会的，B bot 要重学</li></ul>
+    </div>
+    <div class="card">
+      <span class="badge warn">根因 2 · 存得太慢</span>
+      <h3>要等很久才学一次</h3>
+      <p>capture 要等 <b>静止 5 分钟</b>或<b>攒够 8 条</b>才触发；一次最多 8 条且不超过存量 25%；<code>flush</code> 只在压缩前跑。</p>
+      <ul><li>短对话永远轮不到</li><li>新 bot 第一次只学 1 条</li></ul>
+    </div>
+    <div class="card">
+      <span class="badge warn">根因 3 · 旧的不让位</span>
+      <h3>只会追加，不会取代</h3>
+      <p>“住上海”和“住杭州”并存，下次召回随机命中一条，看起来就是没学会。缺少按主题（slot）的 <code>supersede</code>。</p>
+      <ul><li>偏好改了，旧的仍生效</li><li>召回变得不稳定</li></ul>
+    </div>
+  </div>
+  <div class="callout">
+    <div style="font-size:18px">→</div>
+    <div><b>三个根因 → 三条修复（都在本方案里）</b><p class="muted" style="margin-top:4px">存错地方 → 画像做成<b>账号级加密 blob</b>同步；存得太慢 → 画像走<b>快速通道当轮即写</b>；旧的不让位 → 同 slot <b>自动取代</b>并关闭旧条目有效期。</p></div>
+  </div>
+</section>
+
+<section id="community">
+  <div class="eyebrow">对比</div>
+  <h2>社区五种做法，各自赌什么</h2>
+  <div class="tableWrap"><table>
+    <thead><tr><th>做法</th><th>代表</th><th>存储</th><th>写入</th><th>读取</th><th>要向量吗</th><th>赌什么</th></tr></thead>
+    <tbody>
+      <tr><td>文件即记忆</td><td>Claude Code · OpenClaw</td><td>Markdown，明文即真相</td><td>按类型写文件</td><td>索引常驻，正文按需</td><td>不要</td><td>可读可审计</td></tr>
+      <tr><td>Agent 自编辑</td><td>Letta</td><td>core / archival / recall</td><td>sleep-time 后台整理</td><td>core 常驻</td><td>要</td><td>agent 能管好自己</td></tr>
+      <tr><td>抽取 + 存储</td><td>Mem0</td><td>向量 + 图 + KV</td><td>LLM 抽取后 ADD/UPDATE</td><td>语义 top-k</td><td>强依赖</td><td>全自动</td></tr>
+      <tr><td>时序图</td><td>Zep / Graphiti</td><td>双时态图，边带有效期</td><td>抽实体，矛盾失效旧边</td><td>语义+BM25+图</td><td>要</td><td>时序与关系</td></tr>
+      <tr><td>无向量混合检索</td><td>OpenClaw FTS</td><td>SQLite FTS5 虚表</td><td>写文件即写索引</td><td>BM25+时近度+标签</td><td>不要</td><td>本地离线</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">综合 2025–2026 公开文档与仓库自述，便于选型对比，非逐字引用。</p>
+</section>
+
+<section id="score">
+  <div class="eyebrow">打分</div>
+  <h2>放在 Lorca 的硬约束下，谁更合适</h2>
+  <p class="muted">权重来自：单用户、多设备、本地优先、relay 零知识、单 Rust 二进制、必须保留明文可审计。</p>
+  <div class="tableWrap"><table>
+    <thead><tr><th>做法</th><th>本地无服务 ×20</th><th>明文可审计 ×15</th><th>多设备 E2E ×20</th><th>检索质量 ×15</th><th>学会做法 ×15</th><th>成本/延迟 ×15</th><th>总分</th></tr></thead>
+    <tbody>
+      <tr style="background:var(--accentSoft)"><td>文件 + FTS5 + 梦境<div style="font:400 11px var(--mono);color:var(--muted)">OpenClaw 形态</div></td><td><span class="score"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></td><td><span class="score"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></td><td><span class="score"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span></td><td><span class="score"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span></td><td><span class="score"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span></td><td><span class="score"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></td><td><b>89</b></td></tr>
+      <tr><td>Agent 自编辑<div style="font:400 11px var(--mono);color:var(--muted)">Letta</div></td><td><span class="score"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span></td><td><span class="score"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></td><td><span class="score"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span></td><td><span class="score"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></td><td><span class="score"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></td><td><span class="score"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span></td><td><b>58</b></td></tr>
+      <tr><td>抽取 + 向量<div style="font:400 11px var(--mono);color:var(--muted)">Mem0</div></td><td><span class="score"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span></td><td><span class="score"><i class="on"></i><i></i><i></i><i></i><i></i></span></td><td><span class="score"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span></td><td><span class="score"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></td><td><span class="score"><i class="on"></i><i></i><i></i><i></i><i></i></span></td><td><span class="score"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></td><td><b>52</b></td></tr>
+      <tr><td>时序图<div style="font:400 11px var(--mono);color:var(--muted)">Graphiti</div></td><td><span class="score"><i class="on"></i><i></i><i></i><i></i><i></i></span></td><td><span class="score"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span></td><td><span class="score"><i class="on"></i><i></i><i></i><i></i><i></i></span></td><td><span class="score"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></td><td><span class="score"><i class="on"></i><i></i><i></i><i></i><i></i></span></td><td><span class="score"><i class="on"></i><i></i><i></i><i></i><i></i></span></td><td><b>41</b></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="arch">
+  <div class="eyebrow">架构</div>
+  <h2>四层文件 + 一个可重建的索引</h2>
+  <p class="muted">越通用、越稳定的放越上面；索引不存真相，只记录“在哪、被用过几次”。</p>
+  <div class="grid2">
+    <div class="card" style="border-left:3px solid var(--accent)">
+      <span class="badge ok">L0 · 画像</span>
+      <h3>USER.md（账号级 · 加密同步）</h3>
+      <p>你是谁、怎么跟你说话、到哪都成立。分“你说的 / 推断的”两区，所有 bot 与设备共享。条目带 slot、引文、有效期。</p>
+      <div class="kv" style="margin-top:6px"><dt>形态</dt><dd>Markdown · <code>- 2026-10-24 · 住杭州 &lt;!-- id:7f3a slot:city --&gt;</code></dd><dt>预算</dt><dd>120 行 / 8KB 常驻</dd><dt>同步</dt><dd>账号 DEK 加密 blob，同 <code>credentials</code></dd></div>
+    </div>
+    <div class="card"><span class="badge ok">L1 · Bot 记忆</span><h3>MEMORY.md + topic</h3><p>该 bot 的工作记忆。200 行 / 24KB 常驻，其余按相关性召回；topic 命中即注入，不靠 bot 猜。</p></div>
+    <div class="card"><span class="badge ok">L2 · 日志</span><h3>memory/log/YYYY-MM-DD.md</h3><p>发生过什么。每轮一行 + <code>memory_log</code> 事件。永不直进提示词，只参与检索与梦境。</p></div>
+    <div class="card" style="border-left:3px solid var(--accent2)"><span class="badge warn">IDX · 索引</span><h3>index.sqlite（每 Runner · 可重建）</h3><p>FTS5 覆盖所有记忆文件与聊天记录；另记 <code>recall_log</code> 与 <code>doc_meta</code> 供排序。丢了可重建，不作第二真相。</p></div>
+  </div>
+  <div class="figure">
+    <svg viewBox="0 0 960 180" role="img" aria-label="四层与索引关系">
+      <g font-family="IBM Plex Sans, Noto Sans SC, sans-serif" font-size="12" fill="#6B7A76">
+        <rect x="12" y="16" width="210" height="84" rx="12" fill="#FFFDf8" stroke="#16201E" stroke-width="1.2"/>
+        <text x="117" y="44" text-anchor="middle" font-size="13" font-weight="700" fill="#16201E">L0 · USER.md</text>
+        <text x="117" y="62" text-anchor="middle">账号级 · 所有 bot 共享</text>
+        <text x="117" y="78" text-anchor="middle">加密 blob 同步</text>
+        <rect x="252" y="16" width="210" height="84" rx="12" fill="#FFFDf8" stroke="#16201E" stroke-width="1.2"/>
+        <text x="357" y="44" text-anchor="middle" font-size="13" font-weight="700" fill="#16201E">L1 · MEMORY.md</text>
+        <text x="357" y="62" text-anchor="middle">每个 bot · 200 行常驻</text>
+        <text x="357" y="78" text-anchor="middle">topic 按需召回</text>
+        <rect x="492" y="16" width="210" height="84" rx="12" fill="#FFFDf8" stroke="#E8E0C8"/>
+        <text x="597" y="42" text-anchor="middle" font-size="13" font-weight="700" fill="#16201E">L2 · 日志</text>
+        <text x="597" y="60" text-anchor="middle">memory/log/*.md</text>
+        <text x="597" y="76" text-anchor="middle">永不直进提示词</text>
+        <rect x="732" y="16" width="212" height="84" rx="12" fill="#12372A" stroke="#12372A"/>
+        <text x="838" y="44" text-anchor="middle" font-size="13" font-weight="700" fill="#FFFDf8">IDX · index.sqlite</text>
+        <text x="838" y="62" text-anchor="middle" fill="#9AA8A3">FTS5 + 召回日志</text>
+        <text x="838" y="78" text-anchor="middle" fill="#9AA8A3">可重建 · 本地</text>
+        <g stroke="#9AA8A3" stroke-width="1.2" fill="none" marker-end="url(#a)"><path d="M222 58 H252"/><path d="M462 58 H492"/><path d="M702 58 H732"/></g>
+        <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#9AA8A3"/></marker></defs>
+        <text x="480" y="126" text-anchor="middle" font-size="11">读：每轮把 L0 常驻 + L1/L2 的 top-k 拼在 transcript 之后，不污染系统提示缓存</text>
+        <text x="480" y="144" text-anchor="middle" font-size="11">写：用户原话 → 画像快速通道直写并同步；普通事实 → 短期笔记 → 梦境按复用打分晋升</text>
+      </g>
+    </svg>
+    <figcaption>左三列是文件的真相，右一列是本地的加速器。任何记忆最终都落到 Markdown 上。</figcaption>
+  </div>
+</section>
+
+<section id="how-recall">
+  <div class="eyebrow">怎么做 · 召回</div>
+  <h2>不靠向量，靠“被复用”来排序</h2>
+  <div class="grid2">
+    <div class="card">
+      <h3>索引长什么样</h3>
+<pre><code>-- rusqlite 0.37 bundled 已在 Cargo.toml
+CREATE VIRTUAL TABLE memory_fts USING fts5(
+  doc_id, scope, kind, title, body,
+  tokenize='unicode61 "remove_diacritics 2"'
+);
+CREATE TABLE recall_log(query, doc_id, at, rank, injected);
+CREATE TABLE doc_meta(doc_id PRIMARY KEY, valid_from, valid_to, pinned, source);</code></pre>
+      <p>中文分词无需模型：Rust 侧用 <code>jieba-rs</code> 离线分词后写入 FTS5，纯本地、可离线、可审计。</p>
+    </div>
+    <div class="card">
+      <h3>每轮怎么选 6 条</h3>
+      <p>先取 BM25 top-20（&lt;5ms），再按六信号重排取 6 条注入，约 400 token：</p>
+<pre><code>score = 0.40*BM25 + 0.24*log(1+复用次数)
+      + 0.15*查询多样性 + 0.15*时近度(14天半衰)
+      + 0.10*巩固度
+-- 另：pinned +0.20，推断 -0.15，过期排除
+-- 晋升门槛：复用≥3 且 跨≥2 个不同问题</code></pre>
+      <p class="muted">把本该给语义分的权重，挪给了“在多少个不同问题里被用过”——越通用的越该常驻。</p>
+    </div>
+  </div>
+  <div class="callout"><div style="font-size:18px">◎</div><div><b>那 paraphrase 怎么办？</b><p class="muted" style="margin-top:4px">靠行为而非语义：一条笔记若在“周报、纪要、飞书排版”三个不同查询里都被用过，它自然会晋升，无需向量算余弦。兜底：让当轮模型顺手给 20 条打 1–5 分，复用一次本来就要付的调用，不新增模型。</p></div></div>
+</section>
+
+<section id="how-profile">
+  <div class="eyebrow">怎么做 · 画像</div>
+  <h2>让个人信息必更新：当轮即写</h2>
+  <div class="grid2">
+    <div class="card">
+      <h3>USER.md 长这样</h3>
+<pre><code>## 基本信息
+- 2026-10-24 · 住杭州 &lt;!-- id:7f3a slot:city --&gt;
+## 偏好
+- 2026-10-24 · 偏好短回复 &lt;!-- id:21c0 slot:tone --&gt;
+## 推断区
+- [推断·3/5] 可能常在飞书协作 &lt;!-- id:9a01 --&gt;</code></pre>
+      <p>每条带稳定 id 与 slot。推断区单独放、可一键驳回，不与“你说的”混在一起。</p>
+    </div>
+    <div class="card">
+      <h3>当你说“我搬杭州了”</h3>
+<pre><code>抽成 {slot:city, 值:杭州, 引文:原话}
+→ 过同一道门禁（引文·注入·脱敏）
+→ 同 slot 自动取代：旧“上海”加删除线，valid_to=今天
+→ 写 USER.md → 同步到所有 Runner → 下一轮所有 bot 生效</code></pre>
+      <p>画像类<b>不等 5 分钟、不受 8条/25% 限制</b>；普通事实仍走“短期笔记 → 梦境晋升”。</p>
+    </div>
+  </div>
+  <div class="grid3">
+    <div class="card"><h3>矛盾 = 取代</h3><p>同 slot 新值到，旧条目关闭有效期，不进永久遗忘，问“以前住哪”仍可答。</p></div>
+    <div class="card"><h3>同步 = 账号 blob</h3><p>复用 <code>credentials</code> 的机制，按 slot 以 <code>(id,时间)</code> 合并。</p></div>
+    <div class="card"><h3>可见 = 可撤销</h3><p>DM 里轻量确认“已更新：住杭州（原上海）· 撤销”；设置页“关于你”即 USER.md，直改实时同步。</p></div>
+  </div>
+</section>
+
+<section id="lifecycle">
+  <div class="eyebrow">闭环</div>
+  <h2>一条记忆的一生</h2>
+  <div class="figure">
+    <svg viewBox="0 0 960 290" role="img" aria-label="记忆生命周期">
+      <g font-family="IBM Plex Sans, Noto Sans SC, sans-serif" font-size="12" fill="#6B7A76">
+        <rect x="14" y="18" width="150" height="64" rx="12" fill="#FFFDf8" stroke="#16201E"/>
+        <text x="89" y="44" text-anchor="middle" font-weight="700" fill="#16201E">对话</text>
+        <text x="89" y="62" text-anchor="middle">capture · flush · 工具</text>
+        <rect x="194" y="18" width="170" height="64" rx="12" fill="#E3EEEA" stroke="#12372A"/>
+        <text x="279" y="44" text-anchor="middle" font-weight="700" fill="#16201E">短期笔记</text>
+        <text x="279" y="62" text-anchor="middle">过门禁 · 标可信度</text>
+        <rect x="394" y="18" width="170" height="64" rx="12" fill="#12372A" stroke="#12372A"/>
+        <text x="479" y="44" text-anchor="middle" font-weight="700" fill="#FFFDf8">索引 + 召回</text>
+        <text x="479" y="62" text-anchor="middle" fill="#9AA8A3">每轮 top-k · 记信号</text>
+        <rect x="594" y="18" width="180" height="64" rx="12" fill="#FFFDf8" stroke="#16201E"/>
+        <text x="684" y="44" text-anchor="middle" font-weight="700" fill="#16201E">本轮上下文</text>
+        <text x="684" y="62" text-anchor="middle">USER + MEMORY + 相关条目</text>
+        <rect x="814" y="18" width="126" height="64" rx="12" fill="#FFF0D6" stroke="#9A5B13"/>
+        <text x="877" y="44" text-anchor="middle" font-weight="700" fill="#16201E">画像直写</text>
+        <text x="877" y="62" text-anchor="middle">当轮同步</text>
+        <rect x="320" y="150" width="260" height="68" rx="12" fill="#12372A" stroke="#12372A"/>
+        <text x="450" y="174" text-anchor="middle" font-weight="700" fill="#FFFDf8">梦境（每晚 · 空闲时）</text>
+        <text x="450" y="196" text-anchor="middle" fill="#9AA8A3">打分 · 晋升 · 取代 · 归档</text>
+        <rect x="610" y="150" width="170" height="68" rx="12" fill="#FFFDf8" stroke="#16201E"/>
+        <text x="695" y="174" text-anchor="middle" font-weight="700" fill="#16201E">MEMORY / USER</text>
+        <text x="695" y="196" text-anchor="middle">DREAMS.md 可撤销</text>
+        <rect x="100" y="150" width="190" height="68" rx="12" fill="#FFF0D6" stroke="#9A5B13"/>
+        <text x="195" y="174" text-anchor="middle" font-weight="700" fill="#16201E">skill 提议</text>
+        <text x="195" y="196" text-anchor="middle">需批准后生效</text>
+        <g stroke="#9AA8A3" stroke-width="1.2" fill="none" marker-end="url(#a2)"><path d="M164 50 H194"/><path d="M364 50 H394"/><path d="M564 50 H594"/><path d="M479 82 V150"/><path d="M580 184 H610"/><path d="M320 184 H290"/><path d="M850 82 V50 H940 V184 H780"/></g>
+        <defs><marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#9AA8A3"/></marker></defs>
+        <text x="485" y="112" font-size="11">召回日志 → 晋升依据</text>
+        <text x="840" y="112" font-size="11">画像 bypass 梦境</text>
+      </g>
+    </svg>
+    <figcaption>绿底为落盘文件，深色为计算环节，琥珀色需你批准。所有回写都过同一道门禁，且可撤销。</figcaption>
+  </div>
+</section>
+
+<section id="impact">
+  <div class="eyebrow">影响面</div>
+  <h2>要改哪些组件 · 一览</h2>
+  <p class="muted">改动集中在 CLI，本次新增 2 个文件；桌面新增 1 个追踪面板；手机不动。</p>
+  <div class="tableWrap"><table>
+    <thead><tr><th>层</th><th>文件</th><th>改什么</th><th>新增?</th></tr></thead>
+    <tbody>
+      <tr><td>Rust 依赖</td><td><code>Cargo.toml</code></td><td><code>rusqlite 0.37 bundled</code> 已有；新增 <code>jieba-rs</code> 二选一</td><td>1 个 crate</td></tr>
+      <tr><td>存储</td><td><code>memory.rs</code></td><td>条目加 <code>&lt;!-- id/slot --&gt;</code> 与有效期语义</td><td>改</td></tr>
+      <tr><td>画像</td><td><code>profile.rs → user.rs</code></td><td>账号级 USER，旧 PROFILE 一次性迁移</td><td>改+迁移</td></tr>
+      <tr><td>同步</td><td><code>sync/*</code> + <code>identity.rs</code></td><td>新增 <code>user</code> blob，按 slot 合并，复用 credentials 机制</td><td>改</td></tr>
+      <tr><td>索引</td><td><code>memory_index.rs</code></td><td>新建：FTS5 建表、增量索引、BM25 召回</td><td>新增</td></tr>
+      <tr><td>召回</td><td><code>turns.rs</code> 的 <code>context_notes</code></td><td>每轮 transcript 后注入 top-k note（~400 token）</td><td>改</td></tr>
+      <tr><td>采集</td><td><code>memory_capture.rs</code></td><td>画像 slot 走快速通道，绕过配额</td><td>改</td></tr>
+      <tr><td>整理</td><td><code>memory_dream.rs</code></td><td>新建：每晚按复用打分晋升/归档，可撤销</td><td>新增</td></tr>
+      <tr><td>门禁</td><td><code>memory_check.rs</code></td><td>来源分级 <code>user &gt; inferred &gt; tool/web</code></td><td>改</td></tr>
+      <tr><td>工具</td><td><code>turns/tools.rs</code> + <code>requests.rs</code></td><td><code>recall</code> 走 FTS5；<code>memory.read</code> 返回命中</td><td>改</td></tr>
+      <tr><td>追踪</td><td><code>memory_trace.rs</code></td><td>新建：仅桌面、默认开启、3 种事件、30 天 ring</td><td>新增</td></tr>
+      <tr><td>桌面</td><td><code>desktop/sheet_memory.go</code> 等 + <code>sheet_trace.go</code></td><td>Memory 面板展示命中；新增 Trace 抽屉</td><td>改+新增</td></tr>
+      <tr><td>文档</td><td><code>docs/architecture/memory.md</code> 等</td><td>补齐 USER 同步、召回、梦境与追踪契约</td><td>改</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">不在表里的保持不动：凭据脱敏、注入过滤、<code>forgotten.md</code>、run 撤销、relay 零知识、budgets。手机端本次不改。</p>
+</section>
+
+<section id="devtools">
+  <div class="eyebrow">开发期</div>
+  <h2>只在桌面、默认开启的极简追踪</h2>
+  <p class="muted">回答三问：刚才召回了什么、写入是否成功、旧的是否被取代。不堆事件，只留三种人话。</p>
+
+  <div class="grid3">
+    <div class="card"><h3>召回了什么</h3><p><code>recalled</code> — 针对这句用户消息，命中哪几条、注入了哪几条。点开看 BM25 与标题。</p></div>
+    <div class="card"><h3>写入是否成功</h3><p><code>saved</code> — 写进 MEMORY / USER 的是哪条；被门禁拦住的也在此显示原因（一行话）。</p></div>
+    <div class="card"><h3>被取代了什么</h3><p><code>superseded</code> — 同 slot 旧值 → 新值，旧条目加删除线并关闭有效期。</p></div>
+  </div>
+
+  <div class="dev" aria-label="记忆追踪 — 桌面">
+    <div class="devHead"><span>Memory — 桌面追踪 · 默认开启</span><span style="display:flex;gap:8px;align-items:center"><span class="pill">Live</span><span class="pill">bot: Scout</span><span class="pill">仅桌面</span></span></div>
+    <div class="devBody">
+      <div class="devList">
+        <div class="devRow active"><b>14:32 · 召回</b><span>“杭州天气” → 注入 2 条 · 来自 MEMORY.md 与 PROFILE.md</span></div>
+        <div class="devRow"><b>14:31 · 已保存</b><span>住杭州 · slot:city · 将同步到所有设备</span></div>
+        <div class="devRow"><b>14:31 · 已取代</b><span>住上海 → 住杭州 · 旧条目已加删除线</span></div>
+        <div class="devRow"><b>03:00 · 已保存</b><span>梦境晋升 1 条 · 本周被复用 4 次</span></div>
+        <div class="devRow"><b>14:28 · 未保存</b><span>“ignore previous …” · 原因：疑似指令注入</span></div>
+      </div>
+      <div class="devDetail">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <span class="pill">recalled</span><span class="pill">“杭州天气”</span><span class="pill">注入 2 / 命中 5</span>
+        </div>
+<pre><code>召回 “杭州天气”
+  命中 5 条，按相关性排序，注入前 2 条：
+  1. 住杭州 — PROFILE.md · 复用 4 次
+  2. 偏好短回复 — MEMORY.md · 复用 7 次
+  其余 3 条未注入，点开看原因。</code></pre>
+        <p class="muted" style="margin-top:10px">点任一行看原文与原因；“撤销”直接回滚该次写入。追踪落盘在 <code>memory/.trace/YYYY-MM-DD.jsonl</code>，保留 30 天。无需环境变量，桌面构建默认开启。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="tableWrap"><table>
+    <thead><tr><th>能力</th><th>平时</th><th>桌面</th></tr></thead>
+    <tbody>
+      <tr><td>查看 MEMORY / USER / 命中</td><td>有（现有面板增强）</td><td>有 + 实时时间线</td></tr>
+      <tr><td>时间线（3 种事件）</td><td>无</td><td>有，默认开启</td></tr>
+      <tr><td>按 bot 过滤 · 一键撤销</td><td>—</td><td>有</td></tr>
+      <tr><td>落盘与保留</td><td>不额外落盘</td><td><code>.trace/*.jsonl</code> · 30 天</td></tr>
+      <tr><td>手机端</td><td colspan="2">本次不做（仅桌面）</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">实现：<code>crates/cli/src/memory_trace.rs</code> 仅被桌面链路调用；始终写入，无需配置；前台通过 <code>memory.read</code> 的 <code>trace</code> 字段读取。</p>
+</section>
+
+<section id="ship">
+  <div class="eyebrow">落地</div>
+  <h2>五个 PR，每个可单独合入</h2>
+  <ol class="steps">
+    <li><b>P1 · 索引与召回</b> — <code>memory_index.rs</code>（FTS5）覆盖记忆与聊天记录；<code>recall</code> 改走索引；<code>context_notes</code> 注入 top-k。已搭骨架，本分支即 P1。</li>
+    <li><b>P2 · 画像快速通道</b> — 画像 slot 当轮直写、自动取代、同步到所有 Runner。</li>
+    <li><b>P3 · 梦境整理</b> — <code>memory_dream.rs</code> 每晚按复用打分晋升/归档，写 <code>DREAMS.md</code> 可撤销。</li>
+    <li><b>P4 · 纠正沉淀为 skill</b> — 聚类 <code>feedback</code> 的重复纠正，≥2 次提议 USER 规则或 skill。</li>
+    <li><b>P5 · 桌面追踪面板</b> — <code>sheet_trace.go</code> + <code>memory_trace.rs</code> 接线；默认开启，可并行于 P2–P4。</li>
+  </ol>
+  <div class="grid2">
+    <div class="card"><h3>怎么算“越用越懂”</h3><p>重复交代率（“我说过了”）· 纠正率（draft 被编辑/否决）· 召回精度（命中被复用占比）· 记忆成本（每轮 note 的 token 数）。</p></div>
+    <div class="card"><h3>回放集</h3><p>偏好、矛盾、过期、注入各若干段对话，每个 PR 都跑一遍；题型参照 LongMemEval。</p></div>
+  </div>
+</section>
+
+<section id="caveats">
+  <div class="eyebrow">边界</div>
+  <h2>不做的事</h2>
+  <div class="grid2">
+    <div class="card"><h3>不做向量</h3><p>几千条量级的个人记忆，FTS5 + 复用信号已足够；向量带来的下载与常驻不符合单二进制与离线约束。</p></div>
+    <div class="card"><h3>不做图库</h3><p>时序用 <code>valid_from/valid_to</code> 轻量表达；不引入 Neo4j / FalkorDB。</p></div>
+    <div class="card"><h3>不让推断污染画像</h3><p><code>inferred</code> 只能进推断区，需复用或确认才转正；tool/web 来源在梦境前剔除。</p></div>
+    <div class="card"><h3>不改信任模型</h3><p>画像同步复用账号 DEK 与签名；relay 仍只见密文。</p></div>
+  </div>
+</section>
+
+<section id="sources">
+  <div class="eyebrow">来源</div>
+  <p style="font-size:13px;color:var(--muted)">综合以下公开资料（2026-10-26 核对）：
+    <a href="https://docs.openclaw.ai/concepts/memory-architecture">OpenClaw — Memory Architecture</a> ·
+    <a href="https://code.claude.com/docs/en/memory">Claude Code — Memory</a> ·
+    <a href="https://docs.letta.com/guides/concepts/memory">Letta — Sleep-time Agents</a> ·
+    <a href="https://docs.mem0.ai/overview">Mem0 — Overview</a> ·
+    <a href="https://neo4j.com/blog/developer/graphiti-knowledge-graph-memory/">Graphiti / Zep</a> ·
+    <a href="https://github.com/getzep/graphiti">Graphiti OSS</a> ·
+    <a href="https://github.com/plastic-labs/honcho">Honcho</a> ·
+    以及 Lorca 本地文档 <code>memory.md / profile.rs / memory_capture.rs / turns.rs</code>。
+  </p>
+</section>
+
+</main>
+</div>
+<script>
+const links=[...document.querySelectorAll('nav a')];
+const secs=[...document.querySelectorAll('main section[id]')];
+const io=new IntersectionObserver(es=>{ es.forEach(e=>{ if(e.isIntersecting){ links.forEach(a=>a.classList.toggle('active', a.getAttribute('href')==='#'+e.target.id)); } }); },{rootMargin:'-40% 0px -50% 0px',threshold:0});
+secs.forEach(s=>io.observe(s));
+</script>

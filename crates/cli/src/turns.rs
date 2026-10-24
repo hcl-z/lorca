@@ -1121,6 +1121,7 @@ fn context_notes(app: &App, bot: &Bot, chat_id: &str, now: i64) -> Vec<String> {
     [
         memory_note(&MemoryStore::for_bot(&app.config.home, bot)),
         crate::profile::note(&crate::profile::store(&app.config.home)),
+        recall_note(app, bot, chat_id),
         crate::project_context::entries_note(app, chat_id, &bot.id),
         Some(clock_note(now)),
     ]
@@ -1131,6 +1132,30 @@ fn context_notes(app: &App, bot: &Bot, chat_id: &str, now: i64) -> Vec<String> {
 
 /// The memory note after the transcript: `MEMORY.md` under its budget, and the topic files'
 /// names. `None` while the bot remembers nothing.
+fn recall_note(app: &App, bot: &Bot, chat_id: &str) -> Option<String> {
+    let last_user = app
+        .store
+        .page(chat_id, None, 20)
+        .ok()
+        .and_then(|(msgs, _)| {
+            msgs.into_iter().rev().find_map(|m| match m.body {
+                crate::model::Body::Text { text, .. } if matches!(m.author, crate::model::Author::You) && !text.trim().is_empty() => Some(text.trim().to_string()),
+                _ => None,
+            })
+        })
+        .unwrap_or_default();
+    if last_user.trim().is_empty() {
+        return None;
+    }
+    let hits = crate::memory_index::recall(&app.config.home, &bot.id, &last_user, 6);
+    if hits.is_empty() {
+        return None;
+    }
+    let lines: Vec<String> = hits.iter().map(|h| format!("- {} ({})", h.snippet, h.title)).collect();
+    crate::memory_trace::recalled(&app.config.home, &bot.id, &last_user, &lines);
+    Some(format!("[Related memory (recall):\n{}\n]", lines.join("\n")))
+}
+
 fn memory_note(store: &MemoryStore) -> Option<String> {
     let index = store.load_index();
     let topics = store.topics();
@@ -2818,6 +2843,21 @@ fn edit_entries(store: &MemoryStore, source: &str, args: &Value, max_bytes: Opti
         other => return Err(ToolError(format!("Unknown action {other:?}. Use append, replace, remove, or supersede."))),
     }
     .map_err(|e| ToolError(format!("{name}: {e}")))?;
+    // Keep FTS index in sync and record trace (best-effort, no failure propagation)
+    {
+        let home = store.dir().parent().and_then(|p| p.parent()).unwrap_or(store.dir()).to_path_buf();
+        let bot_id = store.dir().file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+        if !bot_id.is_empty() && bot_id != "profile" {
+            let _ = crate::memory_index::reindex_bot(&home, &bot_id);
+            match &change {
+                memory::Change::Appended { line } => crate::memory_trace::saved(&home, &bot_id, line),
+                memory::Change::Superseded { line } => crate::memory_trace::saved(&home, &bot_id, &format!("superseded → {line}")),
+                memory::Change::Replaced => crate::memory_trace::saved(&home, &bot_id, &format!("replaced: {old_text} → {text}")),
+                memory::Change::Removed => crate::memory_trace::saved(&home, &bot_id, &format!("removed: {old_text}")),
+                memory::Change::Duplicate => {},
+            }
+        }
+    }
     let mut message = match &change {
         memory::Change::Duplicate => format!("Already in {name}."),
         memory::Change::Appended { line } => format!("Saved in {name}: {line}"),
@@ -2935,6 +2975,21 @@ impl Tool for Recall {
         let limit = args["limit"].as_u64().map(|l| (l as usize).clamp(1, RECALL_MAX)).unwrap_or(RECALL_DEFAULT);
         if query.is_none() && since.is_none() && until.is_none() {
             return Err("Pass words to look for, or a time range.".into());
+        }
+        // Fast path: FTS5 index when a query is present and no time range narrows it.
+        if let Some(q) = query {
+            if since.is_none() && until.is_none() {
+                let fts = crate::memory_index::search(&self.app.config.home, q, limit);
+                if !fts.is_empty() {
+                    // Record trace for the explicit recall call too
+                    let snippets: Vec<String> = fts.iter().map(|h| h.snippet.clone()).collect();
+                    crate::memory_trace::recalled(&self.app.config.home, &self.bot.id, q, &snippets);
+                    let lines: Vec<String> = fts.iter().map(|h| format!("- {} · {} · {}", h.scope, h.title, h.snippet)).collect();
+                    let mut text = lines.join("\n");
+                    if lines.len() >= limit { text.push_str("\n(more in index; narrow the query)"); }
+                    return Ok(ToolResult::text(text).with_details(json!({ "summary": format!("Recalled {} (FTS)", lines.len()) })));
+                }
+            }
         }
         let regex = query
             .map(|q| {

@@ -202,6 +202,11 @@ async fn answer(app: &Arc<App>, from: &str, request: &Request) -> Result<Value, 
         "update.auto" => crate::update::set_auto(app, body["on"].as_bool().ok_or("missing on")?),
         #[cfg(feature = "cli")]
         "service.status" => crate::service::status_out(&app.config),
+        "memory.trace" => {
+            let bot_id = body["bot_id"].as_str();
+            let limit = body["limit"].as_u64().unwrap_or(30) as usize;
+            Ok(json!({ "trace": crate::memory_trace::recent(&app.config.home, bot_id, limit.clamp(1, 100)) }))
+        }
         other => Err(format!("Unknown request {other}")),
     }
 }
@@ -211,12 +216,16 @@ async fn answer(app: &Arc<App>, from: &str, request: &Request) -> Result<Value, 
 pub fn memory_read(app: &Arc<App>, bot_id: &str) -> Result<Value, String> {
     let bot = local_bot(app, bot_id)?;
     let store = MemoryStore::for_bot(&app.config.home, &bot);
+    // Best-effort: keep FTS in sync when inspector opens
+    crate::memory_index::ensure(&app.config.home);
+    let _ = crate::memory_index::reindex_bot(&app.config.home, bot_id);
     let mut overview = store.overview();
     overview["profile"] = crate::profile::overview(&crate::profile::store(&app.config.home));
     #[cfg(feature = "runner")]
     {
         overview["capture"] = crate::memory_capture::latest(&store).map(|run| json!(run)).unwrap_or(Value::Null);
     }
+    overview["trace"] = serde_json::json!(crate::memory_trace::recent(&app.config.home, Some(bot_id), 30));
     Ok(overview)
 }
 
@@ -250,6 +259,11 @@ pub fn answer_here(app: &Arc<App>, verb: &str, body: &Value) -> Result<Value, St
         "memory_capture.list" => {
             let bot = local_bot(app, body["bot_id"].as_str().ok_or("missing bot_id")?)?;
             Ok(json!({ "runs": crate::memory_capture::runs(&MemoryStore::for_bot(&app.config.home, &bot)) }))
+        }
+        "memory.trace" => {
+            let bot_id = body["bot_id"].as_str();
+            let limit = body["limit"].as_u64().unwrap_or(30) as usize;
+            Ok(json!({ "trace": crate::memory_trace::recent(&app.config.home, bot_id, limit.clamp(1, 100)) }))
         }
         #[cfg(feature = "runner")]
         "memory_capture.undo" => {

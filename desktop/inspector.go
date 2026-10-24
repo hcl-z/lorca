@@ -210,6 +210,7 @@ func (m *mainWindow) inspectorTab(c *ui.Context, chat *model.Chat, members []*mo
 		if single != nil {
 			m.inspectorMemory(c, single)
 			m.inspectorAboutYou(c, single)
+			m.inspectorTrace(c, single)
 		}
 		m.inspectorSkills(c, chat, members)
 		if single != nil {
@@ -597,6 +598,52 @@ func (m *mainWindow) inspectorAboutYou(c *ui.Context, bot *model.Bot) {
 		if _, result := actionRow(c, k, L("Shared notes"), actionRowOptions{Value: value, Tint: &tint, Action: L("Edit…"), Tooltip: L("Shared by every bot on %@.", memory.Runner)}); result.Action {
 			botID, runnerID, runner := bot.ID, bot.RunnerID, memory.Runner
 			m.presentProfile(runnerID, runner, profile, func() { s.refreshMemory(botID) })
+		}
+	})
+}
+
+// inspectorTrace is a tiny, human-readable memory timeline (desktop only, always on).
+func (m *mainWindow) inspectorTrace(c *ui.Context, bot *model.Bot) {
+	p := colors(c)
+	s := &m.inspector
+	memory, known := s.memory[bot.ID]
+	if !known || len(memory.Trace) == 0 {
+		return
+	}
+	// Show last 8, newest first
+	trace := memory.Trace
+	if len(trace) > 8 {
+		trace = trace[len(trace)-8:]
+	}
+	section(c, L("Memory trace"), sectionCaption, nil, func(k *card) {
+		for i := len(trace) - 1; i >= 0; i-- {
+			ev := trace[i]
+			icon, tint := "clock", p.Label2
+			title := ev.Text
+			switch ev.Kind {
+			case "recalled":
+				icon, tint = "magnifyingglass", p.Label
+				title = L("Recalled · %@", ev.Text)
+			case "saved":
+				icon, tint = "checkmark.circle", p.Green
+				title = L("Saved · %@", ev.Text)
+			case "superseded":
+				icon, tint = "arrow.triangle.2.circlepath", p.Orange
+				title = L("Replaced · %@", ev.Text)
+			}
+			// One line per event, human sentence already in ev.Text
+			_ = icon
+			_ = tint
+			// Use keyValueRow so it looks like the rest of the inspector
+			label := ev.Kind
+			if ev.Kind == "recalled" {
+				label = L("Recall")
+			} else if ev.Kind == "saved" {
+				label = L("Saved")
+			} else {
+				label = L("Updated")
+			}
+			keyValueRow(c, k, label, title, false, &p.Label2)
 		}
 	})
 }

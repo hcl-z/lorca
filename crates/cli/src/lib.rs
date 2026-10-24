@@ -44,6 +44,9 @@ pub mod memory;
 #[cfg(feature = "runner")]
 pub mod memory_capture;
 pub mod memory_check;
+pub mod memory_index;
+#[cfg(feature = "runner")]
+pub mod memory_trace;
 pub mod model;
 pub mod outputs;
 pub mod pairing;
