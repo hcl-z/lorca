@@ -576,6 +576,12 @@ func (m *mainWindow) inspectorMemory(c *ui.Context, bot *model.Bot) {
 		if row.Action {
 			showInFolder(joinPath(memory.Path, "MEMORY.md"))
 		}
+		// Lorca Dev shows what the bot's memory did, to watch it change while working on it.
+		if isDevelopment() && disclosureRow(c.Key("memory-trace"), k, L("Trace"), memoryTraceSummary(memory.Trace), &p.Label2) {
+			if current := store.Bot(bot.ID); current != nil {
+				m.presentMemoryTrace(current)
+			}
+		}
 	})
 }
 

@@ -206,8 +206,12 @@ async fn answer(app: &Arc<App>, from: &str, request: &Request) -> Result<Value, 
     }
 }
 
+/// How much of a bot's memory trace `memory.read` answers with.
+const TRACE_ENTRIES: usize = 50;
+
 /// A bot's memory as this Runner has it: the index with its budget and the other files by name,
-/// with the account's profile and the newest capture run, which the inspector shows beside it.
+/// with the account's profile, the newest capture run, and the bot's memory trace, which the
+/// inspector shows beside it.
 pub fn memory_read(app: &Arc<App>, bot_id: &str) -> Result<Value, String> {
     let bot = local_bot(app, bot_id)?;
     let store = MemoryStore::for_bot(&app.config.home, &bot);
@@ -217,6 +221,7 @@ pub fn memory_read(app: &Arc<App>, bot_id: &str) -> Result<Value, String> {
     {
         overview["capture"] = crate::memory_capture::latest(&store).map(|run| json!(run)).unwrap_or(Value::Null);
     }
+    overview["trace"] = json!(crate::memory_trace::recent(&app.config.home, bot_id, TRACE_ENTRIES));
     Ok(overview)
 }
 
