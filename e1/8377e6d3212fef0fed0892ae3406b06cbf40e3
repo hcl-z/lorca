@@ -1,0 +1,19 @@
+desktop/l10n/zh.go
+  s_5ddc42157b6cef::t_4ab43889b8e4c1 1042-1053,1504-1512
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "e18377e6d3212fef0fed0892ae3406b06cbf40e3",
+  "prompts": {},
+  "sessions": {
+    "s_5ddc42157b6cef": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d99e9dd8-5a15-453c-a0e6-8110ebe29f6f",
+        "model": "claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
