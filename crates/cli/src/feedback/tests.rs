@@ -418,6 +418,53 @@ async fn a_skill_revision_is_a_guarded_save_and_undoes_the_same_way() {
     assert_eq!(crate::skills::get(&s.app, &scope, &id).unwrap()["instructions"], "Summarize the inbox.");
     assert!(read_target(&s.app, &s.bot, &Target::Playbook { scope: Scope::bot("another-bot"), id }).await.is_err());
 }
+
+/// What the user corrected twice can become a skill of its own: accepting makes it, undoing
+/// removes it, and it never overwrites a skill or rests on one correction.
+#[tokio::test]
+async fn repeated_corrections_become_a_new_skill_the_user_accepts_and_can_undo() {
+    let s = scratch();
+    let scope = Scope::bot(&s.bot);
+    let target = Target::NewPlaybook { scope: scope.clone(), id: "weekly-report".into(), description: "How the user wants the weekly report written".into() };
+    let first = record(&s.app, &s.bot, input(&s, Kind::Explicit)).await.unwrap();
+    let second = record(&s.app, &s.bot, Record { note: "Again: decisions first, then blockers.".into(), ..input(&s, Kind::Explicit) }).await.unwrap();
+    let proposed = |evidence: Vec<String>| Proposed {
+        target: target.clone(),
+        after: json!("Open with what needs the user's decision, then blockers, then the rest."),
+        evidence,
+        explanation: "The user corrected the report's order twice.".into(),
+    };
+    assert!(propose(&s.app, &s.bot, proposed(vec![first.id.clone()])).await.unwrap_err().contains("two corrections"));
+    let bad_name = Proposed { target: Target::NewPlaybook { scope: scope.clone(), id: "Weekly Report".into(), description: "x".into() }, ..proposed(vec![first.id.clone(), second.id.clone()]) };
+    assert!(propose(&s.app, &s.bot, bad_name).await.unwrap_err().contains("slug"));
+    let elsewhere = Proposed { target: Target::NewPlaybook { scope: Scope::bot("another-bot"), id: "weekly-report".into(), description: "x".into() }, ..proposed(vec![first.id.clone(), second.id.clone()]) };
+    assert!(propose(&s.app, &s.bot, elsewhere).await.is_err(), "only this bot's or its group's scope");
+
+    let p = propose(&s.app, &s.bot, proposed(vec![first.id.clone(), second.id.clone()])).await.unwrap();
+    assert!(crate::skills::get(&s.app, &scope, "weekly-report").is_err(), "nothing is made until the user accepts");
+    let applied = decide(&s.app, &s.bot, &p.id, &p.diff_hash, true, "device").await.unwrap();
+    let view = crate::skills::get(&s.app, &scope, "weekly-report").unwrap();
+    assert_eq!(view["instructions"], "Open with what needs the user's decision, then blockers, then the rest.");
+    assert_eq!(view["description"], "How the user wants the weekly report written");
+    let again = Proposed { after: json!("Something else."), ..proposed(vec![first.id.clone(), second.id.clone()]) };
+    assert!(propose(&s.app, &s.bot, again).await.unwrap_err().contains("exists"), "a made skill is revised, not made again");
+
+    let current = read_target(&s.app, &s.bot, &target).await.unwrap();
+    rollback(&s.app, &s.bot, applied["revision"]["id"].as_str().unwrap(), &current.hash, "device").await.unwrap();
+    assert!(crate::skills::get(&s.app, &scope, "weekly-report").is_err(), "undoing removes it");
+
+    // The same proposal again is the one already decided, so a review does not suggest it twice.
+    let repeat = propose(&s.app, &s.bot, proposed(vec![first.id.clone(), second.id.clone()])).await.unwrap();
+    assert_eq!((repeat.id.as_str(), repeat.state.as_str()), (p.id.as_str(), "accepted"));
+
+    // A skill the user made under that name in between refuses the proposal it would overwrite.
+    let other = Proposed { after: json!("Decisions, then blockers, in five bullets."), ..proposed(vec![first.id.clone(), second.id.clone()]) };
+    let stale = propose(&s.app, &s.bot, other).await.unwrap();
+    let hand = crate::skills::Input { name: "weekly-report".into(), description: "Mine".into(), instructions: "My own way.".into(), files: Vec::new() };
+    crate::skills::save(&s.app, &scope, None, hand, "").unwrap();
+    assert!(decide(&s.app, &s.bot, &stale.id, &stale.diff_hash, true, "device").await.unwrap_err().contains("changed"));
+    assert_eq!(crate::skills::get(&s.app, &scope, "weekly-report").unwrap()["instructions"], "My own way.");
+}
 #[tokio::test]
 async fn review_decisions_become_feedback_once_and_nothing_else_does() {
     let s = scratch();
@@ -562,6 +609,50 @@ async fn bounded_coordinator_stages_concrete_diff_then_skips_reviewed_evidence()
         json!([])
     );
     assert_eq!(calls.load(Ordering::Relaxed), 1);
+    process.abort();
+}
+
+/// A review of a bot with no routine or skill to revise can still propose a new skill from two
+/// repeated corrections, and only in this bot's own scope.
+#[cfg(all(feature = "runner", feature = "server"))]
+#[tokio::test]
+async fn a_review_proposes_a_new_skill_from_repeated_corrections() {
+    use axum::{routing::post, Router};
+    let s = scratch();
+    let first = record(&s.app, &s.bot, input(&s, Kind::Explicit)).await.unwrap();
+    let second = record(&s.app, &s.bot, Record { note: "Again: the summary first.".into(), ..input(&s, Kind::Explicit) }).await.unwrap();
+    let elsewhere = Scope::bot("another-bot");
+    let replies = Arc::new(std::sync::Mutex::new(vec![
+        json!({"proposals":[{"target":{"kind":"new_playbook","scope":elsewhere,"id":"summary-first","description":"x"},"after":"x","evidence":[first.id,second.id],"explanation":"x"}]}),
+        json!({"proposals":[{"target":{"kind":"new_playbook","scope":Scope::bot(&s.bot),"id":"summary-first","description":"Put the summary before the details"},"after":"Open every report with a one-line summary, then the details.","evidence":[first.id,second.id],"explanation":"The user asked for the summary first twice."}]}),
+    ]));
+    let server = Router::new().route("/v1/chat/completions", post(move || {
+        let reply = replies.lock().unwrap().remove(0).to_string();
+        async move {
+            let chunk = json!({"id":"m","object":"chat.completion.chunk","model":"feedback-model","choices":[{"index":0,"delta":{"role":"assistant","content":reply},"finish_reason":null}]});
+            let done = json!({"id":"m","object":"chat.completion.chunk","model":"feedback-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}});
+            ([("content-type", "text/event-stream")], format!("data: {chunk}\n\ndata: {done}\n\ndata: [DONE]\n\n"))
+        }
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let process = tokio::spawn(async move { axum::serve(listener, server).await.unwrap() });
+    let custom = crate::credentials::CustomProvider {
+        name: "Feedback model".into(),
+        api: crate::credentials::CustomApi::ChatCompletions,
+        base_url: format!("http://{addr}/v1"),
+        api_key: String::new(),
+        models: vec![serde_json::from_value(json!({"id":"feedback-model","context_window":64000})).unwrap()],
+        created_at: 0,
+    };
+    s.app.credentials.lock().unwrap().custom.insert("custom:feedback".into(), custom);
+    s.app.state.lock().unwrap().bots[0].provider = "custom:feedback".into();
+
+    assert!(review::run(&s.app, &s.bot, false).await.unwrap_err().contains("outside this bot"));
+    // The refused review left the examples unreviewed, so the next one reads them again.
+    let result = review::run(&s.app, &s.bot, false).await.unwrap();
+    assert_eq!(result["proposals"][0]["target"]["kind"], "new_playbook");
+    assert!(crate::skills::get(&s.app, &Scope::bot(&s.bot), "summary-first").is_err(), "the review never makes it");
     process.abort();
 }
 

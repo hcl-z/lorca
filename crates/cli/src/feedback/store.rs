@@ -48,6 +48,9 @@ impl Origin {
 pub enum Target {
     RoutinePrompt { id: String },
     Playbook { scope: Scope, id: String },
+    /// A skill no folder holds yet, to make from what the user kept correcting. Its content is
+    /// its instructions; accepting it saves the skill, and undoing that removes it again.
+    NewPlaybook { scope: Scope, id: String, description: String },
 }
 pub use crate::skills::Scope;
 

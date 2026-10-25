@@ -10,6 +10,8 @@ export interface FeedbackTarget {
   kind: string;
   id?: string;
   scope?: { kind: string; id: string };
+  /// A skill the suggestion would make (`new_playbook`): what it does and when to use it.
+  description?: string;
 }
 
 export type FeedbackKind = "accepted" | "rejected" | "edited" | "explicit" | "routine_failure" | "ignored_alert";
