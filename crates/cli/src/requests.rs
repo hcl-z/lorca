@@ -156,7 +156,7 @@ async fn answer(app: &Arc<App>, from: &str, request: &Request) -> Result<Value, 
             memory_write(app, body["bot_id"].as_str().ok_or("missing bot_id")?, text, body["expected_hash"].as_str())
         }
         // The account's profile on this Runner, and a bot's prompt preview and capture runs.
-        "profile.read" | "profile.write" | "bots.prompt" | "memory_capture.list" | "memory_capture.undo" => answer_here(app, &request.verb, body),
+        "profile.read" | "profile.write" | "bots.prompt" | "memory_capture.list" | "memory_capture.undo" | "memory_tidy.undo" => answer_here(app, &request.verb, body),
         verb if verb.starts_with("feedback.") => crate::feedback::serve(app, verb, body, from).await,
         #[cfg(feature = "runner")]
         verb if verb.starts_with("plugins.") || verb == "permission.answer" || verb == "permissions.catalog" => crate::plugins::serve_request(app, verb, body, Some(from)).await,
@@ -206,8 +206,12 @@ async fn answer(app: &Arc<App>, from: &str, request: &Request) -> Result<Value, 
     }
 }
 
+/// How much of a bot's memory trace `memory.read` answers with.
+const TRACE_ENTRIES: usize = 50;
+
 /// A bot's memory as this Runner has it: the index with its budget and the other files by name,
-/// with the account's profile and the newest capture run, which the inspector shows beside it.
+/// with the account's profile, the newest capture run, and the bot's memory trace, which the
+/// inspector shows beside it.
 pub fn memory_read(app: &Arc<App>, bot_id: &str) -> Result<Value, String> {
     let bot = local_bot(app, bot_id)?;
     let store = MemoryStore::for_bot(&app.config.home, &bot);
@@ -217,6 +221,8 @@ pub fn memory_read(app: &Arc<App>, bot_id: &str) -> Result<Value, String> {
     {
         overview["capture"] = crate::memory_capture::latest(&store).map(|run| json!(run)).unwrap_or(Value::Null);
     }
+    overview["tidy"] = crate::memory_tidy::latest(&store).map(|run| json!(run)).unwrap_or(Value::Null);
+    overview["trace"] = json!(crate::memory_trace::recent(&app.config.home, bot_id, TRACE_ENTRIES));
     Ok(overview)
 }
 
@@ -252,10 +258,17 @@ pub fn answer_here(app: &Arc<App>, verb: &str, body: &Value) -> Result<Value, St
             Ok(json!({ "runs": crate::memory_capture::runs(&MemoryStore::for_bot(&app.config.home, &bot)) }))
         }
         #[cfg(feature = "runner")]
+        "memory_tidy.undo" => {
+            let bot = local_bot(app, body["bot_id"].as_str().ok_or("missing bot_id")?)?;
+            let run_id = body["run_id"].as_str().ok_or("missing run_id")?;
+            let restored = crate::memory_tidy::undo(&MemoryStore::for_bot(&app.config.home, &bot), run_id)?;
+            Ok(json!({ "restored": restored }))
+        }
+        #[cfg(feature = "runner")]
         "memory_capture.undo" => {
             let bot = local_bot(app, body["bot_id"].as_str().ok_or("missing bot_id")?)?;
             let run_id = body["run_id"].as_str().ok_or("missing run_id")?;
-            let removed = crate::memory_capture::undo(&MemoryStore::for_bot(&app.config.home, &bot), run_id)?;
+            let removed = crate::memory_capture::undo(&MemoryStore::for_bot(&app.config.home, &bot), &crate::profile::store(&app.config.home), run_id)?;
             Ok(json!({ "removed": removed }))
         }
         other => Err(format!("Unknown request {other}")),

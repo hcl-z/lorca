@@ -669,7 +669,7 @@ impl App {
         *self.relay_problem.lock().unwrap() = None;
         // The sync session ends on this instead of waiting for its socket to say something.
         self.outbox_notify.notify_waiters();
-        for path in [self.config.identity_path(), self.config.machine_path(), self.config.credentials_path(), self.config.settings_path(), self.config.home.join("playbooks.enc"), self.config.home.join("secrets.enc")] {
+        for path in [self.config.identity_path(), self.config.machine_path(), self.config.credentials_path(), self.config.settings_path(), self.config.home.join("playbooks.enc"), self.config.home.join("secrets.enc"), crate::profile_sync::path(&self.config.home)] {
             if path.exists() {
                 std::fs::remove_file(&path)?;
             }
@@ -764,10 +764,13 @@ impl App {
 
     pub fn push_roster(&self) {
         let Some(dek) = self.dek() else { return };
+        // Read before the state lock: what this Runner's PROFILE.md changed goes out with it.
+        let profile = crate::profile_sync::for_roster(&self.config.home, cfg!(feature = "runner"));
         let roster = {
             let state = self.state.lock().unwrap();
             RosterBlob {
                 workflows: Some(state.workflows.clone()),
+                profile: Some(profile),
                 bots: state.bots.clone(),
                 chats: state.chats.iter().map(|c| c.meta.clone()).collect(),
                 sections: state.sections.clone(),

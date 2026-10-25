@@ -185,6 +185,27 @@ async fn read_target(app: &Arc<App>, bot_id: &str, target: &Target) -> Result<Sn
                 revision: 0,
             }
         }
+        // A skill to make reads as no instructions while no folder holds it, and as its
+        // instructions once one does, so accepting it twice, or over a skill the user made in
+        // between, is refused as any stale proposal is.
+        Target::NewPlaybook { scope, id, description } => {
+            check_scope(app, bot_id, scope)?;
+            if id != &crate::skills::slugify(id) || id.is_empty() {
+                return Err("A new skill's name is a lowercase slug".into());
+            }
+            if description.trim().is_empty() || description.len() > 300 {
+                return Err("A new skill needs a one-line description of at most 300 bytes".into());
+            }
+            match crate::skills::get(app, scope, id) {
+                Ok(view) if view["builtin"] == true => return Err("A skill Lorca ships has this name".into()),
+                Ok(view) => Snapshot {
+                    content: json!(view["instructions"].as_str().unwrap_or_default()),
+                    hash: view["hash"].as_str().unwrap_or_default().into(),
+                    revision: 0,
+                },
+                Err(_) => store::snapshot(json!(""), 0),
+            }
+        }
     };
     let text = store::text(&snapshot.content);
     if text.len() > MAX_TEXT {
@@ -228,6 +249,18 @@ async fn propose_locked(
         }
     }
     let before = read_target(app, bot_id, &input.target).await?;
+    if let Target::NewPlaybook { description, .. } = &input.target {
+        // One correction is a preference; a way of working the bot should keep shows twice.
+        if input.evidence.len() < 2 {
+            return Err("A new skill rests on at least two corrections".into());
+        }
+        if !store::text(&before.content).is_empty() {
+            return Err("A skill with this name exists; propose a revision of it instead".into());
+        }
+        if memory::scrub(description) != *description {
+            return Err("A new skill's description must be free of credentials".into());
+        }
+    }
     if !input.after.is_string() {
         return Err("A revision is text only; permission, budget and schedule fields cannot be revised".into());
     }
@@ -320,6 +353,24 @@ async fn write_target(
             crate::skills::save(app, scope, Some(id), input, &before.hash)
                 .map(|_| ())
                 .map_err(|error| if error.contains("changed since") { "The skill changed; review a fresh proposal".into() } else { error })
+        }
+        Target::NewPlaybook { scope, id, description } => {
+            let instructions = after.as_str().ok_or("A skill's instructions are text")?;
+            match (store::text(&before.content).is_empty(), instructions.is_empty()) {
+                // Accepting makes the skill; a name in use since refuses it.
+                (true, false) => {
+                    if crate::skills::get(app, scope, id).is_ok() {
+                        return Err("A skill with this name exists now; review a fresh proposal".into());
+                    }
+                    let input = crate::skills::Input { name: id.clone(), description: description.clone(), instructions: instructions.into(), files: Vec::new() };
+                    crate::skills::save(app, scope, None, input, "").map(|_| ())
+                }
+                // Undoing removes it, while it is as the proposal left it.
+                (false, true) => crate::skills::remove(app, scope, id, Some(&before.hash))
+                    .map(|_| ())
+                    .map_err(|error| if error.contains("changed since") { "The skill changed; it can't be undone".into() } else { error }),
+                _ => Err("This skill can only be made or removed".into()),
+            }
         }
     }
 }

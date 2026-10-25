@@ -354,11 +354,22 @@ impl MemoryStore {
     /// The facts of the entries a supersede struck through: what changed, which a later write
     /// must not quietly bring back.
     pub fn superseded_facts(&self) -> Vec<String> {
+        // The housekeeping moves struck entries out of the index into `memory/history.md`.
+        let history = std::fs::read_to_string(self.topics_dir().join("history.md")).unwrap_or_default();
         self.read_index()
             .lines()
+            .chain(history.lines())
             .filter_map(|line| line.trim().strip_prefix("- ~~").and_then(|rest| rest.split_once("~~")).map(|(struck, _)| fact_of(struck)))
             .filter(|fact| !fact.is_empty())
             .collect()
+    }
+
+    /// Replaces one topic file under `memory/`, scrubbed of credentials as the index is.
+    pub fn write_topic(&self, name: &str, text: &str) -> Result<(), MemoryError> {
+        if !TOPIC_NAME.is_match(name) {
+            return Err(MemoryError::Invalid(format!("{name} is not a topic file name")));
+        }
+        self.write_file(&self.topics_dir().join(name), &scrub(text))
     }
 
     /// The facts the user removed, which `remove` records in `forgotten.md`.
@@ -519,6 +530,17 @@ impl MemoryStore {
         updated.push('\n');
         self.save_index(updated)?;
         Ok(Change::Superseded { line })
+    }
+
+    /// Takes back a supersede: the entry `line` names, struck through since, reads as `line`
+    /// again. False when no struck entry of it is left (the user changed it by hand).
+    pub fn restore(&self, line: &str) -> Result<bool, MemoryError> {
+        let body = line.trim().trim_start_matches("- ").trim();
+        let struck = format!("- ~~{body}~~");
+        let text = self.read_index();
+        let Some(found) = text.lines().find(|candidate| candidate.trim().starts_with(&struck)) else { return Ok(false) };
+        self.save_index(text.replacen(found, &format!("- {body}"), 1))?;
+        Ok(true)
     }
 
     /// One timestamped line in today's log: what happened, not what is true.
@@ -788,6 +810,19 @@ mod tests {
         assert_eq!(store.remove("the office is in Goa").unwrap(), Change::Removed);
         assert!(!store.read_index().contains("Goa"));
         assert_eq!(store.read_index().lines().count(), 2, "{}", store.read_index());
+    }
+
+    #[test]
+    fn a_supersede_is_taken_back() {
+        let (_dir, store) = store();
+        store.append_entry("the office is in Pune", None, 0).unwrap();
+        let old = store.read_index().lines().next().unwrap().to_string();
+        let Change::Superseded { line } = store.supersede("the office is in Pune", "the office is in Goa", None, 86_400).unwrap() else { panic!() };
+        store.remove(&line).unwrap();
+        assert!(store.restore(&old).unwrap());
+        assert_eq!(store.read_index(), format!("{old}\n"));
+        assert!(crate::memory_check::check("the office is in Goa", &store).is_err(), "the taken-back fact stays forgotten");
+        assert!(!store.restore(&old).unwrap(), "nothing struck is left to restore");
     }
 
     #[test]

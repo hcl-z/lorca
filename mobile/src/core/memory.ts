@@ -28,6 +28,17 @@ export interface CaptureRun {
   undone: boolean;
 }
 
+/// The newest pass of the memory housekeeping that moved lines out of MEMORY.md, while it is not
+/// undone: struck-through history to memory/history.md, unused entries to memory/archive.md.
+export interface TidyRun {
+  id: string;
+  /// Unix seconds.
+  at: number;
+  history: string[];
+  archived: string[];
+  undone: boolean;
+}
+
 export interface BotMemory {
   bot_id: string;
   /// The bot runs on this Device.
@@ -38,6 +49,7 @@ export interface BotMemory {
   topics: string[];
   profile: MemoryFile;
   capture: CaptureRun | null;
+  tidy?: TidyRun | null;
 }
 
 export interface Profile extends MemoryFile {
@@ -80,6 +92,11 @@ export function writeProfile(runnerId: string, text: string, expectedHash: strin
 /// Forgets what a capture run added.
 export function undoCapture(botId: string, runId: string): Promise<{ removed: number }> {
   return core.request("memory_capture.undo", { bot_id: botId, run_id: runId });
+}
+
+/// Puts back what a housekeeping pass moved out of MEMORY.md.
+export function undoTidy(botId: string, runId: string): Promise<{ restored: number }> {
+  return core.request("memory_tidy.undo", { bot_id: botId, run_id: runId });
 }
 
 export function promptPreview(botId: string, chatId: string): Promise<PromptPreview> {

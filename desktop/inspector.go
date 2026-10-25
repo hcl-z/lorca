@@ -557,6 +557,14 @@ func (m *mainWindow) inspectorMemory(c *ui.Context, bot *model.Bot) {
 			}
 		}
 		// What the last capture learned from the bot's direct chat, and taking it back.
+		// What the housekeeping moved out of MEMORY.md, and putting it back.
+		if tidy := memory.Tidy; tidy != nil {
+			moved := append(slices.Clone(tidy.Archived), tidy.History...)
+			tip := L("Moved to memory/history.md and memory/archive.md, where recall still finds them.")
+			if _, result := actionRow(c, k, L("Tidied"), actionRowOptions{Value: tidy.Summary(), Tint: &p.Label2, Action: L("Undo…"), Tooltip: tip}); result.Action {
+				m.confirmUndoTidy(bot.ID, tidy.ID, moved)
+			}
+		}
 		if capture := memory.Capture; capture != nil && !capture.Undone && len(capture.Added) > 0 {
 			learned := L("1 fact from a recent chat")
 			if len(capture.Added) != 1 {
@@ -575,6 +583,12 @@ func (m *mainWindow) inspectorMemory(c *ui.Context, bot *model.Bot) {
 		_, row := actionRow(c, k, L("Folder"), actionRowOptions{Value: folder, Tint: &p.Label2, Action: action, Tooltip: memory.Path})
 		if row.Action {
 			showInFolder(joinPath(memory.Path, "MEMORY.md"))
+		}
+		// Lorca Dev shows what the bot's memory did, to watch it change while working on it.
+		if isDevelopment() && disclosureRow(c.Key("memory-trace"), k, L("Trace"), memoryTraceSummary(memory.Trace), &p.Label2) {
+			if current := store.Bot(bot.ID); current != nil {
+				m.presentMemoryTrace(current)
+			}
 		}
 	})
 }
@@ -615,6 +629,27 @@ func (m *mainWindow) confirmUndoCapture(botID, runID string, facts []string) {
 		store.UndoCapture(botID, runID, func(err error) {
 			if err != nil {
 				m.showAlert(alertOptions{Message: L("Couldn't forget the learned facts"), Informative: model.ErrorText(err)}, nil)
+				return
+			}
+			m.inspector.refreshMemory(botID)
+		})
+	})
+}
+
+// confirmUndoTidy lists what a housekeeping pass moved and puts it back in MEMORY.md on the user's
+// word.
+func (m *mainWindow) confirmUndoTidy(botID, runID string, lines []string) {
+	m.showAlert(alertOptions{
+		Message:     L("Put back what was tidied?"),
+		Informative: strings.Join(model.CaptureFacts(lines), "\n"),
+		Buttons:     []alertButton{{Title: L("Put Back")}, {Title: L("Cancel")}},
+	}, func(index int) {
+		if index != 0 {
+			return
+		}
+		store.UndoTidy(botID, runID, func(err error) {
+			if err != nil {
+				m.showAlert(alertOptions{Message: L("Couldn't undo it"), Informative: model.ErrorText(err)}, nil)
 				return
 			}
 			m.inspector.refreshMemory(botID)

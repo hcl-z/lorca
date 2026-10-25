@@ -44,12 +44,16 @@ pub mod memory;
 #[cfg(feature = "runner")]
 pub mod memory_capture;
 pub mod memory_check;
+pub mod memory_index;
+pub mod memory_tidy;
+pub mod memory_trace;
 pub mod model;
 pub mod outputs;
 pub mod pairing;
 pub mod permissions;
 pub mod plugins;
 pub mod profile;
+pub mod profile_sync;
 pub mod project_context;
 #[cfg(feature = "provider-auth")]
 pub mod provider_auth;

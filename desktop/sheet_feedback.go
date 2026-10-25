@@ -420,8 +420,11 @@ type feedbackItemState struct {
 }
 
 func feedbackTargetKind(kind string) string {
-	if kind == "playbook" {
+	switch kind {
+	case "playbook":
 		return L("Skill")
+	case "new_playbook":
+		return L("New skill")
 	}
 	return L("Task")
 }
@@ -463,6 +466,9 @@ func (m *mainWindow) presentFeedbackSuggestion(botID string, f model.BotFeedback
 			},
 		}, func() {
 			ui.Text(c, suggestion.Explanation).FontSize(13).LineHeight(1.4).Selectable()
+			if target := suggestion.Target; target.IsNewSkill() && target.Description != "" {
+				caption(c, L("“%@”: %@", target.ID, target.Description))
+			}
 			section(c, feedbackTargetKind(suggestion.Target.Kind), sectionCaption, nil, func(k *card) { feedbackDiff(c, k, suggestion.Diff) })
 			var notes []model.FeedbackNote
 			for _, id := range suggestion.Evidence {

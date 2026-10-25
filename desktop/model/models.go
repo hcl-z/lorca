@@ -1311,6 +1311,30 @@ type BotMemory struct {
 	Profile Profile
 	// The newest capture run that was not undone, if there is one.
 	Capture *CaptureRun
+	// The newest housekeeping pass that moved lines out of MEMORY.md, while it is not undone.
+	Tidy *TidyRun
+	// What the bot's memory did lately, newest first.
+	Trace []MemoryEvent
+}
+
+// MemoryEventKind is what a memory event was: a turn given remembered lines, a fact saved, or a
+// fact the write gate refused.
+type MemoryEventKind string
+
+const (
+	MemoryRecalled MemoryEventKind = "recalled"
+	MemorySaved    MemoryEventKind = "saved"
+	MemoryRefused  MemoryEventKind = "refused"
+)
+
+// MemoryEvent is one thing a bot's memory did, as its Runner traced it. Text is the user's
+// message for a recall and the fact otherwise; Detail is the lines recalled, the file a fact went
+// to, or why it was refused.
+type MemoryEvent struct {
+	At     int64
+	Kind   MemoryEventKind
+	Text   string
+	Detail []string
 }
 
 // Profile is the account's PROFILE.md on a Runner: what every bot there knows about the user.
@@ -1335,6 +1359,27 @@ type CaptureRun struct {
 	Added   []string
 	Refused []string
 	Undone  bool
+}
+
+// TidyRun is one housekeeping pass over MEMORY.md: the struck-through lines it moved to
+// memory/history.md, and the unused entries it moved to memory/archive.md.
+type TidyRun struct {
+	ID       string
+	At       int64
+	History  []string
+	Archived []string
+}
+
+// Summary is what the pass did, in a line.
+func (r TidyRun) Summary() string {
+	var parts []string
+	if n := len(r.Archived); n > 0 {
+		parts = append(parts, L("%d unused archived", n))
+	}
+	if n := len(r.History); n > 0 {
+		parts = append(parts, L("%d replaced moved to history", n))
+	}
+	return strings.Join(parts, " · ")
 }
 
 // CaptureFacts is the facts of memory lines as a person reads them, without the bullet, the
