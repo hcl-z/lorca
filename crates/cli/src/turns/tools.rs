@@ -169,7 +169,7 @@ pub(super) fn turn_tools(
             event: trigger.event.clone(),
         }),
     ];
-    own.extend(memory_tools(app, store, chat));
+    own.extend(memory_tools(app, bot, store, chat));
     own.push(Arc::new(Recall { app: app.clone(), store: store.clone(), bot: bot.clone() }));
     own.push(Arc::new(crate::project_context::ProjectContextTool { app: app.clone(), chat_id: chat_id.clone(), bot: bot.clone() }));
     // Commands run in terminals of their own, kept on this Runner past the turn when they
