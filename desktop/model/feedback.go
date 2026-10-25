@@ -18,7 +18,12 @@ type FeedbackTarget struct {
 	Kind  string         `json:"kind"`
 	ID    string         `json:"id,omitempty"`
 	Scope *FeedbackScope `json:"scope,omitempty"`
+	// Description is a skill the suggestion would make: what it does and when to use it.
+	Description string `json:"description,omitempty"`
 }
+
+// IsNewSkill is whether the target is a skill a suggestion makes, which no folder holds yet.
+func (t FeedbackTarget) IsNewSkill() bool { return t.Kind == "new_playbook" }
 
 // FeedbackScope is a skill's scope: a bot, or a group's project.
 type FeedbackScope struct {

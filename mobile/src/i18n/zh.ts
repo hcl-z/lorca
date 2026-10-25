@@ -685,6 +685,8 @@ export const zh: Record<string, string> = {
   "This suggestion changed on another Device.": "这条建议已在另一台设备上改动。",
   "This suggestion is based on feedback you excluded.": "这条建议依据的是你已排除的反馈。",
   "Skill": "技能",
+  "New skill": "新技能",
+  "“{name}”: {description}": "“{name}”：{description}",
   "Couldn't make the change": "无法修改",
   "Based on": "依据",
   "Couldn't reject it": "无法拒绝",

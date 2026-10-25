@@ -16,7 +16,7 @@ import { daySeparator, stamp } from "../../src/ui/format";
 import { SaveToolbar } from "../../src/ui/navigation";
 import { usePalette } from "../../src/ui/theme";
 
-const kindWord = (target: FeedbackTarget) => (target.kind === "playbook" ? t("Skill") : t("Task"));
+const kindWord = (target: FeedbackTarget) => (target.kind === "playbook" ? t("Skill") : target.kind === "new_playbook" ? t("New skill") : t("Task"));
 
 /// The lines a change takes out on red and puts in on green, as tracked changes read.
 function Diff({ diff }: { diff: string }) {
@@ -70,6 +70,9 @@ export default function FeedbackItemScreen() {
           <View style={styles.header}>
             <Text style={[styles.kicker, { color: p.secondaryLabel }]}>{t("Suggested change")}</Text>
             <Text style={[styles.explanation, { color: p.label }]}>{suggestion.explanation}</Text>
+            {target.kind === "new_playbook" && target.description ? (
+              <Text style={[styles.kicker, { color: p.secondaryLabel }]}>{t("“{name}”: {description}", { name: target.id ?? "", description: target.description })}</Text>
+            ) : null}
           </View>
           <Section title={kindWord(target)}>
             <Diff diff={suggestion.diff} />

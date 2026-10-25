@@ -986,6 +986,8 @@ var zh = map[string]string{
 	"sk-ant-… from console.anthropic.com": "sk-ant-…，来自 console.anthropic.com",
 	"sk-or-… from openrouter.ai/keys":     "sk-or-…，来自 openrouter.ai/keys",
 	"Skill":                               "技能",
+	"New skill":                           "新技能",
+	"“%@”: %@":                            "“%1$@”：%2$@",
 	"Skills":                              "技能",
 	"Skip":                                "跳过",
 	"Skip for Now":                        "暂时跳过",
