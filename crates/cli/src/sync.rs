@@ -1195,6 +1195,8 @@ fn apply_roster(app: &Arc<App>, mut roster: RosterBlob) {
     let kept_permissions;
     let kept_unpaired;
     let unpaired_grew;
+    // Outside the state lock: it reads and writes this Runner's PROFILE.md.
+    let kept_profile = crate::profile_sync::take(&app.config.home, roster.profile.take(), cfg!(feature = "runner"));
     let removed_bots: Vec<String>;
     {
         let mut state = app.state.lock().unwrap();
@@ -1246,7 +1248,7 @@ fn apply_roster(app: &Arc<App>, mut roster: RosterBlob) {
     app.shell_sessions.close_orphans(app);
     #[cfg(feature = "runner")]
     app.coding_agents.close_orphans(app);
-    app.roster_changed(normalized_descriptions || kept_checks || kept_permissions || kept_workflows || kept_unpaired);
+    app.roster_changed(normalized_descriptions || kept_checks || kept_permissions || kept_workflows || kept_unpaired || kept_profile);
     if unpaired_grew {
         app.rotation_due.store(true, Ordering::Relaxed);
     }

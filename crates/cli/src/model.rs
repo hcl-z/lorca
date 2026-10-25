@@ -1336,6 +1336,10 @@ pub struct RosterBlob {
     /// workflows leaves the field out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workflows: Option<Vec<crate::workflows::Setup>>,
+    /// The account's profile of the user, entry by entry (`profile_sync`); a build that does not
+    /// know it leaves the field out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<crate::profile_sync::Entries>,
     pub bots: Vec<Bot>,
     pub chats: Vec<ChatMeta>,
     /// The sidebar's sections, in order.

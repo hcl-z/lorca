@@ -52,6 +52,7 @@ pub mod pairing;
 pub mod permissions;
 pub mod plugins;
 pub mod profile;
+pub mod profile_sync;
 pub mod project_context;
 #[cfg(feature = "provider-auth")]
 pub mod provider_auth;
