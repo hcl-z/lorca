@@ -37,6 +37,10 @@ pub struct Run {
     pub history: Vec<String>,
     /// The entries moved to `memory/archive.md`.
     pub archived: Vec<String>,
+    /// The expiries this pass settled, each a fact key and the day it stopped being true, so
+    /// undoing the pass gives them back.
+    #[serde(default)]
+    pub expired: Vec<(String, String)>,
     pub undone: bool,
 }
 
@@ -123,6 +127,10 @@ pub fn tidy(home: &Path, bot_id: &str, store: &MemoryStore, now: i64) -> Result<
     let (max_lines, max_bytes) = store.budget();
     let full = text.lines().count() as f64 >= max_lines as f64 * ARCHIVE_AT || text.len() as f64 >= max_bytes as f64 * ARCHIVE_AT;
     let recalled = if full { recalled_since(home, bot_id, now - UNUSED_SECS) } else { Default::default() };
+    // A fact with a deadline goes the day after it, whether or not the file is full.
+    let today = memory::local_time(now).date;
+    let expiries = store.expiries();
+    let mut expired: Vec<(String, String)> = Vec::new();
     let mut history = Vec::new();
     let mut archived = Vec::new();
     let mut kept = Vec::new();
@@ -131,6 +139,14 @@ pub fn tidy(home: &Path, bot_id: &str, store: &MemoryStore, now: i64) -> Result<
         if trimmed.starts_with("- ~~") {
             history.push(trimmed.to_string());
             continue;
+        }
+        if trimmed.starts_with("- ") {
+            let key = memory::expiry_key(trimmed);
+            if let Some(expiry) = expiries.get(&key).filter(|expiry| expiry.day().is_some_and(|day| day < today.as_str())) {
+                archived.push(trimmed.to_string());
+                expired.push((key, expiry.until.clone()));
+                continue;
+            }
         }
         let unused = full
             && archived.len() < MAX_ARCHIVED
@@ -158,7 +174,18 @@ pub fn tidy(home: &Path, bot_id: &str, store: &MemoryStore, now: i64) -> Result<
         new.push('\n');
     }
     store.write_index(&new, Some(&memory::hash_text(&text))).map_err(|e| e.to_string())?;
-    let run = Run { id: format!("tidy-{}", uuid::Uuid::new_v4()), at: now, history, archived, undone: false };
+    for (key, _) in &expired {
+        store.set_expiry(key, None);
+    }
+    // A deadline whose fact is gone already (superseded, removed) is settled here too, without
+    // anything to move.
+    let live: std::collections::HashSet<String> = new.lines().map(memory::expiry_key).collect();
+    for key in expiries.keys() {
+        if !live.contains(key) && expiries[key].day().is_some_and(|day| day < today.as_str()) {
+            store.set_expiry(key, None);
+        }
+    }
+    let run = Run { id: format!("tidy-{}", uuid::Uuid::new_v4()), at: now, history, archived, expired, undone: false };
     save_run(store, &run)?;
     Ok(Some(run))
 }
@@ -198,6 +225,10 @@ pub fn undo(store: &MemoryStore, run_id: &str) -> Result<usize, String> {
     store.write_index(&new, Some(&memory::hash_text(&text))).map_err(|e| e.to_string())?;
     take_from_topic(store, HISTORY, &run.history)?;
     take_from_topic(store, ARCHIVE, &run.archived)?;
+    for (key, until) in &run.expired {
+        let line = run.archived.iter().find(|line| &memory::expiry_key(line) == key).cloned().unwrap_or_default();
+        store.set_expiry(key, Some(memory::Expiry { until: until.clone(), line }));
+    }
     run.undone = true;
     save_run(store, &run)?;
     Ok(back.len())
@@ -298,6 +329,32 @@ mod tests {
         assert!(store.topics().contains(&ARCHIVE.to_string()), "a topic file, so recall finds it");
         assert_eq!(undo(&store, &run.id).unwrap(), 4);
         assert!(store.read_index().contains("the user likes tea"));
+    }
+
+    #[test]
+    fn a_fact_with_a_passed_deadline_is_archived_and_undo_gives_it_back() {
+        let (home, store) = scratch();
+        let at = day("2026-10-01");
+        store.append_entry("the user is on leave", None, at).unwrap();
+        let line = store.read_index().lines().next().unwrap().to_string();
+        store.set_expiry(&memory::expiry_key(&line), Some(memory::Expiry { until: "2026-10-20".into(), line: line.clone() }));
+        // One of eight lines: not near the budget, so only the deadline can move it.
+        let run = tidy(&home.0, "b1", &store, day("2026-10-21")).unwrap().unwrap();
+        assert_eq!(run.archived, [line.clone()]);
+        assert_eq!(run.expired.len(), 1);
+        assert!(!store.read_index().contains("on leave"));
+        assert!(store.expiries().is_empty(), "the deadline is settled");
+        assert!(std::fs::read_to_string(store.topics_dir().join(ARCHIVE)).unwrap().contains("on leave"));
+
+        // Before its day, a fact with a deadline stays.
+        let other = scratch();
+        other.1.append_entry("the user is travelling", None, at).unwrap();
+        let line = other.1.read_index().lines().next().unwrap().to_string();
+        other.1.set_expiry(&memory::expiry_key(&line), Some(memory::Expiry { until: "2026-10-21".into(), line }));
+        assert_eq!(tidy(&other.0.0, "b1", &other.1, day("2026-10-21")).unwrap(), None, "the day itself is still in");
+        assert_eq!(undo(&store, &run.id).unwrap(), 1);
+        assert!(store.read_index().contains("on leave"));
+        assert_eq!(store.expiries().len(), 1, "its deadline comes back with it");
     }
 
     #[test]

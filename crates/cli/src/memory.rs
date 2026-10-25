@@ -56,6 +56,27 @@ impl From<std::io::Error> for MemoryError {
     }
 }
 
+/// A fact that stops being true on a date, as a `YYYY-MM-DD` day, and the line as it was saved.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Expiry {
+    pub until: String,
+    /// The entry line, so the fact can be matched back to it.
+    #[serde(default)]
+    pub line: String,
+}
+
+impl Expiry {
+    /// The date as a day, when it is one.
+    pub fn day(&self) -> Option<&str> {
+        DATE.is_match(&self.until).then_some(self.until.as_str())
+    }
+}
+
+/// The key a fact is held under when it expires: what `fact_of` keeps, lowercased.
+pub fn expiry_key(line: &str) -> String {
+    fact_of(line).to_lowercase()
+}
+
 /// What a change to `MEMORY.md` did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Change {
@@ -380,6 +401,40 @@ impl MemoryStore {
             .map(fact_of)
             .filter(|fact| !fact.is_empty())
             .collect()
+    }
+
+    /// The facts that stop being true on a date, by fact key, from `expiring.json`.
+    pub fn expiries(&self) -> std::collections::BTreeMap<String, Expiry> {
+        std::fs::read_to_string(self.dir.join("expiring.json")).ok().and_then(|text| serde_json::from_str(&text).ok()).unwrap_or_default()
+    }
+
+    /// Records that a fact stops being true on `expiry.until`, or forgets that it does with
+    /// `None`.
+    pub fn set_expiry(&self, key: &str, expiry: Option<Expiry>) {
+        let mut expiries = self.expiries();
+        match expiry {
+            Some(expiry) => {
+                if expiries.get(key) == Some(&expiry) {
+                    return;
+                }
+                expiries.insert(key.to_string(), expiry);
+            }
+            None => {
+                if expiries.remove(key).is_none() {
+                    return;
+                }
+            }
+        }
+        let path = self.dir.join("expiring.json");
+        let saved = (|| -> std::io::Result<()> {
+            std::fs::create_dir_all(&self.dir)?;
+            let tmp = path.with_extension("json.tmp");
+            std::fs::write(&tmp, serde_json::to_vec_pretty(&expiries)?)?;
+            std::fs::rename(&tmp, &path)
+        })();
+        if let Err(error) = saved {
+            tracing::warn!(%error, "saving when remembered facts expire");
+        }
     }
 
     fn write_file(&self, path: &Path, text: &str) -> Result<(), MemoryError> {
