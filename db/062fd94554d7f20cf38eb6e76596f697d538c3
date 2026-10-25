@@ -1,0 +1,62 @@
+crates/cli/src/requests.rs
+  s_5ddc42157b6cef::t_16f2565e3f0dff 159,224,261-265
+crates/cli/src/memory_index.rs
+  s_5ddc42157b6cef::t_be0bd0a787fe58 181-182,196,199-201,203,287-289,292
+  s_5ddc42157b6cef::t_16ce729d75090d 183-190,202,204
+crates/cli/src/memory_tidy.rs
+  s_5ddc42157b6cef::t_006ebda376751b 1-314
+crates/cli/src/routines.rs
+  s_5ddc42157b6cef::t_7d523d7bc95e7c 583
+desktop/model/wire.go
+  s_5ddc42157b6cef::t_218b97dd45e9c6 660-666,1423-1424
+crates/cli/src/turns.rs
+  s_5ddc42157b6cef::t_950ae86e8e2378 2332-2334
+crates/cli/src/lib.rs
+  s_5ddc42157b6cef::t_7d523d7bc95e7c 48
+desktop/inspector.go
+  s_5ddc42157b6cef::t_218b97dd45e9c6 560-567,639-652
+crates/cli/src/memory.rs
+  s_5ddc42157b6cef::t_7d523d7bc95e7c 357-358,361,367-372
+crates/cli/src/memory_trace.rs
+  s_5ddc42157b6cef::t_d24dcf1fa1c361 60,62-63,96,101,106
+  s_5ddc42157b6cef::t_b51077cbb889f9 29-32
+  s_5ddc42157b6cef::t_9066a55ec64bd7 91-92,133,136
+  s_5ddc42157b6cef::t_fc6136c78c3d86 140
+docs/architecture/memory.md
+  s_5ddc42157b6cef::t_3849ea49e65f49 68
+  s_5ddc42157b6cef::t_a79d2f01aa2bcf 57-65
+desktop/model/models.go
+  s_5ddc42157b6cef::t_218b97dd45e9c6 1314-1315,1364-1382
+mobile/app/chat-info/memory/[id].tsx
+  s_5ddc42157b6cef::t_8027fa7399f300 10,18-24
+  s_5ddc42157b6cef::t_101dcac1a7aa0d 25
+  s_5ddc42157b6cef::t_a02cc72d4535e4 48-63,124-132
+mobile/src/core/memory.ts
+  s_5ddc42157b6cef::t_a02cc72d4535e4 31-41,52,97-99
+desktop/model/store.go
+  s_5ddc42157b6cef::t_218b97dd45e9c6 2269-2282
+crates/cli/src/api.rs
+  s_5ddc42157b6cef::t_16f2565e3f0dff 494
+desktop/l10n/zh.go
+  s_5ddc42157b6cef::t_09991873f2bb26 1573-1574
+  s_5ddc42157b6cef::t_df15ba4b0d3952 1544-1550
+  s_5ddc42157b6cef::t_520133d0bcc9a4 1568-1572
+mobile/src/i18n/zh.ts
+  s_5ddc42157b6cef::t_df15ba4b0d3952 1070-1075
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "db062fd94554d7f20cf38eb6e76596f697d538c3",
+  "prompts": {},
+  "sessions": {
+    "s_5ddc42157b6cef": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d99e9dd8-5a15-453c-a0e6-8110ebe29f6f",
+        "model": "claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
