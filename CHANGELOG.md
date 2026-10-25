@@ -8,6 +8,17 @@ phone app's.
 
 ## [Unreleased]
 
+## [1.0.28]
+
+- A bot remembers what bears on the message you just sent: each turn carries the lines from its memory, its topic notes, and what its computer knows about you that match your words, found by search rather than by the whole file, in English and in Chinese, Japanese, or Korean.
+- What you say about yourself reaches every bot on every computer you run Lorca on, and a fact that changed replaces the old one instead of sitting beside it: "I moved to Hangzhou" strikes "lives in Shanghai". A fact you removed, or one a newer fact replaced, stays gone on every computer. No relay update is needed.
+- A fact with a deadline, such as leave or a trip, is remembered until it ends and then put aside.
+- What a bot remembered from a chat now shows in the chat as a quiet line naming it, with where to undo it.
+- Each bot tidies its own memory once a day: what changed over time moves to a history note, and notes no message has needed for two months move to an archive once memory is nearly full. Everything moved is still searchable, and any tidy can be undone from the bot's memory.
+- A way of working you keep correcting can become a skill: the bot suggests it from two examples, and you accept or reject it like any other suggested change.
+- Lorca Dev shows what a bot's memory did: the lines a turn was reminded of, what was saved, and what was refused.
+
+
 ## [1.0.27]
 
 - The phone opens faster: a launch shows your chats as you last saw them while the account loads, the first chat you open measures only messages it has not drawn before, and a message that arrives changes only its own chat on screen.
