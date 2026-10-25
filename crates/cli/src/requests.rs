@@ -260,7 +260,7 @@ pub fn answer_here(app: &Arc<App>, verb: &str, body: &Value) -> Result<Value, St
         "memory_capture.undo" => {
             let bot = local_bot(app, body["bot_id"].as_str().ok_or("missing bot_id")?)?;
             let run_id = body["run_id"].as_str().ok_or("missing run_id")?;
-            let removed = crate::memory_capture::undo(&MemoryStore::for_bot(&app.config.home, &bot), run_id)?;
+            let removed = crate::memory_capture::undo(&MemoryStore::for_bot(&app.config.home, &bot), &crate::profile::store(&app.config.home), run_id)?;
             Ok(json!({ "removed": removed }))
         }
         other => Err(format!("Unknown request {other}")),

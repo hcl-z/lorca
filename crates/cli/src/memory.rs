@@ -521,6 +521,17 @@ impl MemoryStore {
         Ok(Change::Superseded { line })
     }
 
+    /// Takes back a supersede: the entry `line` names, struck through since, reads as `line`
+    /// again. False when no struck entry of it is left (the user changed it by hand).
+    pub fn restore(&self, line: &str) -> Result<bool, MemoryError> {
+        let body = line.trim().trim_start_matches("- ").trim();
+        let struck = format!("- ~~{body}~~");
+        let text = self.read_index();
+        let Some(found) = text.lines().find(|candidate| candidate.trim().starts_with(&struck)) else { return Ok(false) };
+        self.save_index(text.replacen(found, &format!("- {body}"), 1))?;
+        Ok(true)
+    }
+
     /// One timestamped line in today's log: what happened, not what is true.
     pub fn append_log(&self, text: &str, source: Option<&str>, now: i64) -> Result<String, MemoryError> {
         let what = normalise(text);
@@ -788,6 +799,19 @@ mod tests {
         assert_eq!(store.remove("the office is in Goa").unwrap(), Change::Removed);
         assert!(!store.read_index().contains("Goa"));
         assert_eq!(store.read_index().lines().count(), 2, "{}", store.read_index());
+    }
+
+    #[test]
+    fn a_supersede_is_taken_back() {
+        let (_dir, store) = store();
+        store.append_entry("the office is in Pune", None, 0).unwrap();
+        let old = store.read_index().lines().next().unwrap().to_string();
+        let Change::Superseded { line } = store.supersede("the office is in Pune", "the office is in Goa", None, 86_400).unwrap() else { panic!() };
+        store.remove(&line).unwrap();
+        assert!(store.restore(&old).unwrap());
+        assert_eq!(store.read_index(), format!("{old}\n"));
+        assert!(crate::memory_check::check("the office is in Goa", &store).is_err(), "the taken-back fact stays forgotten");
+        assert!(!store.restore(&old).unwrap(), "nothing struck is left to restore");
     }
 
     #[test]
