@@ -1,0 +1,39 @@
+crates/cli/src/memory_capture.rs
+  s_5ddc42157b6cef::t_6c10f3d4781b3e 58-62,142-146,156-160
+  s_5ddc42157b6cef::t_d1e49ca8d865c0 252-258
+  s_5ddc42157b6cef::t_fa332f92058255 306-307,309-310,313-319,324-325,328,332-336,339-345,351-353,357-358,360-374,382-390,392-397
+  s_5ddc42157b6cef::t_f9c22dd27ca3b5 320-323,326,329,346-348,375,606,608-611,615-616,620
+  s_5ddc42157b6cef::t_2daf4492279d49 356,377
+  s_5ddc42157b6cef::t_300208ce5478fb 424-429
+  s_5ddc42157b6cef::t_5afeac8b05d9f4 506-511,645,648,652,656,660-661
+  s_5ddc42157b6cef::t_c1dfacf521edc8 600,621
+  s_5ddc42157b6cef::t_6e71512548854e 331
+  s_5ddc42157b6cef::t_5f7e6142c731b7 404-407
+  s_5ddc42157b6cef::t_f7610445449985 558-568,586-599,601-605,607,612-614,617-619,622-640
+  s_5ddc42157b6cef::t_5a8e33e5ccdc72 569-585
+  s_5ddc42157b6cef::t_bbc77914e064ed 54-55,57,151-155,308,311-312,376,378-380
+crates/cli/src/memory.rs
+  s_5ddc42157b6cef::t_aad93840ab71fa 524-534
+  s_5ddc42157b6cef::t_491f00769b20bd 805-816
+crates/cli/src/requests.rs
+  s_5ddc42157b6cef::t_8aa4a34f0cae67 263
+docs/architecture/memory.md
+  s_5ddc42157b6cef::t_a4c34a70f2b47e 55
+  s_5ddc42157b6cef::t_24ab6747bfeca3 33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "907c60dba470fa11efe550391e58355232ce12e7",
+  "prompts": {},
+  "sessions": {
+    "s_5ddc42157b6cef": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d99e9dd8-5a15-453c-a0e6-8110ebe29f6f",
+        "model": "claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
