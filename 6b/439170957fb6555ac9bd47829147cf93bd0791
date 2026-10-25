@@ -1,0 +1,47 @@
+crates/cli/src/feedback/store.rs
+  s_5ddc42157b6cef::t_9ebe8844dbdceb 51-53
+crates/cli/src/feedback/mod.rs
+  s_5ddc42157b6cef::t_74af2db37c3b17 252-263
+  s_5ddc42157b6cef::t_eb8153d0bd58dc 188-208
+  s_5ddc42157b6cef::t_e543e50eb7c60c 357-374
+docs/architecture/feedback.md
+  s_5ddc42157b6cef::t_65d13d7e99c0e9 25
+  s_5ddc42157b6cef::t_23ee9b75dd6b18 39
+  s_5ddc42157b6cef::t_7c0236de536134 47
+mobile/src/ui/feedback.ts
+  s_5ddc42157b6cef::t_a82eaba92ffa13 13-14
+desktop/model/feedback.go
+  s_5ddc42157b6cef::t_a82eaba92ffa13 21-22,25-26
+desktop/l10n/zh.go
+  s_5ddc42157b6cef::t_c97815b1a060d3 989-990
+crates/cli/src/feedback/tests.rs
+  s_5ddc42157b6cef::t_9fc6690b247524 421-455,460,463-467
+  s_5ddc42157b6cef::t_68e0b0cb09cfc1 456-459,461-462
+  s_5ddc42157b6cef::t_00d9ca95b03be9 615-658
+mobile/app/chat-info/feedback-item.tsx
+  s_5ddc42157b6cef::t_a82eaba92ffa13 19
+  s_5ddc42157b6cef::t_f7c4ff5cce708a 73-75
+desktop/sheet_feedback.go
+  s_5ddc42157b6cef::t_a82eaba92ffa13 423-424,426-427,469-471
+mobile/src/i18n/zh.ts
+  s_5ddc42157b6cef::t_4c70eba622cc63 688-689
+crates/cli/src/feedback/review.rs
+  s_5ddc42157b6cef::t_807799ef8085de 85-86
+  s_5ddc42157b6cef::t_402d7a32a017a6 8,90-91,157-163,171-175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "6b439170957fb6555ac9bd47829147cf93bd0791",
+  "prompts": {},
+  "sessions": {
+    "s_5ddc42157b6cef": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d99e9dd8-5a15-453c-a0e6-8110ebe29f6f",
+        "model": "claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
