@@ -580,6 +580,7 @@ pub async fn run(app: Arc<App>) {
         tokio::time::sleep(TICK).await;
         crate::feedback::tick(&app);
         crate::memory_capture::tick(&app);
+        crate::memory_tidy::tick(&app);
         tick(&app);
     }
 }

@@ -1311,6 +1311,8 @@ type BotMemory struct {
 	Profile Profile
 	// The newest capture run that was not undone, if there is one.
 	Capture *CaptureRun
+	// The newest housekeeping pass that moved lines out of MEMORY.md, while it is not undone.
+	Tidy *TidyRun
 	// What the bot's memory did lately, newest first.
 	Trace []MemoryEvent
 }
@@ -1357,6 +1359,27 @@ type CaptureRun struct {
 	Added   []string
 	Refused []string
 	Undone  bool
+}
+
+// TidyRun is one housekeeping pass over MEMORY.md: the struck-through lines it moved to
+// memory/history.md, and the unused entries it moved to memory/archive.md.
+type TidyRun struct {
+	ID       string
+	At       int64
+	History  []string
+	Archived []string
+}
+
+// Summary is what the pass did, in a line.
+func (r TidyRun) Summary() string {
+	var parts []string
+	if n := len(r.Archived); n > 0 {
+		parts = append(parts, L("%d unused archived", n))
+	}
+	if n := len(r.History); n > 0 {
+		parts = append(parts, L("%d replaced moved to history", n))
+	}
+	return strings.Join(parts, " · ")
 }
 
 // CaptureFacts is the facts of memory lines as a person reads them, without the bullet, the

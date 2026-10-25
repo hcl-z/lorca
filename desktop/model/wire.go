@@ -653,6 +653,13 @@ type WireBotMemory struct {
 		Refused []string `json:"refused"`
 		Undone  bool     `json:"undone"`
 	} `json:"capture"`
+	// The newest housekeeping pass that moved lines and was not undone.
+	Tidy *struct {
+		ID       string   `json:"id"`
+		At       int64    `json:"at"`
+		History  []string `json:"history"`
+		Archived []string `json:"archived"`
+	} `json:"tidy"`
 	// What the bot's memory did lately, newest first.
 	Trace []struct {
 		At     int64    `json:"at"`
@@ -1407,6 +1414,9 @@ func ToBotMemory(wire WireBotMemory) BotMemory {
 	}
 	if capture := wire.Capture; capture != nil {
 		memory.Capture = &CaptureRun{ID: capture.ID, At: capture.At, Added: capture.Added, Refused: capture.Refused, Undone: capture.Undone}
+	}
+	if tidy := wire.Tidy; tidy != nil {
+		memory.Tidy = &TidyRun{ID: tidy.ID, At: tidy.At, History: tidy.History, Archived: tidy.Archived}
 	}
 	for _, entry := range wire.Trace {
 		memory.Trace = append(memory.Trace, MemoryEvent{At: entry.At, Kind: MemoryEventKind(entry.Kind), Text: entry.Text, Detail: entry.Detail})

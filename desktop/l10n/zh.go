@@ -1541,6 +1541,13 @@ var zh = map[string]string{
 
 	// Memory capture, the user's profile, and the prompt preview
 	"Learned":                      "学到",
+	"Tidied":                       "已整理",
+	"%d unused archived":           "%d 条久未用到，已归档",
+	"%d replaced moved to history":  "%d 条已被取代，移入历史",
+	"Moved to memory/history.md and memory/archive.md, where recall still finds them.": "移到了 memory/history.md 和 memory/archive.md，召回仍能找到它们。",
+	"Put back what was tidied?":     "把整理掉的内容放回去吗？",
+	"Put Back":                      "放回",
+	"Couldn't undo it":              "无法撤销",
 	"1 fact from a recent chat":    "最近一次对话里的 1 条",
 	"%d facts from a recent chat":  "最近一次对话里的 %d 条",
 	"Undo…":                        "撤销…",

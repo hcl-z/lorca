@@ -2329,9 +2329,9 @@ const RECENT_WORK_MAX_CHARS: usize = 1_400;
 fn recalled_note(app: &App, bot: &Bot, store: &MemoryStore, job: &Job) -> Option<String> {
     let message = app.message(&job.chat_id, &job.trigger_message_id).filter(|message| message.author == Author::You)?;
     let Body::Text { text, .. } = &message.body else { return None };
-    let note = crate::memory_index::turn_note(&app.config.home, &bot.id, store, text);
-    crate::memory_trace::recalled(&app.config.home, &bot.id, text, note.as_deref());
-    note
+    let recall = crate::memory_index::turn_note(&app.config.home, &bot.id, store, text);
+    crate::memory_trace::recalled(&app.config.home, &bot.id, text, recall.note.as_deref(), &recall.loaded);
+    recall.note
 }
 
 /// The newest thing the bot said in each of its other chats in the last two days, so a bot in

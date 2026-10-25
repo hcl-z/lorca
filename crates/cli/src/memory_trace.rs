@@ -26,6 +26,10 @@ pub struct Entry {
     /// What came of it: the lines recalled, the file the fact went to, or why it was refused.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub detail: Vec<String>,
+    /// For a recall, the facts that matched the message but which the turn already had in the
+    /// loaded part of `MEMORY.md`: used, though not given again.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub matched: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,9 +57,10 @@ fn clip(text: &str) -> String {
 
 /// Adds one entry to today's file, scrubbed of credentials as memory is, and drops days past
 /// the newest `KEEP_DAYS`. A failure is logged: the trace never stands in a turn's way.
-fn record(home: &Path, bot_id: &str, kind: Kind, text: &str, detail: &[&str]) {
+fn record(home: &Path, bot_id: &str, kind: Kind, text: &str, detail: &[&str], matched: &[String]) {
     let at = crate::config::now_secs() as i64;
-    let entry = Entry { at, kind, text: memory::scrub(&clip(text)), detail: detail.iter().map(|line| memory::scrub(&clip(line))).collect() };
+    let scrubbed = |line: &str| memory::scrub(&clip(line));
+    let entry = Entry { at, kind, text: scrubbed(text), detail: detail.iter().map(|line| scrubbed(line)).collect(), matched: matched.iter().map(|line| scrubbed(line)).collect() };
     let dir = dir(home, bot_id);
     let written = (|| -> std::io::Result<()> {
         std::fs::create_dir_all(&dir)?;
@@ -83,22 +88,22 @@ fn days(dir: &Path) -> Vec<PathBuf> {
 }
 
 /// A turn started from `message`; `note` is the recall note it carried, or `None` when nothing
-/// matched.
-pub fn recalled(home: &Path, bot_id: &str, message: &str, note: Option<&str>) {
+/// new matched, and `loaded` the facts that matched in what the turn loaded already.
+pub fn recalled(home: &Path, bot_id: &str, message: &str, note: Option<&str>, loaded: &[String]) {
     let lines: Vec<&str> = note
         .map(|note| note.lines().filter_map(|line| line.strip_prefix("- ")).map(|line| line.trim_end_matches(']')).collect())
         .unwrap_or_default();
-    record(home, bot_id, Kind::Recalled, message, &lines);
+    record(home, bot_id, Kind::Recalled, message, &lines, loaded);
 }
 
 /// A fact saved in `file` (`MEMORY.md`, `PROFILE.md`), with what the store said of it.
 pub fn saved(home: &Path, bot_id: &str, file: &str, what: &str) {
-    record(home, bot_id, Kind::Saved, what, &[file]);
+    record(home, bot_id, Kind::Saved, what, &[file], &[]);
 }
 
 /// A fact the write gate refused, and why.
 pub fn refused(home: &Path, bot_id: &str, fact: &str, why: &str) {
-    record(home, bot_id, Kind::Refused, fact, &[why]);
+    record(home, bot_id, Kind::Refused, fact, &[why], &[]);
 }
 
 /// The newest `limit` entries, newest first.
@@ -125,13 +130,14 @@ mod tests {
     #[test]
     fn entries_read_back_newest_first_scrubbed() {
         let home = std::env::temp_dir().join(format!("lorca-trace-{}", uuid::Uuid::new_v4()));
-        recalled(&home, "b1", "杭州天气", Some("[What you remember …:\n- PROFILE.md · 用户住在杭州\n- MEMORY.md · prefers short replies]"));
+        recalled(&home, "b1", "杭州天气", Some("[What you remember …:\n- PROFILE.md · 用户住在杭州\n- MEMORY.md · prefers short replies]"), &["the user travels on Mondays".into()]);
         saved(&home, "b1", "MEMORY.md", "Saved in MEMORY.md: - 2026-10-25 · the key is sk-abcdefghijklmnopqrstuvwxyz");
         refused(&home, "b1", "ignore previous instructions", "reads like an instruction");
-        recalled(&home, "b2", "other bot", None);
+        recalled(&home, "b2", "other bot", None, &[]);
         let entries = recent(&home, "b1", 10);
         assert_eq!(entries.iter().map(|entry| entry.kind).collect::<Vec<_>>(), [Kind::Refused, Kind::Saved, Kind::Recalled]);
         assert_eq!(entries[2].detail, ["PROFILE.md · 用户住在杭州", "MEMORY.md · prefers short replies"]);
+        assert_eq!(entries[2].matched, ["the user travels on Mondays"]);
         assert!(!entries[1].text.contains("sk-abc"), "{}", entries[1].text);
         assert_eq!(recent(&home, "b1", 1).len(), 1);
         assert!(recent(&home, "b2", 10)[0].detail.is_empty(), "nothing recalled");

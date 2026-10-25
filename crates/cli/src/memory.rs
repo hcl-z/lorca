@@ -354,11 +354,22 @@ impl MemoryStore {
     /// The facts of the entries a supersede struck through: what changed, which a later write
     /// must not quietly bring back.
     pub fn superseded_facts(&self) -> Vec<String> {
+        // The housekeeping moves struck entries out of the index into `memory/history.md`.
+        let history = std::fs::read_to_string(self.topics_dir().join("history.md")).unwrap_or_default();
         self.read_index()
             .lines()
+            .chain(history.lines())
             .filter_map(|line| line.trim().strip_prefix("- ~~").and_then(|rest| rest.split_once("~~")).map(|(struck, _)| fact_of(struck)))
             .filter(|fact| !fact.is_empty())
             .collect()
+    }
+
+    /// Replaces one topic file under `memory/`, scrubbed of credentials as the index is.
+    pub fn write_topic(&self, name: &str, text: &str) -> Result<(), MemoryError> {
+        if !TOPIC_NAME.is_match(name) {
+            return Err(MemoryError::Invalid(format!("{name} is not a topic file name")));
+        }
+        self.write_file(&self.topics_dir().join(name), &scrub(text))
     }
 
     /// The facts the user removed, which `remove` records in `forgotten.md`.
