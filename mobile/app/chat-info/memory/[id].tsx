@@ -7,13 +7,21 @@ import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-rou
 import { useCallback, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import { fileSize } from "../../../src/core/model";
-import { botMemory, gauge, undoCapture, type BotMemory } from "../../../src/core/memory";
+import { botMemory, gauge, undoCapture, undoTidy, type BotMemory, type TidyRun } from "../../../src/core/memory";
 import { useBotMap } from "../../../src/core/store";
 import { t, useLanguage } from "../../../src/i18n";
 import { alert } from "../../../src/ui/alert";
 import { stamp } from "../../../src/ui/format";
 import { Row, Section } from "../../../src/ui/forms";
 import { accentColor, Font, usePalette } from "../../../src/ui/theme";
+
+/// What a housekeeping pass did, in a line: how many lines it moved where.
+function tidySummary(run: TidyRun): string {
+  const parts: string[] = [];
+  if (run.archived.length) parts.push(t("{count} unused archived", { count: run.archived.length }));
+  if (run.history.length) parts.push(t("{count} replaced moved to history", { count: run.history.length }));
+  return parts.join(" · ");
+}
 
 export default function BotMemoryScreen() {
   useLanguage();
@@ -36,6 +44,22 @@ export default function BotMemoryScreen() {
 
   if (!bot) return <Stack.Screen options={{ title: t("Memory") }} />;
   const name = bot.name;
+
+  function undoTidied(run: TidyRun) {
+    alert(t("Put back what was tidied?"), [...run.archived, ...run.history].map((line) => `• ${line}`).join("\n"), [
+      { text: t("Cancel"), style: "cancel" },
+      {
+        text: t("Put Back"),
+        onPress: () => {
+          setUndoing(true);
+          undoTidy(id, run.id)
+            .then(load)
+            .catch((e) => alert(t("Couldn't undo it"), e instanceof Error ? e.message : String(e)))
+            .finally(() => setUndoing(false));
+        },
+      },
+    ]);
+  }
 
   function undo(run: NonNullable<BotMemory["capture"]>) {
     alert(t("Forget what {name} remembered?", { name }), run.added.map((fact) => `• ${fact}`).join("\n"), [
@@ -96,6 +120,16 @@ export default function BotMemoryScreen() {
                 <Row key={topic} title={topic} icon="doc.text" />
               ))}
             </Section>
+
+            {memory.tidy ? (
+              <Section
+                title={t("Tidied")}
+                footer={`${stamp(new Date(memory.tidy.at * 1000))} · ${t("Moved to memory/history.md and memory/archive.md, where recall still finds them.")}`}
+              >
+                <Row title={tidySummary(memory.tidy)} titleLines={2} />
+                <Row title={t("Undo…")} destructive disabled={undoing} onPress={() => undoTidied(memory.tidy!)} />
+              </Section>
+            ) : null}
 
             {memory.capture ? (
               <Section title={t("Remembered from a chat")} footer={stamp(new Date(memory.capture.at * 1000))}>

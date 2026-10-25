@@ -580,6 +580,7 @@ pub async fn run(app: Arc<App>) {
         tokio::time::sleep(TICK).await;
         crate::feedback::tick(&app);
         crate::memory_capture::tick(&app);
+        crate::memory_tidy::tick(&app);
         // A bot, the capture, or the user changed PROFILE.md: the account's other Devices hear it.
         if crate::profile_sync::changed_here(&app.config.home) {
             app.push_roster();

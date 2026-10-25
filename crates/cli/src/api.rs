@@ -491,7 +491,7 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
             on_bots_runner(app, &bot, "bots.prompt", body).await
         }
         // The memory capture's runs for a bot, and undoing one, on the bot's Runner.
-        "memory_capture.list" | "memory_capture.undo" => {
+        "memory_capture.list" | "memory_capture.undo" | "memory_tidy.undo" => {
             let bot = app.bot(&string(&params, "bot_id")?).ok_or("Unknown bot")?;
             let body = json!({ "bot_id": bot.id, "run_id": opt_string(&params, "run_id") });
             on_bots_runner(app, &bot, method, body).await

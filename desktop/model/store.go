@@ -2266,6 +2266,20 @@ func (s *Store) WriteProfile(runnerID, text, expectedHash string, done func(stri
 	}, done)
 }
 
+// UndoTidy puts back what a housekeeping pass moved out of MEMORY.md.
+func (s *Store) UndoTidy(botID, runID string, done func(error)) {
+	if s.IsMock {
+		s.post(func() { done(nil) })
+		return
+	}
+	Async(s, func() (struct{}, error) {
+		_, err := call[struct {
+			Restored int `json:"restored"`
+		}](s, "memory_tidy.undo", map[string]any{"bot_id": botID, "run_id": runID})
+		return struct{}{}, err
+	}, func(_ struct{}, err error) { done(err) })
+}
+
 // UndoCapture removes the lines a capture run added, and marks the run undone.
 func (s *Store) UndoCapture(botID, runID string, done func(error)) {
 	if s.IsMock {

@@ -45,6 +45,7 @@ pub mod memory;
 pub mod memory_capture;
 pub mod memory_check;
 pub mod memory_index;
+pub mod memory_tidy;
 pub mod memory_trace;
 pub mod model;
 pub mod outputs;
