@@ -1,0 +1,60 @@
+crates/cli/src/turns.rs
+  s_5ddc42157b6cef::t_16ce729d75090d 2332-2334
+crates/cli/src/memory_index.rs
+  s_5ddc42157b6cef::t_16ce729d75090d 181-190,196,199-204,287-289,292
+crates/cli/src/routines.rs
+  s_5ddc42157b6cef::t_7d523d7bc95e7c 583
+crates/cli/src/requests.rs
+  s_5ddc42157b6cef::t_16f2565e3f0dff 159,224,261-265
+mobile/app/chat-info/memory/[id].tsx
+  s_5ddc42157b6cef::t_8027fa7399f300 10,18-24
+  s_5ddc42157b6cef::t_a02cc72d4535e4 48-63,124-132
+desktop/inspector.go
+  s_5ddc42157b6cef::t_218b97dd45e9c6 560-567,639-652
+crates/cli/src/memory_trace.rs
+  s_5ddc42157b6cef::t_16ce729d75090d 60,62-63,91-92,96,101,106
+  s_5ddc42157b6cef::t_fc6136c78c3d86 133,136,140
+  s_5ddc42157b6cef::t_b51077cbb889f9 29-32
+crates/cli/src/api.rs
+  s_5ddc42157b6cef::t_16f2565e3f0dff 494
+mobile/src/i18n/zh.ts
+  s_5ddc42157b6cef::t_df15ba4b0d3952 1070-1075
+desktop/model/store.go
+  s_5ddc42157b6cef::t_218b97dd45e9c6 2269-2282
+crates/cli/src/lib.rs
+  s_5ddc42157b6cef::t_7d523d7bc95e7c 48
+docs/architecture/memory.md
+  s_5ddc42157b6cef::t_a79d2f01aa2bcf 57-65
+  s_5ddc42157b6cef::t_24b85546095e4b 68
+mobile/src/core/memory.ts
+  s_5ddc42157b6cef::t_a02cc72d4535e4 31-41,52,97-99
+crates/cli/src/memory_tidy.rs
+  s_5ddc42157b6cef::t_82bb8909c8d9cc 214-219,272-273,305
+  s_5ddc42157b6cef::t_f3485df5519703 1-55,61-80,83-86,92-213,220-271,274-287,290-304,306-314
+  s_5ddc42157b6cef::t_fc6136c78c3d86 81-82,87-91,288-289
+  s_5ddc42157b6cef::t_16f2565e3f0dff 56-60
+desktop/model/models.go
+  s_5ddc42157b6cef::t_218b97dd45e9c6 1314-1315,1364-1382
+crates/cli/src/memory.rs
+  s_5ddc42157b6cef::t_7d523d7bc95e7c 357-358,361,367-372
+desktop/model/wire.go
+  s_5ddc42157b6cef::t_218b97dd45e9c6 656-662,1418-1419
+desktop/l10n/zh.go
+  s_5ddc42157b6cef::t_df15ba4b0d3952 1544-1550
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "1e8ee492f8844c895cb7f339b49c6fddf96be429",
+  "prompts": {},
+  "sessions": {
+    "s_5ddc42157b6cef": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d99e9dd8-5a15-453c-a0e6-8110ebe29f6f",
+        "model": "claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
