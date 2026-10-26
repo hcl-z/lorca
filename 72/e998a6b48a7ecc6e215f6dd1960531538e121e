@@ -1,0 +1,21 @@
+crates/cli/src/turns.rs
+  s_5ddc42157b6cef::t_2dd9878c62102f 1097,1103
+  s_5ddc42157b6cef::t_7d9bc913ecef16 6579-6601
+  s_5ddc42157b6cef::t_568285627997d9 2804-2815,2894-2896,2920-2922
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "72e998a6b48a7ecc6e215f6dd1960531538e121e",
+  "prompts": {},
+  "sessions": {
+    "s_5ddc42157b6cef": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d99e9dd8-5a15-453c-a0e6-8110ebe29f6f",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
