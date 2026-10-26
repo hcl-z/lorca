@@ -8,6 +8,12 @@ phone app's.
 
 ## [Unreleased]
 
+## [1.0.30]
+
+- When a bot saves something about you, the chat says so as it happens: the fact, and the one it replaced if it replaced one. The line from the capture, after a chat goes quiet, still covers the rest.
+- A table in a message no longer opens a blank band above and below itself; it sits as close to the text around it as any other block, at any message width.
+
+
 ## [1.0.29]
 
 - A bot that remembers something from a chat says so there, in one quiet line: the facts it learned, a changed one with the fact it replaced, and where to undo it.
