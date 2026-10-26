@@ -1,0 +1,21 @@
+desktop/markdown_view_test.go
+  s_5ddc42157b6cef::t_d315939eec165f 8,117-125
+desktop/markdown_view.go
+  s_5ddc42157b6cef::t_d315939eec165f 20-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "1ff5e3829bea536999a44c25b936552d092141fe",
+  "prompts": {},
+  "sessions": {
+    "s_5ddc42157b6cef": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d99e9dd8-5a15-453c-a0e6-8110ebe29f6f",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
