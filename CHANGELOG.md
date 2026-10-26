@@ -8,6 +8,13 @@ phone app's.
 
 ## [Unreleased]
 
+## [1.0.29]
+
+- A bot that remembers something from a chat says so there, in one quiet line: the facts it learned, a changed one with the fact it replaced, and where to undo it.
+- A fact with a deadline, such as leave or a trip, is remembered until it ends and then set aside, where you can put it back.
+- A message's paragraphs sit closer together in the desktop app, instead of a blank line apart.
+
+
 ## [1.0.28]
 
 - A bot remembers what bears on the message you just sent: each turn carries the lines from its memory, its topic notes, and what its computer knows about you that match your words, found by search rather than by the whole file, in English and in Chinese, Japanese, or Korean.
@@ -17,6 +24,7 @@ phone app's.
 - Each bot tidies its own memory once a day: what changed over time moves to a history note, and notes no message has needed for two months move to an archive once memory is nearly full. Everything moved is still searchable, and any tidy can be undone from the bot's memory.
 - A way of working you keep correcting can become a skill: the bot suggests it from two examples, and you accept or reject it like any other suggested change.
 - Lorca Dev shows what a bot's memory did: the lines a turn was reminded of, what was saved, and what was refused.
+- The memory line and the deadlines above arrived in 1.0.29: this build does not have them.
 
 
 ## [1.0.27]
