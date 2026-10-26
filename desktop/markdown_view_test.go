@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/egoist/lorca/desktop/model"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -111,5 +112,16 @@ func TestMessageTextMenu(t *testing.T) {
 	}
 	if got := tt.Clipboard(); got != "Great. Keep the announcement as a draft until I've reviewed it." {
 		t.Errorf("copied %q", got)
+	}
+}
+
+// A message's paragraphs sit close, as they read in a chat; a document keeps its looser spacing.
+func TestMessageParagraphsSitClose(t *testing.T) {
+	paragraph := model.Block{Kind: model.BlockParagraph}
+	if gap := blockGap(paragraph, paragraph, markdownOptions{}); gap != paragraphGap || gap > 10 {
+		t.Fatalf("a message's paragraphs are %v apart, want %v", gap, paragraphGap)
+	}
+	if gap := blockGap(paragraph, paragraph, markdownOptions{Document: true}); gap != 16 {
+		t.Fatalf("a document's paragraphs are %v apart, want 16", gap)
 	}
 }
