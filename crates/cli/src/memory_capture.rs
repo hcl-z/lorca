@@ -737,4 +737,68 @@ mod tests {
         assert_eq!(latest(&store).map(|run| run.id), Some("capture-2".into()));
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// The whole read, against a model that answers: a fact about the person goes to the
+    /// profile, one about the work to the bot's memory, and the chat hears what was remembered.
+    #[cfg(all(feature = "runner", feature = "server"))]
+    #[tokio::test]
+    async fn a_capture_that_learned_something_says_so_in_the_chat() {
+        use axum::{routing::post, Router};
+        use serde_json::json;
+
+        let home = std::env::temp_dir().join(format!("lorca-capture-e2e-{}", uuid::Uuid::new_v4()));
+        let app = App::load(crate::config::Config { home: home.clone(), port: 0 }).unwrap();
+        app.this_device_id(); // the App settles its identity on load
+        crate::identity::create(&app, None).unwrap();
+        let bot = app.state.lock().unwrap().bots[0].clone();
+        let chat = app.dm_with(&bot.id, None).unwrap();
+        let said = Message::new(&chat.meta.id, Author::You, Body::text("我搬到杭州了，以后周报周四发"));
+        app.upsert_message(said.clone(), false);
+
+        let reply = json!({"facts": [
+            {"text": "the user lives in Hangzhou", "quote": "我搬到杭州了", "about": "person"},
+            {"text": "the weekly report goes out on Thursdays", "quote": "周报周四发", "about": "work"}
+        ]}).to_string();
+        let server = Router::new().route("/v1/chat/completions", post(move || {
+            let reply = reply.clone();
+            async move {
+                let chunk = json!({"id": "m", "object": "chat.completion.chunk", "model": "capture-model", "choices": [{"index": 0, "delta": {"role": "assistant", "content": reply}, "finish_reason": null}]});
+                let done = json!({"id": "m", "object": "chat.completion.chunk", "model": "capture-model", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20}});
+                ([("content-type", "text/event-stream")], format!("data: {chunk}\n\ndata: {done}\n\ndata: [DONE]\n\n"))
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, server).await.unwrap() });
+        let custom = crate::credentials::CustomProvider {
+            name: "Capture model".into(),
+            api: crate::credentials::CustomApi::ChatCompletions,
+            base_url: format!("http://{addr}/v1"),
+            api_key: String::new(),
+            models: vec![serde_json::from_value(json!({"id": "capture-model", "context_window": 64000})).unwrap()],
+            created_at: 0,
+        };
+        app.credentials.lock().unwrap().custom.insert("custom:capture".into(), custom);
+        app.state.lock().unwrap().bots[0].provider = "custom:capture".into();
+        let bot = app.bot(&bot.id).unwrap();
+
+        assert_eq!(run_once(&app, &chat, &bot, std::slice::from_ref(&said)).await, Ok(Outcome::Read));
+        let notices: Vec<String> = app
+            .store
+            .page(&chat.meta.id, None, 50)
+            .unwrap()
+            .0
+            .into_iter()
+            .filter_map(|message| match message.body {
+                Body::Notice { text, .. } => Some(text),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(notices.len(), 1, "{notices:?}");
+        assert_eq!(notices[0], "Remembered 2 facts: the user lives in Hangzhou · the weekly report goes out on Thursdays — undo in Memory.");
+        assert!(crate::profile::store(&app.config.home).read_index().contains("Hangzhou"), "a fact about the person goes to the profile");
+        assert!(MemoryStore::for_bot(&app.config.home, &bot).read_index().contains("Thursdays"), "one about the work to the bot's memory");
+        server.abort();
+        let _ = std::fs::remove_dir_all(&home);
+    }
 }
