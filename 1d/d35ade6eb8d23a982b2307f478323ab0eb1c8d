@@ -1,0 +1,27 @@
+Cargo.toml
+  s_5ddc42157b6cef::t_99858046790f30 20
+desktop/mygo.config.ts
+  s_5ddc42157b6cef::t_99858046790f30 9
+mobile/app.config.ts
+  s_5ddc42157b6cef::t_99858046790f30 5
+package.json
+  s_5ddc42157b6cef::t_99858046790f30 4
+Cargo.lock
+  s_5ddc42157b6cef::t_99858046790f30 2198,2256,2287,2296,2310,2318,2331,2364
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "1dd35ade6eb8d23a982b2307f478323ab0eb1c8d",
+  "prompts": {},
+  "sessions": {
+    "s_5ddc42157b6cef": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d99e9dd8-5a15-453c-a0e6-8110ebe29f6f",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
