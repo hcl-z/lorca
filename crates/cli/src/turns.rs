@@ -1094,13 +1094,13 @@ async fn memory_flush(
 
 /// The memory writing tools, bound to one bot and the chat the writes come from, and the
 /// account's profile, which every bot may add to.
-fn memory_tools(app: &App, bot: &Bot, store: &MemoryStore, chat: &Chat) -> Vec<Arc<dyn Tool>> {
+fn memory_tools(app: &Arc<App>, bot: &Bot, store: &MemoryStore, chat: &Chat) -> Vec<Arc<dyn Tool>> {
     let source = chat_source(app, chat);
     let trace = EntryTrace { home: app.config.home.clone(), bot_id: bot.id.clone() };
     vec![
         Arc::new(MemoryUpdate { store: store.clone(), source: source.clone(), trace: trace.clone() }),
         Arc::new(MemoryLog { store: store.clone(), source: source.clone() }),
-        Arc::new(ProfileUpdate { store: crate::profile::store(&app.config.home), source, trace }),
+        Arc::new(ProfileUpdate { store: crate::profile::store(&app.config.home), source, trace, app: app.clone(), chat_id: chat.meta.id.clone() }),
     ]
 }
 
@@ -2801,6 +2801,18 @@ fn entry_parameters() -> Value {
     })
 }
 
+/// What to say in the chat when the user's profile changed: the fact, and the one it replaced.
+/// A duplicate changes nothing and says nothing.
+fn about_you_line(change: &memory::Change, old_text: &str) -> Option<String> {
+    let fact = |line: &str| memory::fact_of(line);
+    Some(match change {
+        memory::Change::Duplicate => return None,
+        memory::Change::Appended { line } => format!("Saved about you: {}", fact(line)),
+        memory::Change::Superseded { line } => format!("Updated about you: {} (was {})", fact(line), fact(old_text.trim())),
+        memory::Change::Replaced | memory::Change::Removed => return None,
+    })
+}
+
 /// Where a bot's entry edits go in its memory trace (`memory_trace`), whichever file they
 /// change.
 #[derive(Clone)]
@@ -2879,6 +2891,9 @@ struct ProfileUpdate {
     store: MemoryStore,
     source: String,
     trace: EntryTrace,
+    /// Where the line about what changed goes, so a fact about the user is never saved silently.
+    app: Arc<App>,
+    chat_id: String,
 }
 
 #[async_trait]
@@ -2902,6 +2917,9 @@ impl Tool for ProfileUpdate {
     async fn execute(&self, _id: &str, args: Value, _cancel: CancellationToken, _on_update: ToolUpdateFn) -> Result<ToolResult, ToolError> {
         let edit = self.trace.edit(&self.store, &self.source, &args, Some(crate::profile::PROFILE_MAX_BYTES))?;
         let summary = if matches!(edit.change, memory::Change::Removed) { "Removed from the user's profile" } else { "Updated the user's profile" };
+        if let Some(line) = about_you_line(&edit.change, args["old_text"].as_str().unwrap_or("")) {
+            self.app.notice(&self.chat_id, line);
+        }
         Ok(ToolResult::text(edit.message).with_details(json!({ "summary": summary })))
     }
 }
@@ -6556,6 +6574,29 @@ mod tests {
         job.trigger_message_id = String::new();
         assert_eq!(recalled_note(app, &chef, &store, &job), None, "nothing of the user's started it");
         assert_eq!(crate::memory_trace::recent(&app.config.home, "b1", 5).len(), 1, "and its trace says nothing");
+    }
+
+    /// A fact about the user saved through profile_update says so in the chat, and a fact it
+    /// replaced names the one it replaced.
+    #[tokio::test]
+    async fn a_profile_change_says_so_in_the_chat() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        let chef = bot("b1", "Chef");
+        let dm = chat("c1", "dm", None, &["b1"]);
+        app.state.lock().unwrap().chats.push(dm.clone());
+        let store = MemoryStore::for_bot(&app.config.home, &chef);
+        let tools = memory_tools(app, &chef, &store, &dm);
+        let update = tools.iter().find(|tool| tool.name() == "profile_update").unwrap();
+        let call = |args: Value| update.execute("t", args, CancellationToken::new(), Arc::new(|_| {}));
+        call(json!({ "action": "append", "text": "the user lives in Shanghai" })).await.unwrap();
+        call(json!({ "action": "append", "text": "the user lives in Shanghai" })).await.unwrap_err();
+        call(json!({ "action": "supersede", "old_text": "the user lives in Shanghai", "text": "the user lives in Hangzhou" })).await.unwrap();
+        let notices: Vec<String> = app.store.page(&dm.meta.id, None, 20).unwrap().0.into_iter().filter_map(|message| match message.body {
+            Body::Notice { text, .. } => Some(text),
+            _ => None,
+        }).collect();
+        assert_eq!(notices, ["Saved about you: the user lives in Shanghai", "Updated about you: the user lives in Hangzhou (was the user lives in Shanghai)"]);
     }
 
     /// What memory_update saves, and what the gate refuses, reach the bot's trace; a duplicate,
