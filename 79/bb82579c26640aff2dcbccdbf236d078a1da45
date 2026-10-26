@@ -1,0 +1,35 @@
+crates/cli/src/memory_capture.rs
+  s_5ddc42157b6cef::t_7b31f9184bc042 389,707
+  s_5ddc42157b6cef::t_3239b315e0d59b 695-697,699
+  s_5ddc42157b6cef::t_77f529c501dec0 698
+  s_5ddc42157b6cef::t_a7d2eda5bf429e 379,381,549,553,633,645,651
+  s_5ddc42157b6cef::t_ec0b2530649e07 671-694,700-701
+  s_5ddc42157b6cef::t_5ad64ca0fa4ca1 253-256
+  s_5ddc42157b6cef::t_309443f1398e17 309,316-319,331-332,337,380,383,387-388,390-395,401-422,448-449,471
+crates/cli/src/memory.rs
+  s_5ddc42157b6cef::t_209fe56331cabc 59-79
+  s_5ddc42157b6cef::t_dce585c9896426 406-437
+docs/architecture/memory.md
+  s_5ddc42157b6cef::t_df89e8ed52bb06 33,64
+crates/cli/src/memory_tidy.rs
+  s_5ddc42157b6cef::t_f006a2bb04fdfa 336,342
+  s_5ddc42157b6cef::t_70d3a0ffe08e8a 40-43,131-133,143-144,146-150,177-183,185-188,228-231
+  s_5ddc42157b6cef::t_77f529c501dec0 130,145,184
+  s_5ddc42157b6cef::t_ec0b2530649e07 335,337-341,343-359
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "79bb82579c26640aff2dcbccdbf236d078a1da45",
+  "prompts": {},
+  "sessions": {
+    "s_5ddc42157b6cef": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d99e9dd8-5a15-453c-a0e6-8110ebe29f6f",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
