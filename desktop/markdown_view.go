@@ -284,7 +284,11 @@ func markdownBlock(c *ui.Context, block model.Block, o markdownOptions, nested b
 			})
 			return rows
 		}
-		wrap := ui.ScrollHorizontal(c).MaxWidthPercent(100)
+		// The table scrolls sideways, so a cell is one line: wrapped cells measured the row's
+		// height at the width the table does not lay out at, and the row centred the shorter table
+		// in the taller space, a blank band above and below. Top-aligned as well, so any height
+		// the row is given over leaves it at the table's top.
+		wrap := ui.ScrollHorizontal(c).MaxWidthPercent(100).AlignItems(ui.Start)
 		if o.Document {
 			wrap.Radius(radiusMD).Clip().Border(1, p.Separator)
 		}
@@ -317,7 +321,7 @@ func markdownBlock(c *ui.Context, block model.Block, o markdownOptions, nested b
 						if len(spans) == 0 {
 							spans = []model.Span{model.PlainSpan(" ")}
 						}
-						spansView(c, spans, o, header).TextAlign(align)
+						spansView(c, spans, o, header).TextAlign(align).NoWrap()
 					})
 				}
 				for column, spans := range block.Header {

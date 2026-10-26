@@ -125,3 +125,38 @@ func TestMessageParagraphsSitClose(t *testing.T) {
 		t.Fatalf("a document's paragraphs are %v apart, want 16", gap)
 	}
 }
+
+// A wide table scrolls sideways and sits as close to the text around it as any other block: a cell
+// is one line, so the row's height is the table's, and no blank band opens above or below it.
+func TestAWideTableSitsCloseToItsText(t *testing.T) {
+	text := "Before.\n\n| Site | Size | What |\n| --- | --- | --- |\n| ~/Library/Application Support | 39G | LarkShell 11G、Cursor 2.6G、Google 2.5G、Citro Labs 2.5G |\n| ~/Library/Developer | 20G | CoreSimulator 13G |\n\nAfter."
+	for _, width := range []float32{300, 420, 560} {
+		tt := ui.NewTester(func(c *ui.Context) {
+			applyTheme(c)
+			ui.Column(c).Padding(20).Width(width).Children(func() { markdownView(c, text, markdownOptions{}) })
+		}, int(width)+80, 900)
+		tt.Frame()
+		before, ok := tt.Find("Before.")
+		if !ok {
+			t.Fatalf("width %v: no text before the table", width)
+		}
+		head, ok := tt.Find("Site")
+		if !ok {
+			t.Fatalf("width %v: no table header", width)
+		}
+		last, ok := tt.Find("~/Library/Developer")
+		if !ok {
+			t.Fatalf("width %v: no last row", width)
+		}
+		after, ok := tt.Find("After.")
+		if !ok {
+			t.Fatalf("width %v: no text after the table", width)
+		}
+		if gap := head.Y - (before.Y + before.H); gap > 30 {
+			t.Errorf("width %v: the table starts %v below the text before it", width, gap)
+		}
+		if gap := after.Y - (last.Y + last.H); gap > 40 {
+			t.Errorf("width %v: the text after the table starts %v below it", width, gap)
+		}
+	}
+}
