@@ -1,0 +1,20 @@
+crates/cli/src/memory_capture.rs
+  s_5ddc42157b6cef::t_2e975be2a4d6c8 746-747
+  s_5ddc42157b6cef::t_e5f56ba5c0129d 740-745,748-803
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "ab2e321f60087e9501f86ea634b9db34b21117dc",
+  "prompts": {},
+  "sessions": {
+    "s_5ddc42157b6cef": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d99e9dd8-5a15-453c-a0e6-8110ebe29f6f",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
