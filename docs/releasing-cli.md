@@ -25,8 +25,8 @@ lorca-cli.json.sig                an Ed25519 signature of lorca-cli.json
 A CLI installed this way updates itself from the latest release, and installs only a
 `lorca-cli.json` signed by a key it trusts ([Updates and the service](architecture/runtime.md#updates-and-the-service)).
 [`.github/workflows/release-cli-desktop.yml`](../.github/workflows/release-cli-desktop.yml) builds,
-signs, tests, and drafts them, in the same jobs that build the desktop app
-([Releasing the desktop app](releasing-desktop.md)). It writes the release with the workflow's own
+signs, tests, and drafts them, in jobs beside the ones that build the desktop app
+([Releasing the desktop app](releasing-desktop.md)), the two side by side on every platform. It writes the release with the workflow's own
 token and signs with the `CLI_UPDATE_SIGNING_KEY` secret.
 
 ## Update key
@@ -72,9 +72,10 @@ The workflow:
 2. builds `lorca` with `--release --locked` and `LORCA_SELF_UPDATE=1`, which makes a build that
    updates itself: `cargo build` on a macOS runner for the Mac, and `cargo zigbuild` on Linux for
    Linux (musl) and Windows (`x86_64-pc-windows-gnu`). Each binary goes alone into
-   `lorca-cli-<os>-<cpu>.tar.gz` (`.zip` for Windows) with a `.sha256` beside it. The same job then
-   builds the desktop app, whose CLI, built without `LORCA_SELF_UPDATE`, recompiles only the
-   `lorca` crate. Each platform's Rust cache is saved on `main` and restored by the next release;
+   `lorca-cli-<os>-<cpu>.tar.gz` (`.zip` for Windows) with a `.sha256` beside it. The desktop app
+   builds in a job of its own beside this one, on the same platforms, so neither waits for the
+   other. Each platform's Rust cache is kept between runs and restored by the next release, the
+   CLI's and the app's apart;
 3. writes `lorca-cli.json` from the archives and signs it with `CLI_UPDATE_SIGNING_KEY`, after
    checking that the key's public half is in `KEYS`; it stops when the secret is missing;
 4. serves the archives and the manifest the way a release does on Linux, macOS, and Windows

@@ -21,7 +21,7 @@ gh workflow run release-cli-desktop.yml --repo hcl-z/lorca --ref main
 - Configuration: `updates` in [`desktop/mygo.config.ts`](../desktop/mygo.config.ts).
 - Release: [`scripts/desktop.ts`](../scripts/desktop.ts), which runs `go tool mygo build -upload`, and
   [`.github/workflows/release-cli-desktop.yml`](../.github/workflows/release-cli-desktop.yml), which
-  releases the CLI from the same jobs ([Releasing the CLI](releasing-cli.md)). MyGo's
+  releases the CLI from the same workflow, in jobs of its own ([Releasing the CLI](releasing-cli.md)). MyGo's
   [auto-updates guide](https://github.com/egoist/mygo/blob/main/docs/updates.md) covers what it
   signs and uploads.
 

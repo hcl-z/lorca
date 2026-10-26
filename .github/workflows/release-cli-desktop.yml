@@ -1,8 +1,8 @@
-# Releases the lorca CLI and the app in desktop/ from one build per platform. `bun run release`
+# Releases the lorca CLI and the app in desktop/ from one build per platform each. `bun run release`
 # starts it on main, and a run by hand does the same for the commit it runs on; the tags cli-vX.Y.Z
-# and desktop-vX.Y.Z appear when the drafts are published. Running on main keeps each platform's
-# Rust cache where the next release reads it, and the desktop app's CLI builds on the CLI release's
-# dependencies in the same job.
+# and desktop-vX.Y.Z appear when the drafts are published. The CLI and the app build in jobs of
+# their own on every platform, side by side: each takes its own Rust cache from run to run, and
+# neither waits for the other, which halves the time a release takes.
 #
 # The CLI, the version in Cargo.toml, is built with LORCA_SELF_UPDATE=1 for macOS, Linux, and
 # Windows; lorca-cli.json, the manifest lorca update reads, is written and signed with the
@@ -119,20 +119,19 @@ jobs:
               ;;
           esac
 
-  build:
-    name: build ${{ matrix.platform }}
+  build-cli:
+    name: cli ${{ matrix.platform }}
     needs: [version, draft]
+    if: needs.version.outputs.cli-published != 'true'
     runs-on: ${{ matrix.os }}
-    permissions:
-      contents: write
     strategy:
-      # A platform that fails leaves the others to finish their uploads.
+      # A platform that fails leaves the others to upload their archives.
       fail-fast: false
       matrix:
         include:
           # MyGo builds Windows and Linux from Linux without cgo, and zig, through cargo-zigbuild,
           # builds their CLIs: static (musl) for Linux, so one runs on any distribution. The macOS
-          # app needs a Mac, which signs it ad hoc and makes its disk image; it is for Apple silicon.
+          # app needs a Mac.
           - { platform: windows/amd64, name: windows-x86_64, target: x86_64-pc-windows-gnu, os: ubuntu-latest }
           - { platform: linux/amd64, name: linux-x86_64, target: x86_64-unknown-linux-musl, os: ubuntu-latest }
           - { platform: linux/arm64, name: linux-aarch64, target: aarch64-unknown-linux-musl, os: ubuntu-latest }
@@ -151,31 +150,17 @@ jobs:
         with:
           tool: cargo-zigbuild
       # The registry and the built dependencies, kept between runs on main. The cache key names the
-      # runner's OS but not the target, and three of the builds run on Linux.
+      # target, and three of the builds run on Linux.
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: desktop/go.mod
-          cache-dependency-path: desktop/go.sum
-      - uses: oven-sh/setup-bun@v2
-      # makensis, which mygo build needs for the Windows installer on Linux.
-      - name: Install NSIS
-        if: startsWith(matrix.platform, 'windows/')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends nsis
       - name: Build the CLI
-        if: needs.version.outputs.cli-published != 'true'
         env:
           # A release build replaces itself with later releases (`lorca update`).
           LORCA_SELF_UPDATE: "1"
           TARGET: ${{ matrix.target }}
         run: |
           if [[ $RUNNER_OS == macOS ]]; then
-            # The Mac's own build, where `bun run release-desktop` builds the app's CLI too, so the
-            # second build takes the first one's dependencies.
             cargo build --release --locked -p lorca
             echo "CLI_DIR=target/release" >> "$GITHUB_ENV"
           else
@@ -183,7 +168,6 @@ jobs:
             echo "CLI_DIR=target/$TARGET/release" >> "$GITHUB_ENV"
           fi
       - name: Pack the CLI
-        if: needs.version.outputs.cli-published != 'true'
         env:
           TARGET: ${{ matrix.target }}
           NAME: ${{ matrix.name }}
@@ -202,13 +186,57 @@ jobs:
           fi
           cd dist && shasum -a 256 "$archive" > "$archive.sha256"
       - uses: actions/upload-artifact@v7
-        if: needs.version.outputs.cli-published != 'true'
         with:
           name: lorca-cli-${{ matrix.name }}
           path: dist/*
           if-no-files-found: error
-      # The app's CLI does not update itself, the app does, so it is built again without
-      # LORCA_SELF_UPDATE, which recompiles the lorca crate alone.
+
+  # The app, beside the CLI, on the same platforms. Its CLI does not update itself, the app does, so
+  # `release-desktop` builds `lorca` again without LORCA_SELF_UPDATE. It keeps a cache of its own,
+  # apart from the CLI's, as the two jobs share no folder.
+  build-app:
+    name: app ${{ matrix.platform }}
+    needs: [version, draft]
+    runs-on: ${{ matrix.os }}
+    # gh uploads the app's files into the draft.
+    permissions:
+      contents: write
+    strategy:
+      # A platform that fails leaves the others to finish their uploads.
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: windows/amd64, target: x86_64-pc-windows-gnu, os: ubuntu-latest }
+          - { platform: linux/amd64, target: x86_64-unknown-linux-musl, os: ubuntu-latest }
+          - { platform: linux/arm64, target: aarch64-unknown-linux-musl, os: ubuntu-latest }
+          - { platform: darwin/arm64, target: aarch64-apple-darwin, os: macos-26 }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: mlugg/setup-zig@v2
+        if: runner.os == 'Linux'
+        with:
+          version: 0.16.0
+      - uses: taiki-e/install-action@v2
+        if: runner.os == 'Linux'
+        with:
+          tool: cargo-zigbuild
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}-app
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: desktop/go.mod
+          cache-dependency-path: desktop/go.sum
+      - uses: oven-sh/setup-bun@v2
+      # makensis, which mygo build needs for the Windows installer on Linux.
+      - name: Install NSIS
+        if: startsWith(matrix.platform, 'windows/')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends nsis
       - name: Build and upload the app
         env:
           PLATFORM: ${{ matrix.platform }}
@@ -218,7 +246,7 @@ jobs:
         run: bun run release-desktop "$PLATFORM"
 
   manifest:
-    needs: [version, build]
+    needs: [version, build-cli]
     if: needs.version.outputs.cli-published != 'true'
     runs-on: ubuntu-latest
     steps:
