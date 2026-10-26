@@ -17,7 +17,7 @@ members = [
 debug = "line-tables-only"
 
 [workspace.package]
-version = "1.0.28"
+version = "1.0.29"
 edition = "2021"
 license = "GPL-3.0-only"
 
