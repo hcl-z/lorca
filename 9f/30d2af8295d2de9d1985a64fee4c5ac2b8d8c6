@@ -1,0 +1,27 @@
+docs/releasing-cli.md
+  s_5ddc42157b6cef::t_6521d46678010e 28-29,75-78
+docs/releasing-desktop.md
+  s_5ddc42157b6cef::t_6521d46678010e 24
+.github/workflows/test.yml
+  s_5ddc42157b6cef::t_401ff603fd095e 14
+  s_5ddc42157b6cef::t_45de3643530e11 12-13,15
+.github/workflows/release-cli-desktop.yml
+  s_5ddc42157b6cef::t_45de3643530e11 1,3-5,122-123,125,128,134,153,193-200,204-239,249
+  s_5ddc42157b6cef::t_6521d46678010e 201-203
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "9f30d2af8295d2de9d1985a64fee4c5ac2b8d8c6",
+  "prompts": {},
+  "sessions": {
+    "s_5ddc42157b6cef": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d99e9dd8-5a15-453c-a0e6-8110ebe29f6f",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
