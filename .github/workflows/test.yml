@@ -9,10 +9,6 @@ on:
     branches: [main]
   pull_request:
 
-# A "Release x.y.z" commit only changes the versions, and the release workflows build and test what
-# it ships; the suites have just run on the commit before it.
-if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Release ') }}
-
 permissions:
   contents: read
 
@@ -24,9 +20,13 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
 
+# A "Release x.y.z" commit only changes the versions, and the release workflows build and test what
+# it ships; the suites have just run on the commit before it. Every job skips on one.
+
 jobs:
   rust-linux:
     name: Rust (Linux)
+    if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Release ') }}
     runs-on: ubuntu-latest
     # A hung test fails the job instead of holding a pull request for hours.
     timeout-minutes: 30
@@ -55,6 +55,7 @@ jobs:
 
   rust-macos:
     name: Rust (macOS)
+    if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Release ') }}
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -66,6 +67,7 @@ jobs:
 
   rust-windows:
     name: Rust (Windows)
+    if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Release ') }}
     # The crates a Windows Runner runs: the CLI, the agent, the model catalog, and provider
     # sign-in. There paths have drive letters, PATH splits on `;`, and commands run in Git for
     # Windows' bash, which the runner has, in a pseudo console of their own (on pipes where there
@@ -83,6 +85,7 @@ jobs:
 
   desktop:
     name: Desktop app
+    if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Release ') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -107,6 +110,7 @@ jobs:
 
   mobile:
     name: Phone app
+    if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Release ') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
