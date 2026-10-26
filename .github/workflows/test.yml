@@ -9,6 +9,10 @@ on:
     branches: [main]
   pull_request:
 
+# A "Release x.y.z" commit only changes the versions, and the release workflows build and test what
+# it ships; the suites have just run on the commit before it.
+if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Release ') }}
+
 permissions:
   contents: read
 
@@ -51,9 +55,6 @@ jobs:
 
   rust-macos:
     name: Rust (macOS)
-    # A "Release x.y.z" commit on main changes only the versions, and its release builds need the
-    # macOS runners.
-    if: ${{ !startsWith(github.event.head_commit.message, 'Release ') }}
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
