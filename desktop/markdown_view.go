@@ -17,7 +17,9 @@ import (
 // paragraphs, lists, and code, and Copy joins them a line apart.
 
 const (
-	paragraphGap = 24
+	// The room between a message's paragraphs. A reply often runs to several short ones, where a
+	// wider gap read as an empty line of its own; a document keeps its own, looser spacing.
+	paragraphGap = 10
 	codeGap      = 8
 	itemGap      = 2
 )
