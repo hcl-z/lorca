@@ -97,6 +97,13 @@ jobs:
         with:
           go-version-file: desktop/go.mod
           cache-dependency-path: desktop/go.sum
+      # setup-go caches the modules, not what they compile to; the build cache holds the compiled
+      # packages, MyGo's among them, which every run would otherwise compile again.
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/go-build
+          key: go-build-${{ runner.os }}-${{ hashFiles('desktop/go.sum') }}
+          restore-keys: go-build-${{ runner.os }}-
       - name: gofmt
         run: |
           unformatted=$(gofmt -l .)

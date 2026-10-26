@@ -230,6 +230,21 @@ jobs:
         with:
           go-version-file: desktop/go.mod
           cache-dependency-path: desktop/go.sum
+      # setup-go caches the modules, not what they compile to; the build cache holds the compiled
+      # packages, MyGo's among them, which every release would otherwise compile again. The two
+      # systems keep it in different folders.
+      - uses: actions/cache@v6
+        if: runner.os == 'Linux'
+        with:
+          path: ~/.cache/go-build
+          key: go-build-${{ runner.os }}-${{ hashFiles('desktop/go.sum') }}
+          restore-keys: go-build-${{ runner.os }}-
+      - uses: actions/cache@v6
+        if: runner.os == 'macOS'
+        with:
+          path: ~/Library/Caches/go-build
+          key: go-build-${{ runner.os }}-${{ hashFiles('desktop/go.sum') }}
+          restore-keys: go-build-${{ runner.os }}-
       - uses: oven-sh/setup-bun@v2
       # makensis, which mygo build needs for the Windows installer on Linux.
       - name: Install NSIS
