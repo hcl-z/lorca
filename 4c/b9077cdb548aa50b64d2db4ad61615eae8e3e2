@@ -1,0 +1,21 @@
+desktop/markdown_view_test.go
+  s_5ddc42157b6cef::t_118c66ddff2735 128-162
+desktop/markdown_view.go
+  s_5ddc42157b6cef::t_d31b2b3afe7b28 287-291,324
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "4cb9077cdb548aa50b64d2db4ad61615eae8e3e2",
+  "prompts": {},
+  "sessions": {
+    "s_5ddc42157b6cef": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d99e9dd8-5a15-453c-a0e6-8110ebe29f6f",
+        "model": "unknown"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
