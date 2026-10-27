@@ -32,7 +32,7 @@ Every command an agent runs passes the bot's Access as it stands, then Auto-revi
 
 Lorca declares the ACP `elicitation.form` capability, so an agent can ask the user (Claude Code's AskUserQuestion; without the capability its adapter removes the tool and the agent guesses). A form arrives as `elicitation/create` with a message and a schema (`form_of`): a menu (`oneOf`, `anyOf`, or `enum`, each pick with its title and description), several picks (an array of those), yes or no, text, or a number. A free-text field named after a menu's (`question_0_custom` after `question_0`) is that menu's own words, not a field of its own. A link-style (`url`) request is declined.
 
-The question is a card of its own in the chat, which the user answers from any Device or the bot answers for them: [A coding agent's questions](questions.md#a-coding-agents-questions).
+The question is a card of its own in the chat, which the user answers from any Device or the bot answers for them: [A coding agent's questions](questions.md#a-coding-agents-questions). An attended agent's question waits on that card for the user and the bot is not woken, whichever turn directs the agent; an agent nobody watches (`Record.unattended`) wakes the bot, and `Record.proxy` is where a bot that answers for the user is told to handle an attended agent's questions too.
 
 ## Following it
 
@@ -50,9 +50,15 @@ The apps read it as entries (`entries.rs`), which the driver puts under keys of 
 
 An agent is `starting`, `working`, or `idle` (done with what it was asked, waiting for a follow-up), and `asking` while a question waits; once it ended `exited`, `failed`, or `stopped`. One working with nothing new for ten minutes is `stalled`; a spinner's timer ticking is not news.
 
+## Talking to it in the chat
+
+An agent a bot starts is a participant in the chat while it is open: the composer of the desktop on its Runner lists it after the chat's bots in the `@` menu, with its name and what it was asked, and `@Claude Code …` goes to the agent itself rather than to the bot. A Device that only watches the chat, such as a phone, sends the message to the bot as before. What follows the mention is the user's message as written; it reaches the agent at once, cutting short what it does now (`session/cancel`), and starts no turn of the bot's. Its commands are weighed against that message from then on (`Record.trigger_message_id`).
+
+What it says appears in the chat as its own messages (`Message.agent`: its id, name, and kind, so the history outlives its record), one per `said` segment, streamed and then complete; the card keeps the tool calls, thoughts, and plan. The bot reads them as its delegate's words, not its own, and is not woken when a turn the user drove is done. A stall, an exit, or a question still tells it. The agent leaves the `@` menu once it ends; its messages and outputs stay. An idle one whose process went keeps its place, and a `@` starts it again on its session. The phone's composer does not list agents yet, and draws their messages as the bot's.
+
 ## When it is done
 
-When an agent goes idle after working, Lorca publishes what changed in its work as [outputs](outputs.md) of the bot's (`proof::publish`): its diff against the commit it started from (commits, edits not committed yet, and new files, up to 2 MiB) as `<branch>.diff`, a saved secret in it as its placeholder, a new version whenever it changed; the pull request or merge request its transcript names, once, as a link. Then the bot gets a turn of its own, an `agent` job, once no turn runs in the chat, unless a turn read the agent meanwhile: it opens with what the agent said and each output's name, message, output id, and version, which the bot cites as [task evidence](tasks.md). A stalled agent, one that exited by itself, and one that asks a question wake the bot the same way, with its last lines or its question.
+When an agent goes idle after working, Lorca publishes what changed in its work as [outputs](outputs.md) of the bot's (`proof::publish`): its diff against the commit it started from (commits, edits not committed yet, and new files, up to 2 MiB) as `<branch>.diff`, a saved secret in it as its placeholder, a new version whenever it changed; the pull request or merge request its transcript names, once, as a link. Then the bot gets a turn of its own, an `agent` job, once no turn runs in the chat, unless a turn read the agent meanwhile or the user drove that turn from the chat ([Talking to it in the chat](#talking-to-it-in-the-chat)): it opens with what the agent said and each output's name, message, output id, and version, which the bot cites as [task evidence](tasks.md). A stalled agent, one that exited by itself, and one that asks a question wake the bot the same way, with its last lines or its question.
 
 While an agent works, its run time counts toward the limits of the turn that gave it the work, the start or a follow-up ([Budgets](budgets.md)): the turn's scopes hold a run (`BudgetContext::hold`) until the agent is idle, and a time limit reached stops it.
 

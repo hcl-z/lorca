@@ -155,21 +155,28 @@ func (m *mainWindow) composerView(c *ui.Context, chat *model.Chat, members []*mo
 	hasContent := strings.TrimSpace(s.draft) != "" || len(s.attachments) > 0
 	sendOnReturn := prefs.get().SendOnReturn
 
-	// Who `@` can address: members first, then every other bot.
-	mentionable := slices.Clone(members)
-	for _, bot := range store.Bots {
-		if !slices.ContainsFunc(members, func(member *model.Bot) bool { return member.ID == bot.ID }) {
-			mentionable = append(mentionable, bot)
-		}
+	// Who `@` can address: a group's members, then this chat's coding agents. A chat with one
+	// bot needs no mention for it: a message that names no one is its.
+	var mentionable []*model.Bot
+	if len(members) > 1 {
+		mentionable = slices.Clone(members)
+	}
+	agents := agentsHere(chat)
+	choices := make([]mentionChoice, 0, len(mentionable)+len(agents))
+	for _, bot := range mentionable {
+		choices = append(choices, mentionChoice{Name: bot.Name, Bot: bot})
+	}
+	for _, agent := range agents {
+		choices = append(choices, mentionChoice{Name: agent.Name(), Agent: agent})
 	}
 	runes := []rune(s.draft)
-	var mentions []*model.Bot
+	var mentions []mentionChoice
 	start, end, inMention := mentionRange(runes, s.caretAt)
 	if inMention && start != s.mentionClosed-1 {
 		query := strings.ToLower(string(runes[start+1 : end]))
-		for _, bot := range mentionable {
-			if query == "" || strings.HasPrefix(strings.ToLower(bot.Name), query) {
-				mentions = append(mentions, bot)
+		for _, choice := range choices {
+			if query == "" || strings.HasPrefix(strings.ToLower(choice.Name), query) {
+				mentions = append(mentions, choice)
 			}
 		}
 	}
@@ -181,12 +188,34 @@ func (m *mainWindow) composerView(c *ui.Context, chat *model.Chat, members []*mo
 	if !inMention {
 		s.mentionClosed = 0
 	}
-	insertMention := func(bot *model.Bot) {
-		insertion := []rune("@" + bot.Name + " ")
-		next := append(append(slices.Clone(runes[:start]), insertion...), runes[end:]...)
+	insertMention := func(choice mentionChoice) {
+		current := []rune(s.draft)
+		at, to := start, end
+		if from, until, ok := mentionRange(current, s.caretAt); ok {
+			at, to = from, until
+		}
+		if at > len(current) {
+			at = len(current)
+		}
+		if to > len(current) || to < at {
+			to = at
+		}
+		// A name already typed after the caret is this same pick, not a second one: a pick made
+		// after the name was typed must not leave `@Claude Code Claude Code`.
+		name := []rune(choice.Name)
+		if len(current) >= to+len(name) && strings.EqualFold(string(current[to:to+len(name)]), choice.Name) {
+			to += len(name)
+			if to < len(current) && current[to] == ' ' {
+				to++
+			}
+		}
+		insertion := []rune("@" + choice.Name + " ")
+		next := append(append(slices.Clone(current[:at]), insertion...), current[to:]...)
 		s.draft = string(next)
-		s.caret = start + len(insertion)
-		s.picked = append(s.picked, bot.ID)
+		s.caret = at + len(insertion)
+		if choice.Bot != nil {
+			s.picked = append(s.picked, choice.Bot.ID)
+		}
 		s.focus = true
 	}
 
@@ -382,6 +411,9 @@ func (m *mainWindow) composerView(c *ui.Context, chat *model.Chat, members []*mo
 				for _, mention := range mentionRuns(runes, mentionable) {
 					input.TextRanges(ui.TextRange{Start: mention.start, End: mention.end, Color: p.accentColor(mention.bot.Accent), Weight: 600})
 				}
+				for _, mention := range agentMentionRuns(runes, agents) {
+					input.TextRanges(ui.TextRange{Start: mention.start, End: mention.end, Color: agentBrand(p, mention.agent.Kind), Weight: 600})
+				}
 				composing := input.Composing()
 				input.HandleInput(func(ev ui.InputEvent) bool {
 					if ev.Kind != ui.InputKeyDown || composing {
@@ -471,7 +503,7 @@ func (m *mainWindow) composerView(c *ui.Context, chat *model.Chat, members []*mo
 							tooltip = L("Send (Return) · Shift-Return for a new line")
 						}
 					}
-					if len(members) > 1 {
+					if len(mentionable) > 0 || len(agents) > 0 {
 						tooltip += L(" · @ to mention")
 					}
 					// A solid ink disc whether or not there is anything to send, as the reference keeps it;
@@ -500,15 +532,15 @@ func (m *mainWindow) composerView(c *ui.Context, chat *model.Chat, members []*mo
 }
 
 // mentionPanel is the `@` menu: above the composer, five rows showing and the rest scrolling.
-func (m *mainWindow) mentionPanel(c *ui.Context, field ui.Element, bots []*model.Bot, s *composerState, pick func(*model.Bot)) {
+func (m *mainWindow) mentionPanel(c *ui.Context, field ui.Element, choices []mentionChoice, s *composerState, pick func(mentionChoice)) {
 	p := colors(c)
 	ui.Overlay(c, func() {
-		height := float32(min(len(bots), mentionRows)*mentionRowHeight + 10)
+		height := float32(min(len(choices), mentionRows)*mentionRowHeight + 10)
 		panel := ui.Scroll(c).Width(268).Height(height).Padding(5).Radius(radiusXL).Background(p.Popover).Shadow(0, 10, 40, 0, p.Shadow).Border(0.5, p.ShadowEdge).
 			AttachTo(field, ui.AnchorTopLeft, ui.AnchorBottomLeft).Margin(0, 0, 8, 40)
 		panel.Children(func() {
-			for i, bot := range bots {
-				row := ui.Row(c.Key(bot.ID)).Height(mentionRowHeight).Gap(8).Padding(0, 8).Radius(radiusMD).Cursor(ui.CursorPointer)
+			for i, choice := range choices {
+				row := ui.Row(c.Key(choice.key())).Height(mentionRowHeight).Gap(8).Padding(0, 8).Radius(radiusMD).Cursor(ui.CursorPointer)
 				highlighted := i == s.mentionIndex
 				if row.Hovered() {
 					s.mentionIndex, highlighted = i, true
@@ -517,11 +549,24 @@ func (m *mainWindow) mentionPanel(c *ui.Context, field ui.Element, bots []*model
 					row.Background(p.Selection).TextColor(p.SelectionText)
 					row.ScrollIntoView()
 				}
-				detail := model.ProviderName(bot.Provider, store.Providers)
-				if device := store.Device(bot.RunnerID); device != nil {
-					detail = L("on %@", device.Name)
-				}
 				row.Children(func() {
+					if agent := choice.Agent; agent != nil {
+						agentTile(c, p, agent.Kind, 22)
+						ui.Column(c).MinWidth(0).Shrink(1).Children(func() {
+							ui.Text(c, choice.Name).FontSize(13).FontWeight(500).SingleLine()
+							detail := L("Coding agent")
+							if agent.Task != "" {
+								detail = agent.Task
+							}
+							ui.Text(c, detail).FontSize(11).TextColor(p.Label2).SingleLine()
+						})
+						return
+					}
+					bot := choice.Bot
+					detail := model.ProviderName(bot.Provider, store.Providers)
+					if device := store.Device(bot.RunnerID); device != nil {
+						detail = L("on %@", device.Name)
+					}
 					avatar(c, botAvatar(bot), 22, false)
 					ui.Column(c).MinWidth(0).Shrink(1).Children(func() {
 						ui.Text(c, bot.Name).FontSize(13).FontWeight(500).SingleLine()
@@ -529,11 +574,100 @@ func (m *mainWindow) mentionPanel(c *ui.Context, field ui.Element, bots []*model
 					})
 				})
 				if row.Pressed() {
-					pick(bot)
+					pick(choice)
 				}
 			}
 		})
 	})
+}
+
+// mentionChoice is who an `@` can address: a bot, or one of the chat's coding agents.
+type mentionChoice struct {
+	Name  string
+	Bot   *model.Bot
+	Agent *model.AgentRun
+}
+
+func (c mentionChoice) key() string {
+	if c.Agent != nil {
+		return "agent-" + c.Agent.ID
+	}
+	return "bot-" + c.Bot.ID
+}
+
+// chatAgents are the coding agents in a chat the user can talk to: its open cards, newest first.
+func chatAgents(chat *model.Chat) []*model.AgentRun {
+	var agents []*model.AgentRun
+	seen := map[string]bool{}
+	for i := len(chat.Messages) - 1; i >= 0; i-- {
+		message := chat.Messages[i]
+		if message.Body.Kind != model.BodyTool || message.Body.Tool == nil || message.Body.Tool.Agent == nil {
+			continue
+		}
+		agent := message.Body.Tool.Agent
+		// An agent Auto-review is still deciding on has no session to take a message yet.
+		if !agent.IsOpen() || agent.State == model.AgentChecking || seen[agent.ID] {
+			continue
+		}
+		seen[agent.ID] = true
+		agents = append(agents, agent)
+	}
+	return agents
+}
+
+// agentsHere are the chat's agents this Device can hand a message to: an agent runs on its bot's
+// Runner, and only the desktop there reaches it.
+func agentsHere(chat *model.Chat) []*model.AgentRun {
+	here := store.ThisDevice()
+	if here == nil || len(chat.BotIDs) == 0 {
+		return nil
+	}
+	bot := store.Bot(chat.BotIDs[0])
+	if bot == nil || bot.RunnerID != here.ID {
+		return nil
+	}
+	return chatAgents(chat)
+}
+
+type agentMentionRun struct {
+	start, end int
+	agent      *model.AgentRun
+}
+
+// agentMentionRuns are the `@Name` runs of a draft for the chat's coding agents, in runes,
+// whatever their case.
+func agentMentionRuns(runes []rune, agents []*model.AgentRun) []agentMentionRun {
+	lower := func(rs []rune) []rune {
+		out := make([]rune, len(rs))
+		for i, r := range rs {
+			out[i] = unicode.ToLower(r)
+		}
+		return out
+	}
+	text := lower(runes)
+	names := make([][]rune, len(agents))
+	for i, agent := range agents {
+		names[i] = lower([]rune(agent.Name()))
+	}
+	var runs []agentMentionRun
+	for i := 0; i < len(text); i++ {
+		if text[i] != '@' {
+			continue
+		}
+		best := -1
+		for j, name := range names {
+			n := len(name)
+			if n > 0 && i+1+n <= len(text) && slices.Equal(text[i+1:i+1+n], name) && (best < 0 || n > len(names[best])) {
+				best = j
+			}
+		}
+		if best >= 0 {
+			end := i + 1 + len(names[best])
+			runs = append(runs, agentMentionRun{start: i, end: end, agent: agents[best]})
+			i = end - 1
+		}
+	}
+	return runs
 }
 
 type mentionRun struct {

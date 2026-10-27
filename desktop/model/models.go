@@ -2171,6 +2171,16 @@ type Message struct {
 	Notification NotificationTag
 	// EditedAt is when the user edited this message of theirs and sent it again; zero if never.
 	EditedAt time.Time
+	// Agent is the coding agent that wrote this message for its bot, when one did.
+	Agent *AgentAuthor
+}
+
+// AgentAuthor is the coding agent that wrote a message on its bot's behalf: its id, what it is
+// called, and its kind, for the mark and color.
+type AgentAuthor struct {
+	ID   string
+	Name string
+	Kind string
 }
 
 // ReplyQuote is a message quoted by the user's reply: who wrote it and how it opens, as the CLI

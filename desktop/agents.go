@@ -115,7 +115,7 @@ func (m *mainWindow) agentCard(c *ui.Context, chat *model.Chat, message *model.M
 	holder := ui.Box(c.Key("agent:" + message.ID))
 	st, run := m.agentAsker(holder, agent)
 	holder.Children(func() {
-		cardFrame(c, cardAvatar, groupStart, agentSpokenText(agent, name), func() {
+		cardFrameAgent(c, groupStart, agentSpokenText(agent, name), func() {
 			ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Children(func() {
 				agentHeader(c, p, agent, 30, 13.5, func() {
 					if agent.IsRunning() {

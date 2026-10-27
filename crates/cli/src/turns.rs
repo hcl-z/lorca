@@ -2592,6 +2592,11 @@ fn transcript_bounded(app: &App, chat: &Chat, bot: &Bot, workdir: &std::path::Pa
         let timestamp = (message.promoted_at.unwrap_or(message.created_at) * 1000.0) as u64;
         let profile_notice = ProfileNotice::of_id(&message.id);
         match (&message.author, &message.body) {
+            // What its coding agent said in the chat: the work it asked for, not its own words.
+            (Author::Bot { .. }, Body::Text { text, .. }) if message.agent.is_some() => {
+                let agent = message.agent.as_ref().expect("an agent message");
+                out.push(user(&format!("[{} (your coding agent {}, in the chat)]: {text}", agent.name, agent.id), timestamp));
+            }
             (Author::Bot { bot_id }, Body::Text { text, attachments, .. }) if message.output.is_some() => {
                 let output = message.output.as_ref().unwrap();
                 let mut words = format!(

@@ -33,6 +33,8 @@ const (
 	avatarSystem
 	// avatarContact is someone outside Lorca, by the first letter of their name.
 	avatarContact
+	// avatarAgent is a coding agent's own mark on its tile, in its brand color.
+	avatarAgent
 )
 
 type avatarContent struct {
@@ -43,6 +45,8 @@ type avatarContent struct {
 	Path string
 	// Name is a contact's name.
 	Name string
+	// AgentKind is the coding agent whose mark this is (`claude`, `codex`, …).
+	AgentKind string
 }
 
 // botAvatar is the bot's image when this computer has the bytes (the store fetches them and
@@ -68,6 +72,15 @@ func authorAvatar(author model.Author) avatarContent {
 		}
 	}
 	return avatarContent{Kind: avatarSystem}
+}
+
+// messageAvatar is who wrote a message: the coding agent's own mark when one did, else its
+// bot's avatar.
+func messageAvatar(message *model.Message) avatarContent {
+	if message.Agent != nil {
+		return avatarContent{Kind: avatarAgent, AgentKind: message.Agent.Kind}
+	}
+	return authorAvatar(message.Author)
 }
 
 // presencePlace is where the working dot sits: over the bottom-right edge of a circle `size` across,
@@ -112,6 +125,10 @@ func avatar(c *ui.Context, content avatarContent, size float32, working bool) ui
 func avatarOn(c *ui.Context, content avatarContent, size float32, working bool, backdrop ui.Color) ui.Element {
 	p := colors(c)
 	box := ui.Box(c).Size(size, size)
+	if content.Kind == avatarAgent {
+		box.Children(func() { agentTile(c, p, content.AgentKind, size) })
+		return box
+	}
 	box.Children(func() {
 		disc := ui.Box(c).Size(size, size).Radius(size / 2).Clip().Center().TextColor(p.White)
 		switch content.Kind {

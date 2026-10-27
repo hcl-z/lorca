@@ -27,6 +27,8 @@ pub struct CodingAgentTool {
     /// The event behind the turn, when one started it: the owner's task for it, whose text the
     /// review weighs the agent's commands against instead of the event's.
     pub event: Option<crate::event_triggers::EventTask>,
+    /// Nobody is watching the turn that starts it: its questions are the bot's to answer.
+    pub unattended: bool,
 }
 
 const DESCRIPTION: &str = "Hand a coding job to a coding agent on your Runner and supervise it: Claude Code or Codex, or when you name one \
@@ -40,7 +42,8 @@ agent starts again on its session. `stop` ends it, `list` shows your agents in t
 skills one running offers, which you run by sending `/name` (Codex: `$name`) as a message. `plan: true` starts it in its plan mode, and `model` and `effort` choose its model and how hard it thinks; one it cannot take fails the start and says what it offers. `set` changes the model or effort of one that runs, with its conversation kept, so switch with it instead of stopping and starting another. An agent may ask a question while it works, as a form \
 on a card of its own in the chat: you get a turn with the question and its fields, and `answer` fills it in (`answers` by field label; \
 `choice`, numbered from 1, or `text` when it asks one thing) or `decline: true` declines it; answer only what the user's own words settle, \
-and otherwise leave it to the user on that card, who is asked at the same time. Every command it runs goes through Auto-review \
+and otherwise leave it to the user on that card, who is asked at the same time. An attended conversation is the user's: you \
+answer its card only when the user made you their proxy. An agent nobody is watching is yours to answer. Every command it runs goes through Auto-review \
 as yours do, and its card in the chat shows the user its progress and anything it asks them. Saved secrets never go in a prompt or a \
 message: for a job that needs one, such as publishing a package, name your command secrets in `secrets`, and the agent has each as \
 $NAME in its environment.";
@@ -104,6 +107,8 @@ impl Tool for CodingAgentTool {
             Some("send") => {
                 let agent = agent()?;
                 let message = args["message"].as_str().or(args["prompt"].as_str()).map(str::trim).filter(|text| !text.is_empty()).ok_or_else(|| ToolError("send needs a message".into()))?;
+                // The bot drives it again, so its being done is news for the bot once more.
+                agent.record.lock().unwrap().direct = false;
                 super::send(app, &agent, message, args["interrupt"].as_bool().unwrap_or(false)).await.map_err(ToolError)?
             }
             Some("stop") => {
@@ -154,6 +159,12 @@ impl Tool for CodingAgentTool {
             Some("answer") => {
                 let agent = agent()?;
                 let record = agent.record();
+                // A question in an attended conversation is the user's: only a bot they made
+                // their proxy answers it, and only a turn nobody watches answers an unattended
+                // agent's.
+                if !(record.proxy || record.unattended) {
+                    return Err(ToolError("The user answers this on its card; do not answer or decline it for them.".into()));
+                }
                 if args["decline"] == true {
                     super::decline(app, &agent, true).map_err(ToolError)?;
                     format!("Declined the question of {} ({}). It goes on without an answer.", name(&record.kind), record.id)
@@ -194,6 +205,7 @@ impl CodingAgentTool {
             workdir: self.workdir.clone(),
             trigger_message_id: self.trigger_message_id.clone(),
             event: self.event.clone(),
+            unattended: self.unattended,
         };
         let (call_id, args) = (call_id.to_string(), args.clone());
         let row = self.app.coding_agents.row(&self.chat_id, &call_id);
@@ -250,6 +262,7 @@ impl CodingAgentTool {
             prompt: full,
             secrets,
             wants,
+            unattended: self.unattended,
             event: self.event.as_ref().map(|event| crate::event_triggers::EventTask { data: String::new(), ..event.clone() }),
         };
         let agent = super::start(app, start).await?;

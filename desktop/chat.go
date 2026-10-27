@@ -19,9 +19,12 @@ import (
 // bot's name sits above its first bubble and its avatar beside the bubble's bottom edge.
 
 const (
-	horizontalInset  = 22
-	chatAvatarSize   = 26
-	avatarGutter     = 10
+	horizontalInset = 22
+	chatAvatarSize  = 26
+	avatarGutter    = 10
+	// speakerLine is a speaker's name above a bubble: its top padding, line, and bottom margin.
+	// The avatar sits level with the bubble below the name, not with the name itself.
+	speakerLine      = 23
 	groupTopPadding  = 14
 	tightTopPadding  = 4
 	maxBubbleWidth   = 680
@@ -31,12 +34,19 @@ const (
 	composerFallback = 66
 )
 
+// speakerSpring is how the transcript makes room for a speaker: a DM's bot gains its avatar and
+// name when an agent joins the conversation, and loses them when the agent ends.
+var speakerSpring = ui.Animation{Spring: ui.SpringOptions{Duration: 240 * time.Millisecond, Bounce: 0.04}}
+
 // chatState is the chat view's own: the transcript's place, the composer's draft, and the notes
 // it shows. The view keeps one for the chat on screen; another chat starts afresh.
 type chatState struct {
 	chatID string
 	list   ui.ListState
 	rows   []chatRow
+	// speakers is whether the chat shows who says what: a group, or a DM with a coding agent
+	// at work beside its bot.
+	speakers bool
 	// stoppedNotice is "Chef stopped without replying", after a turn that ended without a word.
 	stoppedNotice string
 	// stopping is Stop pressed: the composer shows Send until the turn's next word.
@@ -131,6 +141,7 @@ func isImageOutput(message *model.Message) bool {
 func buildRows(chat *model.Chat, working []string, stoppedNotice string) []chatRow {
 	var rows []chatRow
 	var previousAuthor *model.Author
+	var previousAgent string
 	var previousDate time.Time
 	for _, message := range chat.Messages {
 		if message.Body.Kind == model.BodyTool && !message.Body.Tool.IsShown() {
@@ -139,15 +150,22 @@ func buildRows(chat *model.Chat, working []string, stoppedNotice string) []chatR
 		if previousDate.IsZero() || message.CreatedAt.Sub(previousDate) > separatorGap || !model.IsSameDay(previousDate, message.CreatedAt) {
 			rows = append(rows, chatRow{kind: rowDay, key: "day:" + message.ID, at: message.CreatedAt})
 			previousAuthor = nil
+			previousAgent = ""
+		}
+		agentID := ""
+		if message.Agent != nil {
+			agentID = message.Agent.ID
 		}
 		chrome := message.Body.Kind != model.BodyText
-		groupStart := chrome || previousAuthor == nil || !previousAuthor.Same(message.Author)
+		groupStart := chrome || previousAuthor == nil || !previousAuthor.Same(message.Author) || previousAgent != agentID
 		rows = append(rows, chatRow{kind: rowMessage, key: message.ID, message: message, groupStart: groupStart})
 		if chrome {
 			previousAuthor = nil
+			previousAgent = ""
 		} else {
 			author := message.Author
 			previousAuthor = &author
+			previousAgent = agentID
 		}
 		previousDate = message.CreatedAt
 	}
@@ -170,6 +188,21 @@ func buildRows(chat *model.Chat, working []string, stoppedNotice string) []chatR
 
 // MARK: - The view
 
+// chatHasAgents is whether a coding agent has spoken in the chat or has a card there. A DM with
+// one keeps its speakers and their avatars, so the bot's and the agent's bubbles stay aligned
+// after the agent ends.
+func chatHasAgents(chat *model.Chat) bool {
+	for _, message := range chat.Messages {
+		if message.Agent != nil {
+			return true
+		}
+		if message.Body.Kind == model.BodyTool && message.Body.Tool != nil && message.Body.Tool.Agent != nil {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *mainWindow) chatView(c *ui.Context, chatID string) {
 	p := colors(c)
 	chat := store.Chat(chatID)
@@ -177,6 +210,7 @@ func (m *mainWindow) chatView(c *ui.Context, chatID string) {
 		return
 	}
 	s := m.chatStateFor(chatID)
+	s.speakers = chat.ShowsSpeakers() || chatHasAgents(chat)
 	s.rows = buildRows(chat, store.WorkingBots(chatID), s.stoppedNotice)
 	rows := s.rows
 	members := store.BotsIn(chat)
@@ -271,18 +305,27 @@ func (m *mainWindow) chatRowView(c *ui.Context, chat *model.Chat, row chatRow, s
 		workingCell(c, bots, workingActivity(row.botIDs, chat), chat.IsGroup())
 	case rowMessage:
 		message := row.message
-		showsAvatar := chat.ShowsSpeakers() && (message.Author.Kind == model.AuthorBot || message.Author.Kind == model.AuthorContact)
+		isAgent := message.Agent != nil
+		isAgentCard := message.Body.Kind == model.BodyTool && message.Body.Tool != nil && message.Body.Tool.Agent != nil
+		showsAvatar := isAgent || isAgentCard || (s.speakers && (message.Author.Kind == model.AuthorBot || message.Author.Kind == model.AuthorContact))
 		var cardAvatar *avatarContent
 		if showsAvatar {
-			content := authorAvatar(message.Author)
-			cardAvatar = &content
+			switch {
+			case isAgent:
+				cardAvatar = &avatarContent{Kind: avatarAgent, AgentKind: message.Agent.Kind}
+			case isAgentCard:
+				cardAvatar = &avatarContent{Kind: avatarAgent, AgentKind: message.Body.Tool.Agent.Kind}
+			default:
+				content := authorAvatar(message.Author)
+				cardAvatar = &content
+			}
 		}
 		switch body := message.Body; body.Kind {
 		case model.BodyText:
 			m.messageCell(c, chat, message, row.groupStart, row.stack, showsAvatar, s)
 		case model.BodyTool:
 			if body.Tool.Agent != nil {
-				m.agentCard(c, chat, message, cardAvatar, row.groupStart)
+				m.agentCard(c, chat, message, nil, row.groupStart)
 			} else if body.Tool.Run != nil {
 				m.commandCard(c, chat, message, cardAvatar, row.groupStart)
 			} else {
@@ -312,7 +355,7 @@ func (m *mainWindow) chatRowView(c *ui.Context, chat *model.Chat, row chatRow, s
 			} else if body.Request.IsAsk() {
 				m.askCard(c, chat, message, cardAvatar, row.groupStart)
 			} else if body.Request.IsAgentAsk() {
-				m.agentAskCard(c, chat, message, cardAvatar, row.groupStart)
+				m.agentAskCard(c, chat, message, nil, row.groupStart)
 			} else {
 				m.permissionCard(c, chat, message, cardAvatar, row.groupStart)
 			}
@@ -373,12 +416,14 @@ func (m *mainWindow) messageCell(c *ui.Context, chat *model.Chat, message *model
 	// The bubble as the last frame laid it out, which the floating toolbar is placed beside.
 	var bubbleBox ui.Rect
 	row := ui.Row(c).Padding(top, horizontalInset, 0, left)
+	row.Key("msg:" + message.ID).Transition(ui.ElementTransition{Animation: &speakerSpring, Position: true, Size: true, Colors: true})
 	if isUser {
 		row.Justify(ui.End)
 	}
 	riseIn(c, row, message.CreatedAt)
 	row.Children(func() {
 		column := ui.Column(c).MinWidth(0).MaxWidth(maxBubbleWidth).AlignItems(ui.Start)
+		column.Key("bubble:" + message.ID).Transition(ui.ElementTransition{Animation: &speakerSpring, Position: true, Size: true})
 		if isUser {
 			column.AlignItems(ui.End)
 		}
@@ -392,7 +437,12 @@ func (m *mainWindow) messageCell(c *ui.Context, chat *model.Chat, message *model
 				if message.Author.Kind == model.AuthorContact {
 					name = message.Author.Name
 				}
-				ui.Text(c, name).Padding(0, 0, 0, 4).Margin(0, 0, 2, 0).FontSize(11).FontWeight(600).FixedLineHeight(16).TextColor(tint).SingleLine()
+				if message.Agent != nil {
+					// The agent's own words in the chat: its name in its color, not the bot's.
+					name, tint = message.Agent.Name, agentBrand(p, message.Agent.Kind)
+				}
+				ui.Text(c, name).Padding(5, 0, 0, 18).Margin(0, 0, 2, 0).FontSize(11).FontWeight(600).FixedLineHeight(16).TextColor(tint).SingleLine().
+					Key("name:" + message.ID).Transition(ui.ElementTransition{Animation: &speakerSpring, Enter: &ui.Motion{Collapse: true}, Exit: &ui.Motion{Collapse: true}})
 			}
 			if quote := message.ReplyTo; quote != nil {
 				words := L("In reply to %@: %@", quoteAuthorName(quote.Author), quote.Text)
@@ -477,9 +527,11 @@ func (m *mainWindow) messageCell(c *ui.Context, chat *model.Chat, message *model
 			}
 		})
 		if showsName {
-			ui.Box(c).Absolute().Left(horizontalInset).Bottom(0).Children(func() {
-				avatar(c, authorAvatar(message.Author), chatAvatarSize, false)
-			})
+			ui.Box(c).Absolute().Left(horizontalInset).Top(top + speakerLine).Key("avatar:" + message.ID).
+				Transition(ui.ElementTransition{Animation: &speakerSpring, Enter: &ui.Motion{Scale: 0.6}, Exit: &ui.Motion{Scale: 0.6}}).
+				Children(func() {
+					avatar(c, messageAvatar(message), chatAvatarSize, false)
+				})
 		}
 		// The toolbar floats beside the bubble while the pointer is over its row or the toolbar,
 		// laid out of the flow so it moves nothing; placeActions keeps it in view.
