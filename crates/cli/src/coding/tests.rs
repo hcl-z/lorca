@@ -245,7 +245,14 @@ async fn setup() -> Scratch {
 }
 
 fn tool(scratch: &Scratch) -> CodingAgentTool {
-    CodingAgentTool { app: scratch.app.clone(), bot: scratch.bot.clone(), chat_id: "chat".into(), workdir: scratch.home.join("work"), trigger_message_id: "msg-trigger".into(), event: None }
+    CodingAgentTool { app: scratch.app.clone(), bot: scratch.bot.clone(), chat_id: "chat".into(), workdir: scratch.home.join("work"), trigger_message_id: "msg-trigger".into(), event: None, unattended: false }
+}
+
+/// The tool a turn nobody watches gets: its agents' questions are the bot's to answer.
+fn unattended_tool(scratch: &Scratch) -> CodingAgentTool {
+    let mut tool = tool(scratch);
+    tool.unattended = true;
+    tool
 }
 
 /// The row a `coding_agent` start call puts up as it begins, as the turn does.
@@ -527,23 +534,22 @@ async fn an_agent_whose_start_stop_cut_off_stops_as_soon_as_it_runs() {
     .expect("its process went");
 }
 
-#[tokio::test]
-async fn a_bot_without_shell_access_lets_its_agent_run_nothing() {
-    let scratch = setup().await;
-    let app = &scratch.app;
-    let policy = serde_json::from_value(json!({ "shell": false })).unwrap();
-    app.update_bot("b1", |bot| bot.permissions = Some(policy)).unwrap();
-    let agent = Agent::new(Record {
+/// A record as the tests start with, before an agent's own start fills it.
+fn record(folder: PathBuf) -> Record {
+    Record {
         id: "agent-1".into(),
         chat_id: "chat".into(),
         bot_id: "b1".into(),
         message_id: "msg-none".into(),
         trigger_message_id: String::new(),
+        direct: false,
+        proxy: false,
+        unattended: false,
         kind: "claude".into(),
         session: None,
         config: Vec::new(),
         settings: Vec::new(),
-        folder: scratch.repo.clone(),
+        folder,
         branch: None,
         base: None,
         task: "x".into(),
@@ -559,7 +565,67 @@ async fn a_bot_without_shell_access_lets_its_agent_run_nothing() {
         event: None,
         ask_card: None,
         title: None,
-    });
+    }
+}
+
+#[test]
+fn a_direct_agents_question_waits_for_the_user_unless_the_bot_is_their_proxy() {
+    let mut record = record(PathBuf::from("/tmp"));
+    record.direct = true;
+    assert!(!bot_answers_questions(&record), "a direct question is the user's");
+    record.proxy = true;
+    assert!(bot_answers_questions(&record), "a proxy answers it");
+    record.proxy = false;
+    record.unattended = true;
+    assert!(bot_answers_questions(&record), "nobody watching leaves it to the bot");
+    record.unattended = false;
+    record.direct = false;
+    assert!(!bot_answers_questions(&record), "an attended agent's question is the user's, whichever turn directs it");
+}
+
+#[tokio::test]
+async fn a_bot_cannot_answer_a_question_in_a_conversation_the_user_drives() {
+    let scratch = setup().await;
+    let app = &scratch.app;
+    let mut auto_review = app.auto_review();
+    auto_review.is_enabled = false;
+    app.set_auto_review(auto_review);
+    let tool = tool(&scratch);
+    let row = start_row(app, "call-1");
+    call(&tool, "call-1", json!({ "action": "start", "agent": "gemini", "folder": "shop", "prompt": "Hello (follow-up)" })).await.unwrap();
+    card_when(app, &row, |card| card.state == "idle").await;
+    let agent = app.coding_agents.of("chat", "b1").pop().unwrap();
+
+    // The user talks to it directly, and it asks.
+    crate::coding::from_user(app, &agent, "(ask)", "msg-direct");
+    let card = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Some(card) = app.messages("chat").into_iter().find(|message| matches!(&message.body, Body::Permission { tool, decision, .. } if tool == "agent_ask" && decision == "pending")) {
+                return card;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the question card");
+    // The bot's answer is refused; the card waits for the user.
+    let refused = call(&tool, "call-2", json!({ "action": "answer", "id": agent.id(), "choice": 1 })).await;
+    assert!(refused.as_ref().unwrap_err().contains("The user answers this on its card"), "{refused:?}");
+    assert!(matches!(&app.message("chat", &card.id).unwrap().body, Body::Permission { decision, .. } if decision == "pending"));
+
+    // The user answers it from the app.
+    serve(app, "coding.answer", &json!({ "chat_id": "chat", "message_id": row, "values": { "question_0": "Postgres" } })).await.unwrap();
+    card_when(app, &row, |card| card.state == "idle").await;
+    assert!(agent.read(Some(20)).0.contains("Using Postgres."));
+}
+
+#[tokio::test]
+async fn a_bot_without_shell_access_lets_its_agent_run_nothing() {
+    let scratch = setup().await;
+    let app = &scratch.app;
+    let policy = serde_json::from_value(json!({ "shell": false })).unwrap();
+    app.update_bot("b1", |bot| bot.permissions = Some(policy)).unwrap();
+    let agent = Agent::new(record(scratch.repo.clone()));
     let refused = approve(app, &agent, Approval::Command { command: "ls".into() }).await.unwrap_err();
     assert!(refused.contains("Shell commands are off"), "{refused}");
 }
@@ -759,6 +825,54 @@ async fn an_agent_over_acp_asks_on_its_card_takes_messages_in_turn_and_resumes_i
 }
 
 #[tokio::test]
+async fn a_message_addressed_to_an_agent_cuts_in_and_its_answer_is_in_the_chat() {
+    let scratch = setup().await;
+    let app = &scratch.app;
+    let mut auto_review = app.auto_review();
+    auto_review.is_enabled = false;
+    app.set_auto_review(auto_review);
+    let tool = tool(&scratch);
+    let row = start_row(app, "call-1");
+
+    call(&tool, "call-1", json!({ "action": "start", "agent": "gemini", "folder": "shop", "prompt": "Work on it (slow)" })).await.unwrap();
+    card_when(app, &row, |card| card.state == "working").await;
+    let agent = app.coding_agents.of("chat", "b1").pop().unwrap();
+    let agent_name = name(&agent.record().kind);
+
+    // The user talks to it from the chat: `@Name` goes to the agent, not to the bot.
+    let message = crate::runtime::send_user_message(app.clone(), "chat", &format!("@{agent_name} (follow-up)"), None, Vec::new(), Vec::new(), None).unwrap();
+    assert_eq!(agent.record().trigger_message_id, message.id);
+    assert!(agent.record().direct, "the user drove this turn");
+    assert!(app.running_chat_ids().is_empty(), "the bot runs no turn");
+
+    // It cut in, and its answer is a message of its own in the chat.
+    let said = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Some(message) = app.messages("chat").into_iter().find(|message| {
+                message.state == MessageState::Complete
+                    && message.agent.as_ref().is_some_and(|agent| agent.name == agent_name)
+                    && matches!(&message.body, Body::Text { text, .. } if text.contains("Followed up."))
+            }) {
+                return message;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the agent's answer is in the chat");
+    assert_eq!(said.author, Author::Bot { bot_id: "b1".into() });
+    assert_eq!(said.state, MessageState::Complete);
+    assert_eq!(said.agent.as_ref().map(|agent| agent.kind.as_str()), Some("gemini"));
+
+    let transcript = agent.read(Some(100)).0;
+    assert!(transcript.contains("> (follow-up)") && transcript.contains("⎿ Interrupted"), "{transcript}");
+    // The bot has nothing to report: the user was talking to it directly.
+    card_when(app, &row, |card| card.state == "idle").await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(agent.record().news.is_none(), "the bot was woken");
+}
+
+#[tokio::test]
 async fn an_acp_agent_refused_a_command_goes_on_and_one_that_says_nothing_is_not_called_done() {
     let scratch = setup().await;
     let app = &scratch.app;
@@ -816,7 +930,7 @@ async fn asking_agent(scratch: &Scratch, row: &str) -> (Arc<Agent>, String) {
     let mut auto_review = app.auto_review();
     auto_review.is_enabled = false;
     app.set_auto_review(auto_review);
-    call(&tool(scratch), "call-1", json!({ "action": "start", "agent": "claude", "folder": "shop", "prompt": "Pick a database (ask)" })).await.unwrap();
+    call(&unattended_tool(scratch), "call-1", json!({ "action": "start", "agent": "claude", "folder": "shop", "prompt": "Pick a database (ask)" })).await.unwrap();
     let card = card_when(app, row, |card| card.asking.is_some()).await;
     (app.coding_agents.of("chat", "b1").pop().unwrap(), card.asking.unwrap())
 }

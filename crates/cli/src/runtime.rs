@@ -69,6 +69,15 @@ pub fn send_user_message(
     if let Some(id) = message_id.filter(|id| !id.is_empty()) {
         message.id = id;
     }
+    // `@Claude Code …` in the chat goes to the agent itself, as it was written, and starts no
+    // turn of the bot's: the agent is a participant the user can talk to.
+    #[cfg(feature = "runner")]
+    if let Some((agent, words)) = chat.meta.bot_ids.iter().find_map(|bot_id| crate::coding::mentioned(&app, &chat.meta.id, bot_id, text)) {
+        app.upsert_message(message.clone(), true);
+        crate::turns::hear_user_message(&app, &message);
+        crate::coding::from_user(&app, &agent, &words, &message.id);
+        return Ok(message);
+    }
     admit_user_message(app, &chat, message, &mentions, replied_bot.as_deref())
 }
 

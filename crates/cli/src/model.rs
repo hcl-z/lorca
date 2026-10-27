@@ -1028,6 +1028,16 @@ pub enum MessageState {
     Failed { error: String },
 }
 
+/// The coding agent that wrote a message on its bot's behalf: its id, what it is called, and its
+/// kind, for the mark and color. Kept with the message so the conversation outlives the agent's
+/// record, which is forgotten a month after it ends.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct AgentAuthor {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Message {
     pub id: String,
@@ -1060,6 +1070,10 @@ pub struct Message {
     /// Unix seconds; the apps say Edited.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub edited_at: Option<f64>,
+    /// The coding agent that wrote this message for its bot, when one did: the chat shows its
+    /// bubble as the agent's, and the bot reads it as its delegate's words, not its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<AgentAuthor>,
 }
 
 /// How much of a tool call's detail the apps get: enough for the "Messaged ◉ X" marker.
@@ -1113,6 +1127,7 @@ impl Message {
             output: None,
             external_id: None,
             edited_at: None,
+            agent: None,
         }
     }
 

@@ -540,6 +540,7 @@ mod tests {
             notification: None,
             external_id: None,
             edited_at: None,
+            agent: None,
         }
     }
 

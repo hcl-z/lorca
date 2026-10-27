@@ -167,6 +167,7 @@ pub(super) fn turn_tools(
             workdir: workdir.clone(),
             trigger_message_id: trigger.message_id.clone(),
             event: trigger.event.clone(),
+            unattended: shape.unattended,
         }),
     ];
     own.extend(memory_tools(app, bot, store, chat));
