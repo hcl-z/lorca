@@ -2124,6 +2124,18 @@ impl App {
         true
     }
 
+    /// A message a turn read but did not answer is not that turn's any more: the message's own
+    /// turn answers it.
+    pub fn release_steering_message(&self, chat_id: &str, message_id: &str) {
+        let Some(mut message) = self.message(chat_id, message_id) else { return };
+        if message.promoted_at.is_none() && !message.queued {
+            return;
+        }
+        message.promoted_at = None;
+        message.queued = false;
+        self.upsert_message(message, true);
+    }
+
     /// Marks a user message as held for the next step of the turn at work, or as no longer
     /// held, here and on every Device. Unchanged when it already is.
     pub fn set_queued(&self, chat_id: &str, message_id: &str, queued: bool) {

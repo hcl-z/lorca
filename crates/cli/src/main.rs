@@ -445,6 +445,16 @@ async fn main() -> anyhow::Result<()> {
             }
             // Bots' commands and plugin servers start with it; read it while the rest starts.
             tokio::spawn(lorca_agent::login_shell::environment());
+            // A turn the last run was in when it stopped left messages it had read but not
+            // answered; each chat's newest one gets a turn again, once the commands a bot runs
+            // have the login shell's environment.
+            {
+                let app = app.clone();
+                tokio::spawn(async move {
+                    lorca_agent::login_shell::environment().await;
+                    lorca::turns::recover_unanswered(&app);
+                });
+            }
             tokio::spawn(sync::run(app.clone()));
             tokio::spawn(routines::run(app.clone()));
             tokio::spawn(lorca::event_triggers::run(app.clone()));
