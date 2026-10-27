@@ -1,0 +1,19 @@
+crates/cli/src/turns.rs
+  s_92e80f80c1b740::t_5ded06d85f852b 718
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "5eec3942ecc81e67290ecc52be4e9379cad0acab",
+  "prompts": {},
+  "sessions": {
+    "s_92e80f80c1b740": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e29f82c-d901-4efc-8b99-d04ece7be54f",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
