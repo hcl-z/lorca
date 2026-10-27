@@ -1,0 +1,19 @@
+crates/cli/src/main.rs
+  s_92e80f80c1b740::t_ea2939e8b09f91 448-457
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "25e719ff8536393f6671e7a635fd789feebd0e05",
+  "prompts": {},
+  "sessions": {
+    "s_92e80f80c1b740": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e29f82c-d901-4efc-8b99-d04ece7be54f",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
