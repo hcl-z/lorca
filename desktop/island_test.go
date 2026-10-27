@@ -192,6 +192,39 @@ func TestIslandGallery(t *testing.T) {
 	}
 }
 
+// TestIslandDefersQuestionsAClickCannotAnswer keeps several picks and the user's own words in the
+// chat, since one click cannot say either.
+func TestIslandDefersQuestionsAClickCannotAnswer(t *testing.T) {
+	demoWindow(t)
+	chat := store.Chats[0]
+	last := chat.Messages[len(chat.Messages)-1]
+	store.Update(last.ID, chat.ID, func(message *model.Message) {
+		message.Body = model.Body{
+			Kind: model.BodyPermission,
+			Request: &model.PermissionRequest{
+				Tool:     "ask",
+				Decision: model.DecisionPending,
+				Ask: &model.AskQuestion{
+					Question: "Which checks?",
+					Options:  []model.AskOption{{Label: "Tests"}, {Label: "Lint"}},
+					Multiple: true,
+				},
+			},
+		}
+	})
+	if ask := islandAskOf(store); ask == nil || ask.Kind != islandAskElsewhere {
+		t.Fatalf("a multi-pick question opens the chat: %+v", ask)
+	}
+
+	store.Update(last.ID, chat.ID, func(message *model.Message) {
+		message.Body.Request.Ask.Multiple = false
+		message.Body.Request.Ask.AllowOther = true
+	})
+	if ask := islandAskOf(store); ask == nil || ask.Kind != islandAskElsewhere {
+		t.Fatalf("a question taking the user's words opens the chat: %+v", ask)
+	}
+}
+
 // TestIslandSizesHaveRoomForTheirRows holds the block's size to what it draws: a question grows
 // with its options, and every state is wide enough for what it says.
 func TestIslandSizesHaveRoomForTheirRows(t *testing.T) {

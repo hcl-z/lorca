@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/egoist/lorca/desktop/model"
@@ -58,6 +59,9 @@ const (
 	islandPointerPoll = 120 * time.Millisecond
 	// islandResultFor is how long a finished turn stays on the island.
 	islandResultFor = 8 * time.Second
+	// islandShortcut opens what waits on the user, from anywhere: the chat of the first question,
+	// or Lorca itself when nothing waits.
+	islandShortcut = "CmdOrCtrl+Shift+I"
 )
 
 // islandState is what the island shows.
@@ -204,6 +208,10 @@ func islandAskOf(s *model.Store) *islandAsk {
 				Question:  request.Ask.Question,
 				Options:   request.Ask.Options,
 			}
+			// Several picks, or the user's own words: a click cannot say that, so the chat asks.
+			if request.Ask.Multiple || request.Ask.AllowOther {
+				ask.Kind = islandAskElsewhere
+			}
 			return ask
 		}
 	}
@@ -317,6 +325,11 @@ func newIsland() *island {
 	i := &island{wins: map[int64]*islandWindow{}}
 	i.rebuild()
 	mygo.Screen.OnDisplaysChanged(func() { post(i.rebuild) })
+	// The key works while another app has the keyboard, which is when a question lands; a menu item
+	// of the same keys covers the app while it is active.
+	if err := mygo.GlobalShortcut.Register(islandShortcut, islandOpen); err != nil {
+		log.Printf("island: %s is taken by another app: %v", islandShortcut, err)
+	}
 	go func() {
 		for range time.Tick(islandPointerPoll) {
 			post(i.pollPointer)
@@ -632,9 +645,14 @@ func (i *island) draw(c *ui.Context, state islandState, ask *islandAsk, hovered 
 				}
 			})
 		})
-		if state == islandResult && block.Clicked() {
-			if result := i.resultNow(o.ResultFor); result != nil {
-				app.openChat(result.ChatID)
+		if block.Clicked() {
+			switch state {
+			case islandResult:
+				if result := i.resultNow(o.ResultFor); result != nil {
+					app.openChat(result.ChatID)
+				}
+			case islandIdle, islandWorking:
+				islandOpen()
 			}
 		}
 	})
@@ -783,11 +801,16 @@ func (i *island) identity(c *ui.Context, ask *islandAsk) {
 	case islandAskElsewhere:
 		status, statusInk, statusBG = L("needs you"), ui.Hex("#bf8cff"), ui.RGBA(191, 140, 255, 0.16)
 	}
-	ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
+	header := ui.ButtonBase(c.Key("island-identity")).FillWidth().Gap(8).AlignItems(ui.Center).
+		Cursor(ui.CursorPointer).Label(ask.BotName)
+	header.Children(func() {
 		islandAvatar(c, ask.BotName)
 		ui.Text(c, ask.BotName).FontSize(12.5).FontWeight(600).TextColor(islandInk).Shrink(1).MinWidth(0).SingleLine()
 		i.chip(c, status, statusInk, statusBG)
 	})
+	if header.Clicked() {
+		app.openChat(ask.ChatID)
+	}
 	if ask.Kind != islandAskPermission && ask.Question != "" {
 		ui.Text(c, ask.Question).FontSize(12).TextColor(islandDim).MaxLines(2).Shrink(1).MinWidth(0)
 	}
@@ -880,6 +903,19 @@ func (i *island) action(c *ui.Context, key, label string, primary bool, run func
 	if button.Clicked() {
 		run()
 	}
+}
+
+// islandOpen opens what waits on the user: the chat of the first question, or Lorca when nothing
+// does. The global shortcut and a click on the capsule both call it.
+func islandOpen() {
+	if store == nil {
+		return
+	}
+	if ask := islandAskOf(store); ask != nil {
+		app.openChat(ask.ChatID)
+		return
+	}
+	app.reopen()
 }
 
 // islandPendingCount is how many questions wait on the user across the store: pending `ask_user`
