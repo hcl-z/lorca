@@ -17,14 +17,18 @@ export interface MemoryFile {
   max_bytes: number;
 }
 
-/// The newest run of the memory capture that added facts, while it is not undone.
+/// A saved fact and the file that holds it.
+export interface CaptureFact {
+  text: string;
+  target: "profile" | "memory";
+}
+
+/// One memory capture batch. The client never receives source chat identifiers or quotes.
 export interface CaptureRun {
   id: string;
-  chat_id: string;
   /// Unix seconds.
   at: number;
-  added: string[];
-  refused: string[];
+  facts: CaptureFact[];
   undone: boolean;
 }
 
@@ -49,6 +53,7 @@ export interface BotMemory {
   topics: string[];
   profile: MemoryFile;
   capture: CaptureRun | null;
+  captures?: CaptureRun[];
   tidy?: TidyRun | null;
 }
 
@@ -92,6 +97,10 @@ export function writeProfile(runnerId: string, text: string, expectedHash: strin
 /// Forgets what a capture run added.
 export function undoCapture(botId: string, runId: string): Promise<{ removed: number }> {
   return core.request("memory_capture.undo", { bot_id: botId, run_id: runId });
+}
+
+export function captureHistory(botId: string): Promise<{ runs: CaptureRun[] }> {
+  return core.request("memory_capture.list", { bot_id: botId });
 }
 
 /// Puts back what a housekeeping pass moved out of MEMORY.md.

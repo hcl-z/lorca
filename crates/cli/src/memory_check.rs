@@ -23,7 +23,30 @@ pub type Refusal = String;
 /// whether a supersede replaced it, and whether it is there already. Facts are compared the way
 /// the store tells duplicates, without bullet, date, source, case, or extra spaces.
 pub fn check(text: &str, store: &MemoryStore) -> Result<(), Refusal> {
+    check_with_evidence(text, store, false, None, &[], true)
+}
+
+/// Checks a write. A sensitive fact additionally needs `consent_quote`, which must be one whole
+/// message the user wrote in this turn. Ordinary facts need no such evidence.
+pub fn check_with_evidence(
+    text: &str,
+    store: &MemoryStore,
+    sensitive: bool,
+    consent_quote: Option<&str>,
+    user_messages: &[String],
+    check_duplicates: bool,
+) -> Result<(), Refusal> {
     check_text(text)?;
+    if sensitive && !quotes_complete_message(consent_quote, user_messages) {
+        return Err(
+            "This is sensitive personal information. Save it only when the user's current message asks you to remember it, \
+             and pass that whole message as consent_quote."
+                .into(),
+        );
+    }
+    if !check_duplicates {
+        return Ok(());
+    }
     let fact = crate::memory::fact_of(text);
     let same = |other: &String| other.eq_ignore_ascii_case(&fact);
     if store.forgotten_facts().iter().any(same) {
@@ -37,6 +60,14 @@ pub fn check(text: &str, store: &MemoryStore) -> Result<(), Refusal> {
         return Err("Already in memory, word for word.".into());
     }
     Ok(())
+}
+
+/// The deterministic part of consent evidence: the quote is exactly one complete message the
+/// user wrote in this turn. Whether the message asks to remember the fact is supplied by the
+/// model as the structured `sensitive` proposal, rather than guessed from a keyword list.
+pub fn quotes_complete_message(consent_quote: Option<&str>, user_messages: &[String]) -> bool {
+    let Some(quote) = consent_quote.map(str::trim).filter(|quote| !quote.is_empty()) else { return false };
+    user_messages.iter().any(|message| message.trim() == quote)
 }
 
 /// The checks on the words themselves, without comparing them to what memory holds: for a
@@ -148,6 +179,52 @@ mod tests {
         assert!(check("the user prefers short replies", &store).is_ok());
         assert!(check("the user's company is Acme, a logistics firm", &store).is_ok());
         assert!(check("the user ships on Fridays unless a release is frozen", &store).is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn routing_is_a_structured_choice_not_a_keyword_guess() {
+        let (dir, store) = store();
+        assert!(check("the user lives in Hangzhou", &store).is_ok(), "the content gate does not guess the destination");
+        assert!(check("用户住在杭州", &store).is_ok());
+        assert!(check("my husband works at Acme", &store).is_ok());
+        assert!(check("the weekly report goes out on Fridays", &store).is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sensitive_writes_need_one_complete_user_message() {
+        let (dir, _store) = store();
+        let profile = MemoryStore::with_budget(dir.join("profile"), "PROFILE.md", 120, 8_000);
+        let message = "Please remember that my health condition is asthma.".to_string();
+        assert!(check_with_evidence("the user prefers short replies", &profile, false, None, std::slice::from_ref(&message), false).is_ok(), "ordinary profile facts need no consent");
+        assert!(check_with_evidence("the user's health condition is asthma", &profile, true, None, std::slice::from_ref(&message), false).is_err());
+        assert!(check_with_evidence(
+            "the user's health condition is asthma",
+            &profile,
+            true,
+            Some("my health condition is asthma"),
+            std::slice::from_ref(&message),
+            false
+        )
+        .is_err(), "a fragment is not the whole message");
+        assert!(check_with_evidence(
+            "the user's health condition is asthma",
+            &profile,
+            true,
+            Some("Please remember that my health condition is asthma."),
+            std::slice::from_ref(&message),
+            false
+        ).is_ok());
+        assert!(check_with_evidence(
+            "the user's health condition is asthma",
+            &profile,
+            true,
+            Some("Please remember that my health condition is asthma."),
+            &["Please remember that my".into(), "health condition is asthma.".into()],
+            false
+        ).is_err(), "consent cannot be stitched across messages");
+        assert!(quotes_complete_message(Some("Please remember that my health condition is asthma."), std::slice::from_ref(&message)));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
