@@ -1,0 +1,33 @@
+desktop/render_test.go
+  s_3636d883ed0eaf::t_37c30994c20dd9 42-43,45
+desktop/island_test.go
+  s_3636d883ed0eaf::t_591e7c59b03f4d 117
+  s_3636d883ed0eaf::t_f710dbfea76185 1-50,52-74,76-116,118-121
+  s_3636d883ed0eaf::t_2d5e5b8561424c 51
+  s_3636d883ed0eaf::t_a66bae7a747c25 75
+desktop/island.go
+  s_3636d883ed0eaf::t_c97a4f87f46bc1 137
+  s_3636d883ed0eaf::t_0f78d772cb6a31 68-69,71
+  s_3636d883ed0eaf::t_9c94dcafe0a6f5 178-179
+  s_3636d883ed0eaf::t_d8cc133cc0fec8 1-67,70,72-136,138-177,180-237,239-302
+  s_3636d883ed0eaf::t_4faee1e5840748 238
+desktop/mainwindow.go
+  s_3636d883ed0eaf::t_9dd5c5f636cd99 765
+  s_3636d883ed0eaf::t_92651d23975c94 43-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "d47cbb7e8c683d2f159abc8b61ee1e81cab2cffa",
+  "prompts": {},
+  "sessions": {
+    "s_3636d883ed0eaf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d15791d8-5e14-4670-b179-9d5642630b0f",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
