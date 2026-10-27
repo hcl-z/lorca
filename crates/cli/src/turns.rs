@@ -715,7 +715,7 @@ pub fn recover_unanswered(app: &Arc<App>) -> usize {
         if app.running_jobs.lock().unwrap().values().any(|job| job.chat_id == chat.meta.id) {
             continue;
         }
-        let messages = app.store.page(&chat.meta.id, None, 40).map(|(messages, _)| messages).unwrap_or_default();
+        let messages = app.store.page(&chat.meta.id, None, MAX_CONTEXT_MESSAGES).map(|(messages, _)| messages).unwrap_or_default();
         let mut newest: Option<String> = None;
         for message in messages
             .iter()
