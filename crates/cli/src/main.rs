@@ -419,6 +419,9 @@ async fn main() -> anyhow::Result<()> {
             lorca::service::trim_log();
             lorca::update::start(&app);
             runtime::resume_sent_jobs(&app);
+            // A turn the last run was in when it stopped left messages it had read but not
+            // answered; each chat's newest one gets a turn again.
+            lorca::turns::recover_unanswered(&app);
             lorca::tasks::start(&app);
             // A command a Lorca that quit left waiting went with it; its row says so now.
             {

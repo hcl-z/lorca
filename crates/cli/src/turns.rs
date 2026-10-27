@@ -274,11 +274,13 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
     // If this job waited behind an older turn, its initial transcript may already include
     // later user messages. It answers them in this run; their own admitted jobs become no-ops
     // when they reach the chat lock.
+    let claims = Arc::new(std::sync::Mutex::new(ClaimLedger::default()));
     let mut claimed_initial_steering = false;
     if !chat.meta.is_group() && !job.trigger_message_id.is_empty() {
         for message in app.store.messages_after(&chat.meta.id, &job.trigger_message_id).unwrap_or_default() {
-            if message.author == Author::You && message.is_complete() {
-                claimed_initial_steering |= app.claim_steering_message(&chat.meta.id, &message.id);
+            if message.author == Author::You && message.is_complete() && app.claim_steering_message(&chat.meta.id, &message.id) {
+                claims.lock().unwrap().claim(&message.id);
+                claimed_initial_steering = true;
             }
         }
     }
@@ -326,6 +328,7 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         job: job.clone(),
         chat_id: chat.meta.id.clone(),
         bot_id: bot.id.clone(),
+        claims: claims.clone(),
         model: provider.model_id().to_string(),
         window,
         current: None,
@@ -437,6 +440,10 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
     // Stop ends what the bot left running in the chat too, and what the user sent meanwhile no
     // longer waits for a step; a turn that ends on its own leaves both. A command this turn
     // started in the background runs on, and the chat says so.
+    let mut unanswered = sink.0.lock().unwrap().unanswered_claims();
+    if cancel.is_cancelled() {
+        unanswered = stopped_unanswered(app, job, &chat, unanswered);
+    }
     let mut state = sink.0.lock().unwrap();
     if cancel.is_cancelled() {
         app.shell_sessions.stop_chat(&chat.meta.id);
@@ -495,8 +502,9 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
     }
     // One line in the bot's daily log per turn that did something, written by the Runner, so
     // the bot's other chats can find out what happened here without the transcript.
-    if let Some(line) = turn_log_line(state.last_said.as_deref(), &state.tools_used, outcome == TurnOutcome::Skipped) {
-        drop(state);
+    let line = turn_log_line(state.last_said.as_deref(), &state.tools_used, outcome == TurnOutcome::Skipped);
+    drop(state);
+    if let Some(line) = line {
         let source = match &routine {
             Some(routine) => format!("routine \"{}\"", routine.name),
             None => format!("in {}", chat_source(app, &chat)),
@@ -505,6 +513,10 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
             tracing::warn!(%error, "writing the turn to the daily log");
         }
     }
+    // A message this turn read but did not answer is not its own any more: on a Stop its job
+    // went with the turn, so the newest one gets a new turn; otherwise the job already admitted
+    // behind the chat lock answers it.
+    give_back_unanswered(app, job, &chat, cancel.is_cancelled(), unanswered);
     outcome
 }
 
@@ -636,6 +648,121 @@ pub fn send_now(app: &Arc<App>, chat_id: &str, message_id: &str) -> Result<bool,
     app.shell_sessions.background_chat(app, chat_id);
     interrupt.interrupt();
     Ok(true)
+}
+
+/// A turn that read a message but did not answer it gives it back. On a Stop the message's own
+/// job is gone too, so the newest one gets a new turn; without a Stop, its admitted job runs.
+/// Returns the new job's id when one is admitted.
+fn give_back_unanswered(app: &Arc<App>, job: &Job, chat: &Chat, cancelled: bool, unanswered: Vec<String>) -> Option<String> {
+    if unanswered.is_empty() {
+        return None;
+    }
+    // In chat order, so the newest message is last.
+    let mut ordered: Vec<String> = if job.trigger_message_id.is_empty() {
+        Vec::new()
+    } else {
+        app.store
+            .messages_after(&chat.meta.id, &job.trigger_message_id)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|message| unanswered.iter().any(|id| id == &message.id))
+            .map(|message| message.id)
+            .collect()
+    };
+    for id in unanswered {
+        if !ordered.contains(&id) {
+            ordered.push(id);
+        }
+    }
+    for id in &ordered {
+        app.release_steering_message(&chat.meta.id, id);
+    }
+    if !cancelled || chat.meta.is_group() || chat.meta.channel.is_some() {
+        return None;
+    }
+    // A turn stopped because the chat was deleted or left the account starts nothing.
+    if app.chat(&chat.meta.id).is_none() {
+        return None;
+    }
+    // A turn stopped at a budget limit resumes through the budget, not by answering again.
+    if crate::budgets::current().is_some_and(|budget| budget.check().is_err()) {
+        return None;
+    }
+    let last = ordered.last()?;
+    let bot = app.bot(&job.bot_id)?;
+    let next = crate::runtime::user_turn_job(app, &chat.meta.id, &bot.id, last);
+    let id = next.id.clone();
+    crate::runtime::start_turn(app, next);
+    Some(id)
+}
+
+/// A Runner that restarts while a turn held a message gives the message back: the turn is gone,
+/// so a new one answers the newest stale message in each direct chat.
+pub fn recover_unanswered(app: &Arc<App>) -> usize {
+    /// Older messages are let go without a new turn: they are not what the user is waiting on.
+    const WINDOW: f64 = 24.0 * 60.0 * 60.0;
+    let now = now_secs();
+    let chats = app.state.lock().unwrap().chats.clone();
+    let mut recovered = 0;
+    for chat in chats {
+        if chat.meta.is_group() || chat.meta.channel.is_some() {
+            continue;
+        }
+        let Some(bot) = chat.meta.bot_ids.first().and_then(|id| app.bot(id)) else { continue };
+        if app.this_device_id().as_deref() != Some(bot.runner_id.as_str()) {
+            continue;
+        }
+        if app.running_jobs.lock().unwrap().values().any(|job| job.chat_id == chat.meta.id) {
+            continue;
+        }
+        let messages = app.store.page(&chat.meta.id, None, 40).map(|(messages, _)| messages).unwrap_or_default();
+        let mut newest: Option<String> = None;
+        for message in messages
+            .iter()
+            .filter(|message| message.author == Author::You && message.is_complete() && (message.promoted_at.is_some() || message.queued))
+        {
+            // A reply after the turn read it answers it; one before the claim, or none, does not.
+            let answered = message.promoted_at.is_some_and(|at| {
+                app.store
+                    .messages_after(&chat.meta.id, &message.id)
+                    .unwrap_or_default()
+                    .iter()
+                    .any(|later| {
+                        later.author == (Author::Bot { bot_id: bot.id.clone() })
+                            && matches!(later.body, Body::Text { .. })
+                            && later.is_complete()
+                            && later.created_at >= at
+                    })
+            });
+            if answered {
+                continue;
+            }
+            app.release_steering_message(&chat.meta.id, &message.id);
+            let when = message.promoted_at.unwrap_or(message.created_at);
+            if now - when <= WINDOW {
+                newest = Some(message.id.clone());
+            }
+        }
+        let Some(newest) = newest else { continue };
+        crate::runtime::start_turn(app, crate::runtime::user_turn_job(app, &chat.meta.id, &bot.id, &newest));
+        recovered += 1;
+    }
+    recovered
+}
+
+/// The messages a stopped turn gives back: those it read without answering, and those its
+/// queue still held when Stop came.
+fn stopped_unanswered(app: &App, job: &Job, chat: &Chat, claims: Vec<String>) -> Vec<String> {
+    if chat.meta.is_group() || chat.meta.channel.is_some() || job.trigger_message_id.is_empty() {
+        return claims;
+    }
+    let mut unanswered = claims;
+    for message in app.store.messages_after(&chat.meta.id, &job.trigger_message_id).unwrap_or_default() {
+        if message.author == Author::You && message.queued && !unanswered.contains(&message.id) {
+            unanswered.push(message.id);
+        }
+    }
+    unanswered
 }
 
 /// A new message from the user reached this Runner. The direct-chat loop that owns the chat
@@ -1386,6 +1513,8 @@ struct TurnState {
     job: Job,
     chat_id: String,
     bot_id: String,
+    /// The steering messages this turn has read, and whether its reply has answered them.
+    claims: Arc<std::sync::Mutex<ClaimLedger>>,
     /// The model answering, for the usage record.
     model: String,
     /// Its context window, 0 when unknown.
@@ -1418,6 +1547,37 @@ struct TurnState {
 /// Wait this long before showing a reply up to a sentence end rather than a paragraph end.
 const SENTENCE_FLUSH_AFTER: std::time::Duration = std::time::Duration::from_millis(1500);
 
+/// The steering messages a turn has read. A reply after one answers it; one the turn ends
+/// without answering is released to its own turn.
+#[derive(Default)]
+struct ClaimLedger {
+    claims: Vec<Claim>,
+}
+
+struct Claim {
+    message_id: String,
+    answered: bool,
+}
+
+impl ClaimLedger {
+    fn claim(&mut self, message_id: &str) {
+        if !self.claims.iter().any(|claim| claim.message_id == message_id) {
+            self.claims.push(Claim { message_id: message_id.to_string(), answered: false });
+        }
+    }
+
+    /// A reply reached the chat: it answers every message the turn had read before it.
+    fn answered(&mut self) {
+        for claim in &mut self.claims {
+            claim.answered = true;
+        }
+    }
+
+    fn unanswered(&self) -> Vec<String> {
+        self.claims.iter().filter(|claim| !claim.answered).map(|claim| claim.message_id.clone()).collect()
+    }
+}
+
 /// Where the visible part of a growing reply may end: after the last completed paragraph, or,
 /// once `since_flush` has passed, after the last completed sentence. `None` keeps the shown
 /// text as it is.
@@ -1445,13 +1605,19 @@ fn chunk_boundary(text: &str, shown_len: usize, since_flush: std::time::Duration
 }
 
 impl TurnState {
+    fn unanswered_claims(&self) -> Vec<String> {
+        self.claims.lock().unwrap().unanswered()
+    }
+
     fn handle(&mut self, event: AgentEvent) {
         match event {
             AgentEvent::MessageEnd {
                 message: AgentMessage::Custom { kind, data, .. },
             } if kind == STEERING_MESSAGE_KIND => {
                 if let Ok(message) = serde_json::from_value::<Message>(data) {
-                    self.app.claim_steering_message(&message.chat_id, &message.id);
+                    if self.app.claim_steering_message(&message.chat_id, &message.id) {
+                        self.claims.lock().unwrap().claim(&message.id);
+                    }
                 }
             }
             // Replies arrive in chunks, not tokens (after Grok Bot, whose server re-sends the
@@ -1743,6 +1909,7 @@ impl TurnState {
         message.state = MessageState::Complete;
         self.app.upsert_message(message, true);
         self.sent = true;
+        self.claims.lock().unwrap().answered();
         self.last_said = Some(text.to_string());
     }
 
@@ -5253,6 +5420,7 @@ mod tests {
             },
             chat_id: "chat".into(),
             bot_id: bot.id.clone(),
+            claims: Arc::new(std::sync::Mutex::new(ClaimLedger::default())),
             model: "model".into(),
             window: 0,
             current: None,
@@ -6793,5 +6961,125 @@ mod tests {
         let without_clock = |notes: &[String]| notes.iter().filter(|note| !note.starts_with("[It is now")).cloned().collect::<Vec<_>>();
         assert!(shown.iter().any(|note| note.contains("The user ships on Fridays.")), "{shown:?}");
         assert_eq!(without_clock(&shown), without_clock(&said));
+    }
+
+    /// A turn that read a message but did not answer it does not keep it: Stop gives it back,
+    /// and the message gets the turn its own job would have given it.
+    #[tokio::test]
+    async fn a_stopped_turn_gives_back_a_message_it_read_but_did_not_answer() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        crate::identity::create(app, Some("Runner".into())).unwrap();
+        let chef = Bot { runner_id: app.this_device_id().unwrap(), ..bot("b1", "Chef") };
+        let dm = chat("chat", "dm", None, &["b1"]);
+        app.state.lock().unwrap().bots.push(chef.clone());
+        app.state.lock().unwrap().chats.push(dm.clone());
+        let start = said("chat", Author::You, "run the checks", 1.0);
+        app.upsert_message(start.clone(), false);
+        let steer = said("chat", Author::You, "skip the slow suite", 2.0);
+        app.upsert_message(steer.clone(), false);
+        assert!(app.claim_steering_message("chat", &steer.id), "the turn read it");
+
+        let job = Job { trigger_message_id: start.id.clone(), ..Job::local("turn", "chat", &chef.id, "runner") };
+        let admitted = give_back_unanswered(app, &job, &dm, true, vec![steer.id.clone()]);
+
+        assert!(admitted.is_some(), "the message gets its own turn");
+        assert!(app.message("chat", &steer.id).unwrap().promoted_at.is_none(), "the claim is released");
+        assert!(
+            app.running_jobs.lock().unwrap().values().any(|job| job.chat_id == "chat"),
+            "the new turn waits on the chat lock"
+        );
+        settle_jobs(app).await;
+    }
+
+    /// A reply answers the steering messages the turn had already read; one read after the
+    /// reply is still waiting for its own answer.
+    #[test]
+    fn a_reply_answers_the_steering_messages_read_before_it() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        let chef = bot("b1", "Chef");
+        app.state.lock().unwrap().chats.push(chat("chat", "dm", None, &["b1"]));
+        let read = said("chat", Author::You, "read before the reply", 1.0);
+        app.upsert_message(read.clone(), false);
+        let later = said("chat", Author::You, "read after the reply", 2.0);
+        app.upsert_message(later.clone(), false);
+        let mut turn = turn_state(app, &chef, "dev");
+
+        turn.handle(AgentEvent::MessageEnd {
+            message: AgentMessage::Custom { kind: STEERING_MESSAGE_KIND.into(), data: serde_json::to_value(&read).unwrap(), timestamp: 0 },
+        });
+        turn.complete(turn.new_text_message(), "Answered the first one.");
+        turn.handle(AgentEvent::MessageEnd {
+            message: AgentMessage::Custom { kind: STEERING_MESSAGE_KIND.into(), data: serde_json::to_value(&later).unwrap(), timestamp: 0 },
+        });
+
+        assert_eq!(turn.unanswered_claims(), vec![later.id], "the later message is not answered by the earlier reply");
+    }
+
+    /// A message still in the turn's queue when Stop came is given back too, though the turn
+    /// never read it.
+    #[test]
+    fn a_stopped_turn_gives_back_a_message_still_in_its_queue() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        let chef = bot("b1", "Chef");
+        let dm = chat("chat", "dm", None, &["b1"]);
+        app.state.lock().unwrap().chats.push(dm.clone());
+        let start = said("chat", Author::You, "run the checks", 1.0);
+        app.upsert_message(start.clone(), false);
+        let mut held = said("chat", Author::You, "skip the slow suite", 2.0);
+        held.queued = true;
+        app.upsert_message(held.clone(), false);
+        let job = Job { trigger_message_id: start.id.clone(), ..Job::local("turn", "chat", &chef.id, "runner") };
+
+        assert_eq!(stopped_unanswered(app, &job, &dm, Vec::new()), vec![held.id]);
+    }
+
+    /// A Runner that restarts while a turn held a message gives it back and answers it.
+    #[tokio::test]
+    async fn a_restarted_runner_answers_a_message_its_turn_had_read() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        crate::identity::create(app, Some("Runner".into())).unwrap();
+        let chef = Bot { runner_id: app.this_device_id().unwrap(), ..bot("b1", "Chef") };
+        let dm = chat("chat", "dm", None, &["b1"]);
+        app.state.lock().unwrap().bots.push(chef.clone());
+        app.state.lock().unwrap().chats.push(dm.clone());
+        let start = said("chat", Author::You, "run the checks", 1.0);
+        app.upsert_message(start, false);
+        let mut steer = said("chat", Author::You, "skip the slow suite", now_secs());
+        steer.promoted_at = Some(now_secs());
+        app.upsert_message(steer.clone(), false);
+
+        let recovered = recover_unanswered(app);
+
+        assert_eq!(recovered, 1, "the message gets a turn");
+        assert!(app.message("chat", &steer.id).unwrap().promoted_at.is_none(), "the stale claim is released");
+        settle_jobs(app).await;
+    }
+
+    /// A message a turn answered after reading it is not given a second turn on restart.
+    #[tokio::test]
+    async fn a_restarted_runner_leaves_an_answered_message_alone() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        crate::identity::create(app, Some("Runner".into())).unwrap();
+        let chef = Bot { runner_id: app.this_device_id().unwrap(), ..bot("b1", "Chef") };
+        let dm = chat("chat", "dm", None, &["b1"]);
+        app.state.lock().unwrap().bots.push(chef.clone());
+        app.state.lock().unwrap().chats.push(dm.clone());
+        let start = said("chat", Author::You, "run the checks", 1.0);
+        app.upsert_message(start, false);
+        let mut steer = said("chat", Author::You, "skip the slow suite", now_secs() - 20.0);
+        steer.promoted_at = Some(now_secs() - 10.0);
+        app.upsert_message(steer.clone(), false);
+        app.upsert_message(said("chat", Author::Bot { bot_id: chef.id.clone() }, "Skipped them.", now_secs() - 5.0), false);
+
+        let recovered = recover_unanswered(app);
+
+        assert_eq!(recovered, 0, "it was answered");
+        assert!(app.message("chat", &steer.id).unwrap().promoted_at.is_some(), "an answered claim stays");
+        assert!(app.running_jobs.lock().unwrap().is_empty(), "no new turn");
     }
 }

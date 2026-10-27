@@ -206,7 +206,7 @@ pub fn cancel_chat(app: &Arc<App>, chat_id: &str) {
     }
 }
 
-fn user_turn_job(app: &Arc<App>, chat_id: &str, bot_id: &str, trigger_message_id: &str) -> Job {
+pub(crate) fn user_turn_job(app: &Arc<App>, chat_id: &str, bot_id: &str, trigger_message_id: &str) -> Job {
     Job {
         id: format!("job-{}", uuid::Uuid::new_v4()),
         chat_id: chat_id.to_string(),
