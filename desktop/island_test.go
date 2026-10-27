@@ -35,7 +35,7 @@ func TestIslandStateOf(t *testing.T) {
 		{"a stale result alone is idle", nil, stale, nil, nil, islandIdle},
 	}
 	for _, c := range cases {
-		if got := islandStateOf(c.ask, c.result, c.agents, c.workingBots, now); got != c.want {
+		if got := islandStateOf(c.ask, c.result, c.agents, c.workingBots, now, islandResultFor); got != c.want {
 			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
 		}
 	}
@@ -105,7 +105,7 @@ func TestIslandAskOfProjectsTheQuestion(t *testing.T) {
 
 	// A click on an option answers the card through store.AnswerAsk.
 	i := &island{}
-	tt := ui.NewTester(func(c *ui.Context) { i.draw(c, islandAsking, ask, false) }, islandWindowWidth, islandWindowHeight)
+	tt := ui.NewTester(func(c *ui.Context) { i.draw(c, islandAsking, ask, false, defaultIslandOptions()) }, islandWindowWidth, islandWindowHeight)
 	settle(tt)
 	if !showsLine(tt, "Ship now") {
 		t.Fatalf("no option in the island: %q", tt.Texts())
@@ -135,13 +135,61 @@ func TestIslandRendersStates(t *testing.T) {
 			i.result = &islandFinished{ChatID: store.Chats[0].ID, Title: L("Atlas"), Line: L("4 files changed, tests pass"), At: time.Now()}
 		}
 		drawn := state
-		tt := ui.NewTester(func(c *ui.Context) { i.draw(c, drawn, nil, false) }, islandWindowWidth, islandWindowHeight)
+		tt := ui.NewTester(func(c *ui.Context) { i.draw(c, drawn, nil, false, defaultIslandOptions()) }, islandWindowWidth, islandWindowHeight)
 		settle(tt)
 		renderTo(t, tt, "island-"+state.String())
 	}
-	tt := ui.NewTester(func(c *ui.Context) { i.draw(c, islandIdle, nil, true) }, islandWindowWidth, islandWindowHeight)
+	tt := ui.NewTester(func(c *ui.Context) { i.draw(c, islandIdle, nil, true, defaultIslandOptions()) }, islandWindowWidth, islandWindowHeight)
 	settle(tt)
 	renderTo(t, tt, "island-idle-hover")
+}
+
+// TestIslandGallery draws every state the island shows, cropped to the block, for a look at all of
+// them side by side.
+func TestIslandGallery(t *testing.T) {
+	demoWindow(t)
+	i := &island{}
+	o := defaultIslandOptions()
+	permission := &islandAsk{
+		Kind:      islandAskPermission,
+		BotName:   "Claude Code",
+		Command:   "bun test --watch",
+		Question:  "$ bun test --watch",
+		Decisions: (&model.AgentQuestion{Kind: "command", Command: "bun test --watch", HasRule: true}).Decisions(),
+	}
+	choices := &islandAsk{
+		Kind:     islandAskChoices,
+		BotName:  "Atlas",
+		Question: "Ship 1.0.31 now, or wait for the phone fix?",
+		Options: []model.AskOption{
+			{Label: "Ship now", Description: "Tag, build, and upload the draft release"},
+			{Label: "Wait for the fix", Description: "Hold the release until the phone fix lands"},
+			{Label: "Draft release notes only", Description: "Write the notes and decide later"},
+		},
+	}
+	elsewhere := &islandAsk{Kind: islandAskElsewhere, BotName: "Claude Code", Question: "Which database should the migration use?"}
+	states := []struct {
+		name  string
+		state islandState
+		ask   *islandAsk
+	}{
+		{"1-idle", islandIdle, nil},
+		{"2-working", islandWorking, nil},
+		{"3-ask-choices", islandAsking, choices},
+		{"4-ask-permission", islandAsking, permission},
+		{"5-ask-elsewhere", islandAsking, elsewhere},
+		{"6-result", islandResult, nil},
+	}
+	for _, st := range states {
+		if st.state == islandResult {
+			i.result = &islandFinished{ChatID: store.Chats[0].ID, Title: "Atlas", Line: "4 files changed, tests pass", At: time.Now()}
+		}
+		width, height := islandBlockSize(st.state, st.ask, false, o)
+		drawn, ask := st.state, st.ask
+		tt := ui.NewTester(func(c *ui.Context) { i.draw(c, drawn, ask, false, o) }, width, height)
+		settle(tt)
+		renderTo(t, tt, "gallery-"+st.name)
+	}
 }
 
 // TestIslandSizesHaveRoomForTheirRows holds the block's size to what it draws: a question grows
@@ -149,18 +197,19 @@ func TestIslandRendersStates(t *testing.T) {
 func TestIslandSizesHaveRoomForTheirRows(t *testing.T) {
 	two := &islandAsk{Kind: islandAskChoices, Options: []model.AskOption{{Label: "a"}, {Label: "b"}}}
 	five := &islandAsk{Kind: islandAskChoices, Options: []model.AskOption{{Label: "a"}, {Label: "b"}, {Label: "c"}, {Label: "d"}, {Label: "e"}}}
-	_, twoHigh := islandBlockSize(islandAsking, two, false)
-	_, fiveHigh := islandBlockSize(islandAsking, five, false)
+	o := defaultIslandOptions()
+	_, twoHigh := islandBlockSize(islandAsking, two, false, o)
+	_, fiveHigh := islandBlockSize(islandAsking, five, false, o)
 	if fiveHigh <= twoHigh {
 		t.Fatalf("five options %d do not make a taller island than two %d", fiveHigh, twoHigh)
 	}
-	if w, _ := islandBlockSize(islandAsking, two, false); w != islandExpandedWidth {
+	if w, _ := islandBlockSize(islandAsking, two, false, o); w != islandExpandedWidth {
 		t.Fatalf("question width: %d", w)
 	}
-	if w, h := islandBlockSize(islandIdle, nil, false); w != islandCompactWidth || h != islandCompactHeight {
+	if w, h := islandBlockSize(islandIdle, nil, false, o); w != islandCompactWidth || h != islandCompactHeight {
 		t.Fatalf("idle size: %dx%d", w, h)
 	}
-	if w, h := islandBlockSize(islandIdle, nil, true); w != islandCompactWidth+islandHoverGrowWidth || h != islandCompactHeight+islandHoverGrowHeight {
+	if w, h := islandBlockSize(islandIdle, nil, true, o); w != islandCompactWidth+islandHoverGrowWidth || h != islandCompactHeight+islandHoverGrowHeight {
 		t.Fatalf("hovered idle size: %dx%d", w, h)
 	}
 }

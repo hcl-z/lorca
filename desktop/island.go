@@ -116,6 +116,45 @@ type islandFinished struct {
 	At     time.Time
 }
 
+// islandOptions is the island's own preferences, read once per frame and by the polling.
+type islandOptions struct {
+	// CompactWidth is the folded capsule's width: "small", "regular", or "large" in Settings.
+	CompactWidth int
+	HoverGrow    bool
+	IdleVisible  bool
+	AllDisplays  bool
+	ResultFor    time.Duration
+}
+
+// islandOptionsNow reads the island's preferences, with the defaults a test and a first launch get.
+func islandOptionsNow() islandOptions {
+	p := prefs.get()
+	width := islandCompactWidth
+	switch p.IslandSize {
+	case "small":
+		width = 220
+	case "large":
+		width = 316
+	}
+	seconds := p.IslandResultSeconds
+	if seconds <= 0 {
+		seconds = 8
+	}
+	return islandOptions{
+		CompactWidth: width,
+		HoverGrow:    p.IslandHoverGrow,
+		IdleVisible:  p.IslandIdleVisible,
+		AllDisplays:  p.IslandAllDisplays,
+		ResultFor:    time.Duration(seconds) * time.Second,
+	}
+}
+
+// defaultIslandOptions is what the island shows when the preferences are not loaded, as in the
+// tests, which draw a state without a store behind it.
+func defaultIslandOptions() islandOptions {
+	return islandOptions{CompactWidth: islandCompactWidth, HoverGrow: true, IdleVisible: true, AllDisplays: true, ResultFor: islandResultFor}
+}
+
 // islandAskOf reads the question the island would show: the first coding agent asking or waiting
 // for an approval, else the first bot's `ask_user` still pending. It is pure over the store, so the
 // tests read the projection without a window.
@@ -187,11 +226,11 @@ func islandAuthorName(message *model.Message) string {
 
 // islandStateOf is what the island shows: a question first, else a fresh result, else work, else
 // idle. It is pure, for the tests.
-func islandStateOf(ask *islandAsk, result *islandFinished, agents []model.RunningAgent, workingBots []string, now time.Time) islandState {
+func islandStateOf(ask *islandAsk, result *islandFinished, agents []model.RunningAgent, workingBots []string, now time.Time, resultFor time.Duration) islandState {
 	if ask != nil {
 		return islandAsking
 	}
-	if result != nil && now.Sub(result.At) < islandResultFor {
+	if result != nil && now.Sub(result.At) < resultFor {
 		return islandResult
 	}
 	if len(agents) > 0 || len(workingBots) > 0 {
@@ -202,15 +241,15 @@ func islandStateOf(ask *islandAsk, result *islandFinished, agents []model.Runnin
 
 // islandBlockSize is the painted block, as OpenBot's island sizes it: a compact capsule that grows
 // under the pointer, and a panel whose height follows what it holds.
-func islandBlockSize(state islandState, ask *islandAsk, hovered bool) (width, height int) {
+func islandBlockSize(state islandState, ask *islandAsk, hovered bool, o islandOptions) (width, height int) {
 	switch state {
 	case islandAsking:
 		return islandExpandedWidth, islandPanelHeight(ask)
 	case islandResult:
 		return islandExpandedWidth, islandPanelTop + islandIdentityHeight + 6 + 16 + islandPanelBottom
 	}
-	width, height = islandCompactWidth, islandCompactHeight
-	if hovered {
+	width, height = o.CompactWidth, islandCompactHeight
+	if hovered && o.HoverGrow {
 		width += islandHoverGrowWidth
 		height += islandHoverGrowHeight
 	}
@@ -280,13 +319,33 @@ func newIsland() *island {
 	return i
 }
 
-// rebuild puts one canvas window on every display and closes those of displays that went away.
+// islandDisplays are the displays that get a window: every one, or the main one alone.
+func islandDisplays(o islandOptions) []mygo.Display {
+	all := mygo.Screen.Displays()
+	if o.AllDisplays || len(all) < 2 {
+		return all
+	}
+	for _, d := range all {
+		if d.Primary {
+			return []mygo.Display{d}
+		}
+	}
+	return all[:1]
+}
+
+// rebuild puts a canvas window on each display it should be on, and closes the rest.
 func (i *island) rebuild() {
 	if i == nil || store == nil || !islandSupported {
 		return
 	}
+	i.buildWindows(islandDisplays(islandOptionsNow()))
+	i.sync()
+}
+
+// buildWindows creates the missing windows and closes those of displays left out.
+func (i *island) buildWindows(displays []mygo.Display) {
 	seen := map[int64]bool{}
-	for _, d := range mygo.Screen.Displays() {
+	for _, d := range displays {
 		seen[d.ID] = true
 		if _, ok := i.wins[d.ID]; ok {
 			continue
@@ -325,7 +384,19 @@ func (i *island) rebuild() {
 			delete(i.wins, id)
 		}
 	}
-	i.sync()
+}
+
+// missingWindows is whether the windows on screen are not the ones the preferences ask for.
+func (i *island) missingWindows(displays []mygo.Display) bool {
+	if len(i.wins) != len(displays) {
+		return true
+	}
+	for _, d := range displays {
+		if _, ok := i.wins[d.ID]; !ok {
+			return true
+		}
+	}
+	return false
 }
 
 // islandWindowBounds is the transparent canvas on a display's top edge, centered: OpenBot's
@@ -339,20 +410,23 @@ func islandWindowBounds(d mygo.Display) mygo.Rectangle {
 	}
 }
 
-// sync shows the island in the state the store is in, sizes the block, and hides it where the user
-// turned it off. The store's changes call it on the main thread, where the store lives.
+// sync shows the island in the state the store is in and hides it where the user turned it off,
+// or where the idle capsule is not wanted.
 func (i *island) sync() {
 	if i == nil || store == nil || len(i.wins) == 0 || !islandSupported {
 		return
 	}
-	if !prefs.get().ShowsIsland {
-		i.show(false)
-		return
+	o := islandOptionsNow()
+	displays := islandDisplays(o)
+	if i.missingWindows(displays) {
+		i.buildWindows(displays)
 	}
+	state, _ := islandNow(o)
+	visible := prefs.get().ShowsIsland && (state != islandIdle || o.IdleVisible)
 	for _, win := range i.wins {
 		win.win.Invalidate()
 	}
-	i.show(true)
+	i.show(visible)
 }
 
 // pollPointer reads the pointer against each display's block: over it, the compact capsule grows
@@ -361,15 +435,19 @@ func (i *island) pollPointer() {
 	if i == nil || store == nil || !prefs.get().ShowsIsland {
 		return
 	}
-	state, ask := islandNow()
+	o := islandOptionsNow()
+	state, ask := islandNow(o)
+	if state == islandIdle && !o.IdleVisible {
+		return
+	}
 	p := mygo.Screen.CursorScreenPoint()
 	for _, win := range i.wins {
 		if win.win.IsDestroyed() || !win.win.IsVisible() {
 			continue
 		}
-		width, height := islandBlockSize(state, ask, false)
+		width, height := islandBlockSize(state, ask, false, o)
 		if win.hovered {
-			width, height = islandBlockSize(state, ask, true)
+			width, height = islandBlockSize(state, ask, true, o)
 		}
 		// The block is centered on the display, inside a canvas that is centered too.
 		x := win.display.Bounds.X + (win.display.Bounds.Width-width)/2
@@ -419,25 +497,25 @@ func (i *island) invalidate() {
 }
 
 // islandNow is the state of the store the island shows, and the question if one waits.
-func islandNow() (islandState, *islandAsk) {
+func islandNow(o islandOptions) (islandState, *islandAsk) {
 	if store == nil {
 		return islandIdle, nil
 	}
 	ask := islandAskOf(store)
 	var result *islandFinished
 	if app.island != nil {
-		result = app.island.resultNow()
+		result = app.island.resultNow(o.ResultFor)
 	}
-	state := islandStateOf(ask, result, store.RunningAgents(), islandWorkingBots(store), time.Now())
+	state := islandStateOf(ask, result, store.RunningAgents(), islandWorkingBots(store), time.Now(), o.ResultFor)
 	return state, ask
 }
 
 // resultNow is the result still fresh, or nil.
-func (i *island) resultNow() *islandFinished {
+func (i *island) resultNow(resultFor time.Duration) *islandFinished {
 	if i == nil || i.result == nil {
 		return nil
 	}
-	if time.Since(i.result.At) >= islandResultFor {
+	if time.Since(i.result.At) >= resultFor {
 		return nil
 	}
 	return i.result
@@ -461,7 +539,7 @@ func (i *island) turnFinished(event model.Event) {
 	if i.expiry != nil {
 		i.expiry.Stop()
 	}
-	i.expiry = time.AfterFunc(islandResultFor, func() { post(i.sync) })
+	i.expiry = time.AfterFunc(islandOptionsNow().ResultFor, func() { post(i.sync) })
 }
 
 // islandResultLine is the last thing a bot said in a chat, on one line.
@@ -488,18 +566,20 @@ func (i *island) view(c *ui.Context, displayID int64) {
 	if store == nil {
 		return
 	}
-	state, ask := islandNow()
+	o := islandOptionsNow()
+	state, ask := islandNow(o)
 	hovered := false
-	if win := i.wins[displayID]; win != nil {
+	if win := i.wins[displayID]; win != nil && o.HoverGrow {
 		hovered = win.hovered && state != islandAsking
 	}
-	i.draw(c, state, ask, hovered)
+	i.draw(c, state, ask, hovered, o)
 }
 
 // draw paints one state of the island at the size it would have over a display. The tests draw a
 // state without a store behind it.
-func (i *island) draw(c *ui.Context, state islandState, ask *islandAsk, hovered bool) {
-	width, height := islandBlockSize(state, ask, hovered)
+func (i *island) draw(c *ui.Context, state islandState, ask *islandAsk, hovered bool, o islandOptions) {
+	c.Root().Background(ui.Transparent)
+	width, height := islandBlockSize(state, ask, hovered, o)
 	radius := float32(islandCompactRadius)
 	if state == islandAsking || state == islandResult {
 		radius = islandExpandedRadius
@@ -522,7 +602,7 @@ func (i *island) draw(c *ui.Context, state islandState, ask *islandAsk, hovered 
 			}
 		})
 		if state == islandResult && block.Clicked() {
-			if result := i.resultNow(); result != nil {
+			if result := i.resultNow(o.ResultFor); result != nil {
 				app.openChat(result.ChatID)
 			}
 		}
@@ -587,7 +667,7 @@ func islandAvatar(c *ui.Context, name string) {
 
 // resultPanel is a finished turn: the agent or bot, that it is done, and the last line it said.
 func (i *island) resultPanel(c *ui.Context) {
-	result := i.resultNow()
+	result := i.resultNow(islandOptionsNow().ResultFor)
 	if result == nil {
 		return
 	}
@@ -649,7 +729,7 @@ func (i *island) identity(c *ui.Context, ask *islandAsk) {
 		ui.Text(c, ask.BotName).FontSize(12.5).FontWeight(600).TextColor(islandInk).Shrink(1).MinWidth(0).SingleLine()
 		ui.Text(c, L("asks")).FontSize(12).TextColor(islandDim).Shrink(0)
 	})
-	if ask.Kind == islandAskChoices && ask.Question != "" {
+	if ask.Kind != islandAskPermission && ask.Question != "" {
 		ui.Text(c, ask.Question).FontSize(12).TextColor(islandDim).MaxLines(2).Shrink(1).MinWidth(0)
 	}
 }
