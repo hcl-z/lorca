@@ -242,6 +242,15 @@ func islandStateOf(ask *islandAsk, result *islandFinished, agents []model.Runnin
 	return islandIdle
 }
 
+// islandContentKey tells one showing from the next: the state, and for a question the card it
+// speaks for, so a second question swaps its content in rather than keeping the first.
+func islandContentKey(state islandState, ask *islandAsk) string {
+	if ask == nil {
+		return state.String()
+	}
+	return state.String() + ":" + ask.ChatID + ":" + ask.MessageID
+}
+
 // islandBlockSize is the painted block, as OpenBot's island sizes it: a compact capsule that grows
 // under the pointer, and a panel whose height follows what it holds.
 func islandBlockSize(state islandState, ask *islandAsk, hovered bool, o islandOptions) (width, height int) {
@@ -602,16 +611,26 @@ func (i *island) draw(c *ui.Context, state islandState, ask *islandAsk, hovered 
 			Background(islandBackground()).Clip().
 			Shadow(0, 6, 20, 0, shadow)
 		block.Children(func() {
-			switch state {
-			case islandAsking:
-				i.askPanel(c, ask)
-			case islandResult:
-				i.resultPanel(c)
-			case islandWorking:
-				i.compactBody(c, islandWorking)
-			default:
-				i.compactBody(c, islandIdle)
-			}
+			// The content of a new state fades in from a little lower, as OpenBot's surface swap
+			// does, while the block morphs around it.
+			content := ui.Row(c.Key("island-content-" + islandContentKey(state, ask))).Fill()
+			content.Transition(ui.ElementTransition{
+				Duration: 200 * time.Millisecond,
+				Enter:    &ui.Motion{Y: 6, Opacity: 0, Scale: 0.98},
+				Exit:     &ui.Motion{Y: -4, Opacity: 0},
+			})
+			content.Children(func() {
+				switch state {
+				case islandAsking:
+					i.askPanel(c, ask)
+				case islandResult:
+					i.resultPanel(c)
+				case islandWorking:
+					i.compactBody(c, islandWorking)
+				default:
+					i.compactBody(c, islandIdle)
+				}
+			})
 		})
 		if state == islandResult && block.Clicked() {
 			if result := i.resultNow(o.ResultFor); result != nil {
@@ -666,8 +685,13 @@ func (i *island) compactBody(c *ui.Context, state islandState) {
 			})
 			ui.Spacer(c)
 			if n := unreadTotal(); n > 0 {
-				ui.Row(c).MinWidth(18).Height(18).Padding(0, 5).Radius(9).Background(islandFaint).
-					Center().Shrink(0).Children(func() {
+				badge := ui.Row(c.Key(fmt.Sprint("unread-", n))).MinWidth(18).Height(18).Padding(0, 5).
+					Radius(9).Background(islandFaint).Center().Shrink(0)
+				badge.Transition(ui.ElementTransition{
+					Duration: 180 * time.Millisecond,
+					Enter:    &ui.Motion{Scale: 1.2, Opacity: 0},
+				})
+				badge.Children(func() {
 					ui.Text(c, fmt.Sprint(n)).FontSize(10.5).FontWeight(600).TextColor(islandInk).
 						FontFeatures("tnum").SingleLine()
 				})
@@ -721,12 +745,12 @@ func (i *island) askPanel(c *ui.Context, ask *islandAsk) {
 		case islandAskChoices:
 			for n, option := range ask.Options {
 				place := n
-				i.optionRow(c, fmt.Sprint("ask-", n), fmt.Sprint(n+1), option.Label, option.Description, func() {
+				i.optionRow(c, fmt.Sprint("ask-", n), fmt.Sprint(n+1), option.Label, option.Description, time.Duration(n)*30*time.Millisecond, func() {
 					store.AnswerAsk(ask.ChatID, ask.MessageID, []int{place}, "", func(error) { i.sync() })
 				})
 			}
 		default:
-			i.optionRow(c, "answer-elsewhere", "", L("Answer in Lorca"), "", func() { app.openChat(ask.ChatID) })
+			i.optionRow(c, "answer-elsewhere", "", L("Answer in Lorca"), "", 0, func() { app.openChat(ask.ChatID) })
 		}
 		ui.Row(c).FillWidth().Height(islandActionsHeight).AlignItems(ui.Center).Children(func() {
 			if more := islandPendingCount(store) - 1; more > 0 {
@@ -788,15 +812,29 @@ func (i *island) commandBlock(c *ui.Context, command string) {
 	})
 }
 
+// islandRowFill is a row's background: the faint fill, stronger under the pointer.
+func islandRowFill(hovered bool) ui.Color {
+	if hovered {
+		return islandRowHov
+	}
+	return islandRowBG
+}
+
 // optionRow is one answer of the panel: a number or nothing, the words, and their description, as
 // OpenBot's question rows draw them.
-func (i *island) optionRow(c *ui.Context, key, index, label, description string, answer func()) {
+func (i *island) optionRow(c *ui.Context, key, index, label, description string, stagger time.Duration, answer func()) {
 	row := ui.ButtonBase(c.Key(key)).FillWidth().Height(islandOptionHeight).Padding(7, 10).
-		Radius(12).Background(islandRowBG).AlignItems(ui.Center).Gap(8).
+		Radius(12).AlignItems(ui.Center).Gap(8).
 		Label(label).Cursor(ui.CursorPointer)
-	if row.Hovered() {
-		row.Background(islandRowHov)
+	row.Background(row.AnimateColor("bg", islandRowFill(row.Hovered()), ui.Animation{Duration: 120 * time.Millisecond}))
+	press := ui.Pose{}
+	if row.Pressed() {
+		press.Scale = 0.98
 	}
+	row.AnimatePose(press, ui.Snappy)
+	// Rows of one question arrive one after another, as a list's do.
+	anim := ui.Animation{Spring: ui.SpringOptions{Duration: 320 * time.Millisecond, Bounce: 0.12}, Delay: stagger}
+	row.Transition(ui.ElementTransition{Animation: &anim, Enter: &ui.Motion{Y: 6, Opacity: 0}})
 	row.Children(func() {
 		if index != "" {
 			ui.Row(c).Width(islandOptionIndex).Height(islandOptionIndex).Radius(6).
@@ -825,12 +863,17 @@ func (i *island) action(c *ui.Context, key, label string, primary bool, run func
 	ink := islandDim
 	switch {
 	case primary:
-		button.Background(islandInk)
+		button.Background(button.AnimateColor("bg", islandInk, ui.Animation{Duration: 120 * time.Millisecond}))
 		ink = ui.RGBA(12, 12, 14, 1)
 	case button.Hovered():
-		button.Background(islandRowBG)
+		button.Background(button.AnimateColor("bg", islandRowBG, ui.Animation{Duration: 120 * time.Millisecond}))
 		ink = islandInk
 	}
+	press := ui.Pose{}
+	if button.Pressed() {
+		press.Scale = 0.96
+	}
+	button.AnimatePose(press, ui.Snappy)
 	button.Children(func() {
 		ui.Text(c, label).FontSize(12).FontWeight(600).TextColor(ink).SingleLine()
 	})
