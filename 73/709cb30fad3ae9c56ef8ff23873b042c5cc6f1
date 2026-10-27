@@ -1,0 +1,59 @@
+docs/architecture/runtime.md
+  s_92e80f80c1b740::t_8e3e6a656c0207 70
+crates/cli/src/runtime.rs
+  s_92e80f80c1b740::t_6732860e7fbb5a 209
+crates/cli/src/main.rs
+  s_92e80f80c1b740::t_77acae82274e6c 422-424
+docs/architecture/stopping.md
+  s_92e80f80c1b740::t_c8455c8acf5826 17
+crates/cli/src/turns.rs
+  s_92e80f80c1b740::t_1e53f321a83a65 683-686
+  s_92e80f80c1b740::t_4db4f86a8a0bea 737-739,742
+  s_92e80f80c1b740::t_528021462b8b28 1609
+  s_92e80f80c1b740::t_3888b856f005db 699-700,751-752
+  s_92e80f80c1b740::t_707f504987bd05 6994-7018
+  s_92e80f80c1b740::t_ef65ddb3b8d2d1 444-446
+  s_92e80f80c1b740::t_f5c0a250ebe77a 653-655,697-698
+  s_92e80f80c1b740::t_ae50b9e5f1cb68 702-724,740-741,743-750
+  s_92e80f80c1b740::t_ade3bc7fe17322 331
+  s_92e80f80c1b740::t_2309fa228a3159 1550-1580
+  s_92e80f80c1b740::t_e50c65bd3c9e29 7038-7060
+  s_92e80f80c1b740::t_f554ca09b5dc33 1516-1517
+  s_92e80f80c1b740::t_23d51c9ee15288 443
+  s_92e80f80c1b740::t_88239fb5076d6a 505-507,516-519
+  s_92e80f80c1b740::t_21af2f7816e99e 6965-6993
+  s_92e80f80c1b740::t_da185c6d68f177 701
+  s_92e80f80c1b740::t_e0afce34e77287 7061-7081,7083-7084
+  s_92e80f80c1b740::t_c81ac60dcaad35 7082
+  s_92e80f80c1b740::t_9a1803e0ce0a59 725-736
+  s_92e80f80c1b740::t_a0251f97fb192b 281-283
+  s_92e80f80c1b740::t_087b97454f6068 1912
+  s_92e80f80c1b740::t_5df42cd737a834 5423
+  s_92e80f80c1b740::t_95c10729fc7681 7019-7037
+  s_92e80f80c1b740::t_eb6c4b776493a0 755-765
+  s_92e80f80c1b740::t_502fa88206c86d 1608,1610-1611
+  s_92e80f80c1b740::t_54e8ad1af22815 277
+  s_92e80f80c1b740::t_7d1aa2d9192f9f 656-682,687-696
+  s_92e80f80c1b740::t_4d95d88710f314 1618-1620
+  s_92e80f80c1b740::t_f5471cbc617154 753-754,766-767
+crates/cli/src/app.rs
+  s_92e80f80c1b740::t_e415f613ec309f 2127-2138
+docs/architecture/phone-app.md
+  s_92e80f80c1b740::t_d3cc5190ad6a38 29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "73709cb30fad3ae9c56ef8ff23873b042c5cc6f1",
+  "prompts": {},
+  "sessions": {
+    "s_92e80f80c1b740": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e29f82c-d901-4efc-8b99-d04ece7be54f",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
