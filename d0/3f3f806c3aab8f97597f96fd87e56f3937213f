@@ -1,0 +1,66 @@
+crates/cli/src/runtime.rs
+  s_b9e6899a28ad81::t_938caaa38199d2 72-80
+crates/cli/src/coding/tests.rs
+  s_b9e6899a28ad81::t_266ccf62d3b869 587-612,614-622
+  s_b9e6899a28ad81::t_f29ec2890a0f60 933
+  s_b9e6899a28ad81::t_14fe3da80f0ae3 613
+  s_b9e6899a28ad81::t_a39c4daca308a3 537,539,568-572,574-578,582,584-586,623-627
+  s_b9e6899a28ad81::t_00bb63da08e921 248-255
+  s_b9e6899a28ad81::t_d3e034544df1b8 545
+  s_b9e6899a28ad81::t_eef2a8b2999597 538,552,573,628
+  s_b9e6899a28ad81::t_029519e61ac0f5 547
+  s_b9e6899a28ad81::t_c6f044b52ee418 579-581,583
+  s_b9e6899a28ad81::t_77b118db4e9274 828-851,854-869,873-874
+  s_b9e6899a28ad81::t_64d3943a123a79 546
+  s_b9e6899a28ad81::t_a2b9dba89b0628 870-872
+docs/architecture/coding-agents.md
+  s_b9e6899a28ad81::t_2eb89bd8155df1 57
+  s_b9e6899a28ad81::t_1d6eb9bb0c9639 53-54,56,58
+  s_b9e6899a28ad81::t_66dbf168fdf8fc 61
+  s_b9e6899a28ad81::t_bc1cac33a9af97 35
+  s_b9e6899a28ad81::t_d7f8c8efeca1bb 55
+crates/cli/src/coding/mod.rs
+  s_b9e6899a28ad81::t_dc031f5a0ddcd3 63-64,978,1211
+  s_b9e6899a28ad81::t_f6dbd5007f7d5a 1288
+  s_b9e6899a28ad81::t_e81a1696dd40a2 1478,1480-1481
+  s_b9e6899a28ad81::t_9a9cd3553160e0 1137,1148-1149,1151-1157
+  s_b9e6899a28ad81::t_66366b092be416 798-799
+  s_b9e6899a28ad81::t_001c214a54d560 813
+  s_b9e6899a28ad81::t_034500ce08bedd 134-137,245-256,274,328-348,353-404
+  s_b9e6899a28ad81::t_4c5e912892ea34 1505-1507
+  s_b9e6899a28ad81::t_0fbd8a4e0dd177 882-884
+  s_b9e6899a28ad81::t_d3e034544df1b8 812
+  s_b9e6899a28ad81::t_186e4fa3475012 1475-1477,1479
+  s_b9e6899a28ad81::t_154db8f3713e28 138-141
+  s_b9e6899a28ad81::t_ba5246585baaba 1287,1289
+  s_b9e6899a28ad81::t_99af2470d0e4d6 142-145
+  s_b9e6899a28ad81::t_3395b45110ccc2 814
+  s_b9e6899a28ad81::t_b4fba3a5c6afe6 1286,1290-1292,1294
+docs/architecture/questions.md
+  s_b9e6899a28ad81::t_fe20573e388510 34
+crates/cli/src/coding/tool.rs
+  s_b9e6899a28ad81::t_21079c9ed9181c 265
+  s_b9e6899a28ad81::t_f6b712d53b173a 162-165
+  s_b9e6899a28ad81::t_bc036519bf3440 45-46
+  s_b9e6899a28ad81::t_0cdc68e55a35b1 166-167
+  s_b9e6899a28ad81::t_0239130addb587 208
+  s_b9e6899a28ad81::t_e2a39b2b356f8d 30-31
+crates/cli/src/turns/tools.rs
+  s_b9e6899a28ad81::t_d164b94bf2a56b 170
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "d03f3f806c3aab8f97597f96fd87e56f3937213f",
+  "prompts": {},
+  "sessions": {
+    "s_b9e6899a28ad81": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9f769ae6-f904-41e2-aae4-1e185238e8bc",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
