@@ -1,0 +1,71 @@
+desktop/composer.go
+  s_b9e6899a28ad81::t_5fc0829cf7c3a4 506
+  s_b9e6899a28ad81::t_cd8e2d7d20658e 165-170,173,177-179,191,212,216-218,414-416,535,538,542-543,553-569,577,584-597,599-603,605-607,610-615,630-670
+  s_b9e6899a28ad81::t_b0bd71e5ee0d20 164
+  s_b9e6899a28ad81::t_2eb46c812b2303 608-609
+  s_b9e6899a28ad81::t_b2eed2df392612 158-163
+  s_b9e6899a28ad81::t_f967c5e983dd66 604
+  s_b9e6899a28ad81::t_ade319b2d582bf 598,616-629
+  s_b9e6899a28ad81::t_9e9ad8194f9bb9 192-211,213,215
+desktop/mainwindow.go
+  s_b9e6899a28ad81::t_a922ed375ba38d 985
+  s_b9e6899a28ad81::t_f3dadb393b1272 953-960
+desktop/avatar.go
+  s_b9e6899a28ad81::t_bdb86ac4fc6a98 128-131
+  s_b9e6899a28ad81::t_928bf266fa689c 77-85
+  s_b9e6899a28ad81::t_19972cd4893fd3 36-37,48-49
+desktop/agent_ask_card.go
+  s_b9e6899a28ad81::t_dd2e6799b0f7a0 86
+desktop/agentmarks.go
+  s_b9e6899a28ad81::t_5738252bdc664a 12-16,18
+  s_b9e6899a28ad81::t_3ae853cd27204c 17
+  s_b9e6899a28ad81::t_bed1be632cc475 37-46
+desktop/agents.go
+  s_b9e6899a28ad81::t_78909426235dc6 118
+desktop/composer_test.go
+  s_b9e6899a28ad81::t_9b65cbe54345c6 29-62
+desktop/chat.go
+  s_b9e6899a28ad81::t_124c3cb3c2a637 310
+  s_b9e6899a28ad81::t_de7fa0c12dce68 144,153-157,160,164,168
+  s_b9e6899a28ad81::t_562a03fd9dc54c 308-309,313-321
+  s_b9e6899a28ad81::t_8ba3e7acc3ba60 444-445
+  s_b9e6899a28ad81::t_ae92847a83d7a7 358
+  s_b9e6899a28ad81::t_8b4c3ec4be7d76 191-205
+  s_b9e6899a28ad81::t_2b8cb8f7888427 328
+  s_b9e6899a28ad81::t_2d6a22d1687bd8 419,426
+  s_b9e6899a28ad81::t_82c4394bbbfbea 47-49
+  s_b9e6899a28ad81::t_b4be1d7157a5fb 37-40
+  s_b9e6899a28ad81::t_d8c6067eae5922 530-534
+  s_b9e6899a28ad81::t_85f862bd31dd51 213
+  s_b9e6899a28ad81::t_031b85f4490b5f 440-442
+  s_b9e6899a28ad81::t_1785ff705eabaf 22-24
+  s_b9e6899a28ad81::t_97b3dedab23570 25-27
+desktop/cards.go
+  s_b9e6899a28ad81::t_196fb9fe4d1664 151
+  s_b9e6899a28ad81::t_53cb21c8ae4265 165-169
+  s_b9e6899a28ad81::t_ab6bfd08aadcf0 129,132-133,135,138-144,156
+  s_b9e6899a28ad81::t_beb4d3b731972c 126,130-131,134,136-137,150,152-155,157-159,161,164
+desktop/agentkit.go
+  s_b9e6899a28ad81::t_84905173675bb8 27-30
+desktop/model/wire.go
+  s_b9e6899a28ad81::t_2dcb788bc88240 320-327,970-971
+  s_b9e6899a28ad81::t_4eb4a1555ba58c 315-319
+desktop/model/models.go
+  s_b9e6899a28ad81::t_2dcb788bc88240 2174-2183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "fab57f7f44db26fa2bced950f90cd5df869e8a23",
+  "prompts": {},
+  "sessions": {
+    "s_b9e6899a28ad81": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9f769ae6-f904-41e2-aae4-1e185238e8bc",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
