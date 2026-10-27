@@ -52,6 +52,7 @@ const (
 	islandOptionGap         = 6
 	islandOptionIndex       = 22
 	islandActionsHeight     = 32
+	islandWorkerRow         = 44
 	islandHitSlop           = 6
 	// islandPointerPoll is how often the pointer is read to grow or shrink the capsule and to let
 	// clicks through elsewhere. MyGo 0.4.5 cannot forward mouse moves to an ignored window, so the
@@ -268,6 +269,14 @@ func islandBlockSize(state islandState, ask *islandAsk, hovered bool, o islandOp
 	case islandResult:
 		return islandExpandedWidth, islandPanelTop + islandIdentityHeight + 6 + 16 + islandPanelBottom
 	}
+	if state == islandWorking && hovered {
+		// Under the pointer the capsule opens into the rows of what is at work, as OpenBot's does.
+		rows := 1
+		if store != nil {
+			rows = len(islandWorkers(store))
+		}
+		return islandExpandedWidth, islandWorkingPanelHeight(rows)
+	}
 	width, height = o.CompactWidth, islandCompactHeight
 	if state == islandIdle {
 		width = islandIdleWidth
@@ -277,6 +286,12 @@ func islandBlockSize(state islandState, ask *islandAsk, hovered bool, o islandOp
 		height += islandHoverGrowHeight
 	}
 	return width, height
+}
+
+// islandWorkingPanelHeight is the expanded working panel's height for its rows.
+func islandWorkingPanelHeight(rows int) int {
+	rows = max(rows, 1)
+	return islandPanelTop + rows*islandWorkerRow + max(rows-1, 0)*2 + islandPanelBottom
 }
 
 // islandPanelHeight is the expanded panel's height, from the same numbers its view draws with.
@@ -639,7 +654,11 @@ func (i *island) draw(c *ui.Context, state islandState, ask *islandAsk, hovered 
 				case islandResult:
 					i.resultPanel(c)
 				case islandWorking:
-					i.compactBody(c, islandWorking)
+					if hovered {
+						i.workingPanel(c)
+					} else {
+						i.compactBody(c, islandWorking)
+					}
 				default:
 					i.compactBody(c, islandIdle)
 				}
@@ -724,6 +743,40 @@ func (i *island) compactBody(c *ui.Context, state islandState) {
 // app has the bot's image here.
 func islandAvatar(c *ui.Context, name string) {
 	ui.Avatar(c, name, nil).Width(20).Height(20).Shrink(0)
+}
+
+// workingPanel is the capsule opened under the pointer: one row per thing at work, and a click
+// opens its chat, as OpenBot's working island lists them.
+func (i *island) workingPanel(c *ui.Context) {
+	workers := islandWorkers(store)
+	ui.Column(c).Fill().Padding(islandPanelTop, islandPanelSide, islandPanelBottom, islandPanelSide).
+		Gap(2).Children(func() {
+		for n, worker := range workers {
+			w := worker
+			row := ui.ButtonBase(c.Key(fmt.Sprint("worker-", n))).FillWidth().Height(islandWorkerRow).
+				Padding(4, 8).Radius(12).AlignItems(ui.Center).Gap(10).
+				Label(w.Name).Cursor(ui.CursorPointer)
+			row.Background(row.AnimateColor("bg", islandRowFill(row.Hovered()), ui.Animation{Duration: 120 * time.Millisecond}))
+			press := ui.Pose{}
+			if row.Pressed() {
+				press.Scale = 0.98
+			}
+			row.AnimatePose(press, ui.Snappy)
+			anim := ui.Animation{Spring: ui.SpringOptions{Duration: 320 * time.Millisecond, Bounce: 0.12}, Delay: time.Duration(n) * 30 * time.Millisecond}
+			row.Transition(ui.ElementTransition{Animation: &anim, Enter: &ui.Motion{Y: 6, Opacity: 0}})
+			row.Children(func() {
+				islandAvatar(c, w.Name)
+				ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(1).Children(func() {
+					ui.Text(c, w.Name).FontSize(12.5).FontWeight(600).TextColor(islandInk).SingleLine().Shrink(1).MinWidth(0)
+					ui.Text(c, w.Chat).FontSize(11.5).TextColor(islandDim).SingleLine().Shrink(1).MinWidth(0)
+				})
+				ui.Spinner(c).Width(12).Height(12)
+			})
+			if row.Clicked() {
+				app.openChat(w.ChatID)
+			}
+		}
+	})
 }
 
 // resultPanel is a finished turn: the agent or bot, that it is done, and the last line it said.
@@ -949,6 +1002,34 @@ func islandWorkingBots(s *model.Store) []string {
 			continue
 		}
 		out = append(out, s.WorkingBots(chat.ID)...)
+	}
+	return out
+}
+
+// islandWorker is one row of the expanded working panel: what is at work, and the chat it works
+// in, which a click opens.
+type islandWorker struct {
+	Name   string
+	ChatID string
+	Chat   string
+}
+
+// islandWorkers lists what is at work, coding agents first, as the panel draws them.
+func islandWorkers(s *model.Store) []islandWorker {
+	var out []islandWorker
+	for _, r := range s.RunningAgents() {
+		if r.Agent == nil || r.Chat == nil {
+			continue
+		}
+		out = append(out, islandWorker{Name: r.Agent.Name(), ChatID: r.Chat.ID, Chat: s.Title(r.Chat)})
+	}
+	for _, chat := range s.Chats {
+		if !s.IsResponding(chat.ID) {
+			continue
+		}
+		for _, botID := range s.WorkingBots(chat.ID) {
+			out = append(out, islandWorker{Name: islandBotName(botID), ChatID: chat.ID, Chat: s.Title(chat)})
+		}
 	}
 	return out
 }

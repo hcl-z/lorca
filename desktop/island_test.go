@@ -169,24 +169,26 @@ func TestIslandGallery(t *testing.T) {
 	}
 	elsewhere := &islandAsk{Kind: islandAskElsewhere, BotName: "Claude Code", Question: "Which database should the migration use?"}
 	states := []struct {
-		name  string
-		state islandState
-		ask   *islandAsk
+		name    string
+		state   islandState
+		ask     *islandAsk
+		hovered bool
 	}{
-		{"1-idle", islandIdle, nil},
-		{"2-working", islandWorking, nil},
-		{"3-ask-choices", islandAsking, choices},
-		{"4-ask-permission", islandAsking, permission},
-		{"5-ask-elsewhere", islandAsking, elsewhere},
-		{"6-result", islandResult, nil},
+		{"1-idle", islandIdle, nil, false},
+		{"2-working", islandWorking, nil, false},
+		{"2b-working-open", islandWorking, nil, true},
+		{"3-ask-choices", islandAsking, choices, false},
+		{"4-ask-permission", islandAsking, permission, false},
+		{"5-ask-elsewhere", islandAsking, elsewhere, false},
+		{"6-result", islandResult, nil, false},
 	}
 	for _, st := range states {
 		if st.state == islandResult {
 			i.result = &islandFinished{ChatID: store.Chats[0].ID, Title: "Atlas", Line: "4 files changed, tests pass", At: time.Now()}
 		}
-		width, height := islandBlockSize(st.state, st.ask, false, o)
-		drawn, ask := st.state, st.ask
-		tt := ui.NewTester(func(c *ui.Context) { i.draw(c, drawn, ask, false, o) }, width, height)
+		width, height := islandBlockSize(st.state, st.ask, st.hovered, o)
+		drawn, ask, hovered := st.state, st.ask, st.hovered
+		tt := ui.NewTester(func(c *ui.Context) { i.draw(c, drawn, ask, hovered, o) }, width, height)
 		settle(tt)
 		renderTo(t, tt, "gallery-"+st.name)
 	}
