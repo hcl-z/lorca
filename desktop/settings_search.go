@@ -51,6 +51,11 @@ func trayIconEntry() settingsEntry {
 	return entry(model.PaneGeneral, title, "", L("tray menu bar status icon notification area"))
 }
 
+// islandEntry is the island's switch, on the platforms that have one.
+func islandEntry() settingsEntry {
+	return entry(model.PaneGeneral, L("Show the island at the top of the screen"), "", L("island notch status working agents"))
+}
+
 func unreadBadgeEntry() settingsEntry {
 	return entry(model.PaneGeneral, L("Show unread count on the app icon"), "", L("badge dock menu bar tray number unread"))
 }
@@ -174,7 +179,11 @@ func (s settingsEntry) matches(query string) bool {
 func entriesIn(pane model.SettingsPane, device *model.Device) []settingsEntry {
 	switch pane {
 	case model.PaneGeneral:
-		out := []settingsEntry{sendOnReturnEntry(), trayIconEntry(), unreadBadgeEntry(), appearanceEntry(), appLanguageEntry()}
+		out := []settingsEntry{sendOnReturnEntry(), trayIconEntry(), unreadBadgeEntry()}
+		if runtime.GOOS == "darwin" {
+			out = append(out, islandEntry())
+		}
+		out = append(out, appearanceEntry(), appLanguageEntry())
 		if updatesEnabled() {
 			out = append(out, versionEntry(), automaticChecksEntry(), automaticDownloadsEntry())
 		}

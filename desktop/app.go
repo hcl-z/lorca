@@ -102,6 +102,9 @@ func (a *appDelegate) didFinishLaunching() {
 			a.main.storeChanged(event)
 		}
 		a.notifier.storeChanged(event)
+		if event.Kind == model.EventTurnFinished {
+			a.island.turnFinished(event)
+		}
 		a.island.sync()
 		invalidateWindows()
 	})

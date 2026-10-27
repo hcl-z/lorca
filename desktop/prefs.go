@@ -26,9 +26,12 @@ type Preferences struct {
 	// ShowsTrayIcon puts the app's icon in the menu bar (the notification area on Windows and
 	// Linux); UnreadBadge shows the unread total on the Dock or launcher icon and beside the tray
 	// icon. Both start on.
-	ShowsTrayIcon bool   `json:"showsTrayIcon"`
-	UnreadBadge   bool   `json:"unreadBadge"`
-	RelayURL      string `json:"relayURL"`
+	ShowsTrayIcon bool `json:"showsTrayIcon"`
+	UnreadBadge   bool `json:"unreadBadge"`
+	// ShowsIsland is the window at the top of the screen that says what the bots are doing
+	// (island.go); it starts on, and macOS alone has it.
+	ShowsIsland bool   `json:"showsIsland"`
+	RelayURL    string `json:"relayURL"`
 	// CLIPort is the port the app looks for the CLI on. `LORCA_PORT` wins, so a second app
 	// instance can run against its own CLI.
 	CLIPort int `json:"cliPort"`
@@ -56,6 +59,7 @@ type PreferencesPatch struct {
 	SendOnReturn        *bool   `json:"sendOnReturn,omitempty"`
 	ShowsTrayIcon       *bool   `json:"showsTrayIcon,omitempty"`
 	UnreadBadge         *bool   `json:"unreadBadge,omitempty"`
+	ShowsIsland         *bool   `json:"showsIsland,omitempty"`
 	RelayURL            *string `json:"relayURL,omitempty"`
 	CLIPort             *int    `json:"cliPort,omitempty"`
 	AppLanguage         *string `json:"appLanguage,omitempty"`
@@ -88,7 +92,7 @@ func (s *prefsStore) load() {
 func (s *prefsStore) loadFrom(path string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.value = Preferences{ShowsInspector: true, SendOnReturn: true, ShowsTrayIcon: true, UnreadBadge: true}
+	s.value = Preferences{ShowsInspector: true, SendOnReturn: true, ShowsTrayIcon: true, UnreadBadge: true, ShowsIsland: true}
 	s.path = path
 	if data, err := os.ReadFile(path); path != "" && err == nil {
 		_ = json.Unmarshal(data, &s.value)
@@ -140,6 +144,9 @@ func (s *prefsStore) update(patch PreferencesPatch) Preferences {
 	}
 	if patch.UnreadBadge != nil {
 		v.UnreadBadge = *patch.UnreadBadge
+	}
+	if patch.ShowsIsland != nil {
+		v.ShowsIsland = *patch.ShowsIsland
 	}
 	if patch.RelayURL != nil {
 		v.RelayURL = *patch.RelayURL
@@ -202,6 +209,9 @@ func setPrefs(patch PreferencesPatch) Preferences {
 	}
 	if after.UnreadBadge != before.UnreadBadge && store != nil {
 		setBadge(unreadTotal())
+	}
+	if after.ShowsIsland != before.ShowsIsland && app.island != nil {
+		app.island.sync()
 	}
 	if after.CLIPort != before.CLIPort && app.cli != nil {
 		go app.cli.reconnect()

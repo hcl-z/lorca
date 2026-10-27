@@ -1,6 +1,7 @@
 package main
 
 import (
+	"runtime"
 	"strconv"
 
 	"github.com/egoist/lorca/desktop/l10n"
@@ -58,6 +59,17 @@ func (s settingsPane) general(c *ui.Context) {
 				}
 			}), badge)
 		})
+		if runtime.GOOS == "darwin" {
+			s.section(c, L("Island"), nil, func(k *card) {
+				island := islandEntry().row
+				s.mark(c, accessoryRow(c, k, island, "", func() {
+					on := saved.ShowsIsland
+					if settingsSwitch(c, &on, island, false) {
+						setPrefs(PreferencesPatch{ShowsIsland: &on})
+					}
+				}), island)
+			})
+		}
 		s.section(c, L("Appearance"), nil, func(k *card) {
 			appearance, appLanguage := appearanceEntry().row, appLanguageEntry().row
 			s.mark(c, accessoryRow(c, k, appearance, "", func() {
