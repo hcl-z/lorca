@@ -8,6 +8,14 @@ phone app's.
 
 ## [Unreleased]
 
+## [1.0.31]
+
+- A coding agent a bot starts now takes part in the chat: `@` it from the composer, and what you write reaches it as written, interrupting what it is doing. Its words appear as its own messages under its mark, and the bot reads them as its delegate's.
+- An attended agent's question waits on its card for you; the bot answers only when you made it your proxy, or when nobody is watching a routine's or an event's agent.
+- A turn that a stop or a restart left behind now recovers: it starts once the login shell is ready, answers the message it left unanswered, and checks its whole transcript before calling a claim stale.
+- The desktop `@` menu lists only the bots and agents in that chat, and a pick no longer repeats a name. A chat with one bot drops the "Group" subtitle and stacks the bot's and its agents' avatars; Gemini, Copilot, Cursor, OpenCode, and Kimi have their marks.
+- The agent participant is desktop-only for now: the phone still draws an agent's messages as its bot's and does not list agents in `@`.
+
 ## [1.0.30]
 
 - When a bot saves something about you, the chat says so as it happens: the fact, and the one it replaced if it replaced one. The line from the capture, after a chat goes quiet, still covers the rest.
