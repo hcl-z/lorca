@@ -29,7 +29,10 @@ const (
 	islandWindowWidth  = 614
 	islandWindowHeight = 380
 	// The compact capsule, and how much it grows under the pointer.
-	islandCompactWidth      = 268
+	islandCompactWidth = 268
+	// islandIdleWidth is the idle capsule's width: the mark and a count, as narrow as the idle
+	// island OpenBot shrinks to.
+	islandIdleWidth         = 136
 	islandCompactHeight     = 32
 	islandHoverGrowWidth    = 32
 	islandHoverGrowHeight   = 8
@@ -249,6 +252,9 @@ func islandBlockSize(state islandState, ask *islandAsk, hovered bool, o islandOp
 		return islandExpandedWidth, islandPanelTop + islandIdentityHeight + 6 + 16 + islandPanelBottom
 	}
 	width, height = o.CompactWidth, islandCompactHeight
+	if state == islandIdle {
+		width = islandIdleWidth
+	}
 	if hovered && o.HoverGrow {
 		width += islandHoverGrowWidth
 		height += islandHoverGrowHeight
@@ -264,9 +270,8 @@ func islandPanelHeight(ask *islandAsk) int {
 	case ask == nil:
 	case ask.Kind == islandAskPermission:
 		if ask.Command != "" {
-			h += islandCommandHeight
+			h += islandCommandHeight + islandPanelGap
 		}
-		rows = len(ask.Decisions)
 	case ask.Kind == islandAskChoices:
 		if ask.Question != "" {
 			h += islandDescriptionHeight + 4
@@ -580,15 +585,22 @@ func (i *island) view(c *ui.Context, displayID int64) {
 func (i *island) draw(c *ui.Context, state islandState, ask *islandAsk, hovered bool, o islandOptions) {
 	c.Root().Background(ui.Transparent)
 	width, height := islandBlockSize(state, ask, hovered, o)
-	radius := float32(islandCompactRadius)
+	radius := islandCompactRadius
+	shadow := ui.RGBA(0, 0, 0, 0.26)
 	if state == islandAsking || state == islandResult {
 		radius = islandExpandedRadius
+		shadow = ui.RGBA(0, 0, 0, 0.38)
 	}
+	// A state change morphs the block, as OpenBot's island springs between its sizes.
+	morph := ui.Animation{Duration: 420 * time.Millisecond, Ease: ui.EaseOut}
 	ui.Column(c).Fill().AlignItems(ui.Center).Children(func() {
 		block := ui.Row(c.Key("island"))
-		block.Width(float32(width)).Height(float32(height)).Radius(radius).
+		mw := block.AnimateTo("w", float32(width), morph)
+		mh := block.AnimateTo("h", float32(height), morph)
+		mr := block.AnimateTo("r", float32(radius), morph)
+		block.Width(mw).Height(mh).Radius(mr).
 			Background(islandBackground()).Clip().
-			Shadow(0, 6, 20, 0, ui.RGBA(0, 0, 0, 0.38))
+			Shadow(0, 6, 20, 0, shadow)
 		block.Children(func() {
 			switch state {
 			case islandAsking:
@@ -642,7 +654,11 @@ func (i *island) compactBody(c *ui.Context, state islandState) {
 					Shrink(1).MinWidth(0).SingleLine()
 			}
 			ui.Spacer(c)
-			ui.Spinner(c).Width(12).Height(12)
+			ui.Row(c).Padding(3, 7).Radius(8).Gap(4).AlignItems(ui.Center).
+				Background(ui.RGBA(48, 209, 88, 0.16)).Shrink(0).Children(func() {
+				ui.Spinner(c).Width(10).Height(10).TextColor(islandGreen)
+				ui.Text(c, L("Working")).FontSize(10.5).FontWeight(600).TextColor(islandGreen).SingleLine()
+			})
 		default:
 			// The app's mark, as OpenBot shows its logo beside the idle greeting.
 			ui.Row(c).Width(20).Height(20).Radius(6).Background(islandInk).Center().Shrink(0).Children(func() {
@@ -650,8 +666,11 @@ func (i *island) compactBody(c *ui.Context, state islandState) {
 			})
 			ui.Spacer(c)
 			if n := unreadTotal(); n > 0 {
-				ui.Text(c, fmt.Sprint(n)).FontSize(11.5).FontWeight(600).TextColor(islandDim).
-					FontFeatures("tnum")
+				ui.Row(c).MinWidth(18).Height(18).Padding(0, 5).Radius(9).Background(islandFaint).
+					Center().Shrink(0).Children(func() {
+					ui.Text(c, fmt.Sprint(n)).FontSize(10.5).FontWeight(600).TextColor(islandInk).
+						FontFeatures("tnum").SingleLine()
+				})
 			} else {
 				ui.Text(c, "✨").FontSize(12)
 			}
@@ -676,7 +695,7 @@ func (i *island) resultPanel(c *ui.Context) {
 		ui.Row(c).FillWidth().Gap(islandPanelGap).AlignItems(ui.Center).Children(func() {
 			islandAvatar(c, result.Title)
 			ui.Text(c, result.Title).FontSize(12.5).FontWeight(600).TextColor(islandInk).Shrink(1).MinWidth(0).SingleLine()
-			ui.Text(c, L("finished")).FontSize(12).TextColor(islandDim).Shrink(0)
+			i.chip(c, L("Done"), islandGreen, ui.RGBA(48, 209, 88, 0.16))
 			ui.Spacer(c)
 			ui.Text(c, L("just now")).FontSize(11.5).TextColor(islandDim).Shrink(0)
 		})
@@ -699,12 +718,6 @@ func (i *island) askPanel(c *ui.Context, ask *islandAsk) {
 			if ask.Command != "" {
 				i.commandBlock(c, ask.Command)
 			}
-			for _, decision := range ask.Decisions {
-				d := decision
-				i.optionRow(c, fmt.Sprint("decision-", d.Decision), "", d.Title, "", func() {
-					store.AnswerPermission(ask.ChatID, ask.MessageID, d.Decision)
-				})
-			}
 		case islandAskChoices:
 			for n, option := range ask.Options {
 				place := n
@@ -716,22 +729,51 @@ func (i *island) askPanel(c *ui.Context, ask *islandAsk) {
 			i.optionRow(c, "answer-elsewhere", "", L("Answer in Lorca"), "", func() { app.openChat(ask.ChatID) })
 		}
 		ui.Row(c).FillWidth().Height(islandActionsHeight).AlignItems(ui.Center).Children(func() {
+			if more := islandPendingCount(store) - 1; more > 0 {
+				ui.Text(c, L("%d more", more)).FontSize(11).TextColor(islandDim).Shrink(0)
+			}
 			ui.Spacer(c)
-			i.action(c, L("Close"), func() { app.openChat(ask.ChatID) })
+			if ask.Kind == islandAskPermission {
+				// The decisions, as the agent's card orders them, with Allow once in ink as the card
+				// puts its first choice.
+				for _, decision := range ask.Decisions {
+					d := decision
+					i.action(c, "decision-"+d.Decision, d.Title, d.Decision == "allow", func() {
+						store.AnswerPermission(ask.ChatID, ask.MessageID, d.Decision)
+					})
+				}
+				return
+			}
+			i.action(c, "close", L("Close"), false, func() { app.openChat(ask.ChatID) })
 		})
 	})
 }
 
-// identity is the header: the bot's avatar and name, what it is doing, and the question under them.
+// identity is the header: the bot's avatar and name, a chip for what it needs, and the question
+// under them, as OpenBot's identity row.
 func (i *island) identity(c *ui.Context, ask *islandAsk) {
+	status, statusInk, statusBG := L("asks"), ui.Hex("#6cb8ff"), ui.RGBA(10, 132, 255, 0.18)
+	switch ask.Kind {
+	case islandAskPermission:
+		status, statusInk, statusBG = L("needs approval"), islandWarn, ui.RGBA(255, 159, 10, 0.16)
+	case islandAskElsewhere:
+		status, statusInk, statusBG = L("needs you"), ui.Hex("#bf8cff"), ui.RGBA(191, 140, 255, 0.16)
+	}
 	ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
 		islandAvatar(c, ask.BotName)
 		ui.Text(c, ask.BotName).FontSize(12.5).FontWeight(600).TextColor(islandInk).Shrink(1).MinWidth(0).SingleLine()
-		ui.Text(c, L("asks")).FontSize(12).TextColor(islandDim).Shrink(0)
+		i.chip(c, status, statusInk, statusBG)
 	})
 	if ask.Kind != islandAskPermission && ask.Question != "" {
 		ui.Text(c, ask.Question).FontSize(12).TextColor(islandDim).MaxLines(2).Shrink(1).MinWidth(0)
 	}
+}
+
+// chip is a small tinted word in a header or a compact badge.
+func (i *island) chip(c *ui.Context, text string, ink, fill ui.Color) {
+	ui.Row(c).Padding(2, 7).Radius(7).Background(fill).AlignItems(ui.Center).Shrink(0).Children(func() {
+		ui.Text(c, text).FontSize(10.5).FontWeight(600).TextColor(ink).SingleLine()
+	})
 }
 
 // commandBlock is the command a permission would run, in monospace behind a warning bar.
@@ -758,8 +800,8 @@ func (i *island) optionRow(c *ui.Context, key, index, label, description string,
 	row.Children(func() {
 		if index != "" {
 			ui.Row(c).Width(islandOptionIndex).Height(islandOptionIndex).Radius(6).
-				Background(islandFaint).Center().Children(func() {
-				ui.Text(c, index).FontSize(12).FontWeight(600).TextColor(islandInk).FontFeatures("tnum")
+				Background(ui.RGBA(10, 132, 255, 0.18)).Center().Children(func() {
+				ui.Text(c, index).FontSize(12).FontWeight(600).TextColor(ui.Hex("#6cb8ff")).FontFeatures("tnum")
 			})
 		}
 		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(1).Children(func() {
@@ -775,19 +817,48 @@ func (i *island) optionRow(c *ui.Context, key, index, label, description string,
 	}
 }
 
-// action is a plain word on the panel, as Close is.
-func (i *island) action(c *ui.Context, label string, run func()) {
-	button := ui.ButtonBase(c.Key("action-"+label)).Height(islandActionsHeight).Padding(0, 10).
+// action is a small button on the panel's last row: ink for the choice a click is expected to
+// take, a faint fill under the pointer for the others.
+func (i *island) action(c *ui.Context, key, label string, primary bool, run func()) {
+	button := ui.ButtonBase(c.Key("action-"+key)).Height(26).Padding(0, 12).
 		Radius(8).AlignItems(ui.Center).Label(label).Cursor(ui.CursorPointer)
-	if button.Hovered() {
+	ink := islandDim
+	switch {
+	case primary:
+		button.Background(islandInk)
+		ink = ui.RGBA(12, 12, 14, 1)
+	case button.Hovered():
 		button.Background(islandRowBG)
+		ink = islandInk
 	}
 	button.Children(func() {
-		ui.Text(c, label).FontSize(12).TextColor(islandDim).SingleLine()
+		ui.Text(c, label).FontSize(12).FontWeight(600).TextColor(ink).SingleLine()
 	})
 	if button.Clicked() {
 		run()
 	}
+}
+
+// islandPendingCount is how many questions wait on the user across the store: pending `ask_user`
+// cards and coding agents asking or waiting for an approval. The panel shows the rest after the one
+// it draws.
+func islandPendingCount(s *model.Store) int {
+	count := 0
+	for _, r := range s.RunningAgents() {
+		if r.Agent != nil && (r.Agent.Question != nil || r.Agent.Asking != "") {
+			count++
+		}
+	}
+	for _, chat := range s.Chats {
+		for _, message := range chat.Messages {
+			request := message.Body.Request
+			if message.Body.Kind == model.BodyPermission && request != nil && request.IsPending() &&
+				(request.IsAsk() || request.IsAgentAsk()) {
+				count++
+			}
+		}
+	}
+	return count
 }
 
 // islandWorkingBots are the bots with a turn running, read from the store the same way the sidebar

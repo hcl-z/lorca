@@ -206,10 +206,10 @@ func TestIslandSizesHaveRoomForTheirRows(t *testing.T) {
 	if w, _ := islandBlockSize(islandAsking, two, false, o); w != islandExpandedWidth {
 		t.Fatalf("question width: %d", w)
 	}
-	if w, h := islandBlockSize(islandIdle, nil, false, o); w != islandCompactWidth || h != islandCompactHeight {
+	if w, h := islandBlockSize(islandIdle, nil, false, o); w != islandIdleWidth || h != islandCompactHeight {
 		t.Fatalf("idle size: %dx%d", w, h)
 	}
-	if w, h := islandBlockSize(islandIdle, nil, true, o); w != islandCompactWidth+islandHoverGrowWidth || h != islandCompactHeight+islandHoverGrowHeight {
+	if w, h := islandBlockSize(islandIdle, nil, true, o); w != islandIdleWidth+islandHoverGrowWidth || h != islandCompactHeight+islandHoverGrowHeight {
 		t.Fatalf("hovered idle size: %dx%d", w, h)
 	}
 }
