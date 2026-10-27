@@ -950,6 +950,14 @@ func (m *mainWindow) chatPill(c *ui.Context, chat *model.Chat, title, subtitle s
 	for _, bot := range members[:min(4, len(members))] {
 		avatars = append(avatars, botAvatar(bot))
 	}
+	// The coding agents at work in the chat stand with its bots: the agent is a participant of
+	// the conversation, not a tool row alone.
+	for _, agent := range chatAgents(chat) {
+		if len(avatars) >= 4 {
+			break
+		}
+		avatars = append(avatars, avatarContent{Kind: avatarAgent, AgentKind: agent.Kind})
+	}
 	_, inspector := m.panes(m.lastWidth)
 	open := inspector > 0
 	label := L("Show Details")
@@ -974,7 +982,7 @@ func (m *mainWindow) chatPill(c *ui.Context, chat *model.Chat, title, subtitle s
 				Children(func() { avatarCluster(c, avatars, 26, false, "", p.Popover) })
 		}
 		ui.Text(c, title).Shrink(1).MinWidth(0).FontSize(14).FontWeight(500).SingleLine().ContentTransition(ui.ContentTransition{})
-		if chat.IsGroup() && subtitle != "" {
+		if chat.IsGroup() && len(members) > 1 && subtitle != "" {
 			ui.Text(c, subtitle).Shrink(2).MinWidth(0).FontSize(12).TextColor(p.Label2).SingleLine().ContentTransition(ui.ContentTransition{})
 		}
 	})

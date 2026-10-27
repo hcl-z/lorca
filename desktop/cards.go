@@ -123,25 +123,50 @@ func warningBadge(c *ui.Context, text string) ui.Element {
 	})
 }
 
-// cardFrame is a card's row: indented as a bubble is, the bot's avatar at its bottom edge in a
+// cardFrame is a card's row: indented as a bubble is, the bot's avatar at its top edge in a
 // group.
 func cardFrame(c *ui.Context, cardAvatar *avatarContent, groupStart bool, label string, content func()) {
+	cardFrameIn(c, cardAvatar, groupStart, false, cardAvatar != nil, label, content)
+}
+
+// cardFrameCentered is a card in the middle of the transcript, for the cards that stand apart
+// from the messages.
+func cardFrameCentered(c *ui.Context, groupStart bool, label string, content func()) {
+	cardFrameIn(c, nil, groupStart, true, false, label, content)
+}
+
+// cardFrameAgent is an agent's card, indented as the agent's messages are, with the agent's own
+// tile and name inside it rather than the bot's avatar beside it.
+func cardFrameAgent(c *ui.Context, groupStart bool, label string, content func()) {
+	cardFrameIn(c, nil, groupStart, false, true, label, content)
+}
+
+func cardFrameIn(c *ui.Context, cardAvatar *avatarContent, groupStart, centered, indent bool, label string, content func()) {
 	p := colors(c)
 	top := float32(groupTopPadding)
 	if !groupStart {
 		top = tightTopPadding
 	}
-	left := float32(horizontalInset)
-	if cardAvatar != nil {
-		left = bubbleIndent
+	row := ui.Row(c)
+	row.Transition(ui.ElementTransition{Animation: &speakerSpring, Position: true, Size: true, Colors: true})
+	if centered {
+		row.Padding(top, horizontalInset, 0, horizontalInset).Justify(ui.Center)
+	} else {
+		left := float32(horizontalInset)
+		if cardAvatar != nil || indent {
+			left = bubbleIndent
+		}
+		row.Padding(top, horizontalInset, 0, left)
 	}
-	ui.Row(c).Padding(top, horizontalInset, 0, left).Children(func() {
+	row.Children(func() {
 		ui.Row(c).AlignItems(ui.Start).Gap(10).Width(440).MaxWidthPercent(100).MinWidth(0).Padding(space3, 14, 14, 14).Radius(radiusXL).
 			Background(p.Card).Border(1, p.CardBorder).Label(label).Children(content)
-		if cardAvatar != nil {
-			ui.Box(c).Absolute().Left(horizontalInset).Bottom(0).Children(func() {
-				avatar(c, *cardAvatar, chatAvatarSize, false)
-			})
+		if cardAvatar != nil && !centered {
+			ui.Box(c).Absolute().Left(horizontalInset).Top(top).
+				Transition(ui.ElementTransition{Animation: &speakerSpring, Enter: &ui.Motion{Scale: 0.6}, Exit: &ui.Motion{Scale: 0.6}}).
+				Children(func() {
+					avatar(c, *cardAvatar, chatAvatarSize, false)
+				})
 		}
 	})
 }

@@ -83,7 +83,7 @@ func (m *mainWindow) agentAskCard(c *ui.Context, chat *model.Chat, message *mode
 		}
 	}
 	holder.Children(func() {
-		cardFrame(c, cardAvatar, groupStart, agentAskSpokenText(ask, request.Decision), func() {
+		cardFrameAgent(c, groupStart, agentAskSpokenText(ask, request.Decision), func() {
 			ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Children(func() {
 				ui.Row(c).Gap(10).MinWidth(0).AlignItems(ui.Center).Children(func() {
 					agentTile(c, p, ask.Kind, 30)

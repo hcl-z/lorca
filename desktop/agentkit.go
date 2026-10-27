@@ -24,6 +24,10 @@ func agentBrand(p *palette, kind string) ui.Color {
 		return p.Label
 	case "gemini":
 		return ui.Hex("#4C8DF6")
+	case "copilot", "cursor":
+		return p.Label
+	case "opencode", "kimi":
+		return p.Accent
 	}
 	return p.Accent
 }
