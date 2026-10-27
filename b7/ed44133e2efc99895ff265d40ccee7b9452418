@@ -1,0 +1,44 @@
+desktop/island_test.go
+  s_e771820b4035b3::t_6c08b1f4691caf 1-9,12-15,17-19,21-22,32-33,35-106
+  s_b88daeed94fb39::t_aba6bdddde0d71 10-11,16,20,23-31,34
+desktop/island.go
+  s_b88daeed94fb39::t_6ad34ba0f965de 261
+  s_b88daeed94fb39::t_a62f3bcc282114 14-16
+  s_b88daeed94fb39::t_f45eef7f2064f0 221-222,226-228,230-242,255-256
+  s_b88daeed94fb39::t_35eaf423f5ca8b 160-177,182
+  s_b88daeed94fb39::t_1fc4b6301224a9 50-62,64-67,70-73,75
+  s_e771820b4035b3::t_c29ec4193945b4 1-13,17-49,63,68-69,74,76-132,134-159,178-181,183-202,204-220,223-225,229,243-254,257-260,262-277,290-300
+  s_e771820b4035b3::t_439c083fe1e0b8 133
+  s_b88daeed94fb39::t_2959d7536f5a48 203
+  s_b88daeed94fb39::t_3348fc8cc3b75c 278-289
+desktop/app.go
+  s_e771820b4035b3::t_3e526320816d2f 509
+  s_e771820b4035b3::t_f03c5fcd40b474 38-40
+  s_e771820b4035b3::t_844b7f4c4c00be 98,105,109
+desktop/l10n/zh.go
+  s_b88daeed94fb39::t_f05e3619b33645 75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "b7ed44133e2efc99895ff265d40ccee7b9452418",
+  "prompts": {},
+  "sessions": {
+    "s_b88daeed94fb39": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6fb0fe70-85b6-43fe-a9eb-95e19297976c",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    },
+    "s_e771820b4035b3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7464ca9f-3ee1-4214-8986-332d8bd1c603",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
