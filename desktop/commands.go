@@ -152,7 +152,7 @@ var commandTable = []command{
 	}, enabled: chatSelected},
 	{id: "help", title: func() string { return L("Lorca Help") }, accelerator: "F1"},
 	{id: "architecture", title: func() string { return L("Architecture Notes") }},
-	{id: "checkForUpdates", title: func() string { return L("Check for Updates…") }, enabled: updatesEnabled},
+	{id: "checkForUpdates", title: func() string { return L("Check for Updates…") }, enabled: updateChecksVisible},
 	{id: "about", title: func() string { return L("About %@", appName()) }},
 	{id: "simulateOffline", title: func() string {
 		if store.IsMock {
@@ -356,7 +356,7 @@ func windowMenuBar(kind windowKind) *mygo.Menu {
 	help := []*mygo.MenuItem{at("help"), at("architecture")}
 	if mac {
 		lorca := []*mygo.MenuItem{at("about")}
-		if updatesEnabled() {
+		if updateChecksVisible() {
 			lorca = append(lorca, at("checkForUpdates"))
 		}
 		lorca = append(lorca, sep(), at("settings"), sep(),
@@ -369,7 +369,7 @@ func windowMenuBar(kind windowKind) *mygo.Menu {
 		file = append(file, at("closeWindow"))
 	} else {
 		file = append(file, at("settings"), sep(), at("closeWindow"), at("quit"))
-		if updatesEnabled() {
+		if updateChecksVisible() {
 			help = append(help, sep(), at("checkForUpdates"))
 		}
 		help = append(help, sep(), at("about"))

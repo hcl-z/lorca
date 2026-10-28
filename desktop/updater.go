@@ -23,6 +23,10 @@ func useUpdater() {
 // installed, as `mygo dev`'s or the Debian package's in /opt.
 func updatesEnabled() bool { return mygo.Updater.Enabled() }
 
+// updateChecksVisible is whether the app offers Check for Updates: a build that can update itself,
+// or a development build, where the item stays visible and its window says it cannot update.
+func updateChecksVisible() bool { return updatesEnabled() || isDevelopment() }
+
 // checkForUpdates opens the update window, which says what the check finds.
 func checkForUpdates() { updater.CheckForUpdates() }
 

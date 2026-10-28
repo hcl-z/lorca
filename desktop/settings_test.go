@@ -17,12 +17,15 @@ import (
 func settingsWindowTester(t *testing.T, height int) (*mainWindow, *ui.Tester) {
 	t.Helper()
 	m := demoWindow(t)
-	enabled, state := settingsUpdatesEnabled, settingsUpdaterState
+	enabled, automatic, state := settingsUpdatesEnabled, settingsAutomaticSwitches, settingsUpdaterState
 	settingsUpdatesEnabled = func() bool { return true }
+	settingsAutomaticSwitches = func() bool { return true }
 	settingsUpdaterState = func() updaterState {
 		return updaterState{LastCheck: time.Now().Add(-2 * time.Hour), AutomaticChecks: true}
 	}
-	t.Cleanup(func() { settingsUpdatesEnabled, settingsUpdaterState = enabled, state })
+	t.Cleanup(func() {
+		settingsUpdatesEnabled, settingsAutomaticSwitches, settingsUpdaterState = enabled, automatic, state
+	})
 	m.showSettingsDevice("")
 	tt := ui.NewTester(m.frame(m.view), 1180, height)
 	// The inspector closes as Settings opens; these tests click rows at once, so nothing slides.
