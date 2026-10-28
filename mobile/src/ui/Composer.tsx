@@ -8,8 +8,6 @@
 // available (older iOS, Android) the pieces are filled. An image pasted into the field attaches
 // like a picked photo.
 
-import { Button as MenuButton, Host as SwiftHost, Image as MenuImage, Menu, type ButtonProps } from "@expo/ui/swift-ui";
-import { background, frame, shapes } from "@expo/ui/swift-ui/modifiers";
 import { MenuView, type MenuAction, type MenuComponentRef } from "@expo/ui/community/menu";
 import * as DocumentPicker from "expo-document-picker";
 import { haptic } from "./haptics";
@@ -21,8 +19,12 @@ import { Linking, Platform, ScrollView, StyleSheet, Text, TextInput, View, type 
 import { Pressable } from "./Pressable";
 import { ImagePasteView, type PastedImage } from "../../modules/lorca-core/ImagePasteView";
 import type { PickedFile } from "../core/engine";
-import { fileSize, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, type Bot } from "../core/model";
+import { fileSize, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "../core/model";
 import { BotAvatar } from "./Avatar";
+import { AgentTile } from "./agentKit";
+import { AttachSheet, type AttachSource } from "./AttachSheet";
+import { insertMention as insertMentionText, mentionTrigger, pickMentions, type MentionPick } from "../core/mentions";
+import type { MentionTarget } from "../core/participants";
 import { automaticLanguage, languageName, pickDictationLanguage, setDictationLanguage, useDictationLanguage, useSupportedLanguages } from "./dictation";
 import { t, useLanguage } from "../i18n";
 import { joinDictation } from "./format";
@@ -31,59 +33,16 @@ import { floatShadow, Font, usePalette } from "./theme";
 import { Float, ROUND, RoundButton } from "./chrome";
 import { AndroidIcons } from "./navigation";
 import { alert } from "./alert";
-import { PopupMenu } from "./PopupMenu";
 
 const MAX_LINES = 5;
 const CHIP = 56;
 const FILE_CHIP = 176;
 const DISC = 34;
 
-interface AttachSource {
-  title: string;
-  icon: NonNullable<ButtonProps["systemImage"]>;
-  androidIcon: ImageSourcePropType;
-  run: () => void;
-}
-
-/// The "+" disc as the label of a SwiftUI Menu, so a tap drops down a native menu of sources
-/// right at the button instead of raising a sheet. The disc is filled like the Dictate disc
-/// beside it; the pill under both supplies the glass. The fill is part of the SwiftUI label,
-/// not the wrapping view: the menu morphs out of its label and hides it while open, so a
-/// label that is only the glyph would leave an empty disc behind.
-function AttachMenu({ sources, tint, label, style }: { sources: AttachSource[]; tint: ColorValue; label: ColorValue; style?: StyleProp<ViewStyle> }) {
-  return (
-    // The tap is SwiftUI's; claiming it here keeps it from the pill beside it, whose press
-    // focuses the field.
-    <View style={[styles.round, style]} onStartShouldSetResponder={() => true}>
-      {/* The hosted view would otherwise avoid the keyboard by itself: SwiftUI treats the keys as
-          a safe-area inset and pushes the disc up out of its frame while the sticky composer
-          already rides above them. */}
-      <SwiftHost style={StyleSheet.absoluteFill} ignoreSafeArea="keyboard" testID="attach">
-        <Menu
-          label={
-            <MenuImage
-              systemName="plus"
-              size={19}
-              color={label}
-              modifiers={[frame({ width: ROUND, height: ROUND }), background(tint, shapes.circle())]}
-            />
-          }
-          modifiers={[frame({ width: ROUND, height: ROUND })]}
-        >
-          {sources.map((source) => (
-            <MenuButton key={source.title} systemImage={source.icon} label={source.title} onPress={source.run} />
-          ))}
-        </Menu>
-      </SwiftHost>
-    </View>
-  );
-}
-
 /// Memoized: the chat renders again with every streamed piece of a reply, the composer only when
 /// its own inputs change.
 export const Composer = memo(function Composer({
-  members,
-  isGroup,
+  mentionTargets,
   placeholder,
   reply,
   onCancelReply,
@@ -93,8 +52,7 @@ export const Composer = memo(function Composer({
   onStop,
   onSend,
 }: {
-  members: Bot[];
-  isGroup: boolean;
+  mentionTargets: MentionTarget[];
   placeholder: string;
   /** The message the draft answers, shown above the text until it is sent or dropped. */
   reply?: { name: string; text: string } | null;
@@ -105,14 +63,13 @@ export const Composer = memo(function Composer({
   /** A turn is in flight in the chat: the disc offers Stop. */
   responding?: boolean;
   onStop?: () => Promise<void>;
-  /** The text, its files, and the bots its `@Name`s picked from the chips, by id. */
-  onSend: (text: string, attachments: PickedFile[], mentions: string[]) => void;
+  /** The text, its files, the bots its `@Name`s picked, and the coding agents it addresses. */
+  onSend: (text: string, attachments: PickedFile[], mentions: string[], agents: string[]) => void;
 }) {
   const { language: appLanguage } = useLanguage();
   const p = usePalette();
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<PickedFile[]>([]);
-  const attachMenuRef = useRef<MenuComponentRef>(null);
   const [listening, setListening] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [levels, setLevels] = useState<number[]>([0, 0, 0, 0, 0]);
@@ -121,9 +78,10 @@ export const Composer = memo(function Composer({
   const transcript = useRef("");
   const pendingSend = useRef(false);
   const inputRef = useRef<TextInput>(null);
-  /// The bots picked from the `@` chips since the last send, in order. Two bots can share a name;
-  /// the pick says which one the user meant.
-  const pickedMentions = useRef<Bot[]>([]);
+  /// The bots and agents picked from the `@` chips since the last send, in order. Two can share
+  /// a name; the pick says which one the user meant.
+  const pickedMentions = useRef<MentionTarget[]>([]);
+  const [attachOpen, setAttachOpen] = useState(false);
   const dictationMenuRef = useRef<MenuComponentRef>(null);
   const { language, setting: dictationSetting } = useDictationLanguage();
   const dictationLanguages = useSupportedLanguages();
@@ -166,26 +124,30 @@ export const Composer = memo(function Composer({
   }
   const lineHeight = Font.body * 1.3;
 
+  const trigger = useMemo(() => mentionTrigger(text), [text]);
   const mention = useMemo(() => {
-    if (!isGroup) return null;
-    const match = /(?:^|\s)@(\w*)$/.exec(text);
-    if (!match) return null;
-    const prefix = match[1].toLowerCase();
-    const matches = members.filter((b) => b.name.toLowerCase().startsWith(prefix));
-    return matches.length ? { prefix: match[1], matches } : null;
-  }, [text, isGroup, members]);
+    if (!trigger) return null;
+    const prefix = trigger.query.trim().toLowerCase();
+    const matches = mentionTargets.filter((target) => !prefix || target.name.toLowerCase().startsWith(prefix));
+    return matches.length ? { trigger, matches } : null;
+  }, [trigger, mentionTargets]);
 
-  function insertMention(bot: Bot) {
-    pickedMentions.current.push(bot);
-    setText((current) => current.replace(/@(\w*)$/, `@${bot.name} `));
+  function pickMention(target: MentionTarget) {
+    // A same-name target replaces the pick; the id in the mention still says which one it was.
+    pickedMentions.current = [...pickedMentions.current.filter((picked) => !(picked.kind === target.kind && picked.name === target.name)), target];
+    const at = mentionTrigger(text);
+    if (!at) return;
+    const next = insertMentionText(text, at, target);
+    setText(next.text);
+    requestAnimationFrame(() => inputRef.current?.focus());
   }
 
   /// The picks whose `@Name` is still in the text, and a clean slate for the next message.
-  function takeMentions(value: string): string[] {
-    const lowered = value.toLowerCase();
-    const ids = pickedMentions.current.filter((bot) => lowered.includes(`@${bot.name.toLowerCase()}`)).map((bot) => bot.id);
+  function takeMentions(value: string): { mentions: string[]; agents: string[] } {
+    const picks: MentionPick[] = pickedMentions.current.map((target) => ({ kind: target.kind, id: target.id, name: target.name }));
+    const picked = pickMentions(value, picks);
     pickedMentions.current = [];
-    return ids;
+    return picked;
   }
 
   function send() {
@@ -197,7 +159,8 @@ export const Composer = memo(function Composer({
     }
     if (!canSend) return;
     haptic.send();
-    onSend(text, attachments, takeMentions(text));
+    const picked = takeMentions(text);
+    onSend(text, attachments, picked.mentions, picked.agents);
     setText("");
     setAttachments([]);
   }
@@ -273,12 +236,6 @@ export const Composer = memo(function Composer({
     );
   }
 
-  const sources: AttachSource[] = [
-    { title: t("Photo Library"), icon: "photo.on.rectangle", androidIcon: AndroidIcons.photos, run: () => void pickPhotos() },
-    { title: t("Take Photo"), icon: "camera", androidIcon: AndroidIcons.camera, run: () => void takePhoto() },
-    { title: t("Choose File"), icon: "folder", androidIcon: AndroidIcons.folder, run: () => void pickFiles() },
-  ];
-
   // MARK: - Dictation
 
   useEffect(() => {
@@ -319,7 +276,8 @@ export const Composer = memo(function Composer({
       pendingSend.current = false;
       if (next.trim() || attachments.length) {
         haptic.send();
-        onSend(next, attachments, takeMentions(next));
+        const picked = takeMentions(next);
+        onSend(next, attachments, picked.mentions, picked.agents);
         setText("");
         setAttachments([]);
           }
@@ -354,29 +312,17 @@ export const Composer = memo(function Composer({
 
   const primary = listening || canSend ? "send" : responding ? "stop" : "dictate";
   // An edit takes no new files.
-  const attachActions: MenuAction[] = sources.map((source, index) => ({ id: String(index), title: source.title, image: source.androidIcon }));
-  const plus =
-    Platform.OS === "ios" ? (
-      // The wrapper carries the disc's shape and shadow; the menu inside is clipped to the disc.
-      <View
-        style={[styles.plusShadow, { backgroundColor: p.chrome }, floatShadow(p), editing && styles.disabled]}
-        pointerEvents={editing ? "none" : "auto"}
-      >
-        <AttachMenu sources={sources} tint={p.chrome} label={p.label} style={{ borderWidth: StyleSheet.hairlineWidth, borderColor: p.chromeBorder }} />
-      </View>
-    ) : (
-      <PopupMenu ref={attachMenuRef} actions={attachActions} onPressAction={({ nativeEvent }) => sources[Number(nativeEvent.event)]?.run()}>
-        <RoundButton
-          icon="plus"
-          label={t("Attach")}
-          disabled={!!editing}
-          onPress={() => {
-            haptic.open();
-            attachMenuRef.current?.show();
-          }}
-        />
-      </PopupMenu>
-    );
+  const plus = (
+    <RoundButton
+      icon="plus"
+      label={t("Attach")}
+      disabled={!!editing}
+      onPress={() => {
+        haptic.open();
+        setAttachOpen(true);
+      }}
+    />
+  );
 
   const recording = (
     <Pressable
@@ -488,14 +434,24 @@ export const Composer = memo(function Composer({
       primaryButton
     );
 
+  function attach(source: AttachSource) {
+    if (source === "photos") void pickPhotos();
+    else if (source === "camera") void takePhoto();
+    else void pickFiles();
+  }
+
   return (
     <View style={styles.wrap} pointerEvents="box-none">
       {mention && (
         <ScrollView horizontal keyboardShouldPersistTaps="always" showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-          {mention.matches.map((bot) => (
-            <Pressable key={bot.id} onPress={() => insertMention(bot)} style={({ pressed }) => [styles.chip, { backgroundColor: pressed ? p.secondaryFill : p.cell, opacity: pressed ? 0.8 : 1 }]}>
-              <BotAvatar bot={bot} size={20} />
-              <Text style={[styles.chipText, { color: p.label }]}>{bot.name}</Text>
+          {mention.matches.map((target) => (
+            <Pressable
+              key={`${target.kind}:${target.id}`}
+              onPress={() => pickMention(target)}
+              style={({ pressed }) => [styles.chip, { backgroundColor: pressed ? p.secondaryFill : p.cell, opacity: pressed ? 0.8 : 1 }]}
+            >
+              {target.kind === "bot" ? <BotAvatar bot={target.bot} size={20} /> : <AgentTile kind={target.agent.kind} size={20} round />}
+              <Text style={[styles.chipText, { color: p.label }]}>{target.name}</Text>
             </Pressable>
           ))}
         </ScrollView>
@@ -566,6 +522,7 @@ export const Composer = memo(function Composer({
           </Float>
         </Pressable>
       </View>
+      <AttachSheet visible={attachOpen} onClose={() => setAttachOpen(false)} onPick={(source) => void attach(source)} />
     </View>
   );
 });

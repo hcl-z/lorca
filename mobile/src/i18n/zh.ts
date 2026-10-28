@@ -318,6 +318,8 @@ export const zh: Record<string, string> = {
   "Message": "消息",
   "Message {name}": "发消息给 {name}",
   "Message {title} — @ to address one bot": "发消息给 {title} — 用 @ 指定某个智能体",
+  "Message {name} — @ to address an agent": "发消息给 {name} — 用 @ 召唤 agent",
+  "Message {title} — @ to address a bot or agent": "发消息给 {title} — 用 @ 指定智能体或 agent",
   "Message from": "来自",
   "Message from {name}": "{name} 的消息",
   "Message from {name}: {reason}": "来自 {name} 的消息:{reason}",
