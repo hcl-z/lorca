@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,15 +13,14 @@ import (
 )
 
 // A coding agent's transcript as its sheet and its full view draw it, from the entries its Runner
-// keeps: what it was sent, beside a bar; what it said, as a message is; each tool it used as a
-// line with its state, which opens to its command's output on a terminal, its edits as a diff, or
-// what it gave back; what it thought, a line that opens to it; its plan as a checklist; its
-// notices, marked by how much they matter; each time it compacted its context, a line that opens to
-// what it kept; and Lorca's notes. A tool that runs, one that
-// failed, and the last one are open; a click opens or closes any. The view opens on the newest page
-// of entries and asks the Runner again every two seconds, five through the relay, for what
-// changed; it asks for the page before the oldest when the top comes into view, and keeps to the
-// end unless the user scrolled up to read.
+// keeps: its steps in order, as Cursor shows an agent's run. What it was sent is a card that says
+// who wrote it; a thought is one line, "Thought for 3s", that opens to what it thought; a tool is
+// one line in the past or present tense, and a run of reads and searches folds into "Explored 3
+// files, 2 searches"; what it said is Markdown, a long one folded to its head with Show more under
+// it; its plan is a checklist; its notices, refusals, and compactions are lines of their own. The
+// view opens on the newest page of entries, asks the Runner again every two seconds, five through
+// the relay, for what changed, asks for the page before the oldest when the top comes into view,
+// and keeps to the end unless the user scrolled up to read.
 
 const (
 	// The live terminals one view has at most, the latest; an older open output is plain text.
@@ -58,6 +59,8 @@ type agentTranscript struct {
 	maxWidth float32
 	// kind is the agent's, for its mark beside what it said; bot is who sends it its work.
 	kind, bot string
+	// card is the agent as the transcript last answered it, for the header and the footer.
+	card *model.AgentRun
 }
 
 // plan is the steps of the latest plan the agent made.
@@ -74,7 +77,7 @@ func newAgentTranscript(chatID string, message *model.Message) *agentTranscript 
 	t := &agentTranscript{chatID: chatID, messageID: message.ID, remote: !store.RunsHere(message), open: map[uint64]bool{}, screens: map[uint64]*agentScreen{}, folds: map[uint64]foldedText{}, bot: botName(message)}
 	t.list.FollowEnd = true
 	if agent := model.AgentOf(message); agent != nil {
-		t.kind = agent.Kind
+		t.kind, t.card = agent.Kind, agent
 	}
 	t.load()
 	return t
@@ -110,6 +113,9 @@ func (t *agentTranscript) load() {
 			t.load()
 			return
 		default:
+			if page.Card != nil {
+				t.card = page.Card
+			}
 			entries, _ := model.MergeAgentEntries(t.entries, page)
 			t.entries, t.rev, t.text, t.loaded, t.err = entries, page.Rev, page.Text, true, ""
 			t.hasOlder = len(entries) > 0 && entries[0].Seq > page.First
@@ -171,7 +177,7 @@ func hasBody(tool *model.AgentTool) bool {
 	return tool.Output != "" || len(tool.Diffs) > 0 || tool.Result != ""
 }
 
-// view draws the entries as a list, which builds only the rows in view and keeps the reader's
+// view draws the steps as a list, which builds only the rows in view and keeps the reader's
 // place when a page of older entries lands above it; the caller sizes it.
 func (t *agentTranscript) view(c *ui.Context) ui.Element {
 	p := colors(c)
@@ -187,17 +193,20 @@ func (t *agentTranscript) view(c *ui.Context) ui.Element {
 		return box
 	}
 	// The open outputs with a terminal of their own, the latest first; the rest give theirs up.
-	lastTool := -1
+	lastTool := uint64(0)
+	found := false
 	for i := range t.entries {
 		if tool := t.entries[i].Tool; tool != nil && hasBody(tool) {
-			lastTool = i
+			lastTool, found = t.entries[i].Seq, true
 		}
 	}
 	live := map[uint64]bool{}
-	for i := len(t.entries) - 1; i >= 0 && len(live) < entryScreens; i-- {
-		e := &t.entries[i]
-		if e.Tool != nil && e.Tool.Output != "" && t.isOpen(e, i == lastTool) {
-			live[e.Seq] = true
+	if found {
+		for i := len(t.entries) - 1; i >= 0 && len(live) < entryScreens; i-- {
+			e := &t.entries[i]
+			if e.Tool != nil && e.Tool.Output != "" && t.isOpen(e, e.Seq == lastTool) {
+				live[e.Seq] = true
+			}
 		}
 	}
 	for seq, s := range t.screens {
@@ -206,21 +215,28 @@ func (t *agentTranscript) view(c *ui.Context) ui.Element {
 			delete(t.screens, seq)
 		}
 	}
-	t.list.Key = func(i int) any { return t.entries[i].Seq }
-	list := ui.List(c, &t.list, len(t.entries), func(i int) {
-		e := &t.entries[i]
-		// The rail runs on to the next entry with a node.
-		rail := i+1 < len(t.entries) && t.entries[i+1].Kind != "sent" && t.entries[i+1].Kind != "log"
-		row := ui.Row(c.Key(fmt.Sprintf("row:%d", e.Seq))).FillWidth().Justify(ui.Center)
+	steps := agentSteps(t.entries)
+	t.list.Key = func(i int) any { return steps[i].entry.Seq }
+	list := ui.List(c, &t.list, len(steps), func(i int) {
+		step := steps[i]
+		// Tool lines sit close together; the rest a paragraph apart.
+		top := float32(12)
+		switch {
+		case i == 0:
+			top = 0
+		case step.entry.Kind == "tool" && steps[i-1].entry.Kind == "tool":
+			top = 2
+		}
+		row := ui.Row(c.Key(fmt.Sprintf("step:%d", step.entry.Seq))).FillWidth().Justify(ui.Center).Margin(top, 0, 0, 0)
 		row.Children(func() {
 			column := ui.Column(c).Grow(1).Shrink(1).MinWidth(0)
 			if t.maxWidth > 0 {
 				column.MaxWidth(t.maxWidth)
 			}
-			column.Children(func() { t.entry(c, p, e, i == lastTool, live[e.Seq], rail) })
+			column.Children(func() { t.step(c, step, found && step.entry.Seq == lastTool, live) })
 		})
 	}).Fill().Padding(4, 2, 12, 2).TextColor(p.Label)
-	// Nearing the first entry: the page before it.
+	// Nearing the first step: the page before it.
 	if first, last := t.list.Visible(); last >= first && first < 4 && t.hasOlder {
 		t.loadOlder()
 	}
@@ -242,95 +258,257 @@ func (t *agentTranscript) empty(c *ui.Context, p *palette) {
 	}
 }
 
-// node is an entry's place on the rail: the agent's mark for what it said, a tool's state, or a
-// quiet mark of its kind. None for what was sent, which starts a turn of its own.
-func (t *agentTranscript) node(c *ui.Context, p *palette, e *model.AgentEntry) bool {
-	if e.Kind == "sent" || e.Kind == "log" {
-		return false
-	}
-	disc := ui.Box(c.Key("node")).Size(22, 22).Shrink(0).Radius(11).Background(p.Content).Justify(ui.Center).AlignItems(ui.Center)
-	disc.Children(func() {
-		ring := func(tint ui.Color) ui.Element {
-			return ui.Box(c).Size(22, 22).Radius(11).Background(tint.Alpha(0.1)).Border(0.5, tint.Alpha(0.28)).Justify(ui.Center).AlignItems(ui.Center).TextColor(tint)
-		}
-		switch e.Kind {
-		case "said":
-			agentTile(c, p, t.kind, 22).Radius(11)
-		case "tool":
-			tool := e.Tool
-			switch {
-			case tool == nil:
-			case tool.Running():
-				ring(p.Accent).Children(func() { spinner(c, 11) })
-			case tool.Failed():
-				ring(p.Red).Children(func() { symbol(c, "xmark", 11, 2.4) })
-			default:
-				ring(p.Label2).Children(func() { symbol(c, toolSymbol(tool.Kind), 11, 2) })
+// agentStep is a line of the page: one entry, or a run of reads and searches folded into one.
+type agentStep struct {
+	entry    *model.AgentEntry
+	explored []*model.AgentEntry
+}
+
+func agentSteps(entries []model.AgentEntry) []agentStep {
+	var steps []agentStep
+	for i := range entries {
+		e := &entries[i]
+		if e.Kind == "tool" && e.Tool != nil && (e.Tool.Kind == "read" || e.Tool.Kind == "search") {
+			if n := len(steps); n > 0 && steps[n-1].explored != nil {
+				steps[n-1].explored = append(steps[n-1].explored, e)
+				continue
 			}
-		case "thought":
-			ring(p.Purple).Children(func() { symbol(c, "sparkles", 11, 2) })
-		case "plan":
-			ring(p.Green).Children(func() { symbol(c, "checklist", 11, 2) })
-		case "compaction":
-			ring(p.Teal).Children(func() {
-				if e.Status == "" || e.Status == "in_progress" {
-					spinner(c, 11)
-				} else {
-					symbol(c, "arrow.down.right.and.arrow.up.left", 11, 2)
+			steps = append(steps, agentStep{entry: e, explored: []*model.AgentEntry{e}})
+			continue
+		}
+		steps = append(steps, agentStep{entry: e})
+	}
+	return steps
+}
+
+// exploredText is a fold's line: "Explored 3 files, 2 searches", "Exploring 1 file" while one runs.
+func exploredText(items []*model.AgentEntry) string {
+	files, searches, running := 0, 0, false
+	for _, item := range items {
+		if item.Tool.Kind == "read" {
+			files++
+		} else {
+			searches++
+		}
+		running = running || item.Tool.Running()
+	}
+	var parts []string
+	switch {
+	case files == 1:
+		parts = append(parts, L("1 file"))
+	case files > 1:
+		parts = append(parts, L("%d files", files))
+	}
+	switch {
+	case searches == 1:
+		parts = append(parts, L("1 search"))
+	case searches > 1:
+		parts = append(parts, L("%d searches", searches))
+	}
+	switch {
+	case len(parts) == 2 && running:
+		return L("Exploring %@ %@", parts[0], parts[1])
+	case len(parts) == 2:
+		return L("Explored %@ %@", parts[0], parts[1])
+	case running:
+		return L("Exploring %@", parts[0])
+	}
+	return L("Explored %@", parts[0])
+}
+
+// toolSubject is what a tool acts on: its detail when the agent says, else its title with a
+// leading verb dropped, so "Edit src/a.rs" does not read "Edited Edit src/a.rs".
+func toolSubject(tool *model.AgentTool) string {
+	subject := tool.Detail
+	if subject == "" {
+		subject = tool.Title
+		for _, verb := range []string{"Read ", "Reading ", "Searched ", "Searching ", "Edit ", "Edited ", "Editing ", "Run ", "Ran ", "Running ", "Fetch ", "Fetched ", "Fetching ", "Used ", "Using "} {
+			if strings.HasPrefix(subject, verb) {
+				subject = strings.TrimSpace(strings.TrimPrefix(subject, verb))
+				break
+			}
+		}
+	}
+	return subject
+}
+
+// agentToolText is a step's line, in the past once it is done and in the present while it runs:
+// "Ran bun test", "Editing src/a.rs", "Not allowed: git push".
+func agentToolText(tool *model.AgentTool) string {
+	running := tool.Running()
+	subject := toolSubject(tool)
+	if tool.Failed() && !running {
+		return L("Failed: %@", subject)
+	}
+	switch {
+	case tool.Kind == "read" && running:
+		return L("Reading %@", subject)
+	case tool.Kind == "read":
+		return L("Read %@", subject)
+	case tool.Kind == "search" && running:
+		return L("Searching %@", subject)
+	case tool.Kind == "search":
+		return L("Searched %@", subject)
+	case tool.Kind == "edit" && running:
+		return L("Editing %@", subject)
+	case tool.Kind == "edit":
+		return L("Edited %@", subject)
+	case tool.Kind == "execute" && running:
+		return L("Running %@", subject)
+	case tool.Kind == "execute":
+		return L("Ran %@", subject)
+	case tool.Kind == "fetch" && running:
+		return L("Fetching %@", subject)
+	case tool.Kind == "fetch":
+		return L("Fetched %@", subject)
+	case running:
+		return L("Using %@", subject)
+	}
+	return L("Used %@", subject)
+}
+
+// toolSpans are a step's line with its subject in the text color, a command in monospace, and an
+// edit's counts in green and red; a failed step reads in red.
+func toolSpans(p *palette, tool *model.AgentTool) []ui.Span {
+	text := agentToolText(tool)
+	subject := toolSubject(tool)
+	quiet, ink := p.Label2, p.Label
+	if tool.Failed() {
+		quiet, ink = p.Red, p.Red
+	}
+	font := ""
+	if tool.Kind == "execute" {
+		font = monoFont
+	}
+	var spans []ui.Span
+	if i := strings.Index(text, subject); subject != "" && i >= 0 {
+		spans = append(spans, ui.Span{Text: text[:i], Color: quiet}, ui.Span{Text: subject, Color: ink, Font: font}, ui.Span{Text: text[i+len(subject):], Color: quiet})
+	} else {
+		spans = append(spans, ui.Span{Text: text, Color: quiet})
+	}
+	if tool.Kind == "edit" && !tool.Failed() {
+		added, removed := 0, 0
+		for _, diff := range tool.Diffs {
+			added, removed = added+diff.Added, removed+diff.Removed
+		}
+		if added > 0 {
+			spans = append(spans, ui.Span{Text: "  +" + strconv.Itoa(added), Color: p.Green, Weight: 500})
+		}
+		if removed > 0 {
+			spans = append(spans, ui.Span{Text: " −" + strconv.Itoa(removed), Color: p.Red, Weight: 500})
+		}
+	}
+	return spans
+}
+
+// stepLine is a step's one line: a spinner while it runs, its words, and when it holds more, a
+// chevron that shows it. It answers a click that opens or closes it.
+func stepLine(c *ui.Context, spans []ui.Span, label string, running, expandable, open bool, size float32) bool {
+	p := colors(c)
+	var line ui.Element
+	clicked := false
+	if expandable {
+		line = ui.ButtonBase(c).Cursor(ui.CursorPointer).FocusRing(false)
+		if line.Hovered() {
+			line.Background(p.RowHover)
+		}
+		clicked = line.Clicked()
+	} else {
+		line = ui.Row(c)
+	}
+	line.Gap(6).MinHeight(22).Padding(2, 6).Margin(0, -6).Radius(6).MinWidth(0).MaxWidthPercent(100).AlignSelf(ui.Start).Label(label).Tooltip(label)
+	line.Children(func() {
+		if running {
+			spinner(c, 11)
+		}
+		ui.RichText(c, spans...).FontSize(size).SingleLine().Shrink(1).MinWidth(0)
+		if expandable {
+			name := "chevron.right"
+			if open {
+				name = "chevron.down"
+			}
+			ui.Row(c).Shrink(0).TextColor(p.Label3).Children(func() { symbol(c, name, 11, 2.2) })
+		}
+	})
+	return clicked
+}
+
+// transcript is the page's body: each step in order, or what stands in for them.
+func (t *agentTranscript) transcript(c *ui.Context, lastTool uint64, found bool, live map[uint64]bool) {
+	p := colors(c)
+	switch {
+	case len(t.entries) == 0 && t.text != "":
+		transcriptText(c, p, t.text)
+		return
+	case len(t.entries) == 0 && t.err != "":
+		ui.Text(c, t.err).FontSize(12).TextColor(p.Label2)
+		return
+	case len(t.entries) == 0 && t.loaded:
+		ui.Text(c, L("Nothing yet")).FontSize(12).TextColor(p.Label2)
+		return
+	case len(t.entries) == 0:
+		ui.Text(c, L("Loading…")).FontSize(12).TextColor(p.Label2)
+		return
+	}
+	steps := agentSteps(t.entries)
+	ui.Column(c).Children(func() {
+		for i, step := range steps {
+			// Tool lines sit close together; the rest a paragraph apart.
+			top := float32(12)
+			switch {
+			case i == 0:
+				top = 0
+			case step.entry.Kind == "tool" && steps[i-1].entry.Kind == "tool":
+				top = 2
+			}
+			ui.Column(c.Key(fmt.Sprintf("step:%d", step.entry.Seq))).Margin(top, 0, 0, 0).MinWidth(0).Children(func() {
+				t.step(c, step, found && step.entry.Seq == lastTool, live)
+			})
+		}
+	})
+}
+
+func (t *agentTranscript) step(c *ui.Context, step agentStep, last bool, live map[uint64]bool) {
+	p := colors(c)
+	e := step.entry
+	toggle := func(open bool) { t.open[e.Seq] = !open }
+	switch {
+	case step.explored != nil:
+		open := t.open[e.Seq]
+		text := exploredText(step.explored)
+		running := false
+		for _, each := range step.explored {
+			running = running || each.Tool.Running()
+		}
+		if stepLine(c, []ui.Span{{Text: text, Color: p.Label2}}, text, running, true, open, 12.5) {
+			toggle(open)
+		}
+		if open {
+			ui.Column(c).Padding(2, 0, 2, 14).Children(func() {
+				for _, each := range step.explored {
+					ui.Box(c.Key(fmt.Sprint(each.Seq))).Children(func() {
+						stepLine(c, toolSpans(p, each.Tool), agentToolText(each.Tool), each.Tool.Running(), false, false, 12)
+					})
 				}
 			})
-		case "notice":
-			tint, mark := p.Label2, "info.circle"
-			switch e.Level {
-			case "warning":
-				tint, mark = p.Orange, "exclamationmark.triangle"
-			case "error":
-				tint, mark = p.Red, "xmark.circle"
-			}
-			ring(tint).Children(func() { symbol(c, mark, 11, 2) })
-		default:
-			ui.Box(c).Size(6, 6).Radius(3).Background(p.Label3)
 		}
-	})
-	return true
-}
-
-// entry draws one entry of the transcript: on the rail beside its node, or as a turn's start.
-// `rail` carries the rail on below it, to the next entry's node.
-func (t *agentTranscript) entry(c *ui.Context, p *palette, e *model.AgentEntry, last, live, rail bool) {
-	key := c.Key(fmt.Sprintf("entry:%d", e.Seq))
-	switch e.Kind {
-	case "sent":
-		// What the bot sent it starts a turn: who sent it, then the words.
-		ui.Column(key).FillWidth().Gap(5).Margin(6, 0, 16, 0).Padding(10, 13, 11, 13).Radius(radiusLG).Background(p.Accent.Alpha(0.06)).Border(0.5, p.Accent.Alpha(0.18)).Children(func() {
-			ui.Row(c).Gap(5).AlignItems(ui.Center).TextColor(p.Accent).Children(func() {
-				symbol(c, "paperplane", 11, 2)
-				ui.Text(c, L("%@ asked", t.bot)).FontSize(11).FontWeight(600).SingleLine()
-			})
-			ui.Text(c, e.Text).FontSize(13).LineHeight(1.45).TextColor(p.Label).MaxLines(12).Selectable().Tooltip(e.Text)
-		})
-		return
-	case "log":
-		ui.Column(key).FillWidth().Margin(0, 0, 14, 0).Padding(8, 10).Radius(8).Background(p.Code).Children(func() { transcriptText(c, p, e.Text) })
-		return
-	}
-	ui.Row(key).FillWidth().Gap(12).AlignItems(ui.Stretch).Children(func() {
-		gutter := ui.Box(c.Key("gutter")).Width(22).Shrink(0)
-		gutter.Children(func() {
-			if rail {
-				ui.Box(c).Absolute().Left(10.75).Width(0.5).Top(22).Bottom(0).Background(p.Label4)
-			}
-			t.node(c, p, e)
-		})
-		ui.Column(c.Key("content")).Grow(1).Shrink(1).MinWidth(0).Padding(1, 0, 16, 0).Children(func() {
-			t.content(c, p, e, last, live)
-		})
-	})
-}
-
-// content is what an entry says, beside its node.
-func (t *agentTranscript) content(c *ui.Context, p *palette, e *model.AgentEntry, last, live bool) {
-	switch {
+	case e.Kind == "tool" && e.Tool != nil:
+		tool := e.Tool
+		expandable := hasBody(tool)
+		open := t.isOpen(e, last)
+		if stepLine(c, toolSpans(p, tool), agentToolText(tool), tool.Running(), expandable, open, 12.5) {
+			toggle(open)
+		}
+		if expandable && open {
+			t.toolBody(c, p, e, live[e.Seq])
+		}
+	case e.Kind == "sent":
+		open := t.open[e.Seq]
+		author := t.bot
+		if e.From == "user" {
+			author = L("You")
+		}
+		t.promptCard(c, author, e.Text, e.From == "user", open, func() { toggle(open) })
 	case e.Kind == "said":
 		width := t.maxWidth
 		if width <= 0 {
@@ -369,6 +547,19 @@ func (t *agentTranscript) content(c *ui.Context, p *palette, e *model.AgentEntry
 				})
 			}
 		}
+	case e.Kind == "thought":
+		open := t.open[e.Seq]
+		text := L("Thought")
+		if e.Seconds != nil {
+			text = L("Thought for %ds", max(1, int(math.Round(*e.Seconds))))
+		}
+		expandable := strings.TrimSpace(e.Text) != ""
+		if stepLine(c, []ui.Span{{Text: text, Color: p.Label2}}, text, false, expandable, open, 12.5) {
+			toggle(open)
+		}
+		if expandable && open {
+			ui.Text(c, e.Text).Padding(2, 0, 0, 14).FontSize(12).LineHeight(1.45).TextColor(p.Label2).Selectable()
+		}
 	case e.Kind == "plan":
 		done := 0
 		for _, step := range e.Steps {
@@ -376,7 +567,7 @@ func (t *agentTranscript) content(c *ui.Context, p *palette, e *model.AgentEntry
 				done++
 			}
 		}
-		ui.Column(c).FillWidth().Gap(6).Padding(2, 0, 0, 0).Children(func() {
+		ui.Column(c).FillWidth().Gap(6).Children(func() {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, L("Plan")).FontSize(12.5).FontWeight(600)
 				ui.Text(c, L("%@ of %@", fmt.Sprint(done), fmt.Sprint(len(e.Steps)))).FontSize(11.5).FontFeatures("tnum").TextColor(p.Label3)
@@ -397,12 +588,8 @@ func (t *agentTranscript) content(c *ui.Context, p *palette, e *model.AgentEntry
 				}
 			})
 		})
-	case e.Kind == "tool" && e.Tool != nil:
-		t.tool(c, p, e, last, live)
-	case e.Kind == "thought":
-		first := strings.TrimSpace(strings.SplitN(strings.TrimSpace(e.Text), "\n", 2)[0])
-		t.folded(c, p, e, L("Thought"), first)
 	case e.Kind == "compaction":
+		open := t.open[e.Seq]
 		title := L("Compacting the context…")
 		switch e.Status {
 		case "completed":
@@ -412,130 +599,174 @@ func (t *agentTranscript) content(c *ui.Context, p *palette, e *model.AgentEntry
 		case "cancelled":
 			title = L("Stopped compacting the context")
 		}
-		t.folded(c, p, e, title, "")
+		body := strings.TrimSpace(e.Text) != ""
+		if stepLine(c, []ui.Span{{Text: title, Color: p.Label2}}, title, e.Status == "" || e.Status == "in_progress", body, open, 12.5) {
+			toggle(open)
+		}
+		if body && open {
+			ui.Text(c, e.Text).Padding(2, 0, 0, 14).FontSize(12).LineHeight(1.45).TextColor(p.Label2).Selectable()
+		}
 	case e.Kind == "notice":
-		words := p.Label2
+		tint := p.Label2
 		switch e.Level {
 		case "warning":
-			words = p.Label
+			tint = p.Orange
 		case "error":
-			words = p.Red
+			tint = p.Red
 		}
-		ui.Text(c, e.Text).Margin(3, 0, 0, 0).FontSize(12.5).LineHeight(1.4).TextColor(words).Selectable()
+		ui.Text(c, e.Text).FontSize(11.5).LineHeight(1.4).TextColor(tint).Selectable()
+	case e.Kind == "note":
+		tint := p.Label3
+		if strings.HasPrefix(strings.ToLower(e.Text), "not allowed") {
+			tint = p.Red
+		}
+		ui.Text(c, e.Text).FontSize(12).LineHeight(1.4).TextColor(tint).Selectable()
 	default:
-		ui.Text(c, e.Text).Margin(3, 0, 0, 0).FontSize(12).LineHeight(1.4).TextColor(p.Label3).Selectable()
+		ui.Text(c, e.Text).FontSize(12).LineHeight(1.4).TextColor(p.Label3).Selectable()
 	}
 }
 
-// transcriptText draws the transcript as the bot reads it: what was sent in the accent, each tool's
-// line in bold, and what came back dimmed.
-func transcriptText(c *ui.Context, p *palette, text string) {
-	for i, line := range strings.Split(text, "\n") {
-		t := ui.Text(c.Key(i), line).Font(monoFont).FontSize(11.5).FixedLineHeight(17).Selectable()
-		switch {
-		case strings.HasPrefix(line, "> "):
-			t.TextColor(p.Accent)
-		case strings.HasPrefix(line, "● "):
-			t.FontWeight(600)
-		case strings.HasPrefix(line, "  ⎿"), strings.HasPrefix(line, "    "):
-			t.TextColor(p.Label2)
-		}
-	}
-}
-
-// folded draws a line that opens to an entry's text: what the agent thought, or what a compaction
-// kept. Closed, it shows the first of it beside its title.
-func (t *agentTranscript) folded(c *ui.Context, p *palette, e *model.AgentEntry, title, preview string) {
-	body := strings.TrimSpace(e.Text) != ""
-	open := body && t.open[e.Seq]
-	ui.Column(c.Key("folded")).FillWidth().Gap(4).Children(func() {
-		head := ui.ButtonBase(c.Key("head")).FillWidth().Gap(7).AlignItems(ui.Center).Padding(2, 6).Margin(0, 0, 0, -6).Radius(6).TextColor(p.Label2)
-		if body {
-			head.Cursor(ui.CursorPointer).Label(title)
-			if head.Hovered() {
-				head.Background(p.Hover)
-			}
-		}
-		if head.Clicked() && body {
-			t.open[e.Seq] = !open
-		}
-		head.Children(func() {
-			ui.Text(c, title).Shrink(0).FontSize(12.5).FontWeight(500).SingleLine()
-			if !open && preview != "" {
-				ui.Text(c, preview).Grow(1).Shrink(1).MinWidth(0).FontSize(12).TextColor(p.Label3).SingleLine().Tooltip(preview)
-			} else {
-				ui.Box(c).Grow(1)
-			}
-			if body {
-				chevron := "chevron.right"
-				if open {
-					chevron = "chevron.down"
-				}
-				symbol(c, chevron, 10, 2).TextColor(p.Label3)
-			}
-		})
-		if open {
-			ui.Box(c).FillWidth().Padding(4, 12).Radius(radiusMD).Background(p.Code).TextColor(p.Label2).Children(func() { markdownView(c, e.Text, markdownOptions{Size: 12.5}) })
-		}
-	})
-}
-
-// tool draws a tool's line, which opens to what it did.
-func (t *agentTranscript) tool(c *ui.Context, p *palette, e *model.AgentEntry, last, live bool) {
+// toolBody is what a tool did when its line is open: its command's output, its edits, or what it
+// gave back.
+func (t *agentTranscript) toolBody(c *ui.Context, p *palette, e *model.AgentEntry, live bool) {
 	tool := e.Tool
-	body := hasBody(tool)
-	open := body && t.isOpen(e, last)
-	ui.Column(c.Key("tool")).FillWidth().Gap(6).Children(func() {
-		head := ui.ButtonBase(c.Key("head")).FillWidth().Gap(7).AlignItems(ui.Center).Padding(2, 6).Margin(0, 0, 0, -6).Radius(6).TextColor(p.Label)
-		if body {
-			head.Cursor(ui.CursorPointer).Label(tool.Title)
-			if head.Hovered() {
-				head.Background(p.Hover)
-			}
+	ui.Column(c).FillWidth().Gap(6).Padding(2, 0, 2, 14).Children(func() {
+		if tool.Output != "" {
+			t.output(c, p, e.Seq, tool.Output, live)
 		}
-		if head.Clicked() && body {
-			t.open[e.Seq] = !open
+		for _, diff := range tool.Diffs {
+			diffView(c, p, diff)
+		}
+		if tool.Output == "" && len(tool.Diffs) == 0 && tool.Result != "" {
+			commandOutput(c, tool.Result, 10).Margin(0, 0, 0, 0)
+		}
+	})
+}
+
+// promptCard is what the agent was sent, under who wrote it: "You" in the accent's tint for what
+// the user wrote, else the bot that passed it on. A long one, as the first brief is, folds past
+// two lines, with a chevron on its author line to open or close it.
+func (t *agentTranscript) promptCard(c *ui.Context, author, text string, mine, open bool, toggle func()) {
+	p := colors(c)
+	long := strings.Count(text, "\n") >= 2 || len([]rune(text)) > 200
+	card := ui.Column(c).Gap(4).Padding(9, 12, 10, 12).Radius(radiusMD).Background(p.BotBubble).Border(1, p.BotBubbleBorder)
+	if mine {
+		card.Background(p.Accent.Alpha(0.09)).Border(1, p.Accent.Alpha(0.22))
+	}
+	card.Children(func() {
+		var head ui.Element
+		if long {
+			label := L("Show more")
+			if open {
+				label = L("Show less")
+			}
+			head = ui.ButtonBase(c.Key("head")).FillWidth().Gap(6).AlignItems(ui.Center).Cursor(ui.CursorPointer).FocusRing(false).Label(label)
+			if head.Hovered() {
+				head.TextColor(p.Label)
+			}
+			if head.Clicked() {
+				toggle()
+			}
+		} else {
+			head = ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center)
 		}
 		head.Children(func() {
-			ui.Text(c, tool.Title).Shrink(1).MinWidth(0).FontSize(12.5).FontWeight(500).SingleLine().Tooltip(tool.Title)
-			if tool.Detail != "" {
-				ui.Text(c, tool.Detail).Shrink(2).MinWidth(0).Font(monoFont).FontSize(11.5).TextColor(p.Label2).SingleLine().Tooltip(tool.Detail)
-			}
+			ui.Text(c, author).Shrink(0).FontSize(textCaption).FontWeight(600).TextColor(p.Label3)
 			ui.Box(c).Grow(1)
-			added, removed := 0, 0
-			for _, diff := range tool.Diffs {
-				added, removed = added+diff.Added, removed+diff.Removed
-			}
-			if added+removed > 0 {
-				ui.Text(c, fmt.Sprintf("+%d", added)).Font(monoFont).FontSize(11).TextColor(p.Green)
-				ui.Text(c, fmt.Sprintf("−%d", removed)).Font(monoFont).FontSize(11).TextColor(p.Red)
-			}
-			if tool.ExitCode != nil && *tool.ExitCode != 0 {
-				ui.Text(c, L("exit %@", fmt.Sprint(*tool.ExitCode))).Font(monoFont).FontSize(11).TextColor(p.Red)
-			}
-			if body {
-				mark := "chevron.right"
+			if long {
+				name := "chevron.down"
 				if open {
-					mark = "chevron.down"
+					name = "chevron.up"
 				}
-				symbol(c, mark, 10, 2).TextColor(p.Label3)
+				symbol(c, name, 10, 2).TextColor(p.Label3)
 			}
 		})
-		if !open {
-			return
+		body := ui.Text(c, text).FontSize(12.5).LineHeight(1.4).Selectable()
+		if long && !open {
+			body.MaxLines(2)
 		}
-		ui.Column(c).FillWidth().Gap(6).Children(func() {
-			if tool.Output != "" {
-				t.output(c, p, e.Seq, tool.Output, live)
-			}
-			for _, diff := range tool.Diffs {
-				diffView(c, p, diff)
-			}
-			if tool.Output == "" && len(tool.Diffs) == 0 && tool.Result != "" {
-				commandOutput(c, tool.Result, 10).Margin(0, 0, 0, 0)
-			}
-		})
 	})
+}
+
+// agent is the agent as the transcript last answered it, else the card the caller showed.
+func (t *agentTranscript) agent(fallback *model.AgentRun) *model.AgentRun {
+	if t.card != nil {
+		return t.card
+	}
+	return fallback
+}
+
+// header is the page's top: the agent's mark, what it was asked, who it is and how it stands,
+// its pull request, Stop, and its session: its model, effort, mode, context, and cost.
+func (t *agentTranscript) header(c *ui.Context, w *appWindow, agent *model.AgentRun, st *agentCardState, run agentWork) {
+	p := colors(c)
+	ui.Column(c).Gap(10).Children(func() {
+		ui.Row(c).Gap(10).AlignItems(ui.Start).Children(func() {
+			ui.Row(c).Size(22, 22).Center().TextColor(p.Label).Margin(1, 0, 0, 0).Children(func() { agentTile(c, p, agent.Kind, 20) })
+			ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(2).Children(func() {
+				title := firstNonEmpty(agent.Title, agent.Task)
+				ui.Text(c, title).FontSize(15).FontWeight(600).LineHeight(1.3).MaxLines(2).Tooltip(title)
+				ui.Text(c, t.subtitle(agent)).FontSize(12).TextColor(p.Label2).SingleLine()
+			})
+			ui.Row(c).Gap(8).Shrink(0).Children(func() {
+				if agent.PullRequest != "" {
+					pr := agent.PullRequestName
+					if pr == "" {
+						pr = L("Pull request")
+					}
+					b := pushButton(c.Key("pull-request"), pr, pushOptions{Small: true}).Tooltip(agent.PullRequest)
+					if b.Clicked() {
+						_ = openExternal(agent.PullRequest)
+					}
+				}
+				if agent.IsRunning() && pushButton(c.Key("stop"), L("Stop"), pushOptions{Small: true}).Clicked() {
+					store.StopAgent(t.chatID, t.messageID, func(err error) {
+						if err != nil {
+							post(func() {
+								w.showAlert(alertOptions{Message: L("Could not stop %@", agent.Name()), Informative: model.ErrorText(err)}, nil)
+							})
+						}
+					})
+				}
+			})
+		})
+		ui.Box(c).Height(1).Background(p.Separator)
+		agentFacts(c, p, agent, t.chatID, t.messageID, st, run, 120)
+	})
+}
+
+// subtitle is "Claude Code · Working · fix-login", and the Runner's name when it is another Device.
+func (t *agentTranscript) subtitle(agent *model.AgentRun) string {
+	parts := []string{agent.Name(), agent.Status()}
+	if place := agent.Place(); place != "" {
+		parts = append(parts, place)
+	}
+	if t.remote && agent.Device != "" {
+		parts = append(parts, agent.Device)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// agentFooter is what the agent's work changed, "+12 −3 in 4 files", and its branch.
+func agentFooter(c *ui.Context, agent *model.AgentRun) {
+	p := colors(c)
+	if changes := agent.Changes; changes != nil && changes.Files > 0 {
+		files := L("in %d files", changes.Files)
+		if changes.Files == 1 {
+			files = L("in 1 file")
+		}
+		ui.RichText(c,
+			ui.Span{Text: "+" + strconv.Itoa(changes.Added), Color: p.Green, Weight: 500},
+			ui.Span{Text: " −" + strconv.Itoa(changes.Removed), Color: p.Red, Weight: 500},
+			ui.Span{Text: " " + files, Color: p.Label2},
+		).FontSize(12).SingleLine().Shrink(0)
+	}
+	if agent.Branch != "" {
+		ui.Row(c).Gap(4).Shrink(1).MinWidth(0).TextColor(p.Label2).Tooltip(agent.Folder).Children(func() {
+			symbol(c, "arrow.triangle.branch", 12, 2)
+			ui.Text(c, agent.Branch).Font(monoFont).FontSize(11.5).SingleLine().Shrink(1).MinWidth(0)
+		})
+	}
 }
 
 // output draws a command's output on a terminal of its own, as tall as its lines up to
@@ -585,6 +816,22 @@ func diffView(c *ui.Context, p *palette, diff model.AgentFileDiff) {
 			}
 		})
 	})
+}
+
+// transcriptText draws the transcript as the bot reads it: what was sent in the accent, each tool's
+// line in bold, and what came back dimmed.
+func transcriptText(c *ui.Context, p *palette, text string) {
+	for i, line := range strings.Split(text, "\n") {
+		t := ui.Text(c.Key(i), line).Font(monoFont).FontSize(11.5).FixedLineHeight(17).Selectable()
+		switch {
+		case strings.HasPrefix(line, "> "):
+			t.TextColor(p.Accent)
+		case strings.HasPrefix(line, "● "):
+			t.FontWeight(600)
+		case strings.HasPrefix(line, "  ⎿"), strings.HasPrefix(line, "    "):
+			t.TextColor(p.Label2)
+		}
+	}
 }
 
 // toolSymbol is the mark of a tool that ended well, by its kind.

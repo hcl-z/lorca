@@ -388,16 +388,28 @@ func (m *mainWindow) agentAsk(c *ui.Context, p *palette, agent *model.AgentRun, 
 // presentAgentTranscript shows what a coding agent was sent, said, and did.
 func (w *appWindow) presentAgentTranscript(chatID string, message *model.Message, agent *model.AgentRun) {
 	t := newAgentTranscript(chatID, message)
-	title := agent.Name()
-	if agent.Title != "" {
-		title += " · " + agent.Title
-	}
-	if place := agent.Place(); place != "" {
-		title += " · " + place
+	st := &agentCardState{}
+	run := func(work func(done func(error)), failure string) {
+		if st.busy {
+			return
+		}
+		st.busy = true
+		work(func(err error) {
+			st.busy = false
+			if err != nil {
+				post(func() { w.showAlert(alertOptions{Message: failure, Informative: model.ErrorText(err)}, nil) })
+			}
+		})
 	}
 	w.present(func(c *ui.Context, s *sheet) {
 		t.fill = colors(c).Sheet
-		options := sheetOptions{Title: title, Width: 680, Confirm: L("Done"), NoCancel: true}
+		options := sheetOptions{
+			Width:    680,
+			Confirm:  L("Done"),
+			NoCancel: true,
+			Header:   func() { t.header(c, w, t.agent(agent), st, run) },
+			Leading:  func() { agentFooter(c, t.agent(agent)) },
+		}
 		result := sheetFrame(c, options, func() {
 			t.view(c).Height(460)
 		})

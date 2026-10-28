@@ -110,7 +110,7 @@ impl Tool for CodingAgentTool {
                 let message = args["message"].as_str().or(args["prompt"].as_str()).map(str::trim).filter(|text| !text.is_empty()).ok_or_else(|| ToolError("send needs a message".into()))?;
                 // The bot drives it again, so its being done is news for the bot once more.
                 agent.record.lock().unwrap().direct = false;
-                super::send(app, &agent, message, args["interrupt"].as_bool().unwrap_or(false)).await.map_err(ToolError)?
+                super::send(app, &agent, message, args["interrupt"].as_bool().unwrap_or(false), "").await.map_err(ToolError)?
             }
             Some("stop") => {
                 let agent = agent()?;

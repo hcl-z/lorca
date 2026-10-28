@@ -285,6 +285,9 @@ func (m *mainWindow) agentFull(c *ui.Context, r model.RunningAgent, st *pipState
 			ui.Box(c.Key("full-body")).Grow(1).MinHeight(0).FillWidth().Children(func() {
 				ui.Column(c).Absolute().Left(0).Top(0).Bottom(0).Right(agentSidebarWidth).Padding(18, 28, 18, 28).Children(func() {
 					view.view(c).Grow(1).Basis(0).MinHeight(0)
+					ui.Row(c).FillWidth().MaxWidth(view.maxWidth).AlignSelf(ui.Center).Children(func() {
+						agentFooter(c, view.agent(agent))
+					})
 					// What the agent asks, answered here as in the chat.
 					ui.Column(c).FillWidth().MaxWidth(view.maxWidth).AlignSelf(ui.Center).Children(func() {
 						if chat, card := agentAskMessage(r.Chat.ID, agent.Asking); card != nil {

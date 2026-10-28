@@ -33,6 +33,12 @@ pub(crate) struct Entry {
     /// A notice's severity: `info`, `warning`, or `error`.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub level: String,
+    /// How long a thought took, in seconds, while it thinks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seconds: Option<f64>,
+    /// Who sent a `sent` entry: `user`, or empty for the bot.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub from: String,
     /// How a compaction stands: `in_progress`, `completed`, `failed`, or `cancelled`.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub status: String,
@@ -87,6 +93,11 @@ pub(crate) struct Step {
 impl Entry {
     pub(crate) fn text(kind: &str, text: impl Into<String>) -> Entry {
         Entry { kind: kind.into(), text: text.into(), ..Entry::default() }
+    }
+
+    /// What was sent to the agent, by the user (`from` is `user`) or the bot (empty).
+    pub(crate) fn sent(text: impl Into<String>, from: &str) -> Entry {
+        Entry { kind: "sent".into(), text: text.into(), from: from.into(), ..Entry::default() }
     }
 
     /// The entry with each of its texts passed through `clean`, as everything an agent shows is

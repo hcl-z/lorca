@@ -99,8 +99,8 @@ pub(crate) type Events = mpsc::UnboundedSender<Event>;
 #[async_trait]
 pub(crate) trait Driver: Send + Sync {
     /// Gives it a message: taken up when it is done with what it does now, or at once with
-    /// `interrupt`, which stops that first.
-    async fn send(&self, text: &str, interrupt: bool) -> Result<(), String>;
+    /// `interrupt`, which stops that first. `from` is `user` for what the user wrote in the chat.
+    async fn send(&self, text: &str, interrupt: bool, from: &str) -> Result<(), String>;
     /// The commands it offers (`/name`, `$name`, its skills among them) with what each does.
     async fn commands(&self) -> Vec<(String, String)> {
         Vec::new()

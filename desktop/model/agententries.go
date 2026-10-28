@@ -13,10 +13,14 @@ type AgentEntry struct {
 	Text string `json:"text"`
 	// Level is a notice's severity: info, warning, or error. Status is how a compaction stands:
 	// in_progress, completed, failed, or cancelled.
-	Level  string      `json:"level"`
-	Status string      `json:"status"`
-	Tool   *AgentTool  `json:"tool"`
-	Steps  []AgentStep `json:"steps"`
+	Level  string `json:"level"`
+	Status string `json:"status"`
+	// Seconds is how long a thought took, when the agent says.
+	Seconds *float64 `json:"seconds"`
+	// From is `user` on what the user sent it, empty on what the bot sent.
+	From  string      `json:"from"`
+	Tool  *AgentTool  `json:"tool"`
+	Steps []AgentStep `json:"steps"`
 }
 
 // AgentTool is a tool call: Output is what its command's terminal wrote, with only its colors.
@@ -58,6 +62,7 @@ type AgentStep struct {
 // changed after the change asked from, the latest change, and the first entry the Runner keeps.
 type AgentTranscriptPage struct {
 	Text    string       `json:"text"`
+	Card    *AgentRun    `json:"card"`
 	Entries []AgentEntry `json:"entries"`
 	Rev     uint64       `json:"rev"`
 	First   uint64       `json:"first"`

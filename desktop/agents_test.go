@@ -173,8 +173,10 @@ func TestRenderAgentCard(t *testing.T) {
 	}
 	settle(tt)
 	renderBoth(t, tt, "agent-transcript")
-	// The transcript opens at its end, a page at a time, so the latest entries are the ones drawn.
-	for _, want := range []string{"bun test links", "Run the link test", L("exit %@", "1")} {
+	// What it was sent and said is text, its reads and searches fold into one line, each tool is
+	// a line in the past or present tense, and the plan a checklist. The transcript opens on its
+	// newest page, and this one's nine entries fit in it.
+	for _, want := range []string{"Fix the broken docs link on the download page, with a test.", "I'll find the link first.", "Explored 1 search", "Edited src/pages/download.astro", "Failed: bun test links", "Run the link test"} {
 		if !tt.HasText(want) {
 			t.Errorf("the transcript has no %q: %q", want, tt.Texts())
 		}
@@ -198,7 +200,7 @@ func TestRenderAgentCard(t *testing.T) {
 		tt.Scroll(590, 380, 0, -400)
 		settle(tt)
 	}
-	if err := tt.Click("Edit src/pages/download.astro"); err != nil {
+	if err := tt.Click("Edited src/pages/download.astro"); err != nil {
 		t.Fatal(err)
 	}
 	settle(tt)
@@ -211,7 +213,7 @@ func TestRenderAgentCard(t *testing.T) {
 		tt.Scroll(590, 380, 0, -400)
 		settle(tt)
 	}
-	for _, want := range []string{"Fix the broken docs link on the download page, with a test.", "I'll find the link first.", "Grep"} {
+	for _, want := range []string{"Fix the broken docs link on the download page, with a test.", "I'll find the link first.", "Explored 1 search"} {
 		if !tt.HasText(want) {
 			t.Errorf("the transcript has no %q at its top: %q", want, tt.Texts())
 		}

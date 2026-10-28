@@ -30,7 +30,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::time::Instant;
 
 use crate::app::App;
-use crate::model::{AgentAsk, AgentAskChoice, AgentAskField, AgentQuestion, AgentRun, AgentSetting, Author, Body, Message};
+use crate::model::{AgentAsk, AgentAskChoice, AgentAskField, AgentChanges, AgentQuestion, AgentRun, AgentSetting, Author, Body, Message};
 use driver::{Approval, Ask, Driver, Event, FieldKind};
 
 pub use tool::{review_start, CodingAgentTool};
@@ -73,6 +73,8 @@ const APP_LINES: usize = 2000;
 const MAX_APP_ENTRIES: u64 = 200;
 /// What the bot reads at once, at most.
 const READ_LINES: usize = 200;
+/// How much of what an agent said its message in the chat carries; the transcript keeps it all.
+const MESSAGE_CHARS: usize = 4000;
 /// Ended agents are forgotten this long after they ended.
 const FORGET_AFTER: f64 = 30.0 * 24.0 * 3600.0;
 
@@ -170,6 +172,9 @@ pub(crate) struct Record {
     pub outcome: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pull_request: Option<String>,
+    /// What its work changed against the commit it started from, once it is done.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changes: Option<AgentChanges>,
     pub started_at: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended_at: Option<f64>,
@@ -263,6 +268,16 @@ struct SaidChat {
     paragraph: bool,
     /// When the open message was last written to the chat.
     flushed: Option<Instant>,
+}
+
+/// What a `said` message in the chat carries of `text`: its first `MESSAGE_CHARS`, with an
+/// ellipsis. The transcript keeps the whole answer.
+fn chat_text(text: &str) -> String {
+    if text.chars().count() > MESSAGE_CHARS {
+        format!("{}…", text.chars().take(MESSAGE_CHARS).collect::<String>())
+    } else {
+        text.to_string()
+    }
 }
 
 impl Agent {
@@ -397,7 +412,8 @@ impl Agent {
                     String::new(),
                 ),
             };
-            let body = format!("{prefix}{separator}{text}");
+            // The chat keeps the beginning of a long answer; the transcript keeps all of it.
+            let body = chat_text(&format!("{prefix}{separator}{text}"));
             message.body = Body::text(body);
             message.agent = Some(author);
             message.state = crate::model::MessageState::Streaming;
@@ -413,7 +429,7 @@ impl Agent {
         let (_, message) = said.current.as_mut().expect("a said message");
         let changed = match &mut message.body {
             Body::Text { text: current, .. } => {
-                if current.as_str() == body {
+                if current.as_str() == body.as_str() {
                     false
                 } else {
                     *current = body;
@@ -612,6 +628,7 @@ impl Agents {
             output: (!output.trim().is_empty()).then_some(output),
             outcome: record.outcome,
             pull_request: record.pull_request,
+            changes: record.changes,
             device,
             started_at: Some(record.started_at),
             ..AgentRun::default()
@@ -862,6 +879,7 @@ pub(crate) async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Agent>, St
         stalled: false,
         outcome: None,
         pull_request: None,
+        changes: None,
         started_at: crate::config::now_secs(),
         ended_at: None,
         news: None,
@@ -955,7 +973,7 @@ pub(crate) fn from_user(app: &Arc<App>, agent: &Arc<Agent>, text: &str, message_
     }
     let (app, agent) = (app.clone(), agent.clone());
     tokio::spawn(async move {
-        match send(&app, &agent, &text, true).await {
+        match send(&app, &agent, &text, true, "user").await {
             Ok(_) => save(&app),
             Err(error) => {
                 agent.note(&app, &format!("⎿ {error}"));
@@ -999,7 +1017,7 @@ pub(crate) fn from_job(app: &Arc<App>, job: &crate::model::Job) {
 
 /// Gives the agent a message from the bot: to its running process, or to a new process on its
 /// session when its process is gone (it was done and stopped, or Lorca restarted).
-pub(crate) async fn send(app: &Arc<App>, agent: &Arc<Agent>, text: &str, interrupt: bool) -> Result<String, String> {
+pub(crate) async fn send(app: &Arc<App>, agent: &Arc<Agent>, text: &str, interrupt: bool, from: &str) -> Result<String, String> {
     let text = &without_secrets(app, text.to_string());
     let record = agent.record();
     {
@@ -1012,7 +1030,7 @@ pub(crate) async fn send(app: &Arc<App>, agent: &Arc<Agent>, text: &str, interru
         *agent.budget.lock().unwrap() = Some(budget);
     }
     if let Some(driver) = agent.driver() {
-        driver.send(text, interrupt).await?;
+        driver.send(text, interrupt, from).await?;
         *agent.active_at.lock().unwrap() = Instant::now();
         let busy = matches!(record.state.as_str(), "working" | "starting");
         return Ok(match (busy, interrupt) {
@@ -1223,6 +1241,14 @@ async fn handle(app: &Arc<App>, agent: &Arc<Agent>, event: Event, generation: u6
                 record.stalled = false;
             }
             agent.hold.lock().unwrap().take();
+            let (folder, base) = {
+                let record = agent.record.lock().unwrap();
+                (record.folder.clone(), record.base.clone())
+            };
+            if let Some(base) = base {
+                let changes = workspace::changes(&folder, &base).await;
+                agent.record.lock().unwrap().changes = changes;
+            }
             agents.sync(app, agent);
             // What it made is published as outputs; the bot hears it unless the user drove this
             // turn from the chat, where its words are already showing.

@@ -68,6 +68,7 @@ type mainWindow struct {
 	palette     *paletteState
 	inspector   inspectorState
 	tasks       runningTasksState
+	agents      runningAgentsState
 	attention   attentionState
 	// focusComposer asks the chat on screen to put the keyboard in its composer.
 	focusComposer bool
@@ -761,7 +762,6 @@ func (m *mainWindow) view(c *ui.Context) {
 			m.divider(c, width-inspector-1, false)
 		}
 	})
-	m.agentWindows(c)
 	m.palette.view(c, m)
 	refreshMenuBar()
 }
@@ -931,6 +931,7 @@ func (m *mainWindow) contentHeader(c *ui.Context, chatID, title, subtitle string
 		}
 		m.runningTasksButton(c, chatID)
 		m.attentionButton(c)
+		m.runningAgentsButton(c)
 	})
 	if chat != nil {
 		// The pill is centered on the content, whatever the header holds at its ends; the strip

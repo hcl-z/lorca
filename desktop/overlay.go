@@ -132,6 +132,8 @@ var fieldSubmitted bool
 type sheetOptions struct {
 	Title    string
 	Subtitle string
+	// Header builds the sheet's own header under its title, outside the content's scroll.
+	Header func()
 	// Width is 420 by default.
 	Width   float32
 	Confirm string
@@ -182,12 +184,17 @@ func sheetFrame(c *ui.Context, o sheetOptions, content func()) sheetResult {
 	// confirms it rather than pressing the first button.
 	panel.Focusable().FocusRing(false).AutoFocus()
 	panel.Children(func() {
-		ui.Column(c).Gap(4).Children(func() {
-			ui.Text(c, o.Title).FontSize(15).FontWeight(600)
-			if o.Subtitle != "" {
-				ui.Text(c, o.Subtitle).FontSize(12).TextColor(p.Label2).LineHeight(1.4)
-			}
-		})
+		if o.Title != "" || o.Subtitle != "" {
+			ui.Column(c).Gap(4).Children(func() {
+				ui.Text(c, o.Title).FontSize(15).FontWeight(600)
+				if o.Subtitle != "" {
+					ui.Text(c, o.Subtitle).FontSize(12).TextColor(p.Label2).LineHeight(1.4)
+				}
+			})
+		}
+		if o.Header != nil {
+			o.Header()
+		}
 		if content != nil {
 			fieldSubmitted = false
 			sheetBody(c).Margin(13, -20, 0, -20).Children(func() {

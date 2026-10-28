@@ -11,6 +11,15 @@ use crate::plugins::mcp::Decision;
 use lorca_agent::Tool;
 use tokio_util::sync::CancellationToken;
 
+#[test]
+fn a_long_answer_in_the_chat_is_cut_at_the_message_limit() {
+    let long = "x".repeat(MESSAGE_CHARS + 10);
+    let shown = chat_text(&long);
+    assert_eq!(shown.chars().count(), MESSAGE_CHARS + 1);
+    assert!(shown.ends_with('…'));
+    assert_eq!(chat_text("hi"), "hi");
+}
+
 /// An agent that speaks ACP, scripted, installed as `gemini` and as `npx`, which starts the
 /// adapters of Claude Code and Codex. A job asks to run `git push` (the answer decides how the
 /// tool call ends), opens a pull request, and is done; "(follow-up)" is answered at once,
@@ -574,6 +583,7 @@ fn record(folder: PathBuf) -> Record {
         stalled: false,
         outcome: None,
         pull_request: None,
+        changes: None,
         started_at: 0.0,
         ended_at: None,
         news: None,

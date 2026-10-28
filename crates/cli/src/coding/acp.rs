@@ -11,7 +11,7 @@ use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use agent_client_protocol::schema::v1::{
     CancelNotification, ClientCapabilities, ClientSessionCapabilities, CloseSessionRequest, CompactionCapabilities, ContentBlock, CreateElicitationRequest, CreateElicitationResponse, ElicitationAcceptAction, ElicitationAction, ElicitationCapabilities,
@@ -143,6 +143,8 @@ struct Said {
     /// What it is thinking now, under its key, beside what it says.
     thought: Option<(String, String)>,
     thought_id: Option<String>,
+    /// When the thought it is thinking now began.
+    thought_started: Option<Instant>,
 }
 
 /// A tool call the transcript follows. Some agents begin one with a bare title ("Terminal") and
@@ -194,7 +196,7 @@ struct Shared {
 }
 
 enum Command {
-    Send { text: String, interrupt: bool },
+    Send { text: String, interrupt: bool, from: String },
     /// Change its model or effort now; the answer says whether the session took it.
     Set { wants: Vec<(String, String)>, reply: oneshot::Sender<Result<(), String>> },
     /// It is being stopped: the session closes first when the agent can close one.
@@ -218,8 +220,8 @@ impl Drop for Acp {
 
 #[async_trait]
 impl Driver for Acp {
-    async fn send(&self, text: &str, interrupt: bool) -> Result<(), String> {
-        self.commands.send(Command::Send { text: text.to_string(), interrupt }).map_err(|_| "It is no longer running".to_string())
+    async fn send(&self, text: &str, interrupt: bool, from: &str) -> Result<(), String> {
+        self.commands.send(Command::Send { text: text.to_string(), interrupt, from: from.to_string() }).map_err(|_| "It is no longer running".to_string())
     }
 
     async fn commands(&self) -> Vec<(String, String)> {
@@ -465,19 +467,19 @@ async fn drive(setup: Setup, transport: Transport, events: Events, mut commands:
                 let _ = waiting.send(Ok(()));
             }
 
-            let mut queue: VecDeque<String> = VecDeque::from([first]);
+            let mut queue: VecDeque<(String, String)> = VecDeque::from([(first, String::new())]);
             let mut running: Option<BoxFuture<'static, Result<PromptResponse, agent_client_protocol::Error>>> = None;
             let mut interrupting = false;
             let mut closed = false;
             loop {
                 if running.is_none() {
-                    if let Some(text) = queue.pop_front() {
+                    if let Some((text, from)) = queue.pop_front() {
                         shared.said.lock().unwrap().message.clear();
                         shared.produced.store(false, Ordering::SeqCst);
                         let _ = events.send(Event::Lines(lines::sent(&text)));
                         end_segment(&shared);
                         shared.turn.fetch_add(1, Ordering::SeqCst);
-                        put(&events, &shared, None, Entry::text("sent", text.trim()));
+                        put(&events, &shared, None, Entry::sent(text.trim(), &from));
                         let _ = events.send(Event::Working);
                         let prompt = PromptRequest::new(session.clone(), vec![ContentBlock::Text(TextContent::new(text))]);
                         running = Some(connection.send_request(prompt).block_task().boxed());
@@ -492,12 +494,12 @@ async fn drive(setup: Setup, transport: Transport, events: Events, mut commands:
                         }
                     }
                     command = commands.recv() => match command {
-                        Some(Command::Send { text, interrupt }) if interrupt && running.is_some() => {
-                            queue.push_front(text);
+                        Some(Command::Send { text, interrupt, from }) if interrupt && running.is_some() => {
+                            queue.push_front((text, from));
                             interrupting = true;
                             connection.send_notification(CancelNotification::new(session.clone()))?;
                         }
-                        Some(Command::Send { text, .. }) => queue.push_back(text),
+                        Some(Command::Send { text, from, .. }) => queue.push_back((text, from)),
                         Some(Command::Set { wants, reply }) => {
                             let _ = reply.send(set_options(spec, &connection, &session, &shared, &events, &wants).await);
                         }
@@ -786,6 +788,7 @@ fn end_segment(shared: &Shared) {
     let mut said = shared.said.lock().unwrap();
     said.segment = None;
     said.thought = None;
+    said.thought_started = None;
 }
 
 /// Puts an entry under a key of its own, or under `key`.
@@ -906,6 +909,7 @@ fn update(events: &Events, shared: &Shared, update: &Value, folder: &Path) {
             shared.produced.store(true, Ordering::SeqCst);
             let mut said = shared.said.lock().unwrap();
             said.thought = None;
+            said.thought_started = None;
             // A message the agent names apart from the last is an entry of its own, and the one
             // it says last.
             let id = update["messageId"].as_str().map(str::to_string);
@@ -952,6 +956,7 @@ fn update(events: &Events, shared: &Shared, update: &Value, folder: &Path) {
             let id = update["messageId"].as_str().map(str::to_string);
             if id.is_some() && said.thought_id != id {
                 said.thought = None;
+                said.thought_started = None;
             }
             said.thought_id = id;
             let key = match &mut said.thought {
@@ -962,12 +967,14 @@ fn update(events: &Events, shared: &Shared, update: &Value, folder: &Path) {
                 None => {
                     let key = format!("thought:{}", shared.keys.fetch_add(1, Ordering::SeqCst));
                     said.thought = Some((key.clone(), text.clone()));
+                    said.thought_started = Some(Instant::now());
                     key
                 }
             };
             let thought = said.thought.as_ref().map(|(_, thought)| thought.trim().to_string()).unwrap_or_default();
+            let seconds = said.thought_started.map(|started| started.elapsed().as_secs_f64());
             drop(said);
-            let _ = events.send(Event::Entries(vec![(key, Entry::text("thought", thought))]));
+            let _ = events.send(Event::Entries(vec![(key, Entry { kind: "thought".into(), text: thought, seconds, ..Entry::default() })]));
         }
         "tool_call" | "tool_call_update" => {
             let id = update["toolCallId"].as_str().unwrap_or("").to_string();
