@@ -225,7 +225,11 @@ pub fn memory_read(app: &Arc<App>, bot_id: &str) -> Result<Value, String> {
     overview["profile"] = crate::profile::overview(&crate::profile::store(&app.config.home));
     #[cfg(feature = "runner")]
     {
-        overview["capture"] = crate::memory_capture::latest(&store).map(|run| json!(run)).unwrap_or(Value::Null);
+        overview["capture"] = crate::memory_capture::latest(&store)
+            .and_then(|run| crate::memory_capture::history(&store).into_iter().find(|view| view.id == run.id))
+            .map(|run| json!(run))
+            .unwrap_or(Value::Null);
+        overview["captures"] = json!(crate::memory_capture::history(&store));
     }
     overview["tidy"] = crate::memory_tidy::latest(&store).map(|run| json!(run)).unwrap_or(Value::Null);
     overview["trace"] = json!(crate::memory_trace::recent(&app.config.home, bot_id, TRACE_ENTRIES));
@@ -261,7 +265,7 @@ pub fn answer_here(app: &Arc<App>, verb: &str, body: &Value) -> Result<Value, St
         #[cfg(feature = "runner")]
         "memory_capture.list" => {
             let bot = local_bot(app, body["bot_id"].as_str().ok_or("missing bot_id")?)?;
-            Ok(json!({ "runs": crate::memory_capture::runs(&MemoryStore::for_bot(&app.config.home, &bot)) }))
+            Ok(json!({ "runs": crate::memory_capture::history(&MemoryStore::for_bot(&app.config.home, &bot)) }))
         }
         #[cfg(feature = "runner")]
         "memory_tidy.undo" => {

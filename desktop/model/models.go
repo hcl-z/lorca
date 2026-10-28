@@ -1311,6 +1311,8 @@ type BotMemory struct {
 	Profile Profile
 	// The newest capture run that was not undone, if there is one.
 	Capture *CaptureRun
+	// Every capture run, newest first, without source chats or quotes.
+	Captures []CaptureRun
 	// The newest housekeeping pass that moved lines out of MEMORY.md, while it is not undone.
 	Tidy *TidyRun
 	// What the bot's memory did lately, newest first.
@@ -1351,14 +1353,18 @@ type Profile struct {
 // Empty reports whether the user has written nothing about themselves yet.
 func (p Profile) Empty() bool { return p.Text == "" }
 
-// CaptureRun is one pass of learning from a bot's quiet direct chat: the lines it added, and
-// the facts the write gate refused.
+// CaptureFact is a saved fact and the file that now holds it.
+type CaptureFact struct {
+	Text   string
+	Target string
+}
+
+// CaptureRun is one pass of automatic learning, without a source chat or quote.
 type CaptureRun struct {
-	ID      string
-	At      int64
-	Added   []string
-	Refused []string
-	Undone  bool
+	ID     string
+	At     int64
+	Facts  []CaptureFact
+	Undone bool
 }
 
 // TidyRun is one housekeeping pass over MEMORY.md: the struck-through lines it moved to
@@ -1396,6 +1402,18 @@ func CaptureFacts(lines []string) []string {
 			parts = parts[1:]
 		}
 		facts = append(facts, strings.Join(parts, " · "))
+	}
+	return facts
+}
+
+func (r CaptureRun) FactLines() []string {
+	facts := make([]string, 0, len(r.Facts))
+	for _, fact := range r.Facts {
+		target := L("Bot memory")
+		if fact.Target == "profile" {
+			target = L("Shared profile")
+		}
+		facts = append(facts, fact.Text+" · "+target)
 	}
 	return facts
 }

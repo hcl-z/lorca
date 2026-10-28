@@ -1137,10 +1137,15 @@ fn memory_flush_prompt(cut: Option<&str>) -> String {
         None => "The messages above are about to be summarized and will leave your context.".to_string(),
     };
     format!(
-        "[Housekeeping before compaction] {leaving} Before that, save what is durable and not yet in your memory: facts, \
-         preferences, and decisions that should hold in every future chat go through memory_update, one fact per call, skipping \
-         what MEMORY.md already says; events worth a trace go through memory_log, one line each. Do not reply to the user, call \
-         no other tool, and do no other work. When you are done, or if there is nothing worth saving, answer with exactly DONE."
+        "[Housekeeping before compaction] {leaving} Save only durable facts not yet recorded, using the right place: facts about \
+         the user that every bot should know (name, location, language, lasting preferences) go through profile_update; facts about \
+         your own lasting work go through memory_update. A project decision or goal belongs in shared project context; ongoing work \
+         belongs in tasks; a completed event worth a trace goes through memory_log. Example: 'the user lives in Hangzhou' is profile, \
+         'you prepare the weekly report' is your memory, and 'the project launches Thursday' is project context. Do not put user facts \
+         in your own memory. Never save sensitive personal information unless the user's own message explicitly asks Lorca to remember \
+         it; pass that exact message as consent_quote. If a destination is unclear, save nothing. Use one fact per call and skip what \
+         the destination already says. Do not reply to the user, call no other tool, or do any other work. When done, or if there is \
+         nothing worth saving, answer with exactly DONE."
     )
 }
 
@@ -1194,7 +1199,7 @@ async fn memory_flush(
             drop_bound_thinking(provider.model_id(), &mut context_messages);
             context_messages.extend(context_notes(app, bot, &chat.meta.id, now_secs() as i64).into_iter().map(|note| AgentMessage::User(UserMessage::text(note))));
             context_messages.push(AgentMessage::User(UserMessage::text(memory_flush_prompt(None))));
-            AgentContext { system_prompt: system, messages: context_messages, tools: memory_tools(app, bot, &store, chat), cache_points: Vec::new() }
+            AgentContext { system_prompt: system, messages: context_messages, tools: memory_tools(app, bot, &store, chat, None), cache_points: Vec::new() }
         }
     };
     let config = AgentLoopConfig {
@@ -1226,13 +1231,17 @@ async fn memory_flush(
 
 /// The memory writing tools, bound to one bot and the chat the writes come from, and the
 /// account's profile, which every bot may add to.
-fn memory_tools(app: &Arc<App>, bot: &Bot, store: &MemoryStore, chat: &Chat) -> Vec<Arc<dyn Tool>> {
+fn memory_tools(app: &Arc<App>, bot: &Bot, store: &MemoryStore, chat: &Chat, evidence_message: Option<&Message>) -> Vec<Arc<dyn Tool>> {
     let source = chat_source(app, chat);
     let trace = EntryTrace { home: app.config.home.clone(), bot_id: bot.id.clone() };
+    let user_messages = evidence_message
+        .filter(|message| message.author == Author::You)
+        .and_then(|message| match &message.body { Body::Text { text, .. } => Some(vec![text.clone()]), _ => None })
+        .unwrap_or_default();
     vec![
-        Arc::new(MemoryUpdate { store: store.clone(), source: source.clone(), trace: trace.clone() }),
+            Arc::new(MemoryUpdate { store: store.clone(), source: source.clone(), trace: trace.clone(), user_messages: user_messages.clone() }),
         Arc::new(MemoryLog { store: store.clone(), source: source.clone() }),
-        Arc::new(ProfileUpdate { store: crate::profile::store(&app.config.home), source, trace, app: app.clone(), chat_id: chat.meta.id.clone() }),
+        Arc::new(ProfileUpdate { store: crate::profile::store(&app.config.home), source, trace, app: app.clone(), chat_id: chat.meta.id.clone(), user_messages }),
     ]
 }
 
@@ -2479,12 +2488,14 @@ fn memory_prompt(store: &MemoryStore) -> String {
         "\nMemory: your notes are in {dir}, outside your working directory. MEMORY.md, in the note after the transcript, \
          loads its first {lines} lines or {kb} KB: keep it short. Longer notes go in memory/<topic>.md, read with read and \
          named in MEMORY.md. recall searches your notes, your diary, and your past chats by words and time.\n\
-         - memory_update keeps facts that hold in every future chat, one plain statement per call, without a date: \
+         - memory_update is only for facts about your own lasting work that hold across your chats, one plain statement per call, without a date: \
          replace fixes a typo, supersede replaces a fact that changed, remove deletes a wrong one.\n\
          - Progress on a task or a handoff, what you just did, and anything stale within a week are not memory: note events \
          with memory_log and track work with tasks.\n\
-         - What every bot should know about the user goes in PROFILE.md with profile_update.\n\
-         - Never store secrets. Memory can be out of date: check current data before acting on it.\n",
+         - What every bot should know about the user goes in PROFILE.md with profile_update: name, location, language, role, and lasting preferences. Example: 'the user lives in Hangzhou' goes in PROFILE.md; 'you prepare the weekly report' goes in your MEMORY.md. Never put user facts in your memory.\n\
+         - Project decisions and goals go in shared project context; ongoing work goes in tasks; completed events worth a trace go in memory_log.\n\
+         - Do not save sensitive personal information (health, finances, precise home address, intimate relationships) unless the user's own current message explicitly asks you to remember it. Pass that exact sentence as consent_quote.\n\
+         - Never store secrets. Memory can be out of date: check current data before acting on it. If a fact's destination is unclear, do not save it.\n",
         kb = bytes / 1000,
     )
 }
@@ -2935,6 +2946,7 @@ struct MemoryUpdate {
     /// The chat the change comes from, kept on the entry.
     source: String,
     trace: EntryTrace,
+    user_messages: Vec<String>,
 }
 
 #[async_trait]
@@ -2943,10 +2955,10 @@ impl Tool for MemoryUpdate {
         "memory_update"
     }
     fn description(&self) -> &str {
-        "Change your long-term memory (MEMORY.md), which opens every turn. append adds one dated fact (one fact per call, \
+        "Change your bot-specific long-term memory (MEMORY.md), which opens every turn. It is only for facts about your own lasting work, not the user: user identity, location, language, and lasting preferences belong in PROFILE.md via profile_update. Project decisions belong in shared project context, ongoing work in tasks, and events in memory_log. append adds one dated fact (one fact per call, \
          in the third person, no bullet or date); replace rewrites an exact unique passage in place, for a fact that was \
          mistyped; supersede strikes the old entry through and adds the new fact, for a fact that changed; remove deletes a \
-         passage. Never overwrite the whole file. Record only verified facts, never secrets or another bot's profile."
+         passage. Never overwrite the whole file. Sensitive personal information is refused unless the user's current message explicitly asks Lorca to remember that fact; pass that exact text as consent_quote. Never store secrets."
     }
     fn parameters(&self) -> Value {
         entry_parameters()
@@ -2955,7 +2967,7 @@ impl Tool for MemoryUpdate {
         Some(ToolExecutionMode::Sequential)
     }
     async fn execute(&self, _id: &str, args: Value, _cancel: CancellationToken, _on_update: ToolUpdateFn) -> Result<ToolResult, ToolError> {
-        let edit = self.trace.edit(&self.store, &self.source, &args, None)?;
+        let edit = self.trace.edit(&self.store, &self.source, &args, None, &self.user_messages)?;
         let summary = match edit.change {
             memory::Change::Duplicate => "Already remembered",
             memory::Change::Appended { .. } => "Remembered a fact",
@@ -2973,8 +2985,11 @@ fn entry_parameters() -> Value {
         "type": "object",
         "properties": {
             "action": { "type": "string", "enum": ["append", "replace", "remove", "supersede"] },
+            "about": { "type": "string", "enum": ["person", "work"], "description": "person for something every bot should know about the user (PROFILE.md); work for the bot's own lasting work (MEMORY.md)" },
             "text": { "type": "string", "description": "The fact itself, for append, replace, or supersede" },
-            "old_text": { "type": "string", "description": "The exact, unique existing passage, for replace, supersede, or remove" }
+            "old_text": { "type": "string", "description": "The exact, unique existing passage, for replace, supersede, or remove" },
+            "sensitive": { "type": "boolean", "description": "True only for sensitive personal information (health, finances, precise home address, intimate relationships). It then needs consent_quote" },
+            "consent_quote": { "type": "string", "description": "For sensitive personal information only: the complete current message in which the user asks Lorca to remember this fact" }
         },
         "required": ["action"],
         "additionalProperties": false
@@ -3004,13 +3019,16 @@ struct EntryTrace {
 impl EntryTrace {
     /// `edit_entries`, with what came of it in the bot's trace: a duplicate changes nothing and
     /// leaves nothing there.
-    fn edit(&self, store: &MemoryStore, source: &str, args: &Value, max_bytes: Option<usize>) -> Result<EntryEdit, ToolError> {
+    fn edit(&self, store: &MemoryStore, source: &str, args: &Value, max_bytes: Option<usize>, user_messages: &[String]) -> Result<EntryEdit, ToolError> {
         let fact = args["text"].as_str().or(args["old_text"].as_str()).unwrap_or("");
-        let edit = edit_entries(store, source, args, max_bytes);
+        let edit = edit_entries(store, source, args, max_bytes, user_messages);
         match &edit {
             Ok(EntryEdit { change: memory::Change::Duplicate, .. }) => {}
             Ok(edit) => crate::memory_trace::saved(&self.home, &self.bot_id, store.index_name(), &edit.message),
-            Err(error) => crate::memory_trace::refused(&self.home, &self.bot_id, fact, &error.0),
+            Err(error) => {
+                let trace_fact = if args["sensitive"].as_bool().unwrap_or(false) { "[sensitive personal information]" } else { fact };
+                crate::memory_trace::refused(&self.home, &self.bot_id, trace_fact, &error.0)
+            }
         }
         edit
     }
@@ -3026,27 +3044,40 @@ struct EntryEdit {
 /// a passage rewritten in place passes the checks on its words, since the text it replaces is
 /// expected to be there. `max_bytes`, when given, refuses an edit that would take the file past
 /// what opens every turn.
-fn edit_entries(store: &MemoryStore, source: &str, args: &Value, max_bytes: Option<usize>) -> Result<EntryEdit, ToolError> {
+fn edit_entries(store: &MemoryStore, source: &str, args: &Value, max_bytes: Option<usize>, user_messages: &[String]) -> Result<EntryEdit, ToolError> {
     let action = args["action"].as_str().unwrap_or("").trim();
     let text = args["text"].as_str().unwrap_or("").trim();
     let old_text = args["old_text"].as_str().unwrap_or("").trim();
+    let about = args["about"].as_str().map(str::trim).filter(|about| !about.is_empty());
+    let sensitive = args["sensitive"].as_bool().unwrap_or(false);
+    let consent_quote = args["consent_quote"].as_str();
     let now = now_secs() as i64;
     let name = store.index_name().to_string();
+    let expected_about = if name == "PROFILE.md" { "person" } else { "work" };
+    if about.is_some_and(|about| about != expected_about) {
+        let tool = if expected_about == "person" { "profile_update" } else { "memory_update" };
+        return Err(ToolError(format!("{name} takes facts about {expected_about}. Use {tool} for this one.")));
+    }
     if matches!(action, "append" | "supersede") && max_bytes.is_some_and(|max| store.read_index().len() + text.len() + 40 > max) {
         return Err(ToolError(format!("{name} is full. Make room first: replace, supersede, or remove an older entry.")));
     }
     let change = match action {
         "append" => {
-            crate::memory_check::check(text, store).map_err(ToolError)?;
+            crate::memory_check::check_with_evidence(text, store, sensitive, consent_quote, user_messages, true).map_err(ToolError)?;
             store.append_entry(text, Some(source), now)
         }
         "replace" => {
-            crate::memory_check::check_text(text).map_err(ToolError)?;
+            store.passage_fact(old_text).map_err(|error| ToolError(format!("{name}: {error}")))?;
+            crate::memory_check::check_with_evidence(text, store, sensitive, consent_quote, user_messages, false).map_err(ToolError)?;
             store.replace(old_text, text)
         }
-        "remove" => store.remove(old_text),
+        "remove" => {
+            store.passage_fact(old_text).map_err(|error| ToolError(format!("{name}: {error}")))?;
+            store.remove(old_text)
+        }
         "supersede" => {
-            crate::memory_check::check_text(text).map_err(ToolError)?;
+            store.passage_fact(old_text).map_err(|error| ToolError(format!("{name}: {error}")))?;
+            crate::memory_check::check_with_evidence(text, store, sensitive, consent_quote, user_messages, false).map_err(ToolError)?;
             store.supersede(old_text, text, Some(source), now)
         }
         other => return Err(ToolError(format!("Unknown action {other:?}. Use append, replace, remove, or supersede."))),
@@ -3074,6 +3105,7 @@ struct ProfileUpdate {
     /// Where the line about what changed goes, so a fact about the user is never saved silently.
     app: Arc<App>,
     chat_id: String,
+    user_messages: Vec<String>,
 }
 
 #[async_trait]
@@ -3086,7 +3118,7 @@ impl Tool for ProfileUpdate {
          to, and facts that hold in every chat. Use it only for something the user said about themselves that every bot \
          should know. append adds one fact (third person, no bullet or date); supersede replaces a fact that changed; \
          replace fixes a mistyped passage; remove deletes a wrong one. Never store secrets, or anything from a file, a web \
-         page, or another bot. The user can read and edit the profile."
+         page, or another bot. Sensitive personal information (health, finances, precise home address, intimate relationships) is refused unless the user's current message explicitly asks Lorca to remember it; pass that exact text as consent_quote. The user can read and edit the profile."
     }
     fn parameters(&self) -> Value {
         entry_parameters()
@@ -3095,7 +3127,7 @@ impl Tool for ProfileUpdate {
         Some(ToolExecutionMode::Sequential)
     }
     async fn execute(&self, _id: &str, args: Value, _cancel: CancellationToken, _on_update: ToolUpdateFn) -> Result<ToolResult, ToolError> {
-        let edit = self.trace.edit(&self.store, &self.source, &args, Some(crate::profile::PROFILE_MAX_BYTES))?;
+        let edit = self.trace.edit(&self.store, &self.source, &args, Some(crate::profile::PROFILE_MAX_BYTES), &self.user_messages)?;
         let summary = if matches!(edit.change, memory::Change::Removed) { "Removed from the user's profile" } else { "Updated the user's profile" };
         if let Some(line) = about_you_line(&edit.change, args["old_text"].as_str().unwrap_or("")) {
             self.app.notice(&self.chat_id, line);
@@ -4437,7 +4469,7 @@ mod tests {
         let dm = chat("chat", "dm", None, &["b1"]);
         app.state.lock().unwrap().chats.push(dm.clone());
         let store = MemoryStore::for_bot(&app.config.home, &chef);
-        let mut tools = memory_tools(app, &chef, &store, &dm);
+        let mut tools = memory_tools(app, &chef, &store, &dm, None);
         tools.extend(lorca_agent::tools::coding_tools(scratch.1.join("work")));
         let turn = TurnRequest { system_prompt: "You are Chef, a bot in Lorca.".into(), tools, cache_points: vec![2] };
         let reply = |text: &str| {
@@ -6772,7 +6804,7 @@ mod tests {
         let dm = chat("c1", "dm", None, &["b1"]);
         app.state.lock().unwrap().chats.push(dm.clone());
         let store = MemoryStore::for_bot(&app.config.home, &chef);
-        let tools = memory_tools(app, &chef, &store, &dm);
+        let tools = memory_tools(app, &chef, &store, &dm, None);
         let update = tools.iter().find(|tool| tool.name() == "profile_update").unwrap();
         let call = |args: Value| update.execute("t", args, CancellationToken::new(), Arc::new(|_| {}));
         call(json!({ "action": "append", "text": "the user lives in Shanghai" })).await.unwrap();
@@ -6795,7 +6827,7 @@ mod tests {
         let dm = chat("c1", "dm", None, &["b1"]);
         app.state.lock().unwrap().chats.push(dm.clone());
         let store = MemoryStore::for_bot(&app.config.home, &chef);
-        let tools = memory_tools(app, &chef, &store, &dm);
+        let tools = memory_tools(app, &chef, &store, &dm, None);
         let update = tools.iter().find(|tool| tool.name() == "memory_update").unwrap();
         let call = |args: Value| update.execute("t", args, CancellationToken::new(), Arc::new(|_| {}));
         call(json!({ "action": "append", "text": "the user ships on Fridays" })).await.unwrap();
@@ -6947,7 +6979,7 @@ mod tests {
         assert_eq!(usual_names.last().map(String::as_str), Some(CODEMODE_TOOL_NAME), "codemode comes last");
 
         let setup = make(TurnShape { setting_up: true, ..TurnShape::default() });
-        assert_eq!(names(&setup.tools), ["finish_setup", "recommend_plugins", "search_plugins", "ask_user", "memory_update"]);
+        assert_eq!(names(&setup.tools), ["finish_setup", "recommend_plugins", "search_plugins", "ask_user", "memory_update", "profile_update"]);
         assert_eq!(names(setup.full_tools.as_deref().unwrap()), usual_names, "a finished setup goes on with the usual tools");
     }
 

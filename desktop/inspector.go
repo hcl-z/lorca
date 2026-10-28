@@ -556,7 +556,7 @@ func (m *mainWindow) inspectorMemory(c *ui.Context, bot *model.Bot) {
 				m.presentMemory(current, memory, func() { s.refreshMemory(botID) })
 			}
 		}
-		// What the last capture learned from the bot's direct chat, and taking it back.
+		// What automatic capture learned over time, where it lives, and taking any batch back.
 		// What the housekeeping moved out of MEMORY.md, and putting it back.
 		if tidy := memory.Tidy; tidy != nil {
 			moved := append(slices.Clone(tidy.Archived), tidy.History...)
@@ -565,14 +565,30 @@ func (m *mainWindow) inspectorMemory(c *ui.Context, bot *model.Bot) {
 				m.confirmUndoTidy(bot.ID, tidy.ID, moved)
 			}
 		}
-		if capture := memory.Capture; capture != nil && !capture.Undone && len(capture.Added) > 0 {
-			learned := L("1 fact from a recent chat")
-			if len(capture.Added) != 1 {
-				learned = L("%d facts from a recent chat", len(capture.Added))
-			}
-			facts := model.CaptureFacts(capture.Added)
-			if _, result := actionRow(c, k, L("Learned"), actionRowOptions{Value: learned, Tint: &p.Label2, Action: L("Undo…"), Tooltip: strings.Join(facts, "\n")}); result.Action {
-				m.confirmUndoCapture(bot.ID, capture.ID, facts)
+		captures := memory.Captures
+		if len(captures) == 0 && memory.Capture != nil {
+			captures = []model.CaptureRun{*memory.Capture}
+		}
+		if len(captures) > 0 {
+			actionRow(c, k, L("Automatic memory history"), actionRowOptions{Value: L("%d batches", len(captures)), Tint: &p.Label2})
+			for _, capture := range captures {
+				if len(capture.Facts) == 0 {
+					continue
+				}
+				facts := capture.FactLines()
+				label := time.Unix(capture.At, 0).Local().Format("Jan 2, 2006 · 15:04")
+				if capture.Undone {
+					actionRow(c, k, L("Capture batch"), actionRowOptions{Value: L("Undone · %@", label), Tint: &p.Label2})
+				} else if _, result := actionRow(c, k, L("Capture batch"), actionRowOptions{Value: label, Tint: &p.Label2, Action: L("Undo…"), Tooltip: strings.Join(facts, "\n")}); result.Action {
+					m.confirmUndoCapture(bot.ID, capture.ID, facts)
+				}
+				for _, fact := range capture.Facts {
+					target := L("Bot memory")
+					if fact.Target == "profile" {
+						target = L("Shared profile")
+					}
+					actionRow(c, k, target, actionRowOptions{Value: fact.Text, Tint: &p.Label2})
+				}
 			}
 		}
 		folder := L("%@ · on %@", memory.FilesSummary(), memory.Runner)
