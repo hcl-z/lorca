@@ -132,7 +132,7 @@ func paletteActions(m *mainWindow) []paletteItem {
 	var items []paletteItem
 	for _, entry := range paletteCommands {
 		cmd := commandByID(entry.id)
-		if cmd == nil || (entry.id == "checkForUpdates" && !updatesEnabled()) || !cmd.isEnabled() {
+		if cmd == nil || (entry.id == "checkForUpdates" && !updateChecksVisible()) || !cmd.isEnabled() {
 			continue
 		}
 		id := entry.id

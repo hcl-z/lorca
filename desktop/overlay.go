@@ -85,27 +85,32 @@ func (w *appWindow) presentFullWindow(view func(c *ui.Context, s *sheet), onDism
 func (w *appWindow) hasSheet() bool { return len(w.sheets) > 0 }
 
 // sheetsView builds the window's sheets over its content: the one in front over a dimmed window,
-// those behind it as they were.
+// those behind it as they were. A sheet hangs near the top of the window; the first one grows into
+// place as it fades in and shrinks as it fades out, as AppKit's sheets on macOS 26 do, and one over
+// another comes and goes at once. The dimming is one element that moves under whichever sheet is
+// in front, so it stays as it was while a sheet opens or closes over another.
 func (w *appWindow) sheetsView(c *ui.Context) {
 	p := colors(c)
+	fade := ui.ElementTransition{Enter: &ui.Motion{}, Exit: &ui.Motion{}, Duration: 150_000_000}
+	pop := ui.ElementTransition{Enter: &ui.Motion{Scale: 0.96}, Exit: &ui.Motion{Scale: 0.96}, Duration: 150_000_000}
 	for i, s := range w.sheets {
 		front := i == len(w.sheets)-1
 		ui.Overlay(c, func() {
-			// The panel sits in the middle of the window, clear of the title bar's controls above
-			// it and by the same room below.
-			scrim := ui.Column(c.Key(s.id)).Absolute().Left(0).Top(0).Right(0).Bottom(0)
+			if front && !s.fullWindow {
+				ui.Box(c.Key(sheetScrimKey{})).Absolute().Left(0).Top(0).Right(0).Bottom(0).Background(p.Scrim).Transition(fade)
+			}
+			layer := ui.Column(c.Key(s.id)).Absolute().Left(0).Top(0).Right(0).Bottom(0)
 			if !s.fullWindow {
-				scrim.Center().Padding(44, 16)
+				layer.AlignItems(ui.Center).Padding(44, 16, 16, 16).TransformOrigin(0.5, 0)
 			}
 			if front {
-				if !s.fullWindow {
-					scrim.Background(p.Scrim)
-				}
-				scrim.Modal()
+				layer.Modal()
 			}
-			scrim.Transition(ui.ElementTransition{Enter: &ui.Motion{}, Duration: 120 * time.Millisecond})
+			if i == 0 {
+				layer.Transition(pop)
+			}
 			frontSheet, backdropPressed = front && !s.alert, false
-			scrim.Children(func() { s.view(c, s) })
+			layer.Children(func() { s.view(c, s) })
 			frontSheet, backdropPressed = false, false
 		})
 	}
@@ -121,6 +126,9 @@ var frontSheet, backdropPressed bool
 func pressedBackdrop(panel ui.Element) bool {
 	return frontSheet && panel.PressedOutside()
 }
+
+// sheetScrimKey keys the dimming under the sheet in front.
+type sheetScrimKey struct{}
 
 // fieldSubmitted is set when a field in the sheet being built took Return, which confirms the
 // sheet as Return elsewhere in it does.
@@ -165,9 +173,8 @@ func sheetPanel(c *ui.Context, width float32) ui.Element {
 	if width == 0 {
 		width = 420
 	}
-	panel := ui.Column(c).Width(width).MaxWidthPercent(100).MaxHeightPercent(100).Padding(space5).Radius(radiusSheet).
-		Background(p.Sheet).Shadow(0, 10, 40, 0, p.Shadow).Border(0.5, p.ShadowEdge).
-		Transition(ui.ElementTransition{Enter: &ui.Motion{Y: -10, Scale: 0.97}, Duration: 180 * time.Millisecond})
+	panel := ui.Column(c).Width(width).MaxWidthPercent(100).MaxHeightPercent(100).Padding(20).Radius(18).
+		Background(p.Sheet).Shadow(0, 10, 40, 0, p.Shadow).Border(0.5, p.ShadowEdge)
 	if pressedBackdrop(panel) {
 		backdropPressed = true
 	}

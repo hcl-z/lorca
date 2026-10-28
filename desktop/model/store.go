@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -195,6 +196,13 @@ type Store struct {
 	commandStarts map[string]time.Time
 	// reportedWatchedChat is the chat last reported to the CLI as on screen.
 	reportedWatchedChat *string
+	// watching is the report on its way to the CLI: one request at a time, the latest chat next, so
+	// the CLI ends on the chat on screen.
+	watching struct {
+		sync.Mutex
+		next    *string
+		sending bool
+	}
 	loadingOlder        map[string]bool
 	replies             *replyEngine
 	started             bool
@@ -1278,9 +1286,17 @@ func (s *Store) SetBotRuntime(id string, provider ProviderKind, model, thinking 
 	s.perform("bots.update", map[string]any{"id": id, "provider": provider, "model": model, "thinking": thinking})
 }
 
-// CompactChat summarizes the chat's older part for its bot now, on the Runner.
-func (s *Store) CompactChat(id string) {
-	s.perform("chats.compact", map[string]any{"chat_id": id})
+// CompactChat summarizes the chat's older part for its bot now, on the Runner. It answers once
+// the Runner is done, which waits for a running turn and the memory flush first, or why it did
+// not compact.
+func (s *Store) CompactChat(id string, done func(error)) {
+	if s.IsMock {
+		s.post(func() { done(nil) })
+		return
+	}
+	Async(s, func() (struct{}, error) {
+		return struct{}{}, s.request("chats.compact", map[string]any{"chat_id": id}, nil)
+	}, func(_ struct{}, err error) { done(err) })
 }
 
 // MARK: - Plugins
@@ -2669,11 +2685,34 @@ func (s *Store) SetWatchedChat(id string) {
 		return
 	}
 	s.reportedWatchedChat = &id
-	var chatID any
-	if id != "" {
-		chatID = id
+	s.watching.Lock()
+	defer s.watching.Unlock()
+	s.watching.next = &id
+	if !s.watching.sending {
+		s.watching.sending = true
+		go s.sendWatching()
 	}
-	go func() { _ = s.request("ui.watching", map[string]any{"chat_id": chatID}, nil) }()
+}
+
+// sendWatching sends the reports SetWatchedChat leaves, in order, skipping any a newer one
+// replaced before it went.
+func (s *Store) sendWatching() {
+	for {
+		s.watching.Lock()
+		next := s.watching.next
+		s.watching.next = nil
+		if next == nil {
+			s.watching.sending = false
+			s.watching.Unlock()
+			return
+		}
+		s.watching.Unlock()
+		var chatID any
+		if *next != "" {
+			chatID = *next
+		}
+		_ = s.request("ui.watching", map[string]any{"chat_id": chatID}, nil)
+	}
 }
 
 func (s *Store) MarkRead(id string) {

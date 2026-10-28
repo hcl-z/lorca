@@ -152,7 +152,7 @@ var commandTable = []command{
 	}, enabled: chatSelected},
 	{id: "help", title: func() string { return L("Lorca Help") }, accelerator: "F1"},
 	{id: "architecture", title: func() string { return L("Architecture Notes") }},
-	{id: "checkForUpdates", title: func() string { return L("Check for Updates…") }, enabled: updatesEnabled},
+	{id: "checkForUpdates", title: func() string { return L("Check for Updates…") }, enabled: updateChecksVisible},
 	{id: "about", title: func() string { return L("About %@", appName()) }},
 	{id: "simulateOffline", title: func() string {
 		if store.IsMock {
@@ -345,18 +345,37 @@ func submenu(label string, items ...*mygo.MenuItem) *mygo.MenuItem {
 	return &mygo.MenuItem{Label: label, Submenu: items}
 }
 
-// windowMenuBar is the menu bar, in the order the macOS app's has it; what belongs to the app menu
-// there (Settings, Quit, About, Check for Updates) sits in File and Help, as on Windows and Linux.
+// windowMenuBar is the menu bar, in the order the macOS app's has it. On a Mac the app menu holds
+// About, Check for Updates, Settings, and Quit; on Windows and Linux they sit in File and Help.
 func windowMenuBar(kind windowKind) *mygo.Menu {
 	at := func(id string) *mygo.MenuItem { return menuItem(id, kind) }
 	sep := mygo.Separator
+	mac := runtime.GOOS == "darwin"
+	var bar []*mygo.MenuItem
+	file := []*mygo.MenuItem{at("newBot"), at("importBotTemplate"), at("newGroupChat"), at("newTask"), at("newSection"), sep(), at("shareBotTemplate"), sep(), at("marketplace"), sep(), at("pairDevice"), sep()}
 	help := []*mygo.MenuItem{at("help"), at("architecture")}
-	if updatesEnabled() {
-		help = append(help, sep(), at("checkForUpdates"))
+	if mac {
+		lorca := []*mygo.MenuItem{at("about")}
+		if updateChecksVisible() {
+			lorca = append(lorca, at("checkForUpdates"))
+		}
+		lorca = append(lorca, sep(), at("settings"), sep(),
+			&mygo.MenuItem{Role: mygo.RoleServices, Label: L("Services")}, sep(),
+			&mygo.MenuItem{Role: mygo.RoleHide, Label: L("Hide %@", appName())},
+			&mygo.MenuItem{Role: mygo.RoleHideOthers, Label: L("Hide Others")},
+			&mygo.MenuItem{Role: mygo.RoleUnhide, Label: L("Show All")}, sep(),
+			at("quit"))
+		bar = append(bar, submenu(appName(), lorca...))
+		file = append(file, at("closeWindow"))
+	} else {
+		file = append(file, at("settings"), sep(), at("closeWindow"), at("quit"))
+		if updateChecksVisible() {
+			help = append(help, sep(), at("checkForUpdates"))
+		}
+		help = append(help, sep(), at("about"))
 	}
-	help = append(help, sep(), at("about"))
-	return mygo.NewMenu([]*mygo.MenuItem{
-		submenu(L("File"), at("newBot"), at("importBotTemplate"), at("newGroupChat"), at("newTask"), at("newSection"), sep(), at("shareBotTemplate"), sep(), at("marketplace"), sep(), at("pairDevice"), sep(), at("settings"), sep(), at("closeWindow"), at("quit")),
+	return mygo.NewMenu(append(bar,
+		submenu(L("File"), file...),
 		submenu(L("Edit"),
 			&mygo.MenuItem{Role: mygo.RoleUndo, Label: L("Undo")},
 			&mygo.MenuItem{Role: mygo.RoleRedo, Label: L("Redo")},
@@ -374,7 +393,7 @@ func windowMenuBar(kind windowKind) *mygo.Menu {
 		submenu(L("Window"), &mygo.MenuItem{Role: mygo.RoleMinimize, Label: L("Minimize")}, &mygo.MenuItem{Role: mygo.RoleZoom, Label: L("Zoom")}),
 		submenu("Debug", at("simulateOffline"), at("replayMock"), sep(), at("showOnboarding")),
 		submenu(L("Help"), help...),
-	})
+	))
 }
 
 // muteMenu is Mute Chat and its spans; the menu bar shows it for a chat with its alerts on, and

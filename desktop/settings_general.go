@@ -14,8 +14,9 @@ import (
 
 // The updater's answers General shows; a test stands in for them.
 var (
-	settingsUpdatesEnabled = updatesEnabled
-	settingsUpdaterState   = currentUpdaterState
+	settingsUpdatesEnabled    = updateChecksVisible
+	settingsAutomaticSwitches = updatesEnabled
+	settingsUpdaterState      = currentUpdaterState
 )
 
 // settingsSwitch reports a user change after applying bound input.
@@ -166,18 +167,20 @@ func (s settingsPane) general(c *ui.Context) {
 					checkForUpdates()
 				}
 				checks, downloads := automaticChecksEntry().row, automaticDownloadsEntry().row
-				s.mark(c, accessoryRow(c, k, checks, "", func() {
-					on := updater.AutomaticChecks
-					if settingsSwitch(c, &on, checks, false) {
-						setAutomaticUpdates(on, updater.AutomaticDownloads)
-					}
-				}), checks)
-				s.mark(c, accessoryRow(c, k, downloads, "", func() {
-					on := updater.AutomaticDownloads
-					if settingsSwitch(c, &on, downloads, !updater.AutomaticChecks) {
-						setAutomaticUpdates(updater.AutomaticChecks, on)
-					}
-				}), downloads)
+				if settingsAutomaticSwitches() {
+					s.mark(c, accessoryRow(c, k, checks, "", func() {
+						on := updater.AutomaticChecks
+						if settingsSwitch(c, &on, checks, false) {
+							setAutomaticUpdates(on, updater.AutomaticDownloads)
+						}
+					}), checks)
+					s.mark(c, accessoryRow(c, k, downloads, "", func() {
+						on := updater.AutomaticDownloads
+						if settingsSwitch(c, &on, downloads, !updater.AutomaticChecks) {
+							setAutomaticUpdates(updater.AutomaticChecks, on)
+						}
+					}), downloads)
+				}
 			})
 		}
 		s.footnote(c, L("Lorca talks only to the CLI on this computer. Nothing here is synced; each Device keeps its own settings."))

@@ -25,7 +25,7 @@ func openTestSheet(t *testing.T, m *mainWindow, closed *int) *ui.Tester {
 	return tt
 }
 
-func TestSheetIsCentered(t *testing.T) {
+func TestSheetHangsNearTheTop(t *testing.T) {
 	m := demoWindow(t)
 	var closed int
 	tt := openTestSheet(t, m, &closed)
@@ -38,10 +38,13 @@ func TestSheetIsCentered(t *testing.T) {
 	if !ok {
 		t.Fatalf("no Done button in %q", tt.Texts())
 	}
-	// The panel runs from its padding above the title to its padding below the buttons.
+	// The panel starts after the layer's 44 above it, not at the window's middle.
 	top, bottom := title.Y-space5, done.Y+done.H+space5
-	if got, want := (top+bottom)/2, float32(820)/2; math.Abs(float64(got-want)) > 6 {
-		t.Errorf("panel's middle is at %v, want the window's %v", got, want)
+	if got, want := top, float32(44); math.Abs(float64(got-want)) > 6 {
+		t.Errorf("panel's top is at %v, want the window's %v", got, want)
+	}
+	if bottom > 820/2 {
+		t.Errorf("panel's bottom is at %v, down the window as a centered sheet would be", bottom)
 	}
 	if got, want := title.X+title.W/2, float32(1180)/2; math.Abs(float64(got-want)) > 200 {
 		t.Errorf("title is at %v, nowhere near the window's middle %v", got, want)
