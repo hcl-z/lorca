@@ -65,7 +65,7 @@ pub fn send_user_message(
         Some(ReplyTo { author: Author::Bot { bot_id }, .. }) => Some(bot_id.clone()),
         _ => None,
     };
-    let mut message = Message::new(chat_id, Author::You, Body::Text { text: text.to_string(), attachments, mentions: mentions.clone(), reply_to });
+    let mut message = Message::new(chat_id, Author::You, Body::Text { agents: Vec::new(), text: text.to_string(), attachments, mentions: mentions.clone(), reply_to });
     if let Some(id) = message_id.filter(|id| !id.is_empty()) {
         message.id = id;
     }
@@ -217,6 +217,7 @@ pub fn cancel_chat(app: &Arc<App>, chat_id: &str) {
 
 pub(crate) fn user_turn_job(app: &Arc<App>, chat_id: &str, bot_id: &str, trigger_message_id: &str) -> Job {
     Job {
+        agent_message: None,
         id: format!("job-{}", uuid::Uuid::new_v4()),
         chat_id: chat_id.to_string(),
         bot_id: bot_id.to_string(),
@@ -241,6 +242,7 @@ pub(crate) fn user_turn_job(app: &Arc<App>, chat_id: &str, bot_id: &str, trigger
 /// `trigger_message_id` is the command's card.
 pub fn command_job(app: &App, chat_id: &str, bot_id: &str, card_id: &str) -> Job {
     Job {
+        agent_message: None,
         id: format!("job-{}", uuid::Uuid::new_v4()),
         chat_id: chat_id.to_string(),
         bot_id: bot_id.to_string(),
@@ -264,7 +266,8 @@ pub fn command_job(app: &App, chat_id: &str, bot_id: &str, card_id: &str) -> Job
 /// The turn in which a bot hears what a coding agent it runs did (`coding::wake`):
 /// `trigger_message_id` is the agent's card.
 pub fn agent_job(app: &App, chat_id: &str, bot_id: &str, card_id: &str) -> Job {
-    Job { kind: "agent".into(), ..command_job(app, chat_id, bot_id, card_id) }
+    Job {
+        agent_message: None, kind: "agent".into(), ..command_job(app, chat_id, bot_id, card_id) }
 }
 
 /// Members in chat order, with the ones the message mentions first, then the one whose message
@@ -454,6 +457,7 @@ async fn run_room(
                 continue;
             }
             let job = Job {
+                agent_message: None,
                 id: format!("job-{}", uuid::Uuid::new_v4()),
                 chat_id: chat_id.clone(),
                 bot_id: bot.id.clone(),
@@ -1013,7 +1017,7 @@ mod tests {
 
         let reply = send_user_message(app.clone(), "chat", "yes, ship it", None, Vec::new(), Vec::new(), Some("msg-original".into())).unwrap();
         let Body::Text { reply_to: Some(quote), .. } = &reply.body else { panic!("no quote: {:?}", reply.body) };
-        assert_eq!(quote, &ReplyTo { message_id: "msg-original".into(), author: Author::Bot { bot_id: "b1".into() }, text: "The build passes. Ship it?".into() });
+        assert_eq!(quote, &ReplyTo { message_id: "msg-original".into(), author: Author::Bot { bot_id: "b1".into() }, text: "The build passes. Ship it?".into(), agent: None });
         assert_eq!(app.message("chat", &reply.id).map(|stored| stored.body), Some(reply.body.clone()));
 
         let error = send_user_message(app.clone(), "chat", "and this?", None, Vec::new(), Vec::new(), Some("msg-gone".into())).unwrap_err();
@@ -1031,6 +1035,7 @@ mod tests {
             "chat",
             Author::You,
             Body::Text {
+                agents: Vec::new(),
                 text: String::new(),
                 attachments: vec![Attachment { id: "f".into(), name: "plan.pdf".into(), mime: "application/pdf".into(), size: 1, width: None, height: None, sha256: None }],
                 mentions: Vec::new(),
@@ -1089,6 +1094,7 @@ mod tests {
         crate::identity::create(app, None).unwrap();
         let runner_keys = crate::keys::Machine::generate();
         app.state.lock().unwrap().devices.push(Device {
+            agent_messages: false,
             id: "runner".into(),
             name: "Runner".into(),
             model: String::new(),
@@ -1206,6 +1212,7 @@ mod tests {
         crate::identity::create(app, None).unwrap();
         let mac_keys = crate::keys::Machine::generate();
         app.state.lock().unwrap().devices.push(Device {
+            agent_messages: false,
             id: "mac".into(),
             name: "Mac".into(),
             model: String::new(),
@@ -1237,6 +1244,7 @@ mod tests {
         let machine_file = app.machine_file().unwrap();
         let dek = machine_file.dek().unwrap();
         let mac = Device {
+            agent_messages: true,
             id: "mac".into(),
             name: "Mac".into(),
             model: "MacBook Air (M5)".into(),
@@ -1280,6 +1288,7 @@ mod tests {
         app.upsert_message(message, false);
         assert!(app.claim_steering_message("chat", "message"));
         let job = Job {
+            agent_message: None,
             id: "replacement".into(),
             chat_id: "chat".into(),
             bot_id: "bot".into(),

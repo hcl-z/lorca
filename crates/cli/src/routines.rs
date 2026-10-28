@@ -501,6 +501,7 @@ pub fn signed_out_text(routine: &Routine) -> String {
 fn job_for(app: &Arc<App>, routine: &Routine) -> Result<Job, String> {
     let dm = app.dm_with(&routine.bot_id, None).map_err(|e| e.to_string())?;
     Ok(Job {
+        agent_message: None,
         id: format!("job-{}", uuid::Uuid::new_v4()),
         chat_id: dm.meta.id,
         bot_id: routine.bot_id.clone(),

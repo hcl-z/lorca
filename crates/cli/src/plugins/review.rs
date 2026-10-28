@@ -1057,6 +1057,7 @@ mod tests {
         let home = std::env::temp_dir().join(format!("lorca-review-request-{}", uuid::Uuid::new_v4()));
         let app = App::load(crate::config::Config { home: home.clone(), port: 0 }).unwrap();
         app.state.lock().unwrap().devices.push(Device {
+            agent_messages: false,
             id: "runner".into(), name: "MacBook Air".into(), model: String::new(), os: "macos".into(), os_version: String::new(),
             box_pubkey: String::new(), plugins: Vec::new(), channels: Vec::new(), version: String::new(), update: None, updated_at: 0,
         });
