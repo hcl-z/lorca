@@ -492,7 +492,35 @@ export interface AgentQuestion {
 
 /// Its product's name, which is not translated.
 export function agentName(agent: AgentRun): string {
-  return agent.name || (agent.kind === "codex" ? "Codex" : "Claude Code");
+  return agent.name || agentKindName(agent.kind);
+}
+
+/// The product name of a kind, when its card carries none.
+export function agentKindName(kind: string): string {
+  switch (kind) {
+    case "claude":
+    case "claude-acp":
+      return "Claude Code";
+    case "codex":
+    case "codex-acp":
+      return "Codex";
+    case "gemini":
+      return "Gemini CLI";
+    case "copilot":
+      return "GitHub Copilot";
+    case "cursor":
+      return "Cursor";
+    case "opencode":
+      return "OpenCode";
+    case "kimi":
+      return "Kimi Code";
+    case "kiro":
+      return "Kiro";
+    case "pi":
+      return "pi";
+    default:
+      return "Coding agent";
+  }
 }
 
 export function agentIsOpen(agent: AgentRun): boolean {
