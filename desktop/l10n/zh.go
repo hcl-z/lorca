@@ -1543,6 +1543,12 @@ var zh = map[string]string{
 	"browser web ego lite playwright built-in automatic engine": "浏览器 网页 ego lite playwright 内置 自动 引擎",
 
 	// Memory capture, the user's profile, and the prompt preview
+	"Automatic memory history":     "自动记忆历史",
+	"%d batches":                   "%d 批",
+	"Capture batch":                "捕获批次",
+	"Undone · %@":                  "已撤销 · %@",
+	"Bot memory":                   "智能体记忆",
+	"Shared profile":               "共享资料",
 	"Learned":                      "学到",
 	"Tidied":                       "已整理",
 	"%d unused archived":           "%d 条久未用到，已归档",
@@ -1551,8 +1557,6 @@ var zh = map[string]string{
 	"Put back what was tidied?":    "把整理掉的内容放回去吗？",
 	"Put Back":                     "放回",
 	"Couldn't undo it":             "无法撤销",
-	"1 fact from a recent chat":    "最近一次对话里的 1 条",
-	"%d facts from a recent chat":  "最近一次对话里的 %d 条",
 	"Undo…":                        "撤销…",
 	"Forget what the bot learned?": "忘掉智能体学到的内容？",
 	"These leave its memory, and it won't add them again unless you bring them up.": "这些内容会从它的记忆里移除，除非你再次提起，它不会再自己加回来。",

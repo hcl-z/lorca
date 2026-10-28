@@ -21,11 +21,11 @@ const SAMPLE_TEAM_TOOLS: [&str; 2] = ["list_teammates", "search_plugins"];
 /// Tools an unattended turn (a routine's run, an event) goes without: each makes a bot, a group,
 /// a profile change, or a plugin card for the user, and nobody is here to ask. Their schemas stay
 /// out of the run's requests.
-const USER_REQUEST_TOOLS: [&str; 5] = ["create_bot", "edit_bot", "create_group", "edit_group", "recommend_plugins"];
+const USER_REQUEST_TOOLS: [&str; 6] = ["create_bot", "edit_bot", "create_group", "edit_group", "recommend_plugins", "profile_update"];
 
 /// All a new bot has while it works out its job with the user, settles its profile, and lists
 /// its plugins.
-const SETUP_TOOLS: [&str; 5] = ["ask_user", "finish_setup", "search_plugins", "recommend_plugins", "memory_update"];
+const SETUP_TOOLS: [&str; 6] = ["ask_user", "finish_setup", "search_plugins", "recommend_plugins", "memory_update", "profile_update"];
 
 /// What codemode scripts call besides plugin tools: the bot's own file, memory and output tools. `bash`
 /// is the scripts' own (`shell::script_bash`); the tools that hand work to teammates, change
@@ -170,7 +170,8 @@ pub(super) fn turn_tools(
             unattended: shape.unattended,
         }),
     ];
-    own.extend(memory_tools(app, bot, store, chat));
+    let evidence_message = app.message(chat_id, &trigger.message_id);
+    own.extend(memory_tools(app, bot, store, chat, evidence_message.as_ref()));
     own.push(Arc::new(Recall { app: app.clone(), store: store.clone(), bot: bot.clone() }));
     own.push(Arc::new(crate::project_context::ProjectContextTool { app: app.clone(), chat_id: chat_id.clone(), bot: bot.clone() }));
     // Commands run in terminals of their own, kept on this Runner past the turn when they
@@ -228,12 +229,13 @@ mod tests {
             (Team, "create_bot"),
             (Own, "coding_agent"),
             (Own, "memory_update"),
+            (Own, "profile_update"),
             (Own, "project_context"),
             (Own, "bash"),
             (Own, "codemode"),
         ];
         let usual = TurnShape::default();
-        assert_eq!(kept(usual, &tools), ["list_teammates", "message_bot", "recommend_plugins", "edit_bot", "search_plugins", "ask_user", "coding_agent", "memory_update", "bash", "codemode"]);
+        assert_eq!(kept(usual, &tools), ["list_teammates", "message_bot", "recommend_plugins", "edit_bot", "search_plugins", "ask_user", "coding_agent", "memory_update", "profile_update", "bash", "codemode"]);
         assert!(kept(TurnShape { chief: true, ..usual }, &tools).contains(&"create_bot"), "only the chief makes bots");
         assert!(kept(TurnShape { project: true, ..usual }, &tools).contains(&"project_context"));
         assert_eq!(
@@ -243,10 +245,10 @@ mod tests {
         );
         assert_eq!(
             kept(TurnShape { sample: true, chief: true, ..usual }, &tools),
-            ["list_teammates", "search_plugins", "memory_update", "bash", "codemode"],
+            ["list_teammates", "search_plugins", "memory_update", "profile_update", "bash", "codemode"],
             "a sample hands nothing off and starts no agent, but works with its own tools"
         );
-        assert_eq!(kept(TurnShape { setting_up: true, ..usual }, &tools), ["finish_setup", "recommend_plugins", "search_plugins", "ask_user", "memory_update"]);
+        assert_eq!(kept(TurnShape { setting_up: true, ..usual }, &tools), ["finish_setup", "recommend_plugins", "search_plugins", "ask_user", "memory_update", "profile_update"]);
         assert!(!kept(TurnShape { setting_up: true, unattended: true, ..usual }, &tools).contains(&"recommend_plugins"));
     }
 }

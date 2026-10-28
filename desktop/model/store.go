@@ -2212,7 +2212,21 @@ func (s *Store) BotMemory(id string, done func(BotMemory, error)) {
 	}
 	Async(s, func() (BotMemory, error) {
 		wire, err := call[WireBotMemory](s, "bots.memory", map[string]any{"bot_id": id})
-		return ToBotMemory(wire), err
+		memory := ToBotMemory(wire)
+		if err != nil || !memory.Here {
+			return memory, err
+		}
+		history, err := call[struct {
+			Runs []WireCaptureRun `json:"runs"`
+		}](s, "memory_capture.list", map[string]any{"bot_id": id})
+		if err != nil {
+			return memory, nil
+		}
+		memory.Captures = make([]CaptureRun, 0, len(history.Runs))
+		for _, run := range history.Runs {
+			memory.Captures = append(memory.Captures, CaptureRun{ID: run.ID, At: run.At, Facts: captureFacts(run.Facts), Undone: run.Undone})
+		}
+		return memory, nil
 	}, done)
 }
 
