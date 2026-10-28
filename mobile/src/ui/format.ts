@@ -1,8 +1,8 @@
 // Stamps, previews, and the working row's words, the rules the Mac app uses
 // (Design/Formatters.swift, AppStore.preview, ChatViewController.activity).
 
-import type { Body, Bot, Chat, Message, Routine } from "../core/model";
-import { attachmentSummary, isSentMessage } from "../core/model";
+import type { Body, Bot, Chat, Message, ReplyTo, Routine } from "../core/model";
+import { agentKindName, attachmentSummary, isSentMessage } from "../core/model";
 import type { StoreState } from "../core/store";
 import { language, t } from "../i18n";
 import { draftTitle } from "./drafts";
@@ -141,6 +141,22 @@ export function lastSeen(seenUnix: number | undefined): string {
 }
 
 /// The last thing worth previewing: tool calls never are, except a sent message.
+/// Who wrote a quoted message: the coding agent that wrote it, else the bot, the person, or You.
+export function quoteAuthorName(quote: ReplyTo, bots: Map<string, Bot>): string {
+  if (quote.agent) return quote.agent.name || agentKindName(quote.agent.kind);
+  const author = quote.author;
+  if (author.kind === "you") return t("You");
+  if (author.kind === "bot") return bots.get(author.bot_id)?.name ?? t("Bot");
+  if (author.kind === "contact") return author.name;
+  return "Lorca";
+}
+
+/// Who wrote a message: an agent's own name when one wrote it, else its author's.
+export function messageAuthorName(message: Message, bots: Map<string, Bot>): string {
+  if (message.agent) return message.agent.name || agentKindName(message.agent.kind);
+  return quoteAuthorName({ message_id: message.id, author: message.author, text: "" }, bots);
+}
+
 export function preview(chat: Chat, bots: Map<string, Bot>): string {
   let shown: Message | undefined;
   for (let i = chat.messages.length - 1; i >= 0 && !shown; i--) {
@@ -183,6 +199,7 @@ export function preview(chat: Chat, bots: Map<string, Bot>): string {
       break;
   }
   const flattened = body.replace(/\n/g, " ").replace(/\*\*/g, "").replace(/`/g, "").trim();
+  if (shown.agent) return `${shown.agent.name || agentKindName(shown.agent.kind)}: ${flattened}`;
   if (chat.kind === "group" && shown.author.kind === "bot" && shown.body.kind === "text") {
     return `${bots.get(shown.author.bot_id)?.name ?? t("Bot")}: ${flattened}`;
   }
