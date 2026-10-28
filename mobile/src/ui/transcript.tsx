@@ -400,11 +400,11 @@ export function CardButton({ label, icon, primary = false, disabled = false, onP
   return <Button title={label} icon={icon} kind={primary ? "primary" : "secondary"} disabled={disabled} onPress={onPress} style={styles.cardButton} />;
 }
 
-export const PermissionRow = memo(function PermissionRow({ row, isGroup, onDecide, onFill }: { row: Extract<Row, { type: "permission" }>; isGroup: boolean; onDecide: (message: Message, decision: "allow" | "always" | "deny") => void; onFill: (message: Message) => void }) {
+export const PermissionRow = memo(function PermissionRow({ row, isGroup, onDecide, onFill, onOpenQuestion, onOpenCommand }: { row: Extract<Row, { type: "permission" }>; isGroup: boolean; onDecide: (message: Message, decision: "allow" | "always" | "deny") => void; onFill: (message: Message) => void; onOpenQuestion?: (message: Message) => void; onOpenCommand?: (message: Message) => void }) {
   if (row.body.tool === "secret" && row.body.secret) return <SecretRow row={row} isGroup={isGroup} onDecide={onDecide} onFill={onFill} />;
-  if (row.body.tool === "ask" && row.body.ask) return <QuestionRow row={row} ask={row.body.ask} isGroup={isGroup} onDecide={onDecide} />;
+  if (row.body.tool === "ask" && row.body.ask) return <QuestionRow row={row} ask={row.body.ask} isGroup={isGroup} onDecide={onDecide} onOpen={onOpenQuestion} />;
   if (row.body.tool === "agent_ask" && row.body.agent_ask) return <AgentAskRow row={row} ask={row.body.agent_ask} isGroup={isGroup} />;
-  return <AskRow row={row} isGroup={isGroup} onDecide={onDecide} />;
+  return <AskRow row={row} isGroup={isGroup} onDecide={onDecide} onOpenCommand={onOpenCommand} />;
 });
 
 /// A bot asking for a secret, as the Mac's card: who asks and where it goes, why, Fill In, which
@@ -449,7 +449,7 @@ function SecretRow({ row, isGroup, onDecide, onFill }: { row: Extract<Row, { typ
   );
 }
 
-const AskRow = memo(function AskRow({ row, isGroup, onDecide }: { row: Extract<Row, { type: "permission" }>; isGroup: boolean; onDecide: (message: Message, decision: "allow" | "always" | "deny") => void }) {
+const AskRow = memo(function AskRow({ row, isGroup, onDecide, onOpenCommand }: { row: Extract<Row, { type: "permission" }>; isGroup: boolean; onDecide: (message: Message, decision: "allow" | "always" | "deny") => void; onOpenCommand?: (message: Message) => void }) {
   useLanguage();
   const p = usePalette();
   const [copied, setCopied] = useState(false);
@@ -530,7 +530,7 @@ const AskRow = memo(function AskRow({ row, isGroup, onDecide }: { row: Extract<R
         </View>
         {pending && shell ? (
           <Pressable
-            onPress={() => router.push({ pathname: "/command/[id]", params: { id: row.message.id, chat: row.message.chat_id, title } })}
+            onPress={() => (onOpenCommand ? onOpenCommand(row.message) : router.push({ pathname: "/command/[id]", params: { id: row.message.id, chat: row.message.chat_id, title } }))}
             style={({ pressed }) => [styles.command, { backgroundColor: p.innerCard, opacity: pressed ? 0.6 : 1 }]}
             accessibilityRole="button"
             accessibilityLabel={t("Show the full command")}
@@ -600,7 +600,7 @@ const AskRow = memo(function AskRow({ row, isGroup, onDecide }: { row: Extract<R
 /// on its tap; several, or Other, send with Submit. Skip leaves the choice to the bot. A refusal
 /// from the Runner (offline, expired) puts the card back with why under it. Answered, it keeps the
 /// question and says what was picked.
-const QuestionRow = memo(function QuestionRow({ row, ask, isGroup, onDecide }: { row: Extract<Row, { type: "permission" }>; ask: AskQuestion; isGroup: boolean; onDecide: (message: Message, decision: "allow" | "always" | "deny") => void }) {
+export const QuestionRow = memo(function QuestionRow({ row, ask, isGroup, onDecide, onOpen }: { row: Extract<Row, { type: "permission" }>; ask: AskQuestion; isGroup: boolean; onDecide: (message: Message, decision: "allow" | "always" | "deny") => void; onOpen?: (message: Message) => void }) {
   useLanguage();
   const p = usePalette();
   const [picked, setPicked] = useState<number[]>([]);
@@ -642,7 +642,14 @@ const QuestionRow = memo(function QuestionRow({ row, ask, isGroup, onDecide }: {
         </View>
       )}
       <View style={[styles.permission, { backgroundColor: p.botBubble }]}>
-        <Text style={[styles.caption, { color: p.secondaryLabel }]}>{t("{who} asks you to choose", { who })}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Text style={[styles.caption, { color: p.secondaryLabel, flex: 1 }]}>{t("{who} asks you to choose", { who })}</Text>
+          {onOpen && pending ? (
+            <Pressable onPress={() => onOpen(row.message)} hitSlop={8} accessibilityRole="button" accessibilityLabel={t("Answer in a sheet")} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
+              <Symbol name="rectangle.expand.vertical" size={15} color={p.secondaryLabel} />
+            </Pressable>
+          ) : null}
+        </View>
         <Text style={[styles.questionText, { color: p.label }]}>{ask.question}</Text>
         {pending ? (
           <>
@@ -1007,12 +1014,14 @@ export const CommandRow = memo(function CommandRow({
   onDecide,
   onAnswer,
   onStop,
+  onOpenCommand,
 }: {
   row: Extract<Row, { type: "command" }>;
   isGroup: boolean;
   onDecide: (message: Message, decision: "allow" | "always" | "deny") => void;
   onAnswer: (message: Message) => void;
   onStop: (message: Message) => Promise<void>;
+  onOpenCommand?: (message: Message) => void;
 }) {
   useLanguage();
   const p = usePalette();
@@ -1076,7 +1085,7 @@ export const CommandRow = memo(function CommandRow({
           ) : null}
         </View>
         <Pressable
-          onPress={() => router.push({ pathname: "/command/[id]", params: { id: row.message.id, chat: row.message.chat_id, title: t("{who}'s command", { who }) } })}
+          onPress={() => (onOpenCommand ? onOpenCommand(row.message) : router.push({ pathname: "/command/[id]", params: { id: row.message.id, chat: row.message.chat_id, title: t("{who}'s command", { who }) } }))}
           style={({ pressed }) => [styles.command, { backgroundColor: p.innerCard, opacity: pressed ? 0.6 : 1 }]}
           accessibilityRole="button"
           accessibilityLabel={t("Show the full command")}
@@ -1136,6 +1145,7 @@ export const AgentRow = memo(function AgentRow({
   onStop,
   onActions,
   onOpenAsk,
+  onOpenCommand,
 }: {
   row: Extract<Row, { type: "agent" }>;
   isGroup: boolean;
@@ -1143,6 +1153,7 @@ export const AgentRow = memo(function AgentRow({
   onStop: (message: Message) => Promise<void>;
   onActions?: (message: Message) => void;
   onOpenAsk?: (message: Message) => void;
+  onOpenCommand?: (message: Message) => void;
 }) {
   useLanguage();
   const p = usePalette();
@@ -1214,7 +1225,7 @@ export const AgentRow = memo(function AgentRow({
           <Callout tint={accentColor("orange", p.dark)} icon="hand.raised" title={agentTitle(agent, who)}>
             {asks.kind === "command" && asks.command ? (
               <Pressable
-                onPress={() => router.push({ pathname: "/command/[id]", params: { id: row.message.id, chat: row.message.chat_id, title: t("{who}'s command", { who: name }) } })}
+                onPress={() => (onOpenCommand ? onOpenCommand(row.message) : router.push({ pathname: "/command/[id]", params: { id: row.message.id, chat: row.message.chat_id, title: t("{who}'s command", { who: name }) } }))}
                 style={({ pressed }) => [styles.command, { backgroundColor: p.innerCard, opacity: pressed ? 0.6 : 1 }]}
                 accessibilityRole="button"
                 accessibilityLabel={t("Show the full command")}

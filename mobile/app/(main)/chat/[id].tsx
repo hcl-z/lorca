@@ -47,6 +47,7 @@ import { RunningAgents } from "../../../src/ui/RunningAgents";
 import { ParticipantsSheet } from "../../../src/ui/ParticipantsSheet";
 import { AgentActionsSheet } from "../../../src/ui/AgentActionsSheet";
 import { AgentAskSheet } from "../../../src/ui/AgentAskSheet";
+import { CommandSheet, MessageSheet, QuestionSheet, TasksSheet } from "../../../src/ui/DetailSheets";
 import { CapsuleButton, Float, RoundButton } from "../../../src/ui/chrome";
 import { KeyboardFoot } from "../../../src/ui/KeyboardFoot";
 import { useWide } from "../../../src/ui/layout";
@@ -350,11 +351,21 @@ export default function ChatScreen() {
   const openParticipants = useCallback(() => setParticipantsOpen(true), []);
   const [actionsFor, setActionsFor] = useState<Message | null>(null);
   const [askFor, setAskFor] = useState<Message | null>(null);
+  const [messageFor, setMessageFor] = useState<Message | null>(null);
+  const [commandFor, setCommandFor] = useState<Message | null>(null);
+  const [tasksOpen, setTasksOpen] = useState(false);
+  const [questionFor, setQuestionFor] = useState<Message | null>(null);
   const openAgentActions = useCallback((message: Message) => {
     haptic.open();
     setActionsFor(message);
   }, []);
   const openAsk = useCallback((message: Message) => setAskFor(message), []);
+  const openCommand = useCallback((message: Message) => setCommandFor(message), []);
+  const openQuestion = useCallback((message: Message) => setQuestionFor(message), []);
+  const questionRow =
+    questionFor?.body.kind === "permission"
+      ? { key: questionFor.id, type: "permission" as const, message: questionFor, body: questionFor.body, bot: questionFor.author.kind === "bot" ? bots.get(questionFor.author.bot_id) : undefined, groupStart: false }
+      : undefined;
   const actionsAgent = actionsFor?.body.kind === "tool" ? actionsFor.body.agent : undefined;
   const askRow =
     askFor?.body.kind === "permission"
@@ -446,13 +457,10 @@ export default function ChatScreen() {
   /// The whole message behind a "Messaged ◉ Name" marker, as a sheet.
   const openMarker = useCallback(
     (row: Extract<Row, { type: "marker" }>) => {
-      const title = `${row.text} ${row.bot?.name ?? t("a teammate")}`;
-      router.push({
-        pathname: "/message/[id]",
-        params: { id: row.key, chat: id, title },
-      });
+      const message = chat?.messages.find((each) => each.id === row.key);
+      if (message) setMessageFor(message);
     },
-    [router, id],
+    [chat],
   );
 
   /// Answers a card. One whose answer cannot reach the bot's Runner asks again, and says why.
@@ -496,6 +504,8 @@ export default function ChatScreen() {
               isGroup={speakers}
               onDecide={answerCard}
               onFill={fillSecret}
+              onOpenQuestion={openQuestion}
+              onOpenCommand={openCommand}
             />
           );
         case "draft":
@@ -508,6 +518,7 @@ export default function ChatScreen() {
               onDecide={answerCard}
               onAnswer={answerCommand}
               onStop={stopCommand}
+              onOpenCommand={openCommand}
             />
           );
         case "agent":
@@ -519,6 +530,7 @@ export default function ChatScreen() {
               onStop={stopAgent}
               onActions={openAgentActions}
               onOpenAsk={openAsk}
+              onOpenCommand={openCommand}
             />
           );
         case "working":
@@ -527,7 +539,7 @@ export default function ChatScreen() {
           return <StatusRow text={item.text} />;
       }
     },
-    [answerCard, answerCommand, fillSecret, bots, id, isGroup, speakers, openMarker, startReply, revealQuoted, flashId, stopCommand, startEdit, regenerate, openAgentActions, openAsk],
+    [answerCard, answerCommand, fillSecret, bots, id, isGroup, speakers, openMarker, startReply, revealQuoted, flashId, stopCommand, startEdit, regenerate, openAgentActions, openAsk, openCommand, openQuestion],
   );
 
   if (!chat) {
@@ -552,6 +564,7 @@ export default function ChatScreen() {
         service={chat?.channel?.service}
         working={isWorking}
         hasTasks={hasTasks}
+        onTasks={() => setTasksOpen(true)}
         wide={wide}
         top={insets.top}
       />
@@ -703,6 +716,27 @@ export default function ChatScreen() {
         }}
       />
       <AgentAskSheet visible={!!askFor} row={askRow} ask={askRow?.body.agent_ask} onClose={() => setAskFor(null)} />
+      <MessageSheet visible={!!messageFor} message={messageFor ?? undefined} onClose={() => setMessageFor(null)} />
+      <CommandSheet visible={!!commandFor} message={commandFor ?? undefined} onClose={() => setCommandFor(null)} />
+      <TasksSheet
+        visible={tasksOpen}
+        chatId={id}
+        onClose={() => setTasksOpen(false)}
+        onOpenCommand={(message) => {
+          setTasksOpen(false);
+          setTimeout(() => router.push({ pathname: "/tasks/command/[id]", params: { id: message.id, chat: id } }), 260);
+        }}
+      />
+      <QuestionSheet
+        visible={!!questionFor}
+        row={questionRow}
+        ask={questionRow?.body.ask}
+        onClose={() => setQuestionFor(null)}
+        onDecide={(message, decision) => {
+          setQuestionFor(null);
+          answerCard(message, decision);
+        }}
+      />
       <ParticipantsSheet
         visible={participantsOpen}
         title={title}
@@ -735,6 +769,7 @@ const ChatHeader = memo(function ChatHeader({
   service,
   working,
   hasTasks,
+  onTasks,
   wide,
   top,
 }: {
@@ -746,6 +781,7 @@ const ChatHeader = memo(function ChatHeader({
   service?: string;
   working: boolean;
   hasTasks: boolean;
+  onTasks: () => void;
   wide: boolean;
   top: number;
 }) {
@@ -761,7 +797,7 @@ const ChatHeader = memo(function ChatHeader({
   const androidHeaderHeight = visibleHeaderHeight + ANDROID_FADE_HEIGHT;
   const androidHeaderStop = visibleHeaderHeight / androidHeaderHeight;
   const info = () => router.push(`/chat-info/${id}`);
-  const tasks = () => router.push(`/tasks/${id}`);
+  const tasks = onTasks;
   const label = t("{title}, participants", { title });
   const who = (
     <>
