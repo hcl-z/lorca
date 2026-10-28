@@ -1315,6 +1315,10 @@ var zh = map[string]string{
 	"Always":                "始终",
 	"Hide":                  "隐藏",
 	"Hide Chat":             "隐藏聊天",
+	"Hide %@":               "隐藏 %@",
+	"Hide Others":           "隐藏其他",
+	"Show All":              "全部显示",
+	"Services":              "服务",
 	"Show in Sidebar":       "在侧边栏显示",
 	"Unpin Chat":            "取消置顶聊天",
 	"Move to Section":       "移至分组",
@@ -1641,4 +1645,6 @@ var zh = map[string]string{
 	"%d seconds":     "%d 秒",
 	"needs approval": "待批准",
 	"needs you":      "待你处理",
+	"Compacting…":    "正在压缩…",
+	"Compacted":      "已压缩",
 }
