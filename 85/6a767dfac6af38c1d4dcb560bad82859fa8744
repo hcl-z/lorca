@@ -1,0 +1,25 @@
+mobile/src/ui/agentKit.tsx
+  s_b9e6899a28ad81::t_36328b9f01b381 9,127,129,137,158
+mobile/app/(main)/chat/[id].tsx
+  s_b9e6899a28ad81::t_36328b9f01b381 32,328,465
+mobile/src/ui/ChatPeek.tsx
+  s_b9e6899a28ad81::t_36328b9f01b381 11,37
+mobile/src/ui/transcript.tsx
+  s_b9e6899a28ad81::t_36328b9f01b381 13,17,23,157,166,192,200-204,214-217,221-225,235,237,308,735
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "856a767dfac6af38c1d4dcb560bad82859fa8744",
+  "prompts": {},
+  "sessions": {
+    "s_b9e6899a28ad81": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9f769ae6-f904-41e2-aae4-1e185238e8bc",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
