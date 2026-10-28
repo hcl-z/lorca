@@ -252,6 +252,13 @@ pub struct Agent {
 struct SaidChat {
     /// The entry key of the segment being said, and its message.
     current: Option<(String, Message)>,
+    /// What the message held before the segment being said.
+    prefix: String,
+    /// What separates the segment being said from the prefix: a space inside one message, a
+    /// paragraph after a tool call, plan, or note.
+    separator: String,
+    /// A tool call, plan, or note came since the last words: the next ones start a paragraph.
+    hard: bool,
     /// When the open message was last written to the chat.
     flushed: Option<Instant>,
 }
@@ -325,34 +332,43 @@ impl Agent {
             return;
         }
         let redactions = crate::secrets::Redactions::load(app);
-        let mut project: Vec<(String, String)> = Vec::new();
+        let mut project: Vec<(String, String, bool)> = Vec::new();
+        let mut hard = self.said.lock().unwrap().hard;
         {
             let mut entries = self.entries.lock().unwrap();
             for (key, entry) in new {
                 let entry = entry.cleaned(|text| redactions.text(&text).unwrap_or(text));
-                // What it says is a message of its own in the chat; a tool, a plan, a note, or a
-                // new prompt closes the one it was saying.
+                // What it says is a message of its own in the chat. A tool, a plan, or a note
+                // separates the next words with a paragraph, but does not end the message: one
+                // turn is one message. A new prompt ends it, and the next turn starts another.
                 if entry.kind == "said" {
-                    project.push((key.clone(), entry.text.clone()));
-                } else if matches!(entry.kind.as_str(), "tool" | "plan" | "note" | "sent") {
-                    project.push((String::new(), String::new()));
+                    project.push((key.clone(), entry.text.clone(), hard));
+                    hard = false;
+                } else if entry.kind == "sent" {
+                    project.push((String::new(), String::new(), true));
+                    hard = false;
+                } else if matches!(entry.kind.as_str(), "tool" | "plan" | "note") {
+                    hard = true;
                 }
                 entries.put(key, entry);
             }
         }
-        for (key, text) in project {
+        self.said.lock().unwrap().hard = hard;
+        for (key, text, hard) in project {
             if key.is_empty() {
                 self.end_said(app);
             } else {
-                self.say_in_chat(app, &key, &text);
+                self.say_in_chat(app, &key, &text, hard);
             }
         }
         *self.active_at.lock().unwrap() = Instant::now();
     }
 
-    /// Its words in the chat: one message per `said` segment, growing as it streams and complete
-    /// when the segment is. `@Name` in the chat sends it here (`from_user`).
-    fn say_in_chat(&self, app: &App, key: &str, text: &str) {
+    /// Its words in the chat: one message for the turn, growing as it streams and complete when
+    /// the turn is. A new `said` segment continues the same message; a tool call, plan, or note
+    /// only makes the next segment start a paragraph, and a new user message ends it. `@Name` in
+    /// the chat sends it here (`from_user`).
+    fn say_in_chat(&self, app: &App, key: &str, text: &str, hard: bool) {
         let text = text.trim();
         if text.is_empty() {
             return;
@@ -362,26 +378,43 @@ impl Agent {
         let mut said = self.said.lock().unwrap();
         let same = matches!(&said.current, Some((open, _)) if open == key);
         if !same {
-            if let Some((_, mut message)) = said.current.take() {
-                message.state = crate::model::MessageState::Complete;
-                app.upsert_message(message, true);
-            }
-            let mut message = Message::new(&record.chat_id, Author::Bot { bot_id: record.bot_id }, Body::text(text));
+            // Keep the turn's one message, with its id and when it started: a new segment only
+            // grows its text. A tool call, plan, or note makes the next segment a paragraph.
+            let (mut message, prefix, separator) = match said.current.take() {
+                Some((_, message)) => {
+                    let Body::Text { text: body, .. } = &message.body else {
+                        return;
+                    };
+                    let prefix = body.clone();
+                    let separator = if hard { "\n\n".to_string() } else { " ".to_string() };
+                    (message, prefix, separator)
+                }
+                None => (
+                    Message::new(&record.chat_id, Author::Bot { bot_id: record.bot_id }, Body::text(text)),
+                    String::new(),
+                    String::new(),
+                ),
+            };
+            let body = format!("{prefix}{separator}{text}");
+            message.body = Body::text(body);
             message.agent = Some(author);
             message.state = crate::model::MessageState::Streaming;
             app.upsert_message(message.clone(), true);
+            said.prefix = prefix;
+            said.separator = separator;
             said.current = Some((key.to_string(), message));
             said.flushed = Some(Instant::now());
             return;
         }
         let due = said.flushed.is_none_or(|flushed| flushed.elapsed() >= CHAT_FLUSH);
+        let body = format!("{}{}{}", said.prefix, said.separator, text);
         let (_, message) = said.current.as_mut().expect("a said message");
         let changed = match &mut message.body {
-            Body::Text { text: body, .. } => {
-                if body.as_str() == text {
+            Body::Text { text: current, .. } => {
+                if current.as_str() == body {
                     false
                 } else {
-                    *body = text.to_string();
+                    *current = body;
                     true
                 }
             }
@@ -394,13 +427,16 @@ impl Agent {
         }
     }
 
-    /// The segment it was saying is over: its message in the chat is complete.
+    /// The turn it was saying is over: its message in the chat is complete.
     fn end_said(&self, app: &App) {
         let mut said = self.said.lock().unwrap();
         if let Some((_, mut message)) = said.current.take() {
             message.state = crate::model::MessageState::Complete;
             app.upsert_message(message, true);
         }
+        said.prefix.clear();
+        said.separator.clear();
+        said.hard = false;
         said.flushed = None;
     }
 
@@ -1059,6 +1095,7 @@ async fn supervise(app: Arc<App>, agent: Arc<Agent>, mut events: mpsc::Unbounded
                 record.stalled = true;
                 record.news = Some(News::Stalled);
             }
+            agent.end_said(&app);
             agents.sync(&app, &agent);
             save(&app);
             wake(&app, &agent);
@@ -1525,6 +1562,7 @@ fn bot_answers_questions(record: &Record) -> bool {
 /// stopping, is an `Err`, and the card says which.
 async fn converse(app: &Arc<App>, agent: &Arc<Agent>, ask: Ask) -> Result<Option<serde_json::Map<String, Value>>, String> {
     // One question at a time, as a permission is asked.
+    agent.end_said(app);
     let _one = agent.asking.lock().await;
     if !agent.is_running() {
         return Err("Stopped".into());
