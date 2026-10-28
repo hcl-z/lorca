@@ -68,6 +68,7 @@ type mainWindow struct {
 	palette     *paletteState
 	inspector   inspectorState
 	tasks       runningTasksState
+	agents      runningAgentsState
 	attention   attentionState
 	// focusComposer asks the chat on screen to put the keyboard in its composer.
 	focusComposer bool
@@ -761,7 +762,6 @@ func (m *mainWindow) view(c *ui.Context) {
 			m.divider(c, width-inspector-1, false)
 		}
 	})
-	m.agentWindows(c)
 	m.palette.view(c, m)
 	refreshMenuBar()
 }
@@ -930,6 +930,9 @@ func (m *mainWindow) contentHeader(c *ui.Context, chatID, title, subtitle string
 			return
 		}
 		m.runningTasksButton(c, chatID)
+		// The agents capsule before Attention: with it after, the press that opens Attention's
+		// popover is dismissed in the same frame.
+		m.runningAgentsButton(c)
 		m.attentionButton(c)
 	})
 	if chat != nil {

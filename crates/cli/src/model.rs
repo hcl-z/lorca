@@ -682,6 +682,15 @@ impl ReplyTo {
     }
 }
 
+/// What a coding agent's work changed against the commit it started from: its files, and the
+/// lines added and removed.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct AgentChanges {
+    pub files: u32,
+    pub added: u32,
+    pub removed: u32,
+}
+
 /// What a message to a coding agent carries to the Runner that runs it: the agent's id and the
 /// user's text as typed. The Runner strips the agent's `@Name` before it sends it.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -692,7 +701,6 @@ pub struct AgentMessage {
 
 /// The Job kind that hands a message to a coding agent rather than a bot turn.
 pub const AGENT_MESSAGE_JOB: &str = "agent_message";
-
 /// A coding agent (Claude Code, Codex, or another that speaks ACP) a bot runs on its Runner, as the card on the
 /// `coding_agent` row that started it shows it (`crate::coding`): Auto-review's question before
 /// it starts, what it works on and where, how it stands, its last lines, and what it asks.
@@ -751,6 +759,9 @@ pub struct AgentRun {
     /// The pull request it opened, when its transcript names one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pull_request: Option<String>,
+    /// What its work changed against the commit it started from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changes: Option<AgentChanges>,
     /// The Runner it runs on, by name: "Workbench".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device: Option<String>,

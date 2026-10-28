@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
+use crate::model::AgentChanges;
+
 /// The most diff an output carries.
 const DIFF_BYTES: usize = 2 * 1024 * 1024;
 /// New files a diff shows in full, at most, and how big each may be.
@@ -119,6 +121,32 @@ pub(crate) async fn git(folder: &Path, args: &[&str]) -> Result<String, String> 
     }
 }
 
+/// What the agent changed since `base`: commits, edits not committed yet, and new files. `None`
+/// when git cannot tell.
+pub(crate) async fn changes(folder: &Path, base: &str) -> Option<AgentChanges> {
+    let numstat = git(folder, &["-c", "core.quotepath=off", "diff", "--numstat", base, "--"]).await.ok()?;
+    let mut changes = AgentChanges::default();
+    for line in numstat.lines() {
+        let mut fields = line.split('\t');
+        let (Some(added), Some(removed)) = (fields.next(), fields.next()) else { continue };
+        changes.files += 1;
+        // A binary file counts as changed, with no lines.
+        changes.added += added.parse::<u32>().unwrap_or(0);
+        changes.removed += removed.parse::<u32>().unwrap_or(0);
+    }
+    let untracked = git(folder, &["ls-files", "--others", "--exclude-standard"]).await.unwrap_or_default();
+    for file in untracked.lines().filter(|file| !file.is_empty()).take(NEW_FILES) {
+        changes.files += 1;
+        let path = folder.join(file);
+        if std::fs::metadata(&path).is_ok_and(|metadata| metadata.len() <= NEW_FILE_BYTES) {
+            if let Ok(text) = std::fs::read_to_string(&path) {
+                changes.added += text.lines().count() as u32;
+            }
+        }
+    }
+    Some(changes)
+}
+
 /// Everything the agent changed since `base`: commits, edits not committed yet, and new files.
 /// Empty when nothing changed.
 pub(crate) async fn diff(folder: &Path, base: &str) -> String {
@@ -192,6 +220,8 @@ mod tests {
         assert_eq!(again.folder, place.folder);
         let diff = diff(&again.folder, again.base.as_deref().unwrap()).await;
         assert!(diff.contains("+login") && diff.contains("+new"), "{diff}");
+        let changed = changes(&again.folder, again.base.as_deref().unwrap()).await.unwrap();
+        assert_eq!((changed.files, changed.added, changed.removed), (2, 2, 0), "{changed:?}");
 
         // A new one without a name takes the task's words.
         let fresh = prepare(&home, &scratch, Some("shop"), None, "Add dark mode").await.unwrap();
