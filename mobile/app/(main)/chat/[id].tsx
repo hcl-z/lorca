@@ -28,7 +28,8 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SoftScrollEdgeView } from "../../../modules/lorca-core/SoftScrollEdgeView";
 import { chatTitle, engine, type PickedFile } from "../../../src/core/engine";
-import { isLive, showsSpeakers, type Bot, type Message } from "../../../src/core/model";
+import { isLive, showsSpeakers, type AgentRun, type Bot, type Message } from "../../../src/core/model";
+import { chatAgents, mentionTargets } from "../../../src/core/participants";
 import {
   useBotMap,
   useChat,
@@ -39,9 +40,10 @@ import {
 } from "../../../src/core/store";
 import { chatShown, scrollBegan, scrollEnded } from "../../../src/core/timing";
 import { t, useLanguage } from "../../../src/i18n";
-import { AvatarCluster } from "../../../src/ui/Avatar";
+import { ParticipantCluster } from "../../../src/ui/Avatar";
 import { Composer } from "../../../src/ui/Composer";
 import { RunningAgents } from "../../../src/ui/RunningAgents";
+import { ParticipantsSheet } from "../../../src/ui/ParticipantsSheet";
 import { CapsuleButton, Float, RoundButton } from "../../../src/ui/chrome";
 import { KeyboardFoot } from "../../../src/ui/KeyboardFoot";
 import { useWide } from "../../../src/ui/layout";
@@ -57,6 +59,7 @@ import {
   DayRow,
   MarkerRow,
   MessageRow,
+  messageAuthorName,
   quoteAuthorName,
   NoticeRow,
   PermissionRow,
@@ -323,12 +326,32 @@ export default function ChatScreen() {
   // A channel's conversation shows its speakers by name, as a group does.
   const speakers = chat ? showsSpeakers(chat) : false;
   const title = chat ? chatTitle(chat) : t("Chat");
-  // After the Mac app: "Message Chef", or the group's title with a hint that @ addresses one bot.
+  // The agent card changes rarely; keep the composer's target list from changing with every
+  // streamed word of a reply, or its memo would re-render on each one.
+  const devices = useStore((s) => s.devices);
+  const runnerSupportsAgents = useMemo(() => {
+    const runner = members[0] ? devices.find((device) => device.id === members[0].runner_id) : undefined;
+    return !!runner?.agent_messages;
+  }, [members, devices]);
+  const mentionKey = chat
+    ? [chat.bot_ids.join(","), ...chatAgents(chat).map(({ agent }) => `${agent.id}:${agent.name ?? ""}:${agent.kind}:${agent.state}`)].join("|")
+    : "";
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const targets = useMemo(() => (chat ? mentionTargets(chat, bots, runnerSupportsAgents) : []), [mentionKey, bots, runnerSupportsAgents]);
+  const agentMentionable = targets.some((target) => target.kind === "agent");
+  // The header and participants sheet read the open agents, not every streamed word.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const agents = useMemo(() => (chat ? chatAgents(chat) : []), [mentionKey]);
+  const [participantsOpen, setParticipantsOpen] = useState(false);
+  const openParticipants = useCallback(() => setParticipantsOpen(true), []);
+  // After the Mac app: "Message Chef", or the group's title with a hint that @ addresses one.
   const placeholder =
     !isGroup && members[0]
-      ? t("Ask {name}", { name: members[0].name })
-      : members.length > 1
-        ? t("Message {title} — @ to address one bot", { title })
+      ? agentMentionable
+        ? t("Message {name} — @ to address an agent", { name: members[0].name })
+        : t("Ask {name}", { name: members[0].name })
+      : targets.length > 1
+        ? t("Message {title} — @ to address a bot or agent", { title })
         : t("Message {name}", { name: title });
 
   /// The command whose answer sheet is up. The sheet reads the live row, so it goes when the
@@ -348,7 +371,7 @@ export default function ChatScreen() {
     (message: Message) => {
       if (message.body.kind !== "text") return;
       const words = quoteText(message.body.text) || (message.body.attachments ?? []).map((file) => file.name).join(", ");
-      setReplying({ messageID: message.id, name: quoteAuthorName(message.author, bots), text: words });
+      setReplying({ messageID: message.id, name: messageAuthorName(message, bots), text: words });
     },
     [bots],
   );
@@ -370,7 +393,7 @@ export default function ChatScreen() {
   // Stable while the reply target is, so the memoized composer skips the renders a streaming
   // reply causes.
   const send = useCallback(
-    (text: string, files: PickedFile[], mentions: string[]) => {
+    (text: string, files: PickedFile[], mentions: string[], agents: string[] = []) => {
       // The anchor is measured against the screen without the keyboard.
       void KeyboardController.dismiss();
       if (editing) {
@@ -382,7 +405,7 @@ export default function ChatScreen() {
       const replyTo = replying?.messageID;
       setReplying(null);
       engine
-        .sendMessage(id, text, files, mentions, replyTo)
+        .sendMessage(id, text, files, mentions, agents, replyTo)
         .then((message) => setAnchorKey(message.id))
         .catch((error) => {
           alert(
@@ -506,6 +529,8 @@ export default function ChatScreen() {
         id={id}
         title={title}
         members={members}
+        agents={agents.map(({ agent }) => agent)}
+        onOpenParticipants={openParticipants}
         service={chat?.channel?.service}
         working={isWorking}
         hasTasks={hasTasks}
@@ -611,8 +636,7 @@ export default function ChatScreen() {
         >
           <RunningAgents />
           <Composer
-            members={members}
-            isGroup={isGroup}
+            mentionTargets={targets}
             placeholder={placeholder}
             reply={replying}
             onCancelReply={cancelReply}
@@ -638,6 +662,19 @@ export default function ChatScreen() {
           onSave={(values) => engine.answerSecret(filling.chat_id, filling.id, values)}
         />
       ) : null}
+      <ParticipantsSheet
+        visible={participantsOpen}
+        title={title}
+        bots={members}
+        agents={agents.map(({ message, agent }) => ({ messageId: message.id, agent }))}
+        onClose={() => setParticipantsOpen(false)}
+        onOpenAgent={(messageId) => {
+          setParticipantsOpen(false);
+          // The native sheet dismisses first; a route pushed mid-dismiss can be swallowed.
+          setTimeout(() => router.push(`/agent/${messageId}`), 260);
+        }}
+        onStopAgent={(messageId) => engine.stopAgent(id, messageId)}
+      />
     </View>
   );
 }
@@ -648,7 +685,29 @@ export default function ChatScreen() {
 /// surface color fading into the transcript under round buttons. Memoized, and its options held:
 /// the screen renders again with every event in the chat, and new header options re-apply the
 /// native bar.
-const ChatHeader = memo(function ChatHeader({ id, title, members, service, working, hasTasks, wide, top }: { id: string; title: string; members: Bot[]; service?: string; working: boolean; hasTasks: boolean; wide: boolean; top: number }) {
+const ChatHeader = memo(function ChatHeader({
+  id,
+  title,
+  members,
+  agents,
+  onOpenParticipants,
+  service,
+  working,
+  hasTasks,
+  wide,
+  top,
+}: {
+  id: string;
+  title: string;
+  members: Bot[];
+  agents: AgentRun[];
+  onOpenParticipants: () => void;
+  service?: string;
+  working: boolean;
+  hasTasks: boolean;
+  wide: boolean;
+  top: number;
+}) {
   useLanguage();
   const router = useRouter();
   const p = usePalette();
@@ -662,10 +721,10 @@ const ChatHeader = memo(function ChatHeader({ id, title, members, service, worki
   const androidHeaderStop = visibleHeaderHeight / androidHeaderHeight;
   const info = () => router.push(`/chat-info/${id}`);
   const tasks = () => router.push(`/tasks/${id}`);
-  const label = t("{title}, info", { title });
+  const label = t("{title}, participants", { title });
   const who = (
     <>
-      <AvatarCluster bots={members} size={30} working={working} service={service} />
+      <ParticipantCluster bots={members} agents={agents} size={30} working={working} service={service} />
       <Text style={[styles.titleText, { color: p.label }]} numberOfLines={1}>
         {title}
       </Text>
@@ -678,7 +737,7 @@ const ChatHeader = memo(function ChatHeader({ id, title, members, service, worki
         <>
           <Stack.Toolbar placement="left">
             <Stack.Toolbar.View>
-              <Pressable onPress={info} style={styles.titleView} accessibilityRole="button" accessibilityLabel={label}>
+              <Pressable onPress={onOpenParticipants} style={styles.titleView} accessibilityRole="button" accessibilityLabel={label}>
                 {who}
               </Pressable>
             </Stack.Toolbar.View>
@@ -702,7 +761,7 @@ const ChatHeader = memo(function ChatHeader({ id, title, members, service, worki
           <View pointerEvents="box-none" style={[styles.androidHeaderControls, { height: visibleHeaderHeight, paddingTop: top }]}>
             {/* Beside the sidebar there is nothing to go back to. */}
             {wide ? null : <RoundButton icon="chevron.left" label={t("Back")} onPress={() => router.back()} />}
-            <CapsuleButton label={label} onPress={info}>
+            <CapsuleButton label={label} onPress={onOpenParticipants}>
               {who}
             </CapsuleButton>
             <View style={{ flex: 1 }} />
