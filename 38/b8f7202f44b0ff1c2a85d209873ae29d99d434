@@ -1,0 +1,69 @@
+mobile/src/ui/DetailSheets.tsx
+  s_b9e6899a28ad81::t_e4506a3c842d58 7,72-75,78
+  s_b9e6899a28ad81::t_4d67c8e92d2ce7 11,16-17,23,28,37,46,66,124
+mobile/src/ui/AttachSheet.tsx
+  s_b9e6899a28ad81::t_4d67c8e92d2ce7 4
+  s_b9e6899a28ad81::t_1d2120fe020a62 11
+mobile/src/core/model.ts
+  s_b9e6899a28ad81::t_6166f807caed8d 499-512,514
+crates/cli/src/coding/mod.rs
+  s_b9e6899a28ad81::t_e7ba07c5dda638 261,336,345-346,349,351,356-357,361,371,389,439
+mobile/app/(main)/chat/[id].tsx
+  s_b9e6899a28ad81::t_e4506a3c842d58 749
+  s_b9e6899a28ad81::t_e7ba07c5dda638 342,345,348
+  s_b9e6899a28ad81::t_d505828a418081 507
+mobile/src/ui/Composer.tsx
+  s_b9e6899a28ad81::t_e4506a3c842d58 130
+mobile/src/ui/agentMarks.ts
+  s_b9e6899a28ad81::t_6166f807caed8d 31-42,44,49-60,62
+crates/cli/src/coding/tests.rs
+  s_b9e6899a28ad81::t_7c0ef2fe0a9a09 1291-1306,1309-1333
+mobile/src/ui/AgentAskSheet.tsx
+  s_b9e6899a28ad81::t_1d2120fe020a62 23
+  s_b9e6899a28ad81::t_4d67c8e92d2ce7 7
+mobile/src/ui/Sheet.tsx
+  s_b9e6899a28ad81::t_e4506a3c842d58 173
+  s_b9e6899a28ad81::t_4d67c8e92d2ce7 26,30-32,34-35,85-86,97,204,212,217
+docs/architecture/turn-context.md
+  s_b9e6899a28ad81::t_08d93d5b790855 3
+docs/architecture/coding-agents.md
+  s_b9e6899a28ad81::t_08d93d5b790855 57
+crates/cli/src/runtime.rs
+  s_b9e6899a28ad81::t_fbc2b81e65c5d8 149-156,160,163-169,175,182,184,186-188
+  s_b9e6899a28ad81::t_7c0ef2fe0a9a09 1763-1768
+  s_b9e6899a28ad81::t_e7ba07c5dda638 89-99,142,179,189
+mobile/src/ui/AgentActionsSheet.tsx
+  s_b9e6899a28ad81::t_4d67c8e92d2ce7 5
+  s_b9e6899a28ad81::t_8055efe31ce1f0 25
+mobile/src/ui/transcript.tsx
+  s_b9e6899a28ad81::t_d505828a418081 403,405-406,608,650,652-656,736,797-801
+  s_b9e6899a28ad81::t_e4506a3c842d58 426-430
+mobile/src/ui/format.ts
+  s_b9e6899a28ad81::t_fbc2b81e65c5d8 143-144,151-156,160
+mobile/src/ui/sheetPresets.ts
+  s_b9e6899a28ad81::t_3211fc1dadbe19 4-10,16
+docs/architecture/languages.md
+  s_b9e6899a28ad81::t_fbc2b81e65c5d8 5
+docs/architecture/phone-ui.md
+  s_b9e6899a28ad81::t_fbc2b81e65c5d8 7
+mobile/src/ui/ParticipantsSheet.tsx
+  s_b9e6899a28ad81::t_4d67c8e92d2ce7 8,12,37-38
+crates/cli/src/turns.rs
+  s_b9e6899a28ad81::t_7c0ef2fe0a9a09 7118-7129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "38b8f7202f44b0ff1c2a85d209873ae29d99d434",
+  "prompts": {},
+  "sessions": {
+    "s_b9e6899a28ad81": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9f769ae6-f904-41e2-aae4-1e185238e8bc",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
