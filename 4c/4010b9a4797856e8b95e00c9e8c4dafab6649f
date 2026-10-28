@@ -1,0 +1,53 @@
+crates/cli/src/channels.rs
+  s_b9e6899a28ad81::t_8c81aabf89b6e7 767,983
+crates/cli/src/plugins/review.rs
+  s_b9e6899a28ad81::t_8c81aabf89b6e7 1060
+crates/cli/src/outputs.rs
+  s_b9e6899a28ad81::t_8c81aabf89b6e7 190
+crates/cli/src/workflows.rs
+  s_b9e6899a28ad81::t_8c81aabf89b6e7 398,925
+crates/cli/src/handoffs.rs
+  s_b9e6899a28ad81::t_8c81aabf89b6e7 533
+crates/cli/src/feedback/review.rs
+  s_b9e6899a28ad81::t_8c81aabf89b6e7 99
+crates/cli/src/pairing.rs
+  s_b9e6899a28ad81::t_8c81aabf89b6e7 264
+crates/cli/src/memory_capture.rs
+  s_b9e6899a28ad81::t_8c81aabf89b6e7 534
+crates/cli/src/model.rs
+  s_b9e6899a28ad81::t_8c81aabf89b6e7 56-59,380-383,646-648,681,685-695,830-834,1045-1058,1081-1096,1594-1597,1634,2064-2117
+crates/cli/src/routines.rs
+  s_b9e6899a28ad81::t_8c81aabf89b6e7 504
+crates/cli/src/runtime.rs
+  s_b9e6899a28ad81::t_8c81aabf89b6e7 68,220,245,269-270,460,1020,1038,1097,1215,1247,1291
+crates/cli/src/sync.rs
+  s_b9e6899a28ad81::t_8c81aabf89b6e7 1542
+crates/cli/src/event_triggers.rs
+  s_b9e6899a28ad81::t_8c81aabf89b6e7 1204
+crates/cli/src/tasks/mod.rs
+  s_b9e6899a28ad81::t_8c81aabf89b6e7 599
+crates/cli/src/turns.rs
+  s_b9e6899a28ad81::t_8c81aabf89b6e7 616,2615,2618,4629-4630,4856,4868,4877,5067-5068,5411,6321,6698,6921-6922,6994-6995,7046-7047
+mobile/src/core/model.ts
+  s_b9e6899a28ad81::t_8c81aabf89b6e7 74-76,250-257,296-305,583-584,710-711
+crates/cli/src/attention.rs
+  s_b9e6899a28ad81::t_8c81aabf89b6e7 604
+crates/cli/src/app.rs
+  s_b9e6899a28ad81::t_8c81aabf89b6e7 707
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "4c4010b9a4797856e8b95e00c9e8c4dafab6649f",
+  "prompts": {},
+  "sessions": {
+    "s_b9e6899a28ad81": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9f769ae6-f904-41e2-aae4-1e185238e8bc",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
