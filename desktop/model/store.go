@@ -1820,11 +1820,12 @@ func (s *Store) SetAgentOption(chatID, messageID, what, value string, done func(
 }
 
 // AgentTranscript is a coding agent's transcript, from its Runner: what it was sent, said, and
-// did, as entries, those changed after change `since` when it is not nil.
-func (s *Store) AgentTranscript(chatID, messageID string, since *uint64, done func(AgentTranscriptPage, error)) {
+// did, as entries, those changed after change `since` when it is not nil, else the newest page
+// of `limit` entries before `before` (the newest page without it).
+func (s *Store) AgentTranscript(chatID, messageID string, since, before *uint64, limit int, done func(AgentTranscriptPage, error)) {
 	if s.IsMock {
 		page := AgentTranscriptPage{Text: MockAgentTranscript, Rev: 1}
-		if since == nil {
+		if since == nil && before == nil {
 			page.Entries = MockAgentEntries()
 		}
 		s.post(func() { done(page, nil) })
@@ -1834,6 +1835,12 @@ func (s *Store) AgentTranscript(chatID, messageID string, since *uint64, done fu
 		params := map[string]any{"chat_id": chatID, "message_id": messageID}
 		if since != nil {
 			params["since"] = *since
+		}
+		if before != nil {
+			params["before"] = *before
+		}
+		if limit > 0 {
+			params["limit"] = limit
 		}
 		var page AgentTranscriptPage
 		err := s.request("coding.transcript", params, &page)

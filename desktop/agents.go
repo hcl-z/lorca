@@ -396,6 +396,7 @@ func (w *appWindow) presentAgentTranscript(chatID string, message *model.Message
 		title += " · " + place
 	}
 	w.present(func(c *ui.Context, s *sheet) {
+		t.fill = colors(c).Sheet
 		options := sheetOptions{Title: title, Width: 680, Confirm: L("Done"), NoCancel: true}
 		result := sheetFrame(c, options, func() {
 			t.view(c).Height(460)

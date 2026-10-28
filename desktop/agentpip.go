@@ -253,6 +253,7 @@ func (m *mainWindow) agentFull(c *ui.Context, r model.RunningAgent, st *pipState
 	}
 	view := st.view
 	view.maxWidth = 760
+	view.fill = p.Content
 	ui.Overlay(c, func() {
 		root := ui.Column(c.Key("pip-full:" + id)).Absolute().Left(0).Top(0).Right(0).Bottom(0).Background(p.Content).Modal()
 		asking, run := m.agentAsker(root, agent)

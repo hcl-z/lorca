@@ -1169,9 +1169,16 @@ class Engine {
   }
 
   /// A coding agent's transcript, from its Runner: what it was sent, said, and did, as entries,
-  /// those changed after change `since` when it is given.
-  async agentTranscript(chatId: string, messageId: string, since?: number): Promise<AgentTranscriptPage> {
-    return core.request<AgentTranscriptPage>("coding.transcript", { chat_id: chatId, message_id: messageId, ...(since === undefined ? {} : { since }) });
+  /// those changed after change `since` when it is given, else the newest page of the entries
+  /// before `before` (the newest page without it).
+  async agentTranscript(chatId: string, messageId: string, since?: number, before?: number, limit?: number): Promise<AgentTranscriptPage> {
+    return core.request<AgentTranscriptPage>("coding.transcript", {
+      chat_id: chatId,
+      message_id: messageId,
+      ...(since === undefined ? {} : { since }),
+      ...(before === undefined ? {} : { before }),
+      ...(limit === undefined ? {} : { limit }),
+    });
   }
 
   // MARK: - Routines

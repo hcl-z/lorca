@@ -156,7 +156,29 @@ impl Entries {
     /// the first entry kept, before which an app drops what it has.
     pub(crate) fn since(&self, since: Option<u64>) -> (Vec<Entry>, u64, u64) {
         let changed = self.list.iter().filter(|entry| since.is_none_or(|since| entry.rev > since)).cloned().collect();
-        (changed, self.rev, self.list.front().map_or(self.next, |entry| entry.seq))
+        (changed, self.rev, self.first())
+    }
+
+    /// The newest page of the entries before `before` (the newest page without it), oldest first,
+    /// with the latest change and the first entry kept. A page shorter than `limit` with nothing
+    /// before it is the whole transcript.
+    pub(crate) fn page(&self, before: Option<u64>, limit: usize) -> (Vec<Entry>, u64, u64) {
+        let end = match before {
+            Some(before) => self.list.partition_point(|entry| entry.seq < before),
+            None => self.list.len(),
+        };
+        let start = end.saturating_sub(limit.max(1));
+        (self.list.range(start..end).cloned().collect(), self.rev, self.first())
+    }
+
+    /// Whether the agent kept no entries, so `coding.transcript` answers its text transcript.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.list.is_empty()
+    }
+
+    /// The first entry kept, before which an app drops what it has.
+    fn first(&self) -> u64 {
+        self.list.front().map_or(self.next, |entry| entry.seq)
     }
 
     pub(crate) fn all(&self) -> Vec<Entry> {
