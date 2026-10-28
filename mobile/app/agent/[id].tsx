@@ -12,7 +12,7 @@
 // changed, and keeps to the end unless the user scrolled up to read.
 
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { memo, useCallback, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { type AgentEntry, type AgentTool, mergeAgentEntries, toolFailed, toolRunning } from "../../src/core/agentEntries";
@@ -22,6 +22,7 @@ import { agentIsRunning, agentName, type AgentRun, type Message } from "../../sr
 import { useStore } from "../../src/core/store";
 import { t, useLanguage } from "../../src/i18n";
 import { AgentHeader, AgentTile, Callout, PullRequestButton, SpecStrip, StopButton, alpha, mono, useNow } from "../../src/ui/agentKit";
+import { agentSteps, agentToolText, exploredText, thoughtTitle, type AgentStep } from "../../src/ui/agentSteps";
 import { alert } from "../../src/ui/alert";
 import { Markdown } from "../../src/ui/Markdown";
 import { CloseToolbar } from "../../src/ui/navigation";
@@ -48,7 +49,7 @@ export default function AgentScreen() {
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Record<number, boolean>>({});
   const [stopping, setStopping] = useState(false);
-  const scroll = useRef<FlashListRef<AgentEntry>>(null);
+  const scroll = useRef<FlashListRef<AgentStep>>(null);
   const atEnd = useRef(true);
 
   useFocusEffect(
@@ -81,8 +82,10 @@ export default function AgentScreen() {
   );
 
   const who = bot?.name ?? t("The bot");
-  const lastTool = entries.reduce((last, entry, at) => (entry.tool && hasBody(entry.tool) ? at : last), -1);
-  const isOpen = (entry: AgentEntry, at: number) => open[entry.seq] ?? (!!entry.tool && (toolRunning(entry.tool) || toolFailed(entry.tool) || at === lastTool));
+  const steps = useMemo(() => agentSteps(entries), [entries]);
+  let lastToolSeq = 0;
+  for (const entry of entries) if (entry.tool && hasBody(entry.tool)) lastToolSeq = entry.seq;
+  const isOpen = (entry: AgentEntry) => open[entry.seq] ?? (!!entry.tool && (toolRunning(entry.tool) || toolFailed(entry.tool) || entry.seq === lastToolSeq));
   const column = Math.min(width, 760) - 32;
   const toggle = useCallback((entry: AgentEntry, shown: boolean) => setOpen((was) => ({ ...was, [entry.seq]: !shown })), []);
   const stop = () => {
@@ -102,9 +105,9 @@ export default function AgentScreen() {
           the overview over them and what the agent asks under them. */}
       <FlashList
         ref={scroll}
-        data={entries}
-        keyExtractor={(entry) => String(entry.seq)}
-        getItemType={(entry) => (entry.tool ? "tool" : entry.kind)}
+        data={steps}
+        keyExtractor={(step) => String(step.entry.seq)}
+        getItemType={(step) => (step.explored ? "explored" : step.entry.kind)}
         extraData={open}
         drawDistance={800}
         contentContainerStyle={{ ...styles.content, paddingHorizontal: 16 + (width - column - 32) / 2 }}
@@ -123,15 +126,13 @@ export default function AgentScreen() {
             <View style={{ height: 6 }} />
           </>
         }
-        renderItem={({ item: entry, index: at }) => (
-          <EntryRow
-            entry={entry}
+        renderItem={({ item: step }) => (
+          <StepRow
+            step={step}
             kind={agent?.kind ?? ""}
             who={who}
-            // The rail runs on to the next entry with a node.
-            rail={at + 1 < entries.length && entries[at + 1].kind !== "sent" && entries[at + 1].kind !== "log"}
-            open={isOpen(entry, at)}
-            width={column - NODE - 12}
+            open={step.explored ? !!open[step.entry.seq] : isOpen(step.entry)}
+            width={column}
             onToggle={toggle}
           />
         )}
@@ -187,13 +188,19 @@ function Overview({ agent, message, entries, stopping, onStop }: { agent: AgentR
           </Text>
         </Section>
       ) : null}
-      {agent.branch || agent.folder || agent.device || since ? (
+      {agent.branch || agent.folder || agent.device || since || (agent.changes?.files ?? 0) > 0 ? (
         <Section title={t("Workspace")}>
           <View style={[styles.facts, { backgroundColor: p.code }]}>
             {agent.branch ? fact("arrow.triangle.branch", agent.branch, true) : null}
             {agent.folder ? fact("folder", agent.folder, true) : null}
             {agent.device ? fact("desktopcomputer", agent.device) : null}
             {since ? fact("clock", t("Started {time} ago", { time: since })) : null}
+            {agent.changes && agent.changes.files > 0
+              ? fact(
+                  "plus.forwardslash.minus",
+                  `+${agent.changes.added} −${agent.changes.removed} ${agent.changes.files === 1 ? t("in 1 file") : t("in {count} files", { count: agent.changes.files })}`,
+                )
+              : null}
           </View>
         </Section>
       ) : null}
@@ -268,6 +275,83 @@ function CardQuestion({ agent, message, who }: { agent: AgentRun; message: Messa
 function hasBody(tool: AgentTool): boolean {
   return !!tool.output || (tool.diffs?.length ?? 0) > 0 || !!tool.result;
 }
+
+/// One step of the transcript, after the desktop's: a folded run of reads and searches, a prompt
+/// card, a thought line, a tool line, or what the agent said.
+const StepRow = memo(function StepRow({ step, kind, who, open, width, onToggle }: { step: AgentStep; kind: string; who: string; open: boolean; width: number; onToggle: (entry: AgentEntry, open: boolean) => void }) {
+  const p = usePalette();
+  const entry = step.entry;
+  if (step.explored) {
+    return (
+      <View style={{ paddingBottom: 10 }}>
+        <Pressable onPress={() => onToggle(entry, open)} accessibilityRole="button" accessibilityState={{ expanded: open }} style={styles.stepLine}>
+          <Text numberOfLines={1} style={[styles.stepTitle, { color: p.secondaryLabel }]}>{exploredText(step.explored)}</Text>
+          <View style={{ flex: 1 }} />
+          <Symbol name={open ? "chevron.down" : "chevron.right"} size={11} color={p.tertiaryLabel} weight="semibold" />
+        </Pressable>
+        {open ? (
+          <View style={{ gap: 6, paddingLeft: 12, paddingTop: 4 }}>
+            {step.explored.map((each) => (each.tool ? <ToolView key={each.seq} tool={each.tool} title={agentToolText(each.tool)} open={false} onToggle={() => {}} /> : null))}
+          </View>
+        ) : null}
+      </View>
+    );
+  }
+  switch (entry.kind) {
+    case "sent":
+      return <PromptCard entry={entry} who={who} open={open} onToggle={() => onToggle(entry, open)} />;
+    case "said":
+      return (
+        <View style={{ paddingBottom: 10 }}>
+          <Markdown text={entry.text ?? ""} color={p.label} maxWidth={width} size={15} />
+        </View>
+      );
+    case "thought":
+      return (
+        <View style={{ paddingBottom: 6 }}>
+          <Folded title={thoughtTitle(entry)} text={entry.text ?? ""} open={open} onToggle={() => onToggle(entry, open)} width={width} />
+        </View>
+      );
+    case "tool":
+      return entry.tool ? (
+        <View style={{ paddingBottom: 10 }}>
+          <ToolView tool={entry.tool} title={agentToolText(entry.tool)} open={open} onToggle={() => onToggle(entry, open)} />
+        </View>
+      ) : null;
+    case "log":
+      return (
+        <View style={[styles.code, { backgroundColor: p.code, marginBottom: 10 }]}>
+          <Text selectable style={[styles.mono, { color: p.label }]}>{entry.text}</Text>
+        </View>
+      );
+    default:
+      return (
+        <View style={{ paddingBottom: 8 }}>
+          <EntryContent entry={entry} open={open} width={width} onToggle={() => onToggle(entry, open)} />
+        </View>
+      );
+  }
+});
+
+/// What the agent was sent, under who wrote it: "You" for the user, else the bot. A long brief
+/// folds to two lines behind a chevron on its author line.
+const PromptCard = memo(function PromptCard({ entry, who, open, onToggle }: { entry: AgentEntry; who: string; open: boolean; onToggle: () => void }) {
+  const p = usePalette();
+  const mine = entry.from === "user";
+  const text = entry.text ?? "";
+  const long = (text.match(/\n/g)?.length ?? 0) >= 2 || [...text].length > 200;
+  const shown = long && open;
+  return (
+    <View style={[styles.prompt, { backgroundColor: mine ? alpha(p.ink, 0.09) : p.botBubble, borderColor: mine ? alpha(p.ink, 0.22) : p.cardBorder }]}>
+      <Pressable disabled={!long} onPress={onToggle} accessibilityRole="button" accessibilityState={{ expanded: shown }} style={styles.promptHead}>
+        <Text numberOfLines={1} style={[styles.promptAuthor, { color: p.tertiaryLabel }]}>{mine ? t("You") : who}</Text>
+        <View style={{ flex: 1 }} />
+        {long ? <Symbol name={shown ? "chevron.up" : "chevron.down"} size={10} color={p.tertiaryLabel} weight="semibold" /> : null}
+      </Pressable>
+      <Text selectable numberOfLines={long && !shown ? 2 : undefined} style={[styles.promptText, { color: p.label }]}>{text}</Text>
+    </View>
+  );
+});
 
 /// One entry of the transcript: on the rail beside its node, or, for what was sent, a turn's start.
 /// Drawn again only when its entry, its place, or whether it is open changes: the sheet refreshes
@@ -447,7 +531,7 @@ function Folded({ title, text, open, onToggle, width }: { title: string; text: s
   );
 }
 
-function ToolView({ tool, open, onToggle }: { tool: AgentTool; open: boolean; onToggle: () => void }) {
+function ToolView({ tool, title, open, onToggle }: { tool: AgentTool; title?: string; open: boolean; onToggle: () => void }) {
   const p = usePalette();
   const body = hasBody(tool);
   const shown = body && open;
@@ -459,10 +543,10 @@ function ToolView({ tool, open, onToggle }: { tool: AgentTool; open: boolean; on
   return (
     <View style={{ gap: 7 }}>
       <Pressable disabled={!body} onPress={onToggle} accessibilityRole="button" accessibilityState={{ expanded: shown }} style={styles.head}>
-        <Text numberOfLines={1} style={[styles.title, { color: p.label }]}>
-          {tool.title}
+        <Text numberOfLines={1} style={[styles.title, { color: toolFailed(tool) ? red : p.label }]}>
+          {title ?? tool.title}
         </Text>
-        {tool.detail ? (
+        {!title && tool.detail ? (
           <Text numberOfLines={1} style={[styles.detail, { color: p.secondaryLabel }]}>
             {tool.detail}
           </Text>
@@ -570,6 +654,12 @@ const styles = StyleSheet.create({
   entryContent: { flex: 1, minWidth: 0, paddingTop: 1, paddingBottom: 18 },
   note: { fontSize: 14, lineHeight: 19, marginTop: 2 },
   head: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: NODE },
+  stepLine: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: 24 },
+  stepTitle: { fontSize: 14, fontWeight: "500", flexShrink: 1 },
+  prompt: { borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12, paddingTop: 9, paddingBottom: 10, gap: 4, marginTop: 6, marginBottom: 14 },
+  promptHead: { flexDirection: "row", alignItems: "center", gap: 6 },
+  promptAuthor: { fontSize: 11.5, fontWeight: "600" },
+  promptText: { fontSize: 14.5, lineHeight: 20 },
   title: { fontSize: 15, fontWeight: "500", flexShrink: 1 },
   detail: { fontFamily: mono, fontSize: 12, flexShrink: 2 },
   preview: { fontSize: 13, flex: 1 },

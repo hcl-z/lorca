@@ -1756,6 +1756,13 @@ func (q *AgentQuestion) Decisions() []Answer {
 	return []Answer{{L("Allow once"), "allow"}, {L("Always allow"), "always"}, {L("Deny"), "deny"}}
 }
 
+// AgentChanges is what a coding agent's work changed against the commit it started from.
+type AgentChanges struct {
+	Files   int `json:"files"`
+	Added   int `json:"added"`
+	Removed int `json:"removed"`
+}
+
 // AgentRun is a coding agent a bot runs on its Runner, Claude Code, Codex, or another that speaks
 // ACP, as the card of the call that started it shows it: Auto-review's question before it starts,
 // what it works on and where, how it stands, its last lines, and what it asks.
@@ -1783,6 +1790,8 @@ type AgentRun struct {
 	Outcome string
 	// PullRequest is the pull request it opened, when its transcript names one.
 	PullRequest string
+	// Changes is what its work changed against the commit it started from.
+	Changes *AgentChanges
 	// StartedAt is when it started; zero on a card that does not say.
 	StartedAt time.Time
 	Device    string

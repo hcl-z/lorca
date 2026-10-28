@@ -41,7 +41,7 @@ import { chatShown, scrollBegan, scrollEnded } from "../../../src/core/timing";
 import { t, useLanguage } from "../../../src/i18n";
 import { AvatarCluster } from "../../../src/ui/Avatar";
 import { Composer } from "../../../src/ui/Composer";
-import { RunningAgents } from "../../../src/ui/RunningAgents";
+import { RunningAgentsCapsule, RunningAgentsMenu } from "../../../src/ui/RunningAgentsMenu";
 import { CapsuleButton, Float, RoundButton } from "../../../src/ui/chrome";
 import { KeyboardFoot } from "../../../src/ui/KeyboardFoot";
 import { useWide } from "../../../src/ui/layout";
@@ -609,7 +609,6 @@ export default function ChatScreen() {
             publishComposerExtra();
           }}
         >
-          <RunningAgents />
           <Composer
             members={members}
             isGroup={isGroup}
@@ -652,6 +651,7 @@ const ChatHeader = memo(function ChatHeader({ id, title, members, service, worki
   useLanguage();
   const router = useRouter();
   const p = usePalette();
+  const [agentsOpen, setAgentsOpen] = useState(false);
   const options = useMemo(() => ({ title, headerTitle: "" }), [title]);
   const veil = useMemo(() => {
     const surface = p.background as string;
@@ -687,6 +687,9 @@ const ChatHeader = memo(function ChatHeader({ id, title, members, service, worki
             {/* The commands the chat's bots are running, while there are any. */}
             <Stack.Toolbar.Button hidden={!hasTasks} icon="desktopcomputer" accessibilityLabel={t("Running tasks")} onPress={tasks} />
             <Stack.Toolbar.Button hidden={hasTasks} icon="ellipsis" accessibilityLabel={t("Chat info")} onPress={info} />
+            <Stack.Toolbar.View>
+              <RunningAgentsCapsule onPress={() => setAgentsOpen(true)} />
+            </Stack.Toolbar.View>
           </Stack.Toolbar>
         </>
       ) : (
@@ -706,10 +709,12 @@ const ChatHeader = memo(function ChatHeader({ id, title, members, service, worki
               {who}
             </CapsuleButton>
             <View style={{ flex: 1 }} />
+            <RunningAgentsCapsule onPress={() => setAgentsOpen(true)} />
             {hasTasks ? <RoundButton icon="desktopcomputer" label={t("Running tasks")} onPress={tasks} /> : <RoundButton icon="ellipsis" label={t("Chat info")} onPress={info} />}
           </View>
         </View>
       )}
+      <RunningAgentsMenu visible={agentsOpen} onClose={() => setAgentsOpen(false)} />
     </>
   );
 });
