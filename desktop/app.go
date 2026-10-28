@@ -35,6 +35,9 @@ type appDelegate struct {
 	main       *mainWindow
 	onboarding *onboardingWindow
 	settings   *settingsWindow
+	// island is the system-level window of the coding agents at work, apart from the main window
+	// so hiding it leaves the island up (island.go).
+	island *island
 	// onboardingOverIdentity is onboarding opened again over an identity that still exists.
 	// Create, restore, and pair refuse to run there, so closing it is Cancel: the main window it
 	// hid comes back as it was.
@@ -92,15 +95,21 @@ func (a *appDelegate) didFinishLaunching() {
 	a.launcher = newLauncher()
 	store = model.NewStore(cliTransport{a.cli}, post, isMock())
 	a.notifier = newNotifier()
+	a.island = newIsland()
 	store.Subscribe(func(event model.Event) {
 		a.storeChanged(event)
 		if a.main != nil {
 			a.main.storeChanged(event)
 		}
 		a.notifier.storeChanged(event)
+		if event.Kind == model.EventTurnFinished {
+			a.island.turnFinished(event)
+		}
+		a.island.sync()
 		invalidateWindows()
 	})
 	store.Start()
+	a.island.sync()
 	if isMock() {
 		yes := true
 		a.hasIdentity = &yes
@@ -500,6 +509,7 @@ func (a *appDelegate) languageChanged() {
 	if a.settings != nil {
 		a.settings.win.SetTitle(L("Settings") + " - " + appName())
 	}
+	a.island.invalidate()
 	invalidateWindows()
 }
 

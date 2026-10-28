@@ -1,6 +1,7 @@
 package main
 
 import (
+	"runtime"
 	"strconv"
 
 	"github.com/egoist/lorca/desktop/l10n"
@@ -58,6 +59,70 @@ func (s settingsPane) general(c *ui.Context) {
 				}
 			}), badge)
 		})
+		if runtime.GOOS == "darwin" {
+			s.section(c, L("Island"), nil, func(k *card) {
+				show, all, idle, grow := islandEntry().row, islandAllDisplaysEntry().row,
+					islandIdleEntry().row, islandHoverEntry().row
+				s.mark(c, accessoryRow(c, k, show, "", func() {
+					on := saved.ShowsIsland
+					if settingsSwitch(c, &on, show, false) {
+						setPrefs(PreferencesPatch{ShowsIsland: &on})
+					}
+				}), show)
+				s.mark(c, accessoryRow(c, k, all, "", func() {
+					on := saved.IslandAllDisplays
+					if settingsSwitch(c, &on, all, false) {
+						setPrefs(PreferencesPatch{IslandAllDisplays: &on})
+					}
+				}), all)
+				s.mark(c, accessoryRow(c, k, idle, "", func() {
+					on := saved.IslandIdleVisible
+					if settingsSwitch(c, &on, idle, false) {
+						setPrefs(PreferencesPatch{IslandIdleVisible: &on})
+					}
+				}), idle)
+				s.mark(c, accessoryRow(c, k, grow, "", func() {
+					on := saved.IslandHoverGrow
+					if settingsSwitch(c, &on, grow, false) {
+						setPrefs(PreferencesPatch{IslandHoverGrow: &on})
+					}
+				}), grow)
+				size, stays := islandSizeEntry().row, islandResultEntry().row
+				s.mark(c, accessoryRow(c, k, size, "", func() {
+					picked, changed, _ := popUpButton(c, popUp{
+						Options: []popUpOption{
+							{Value: "small", Label: L("Small")},
+							{Value: "regular", Label: L("Regular")},
+							{Value: "large", Label: L("Large")},
+						},
+						Value: saved.IslandSize,
+						Style: popUpSettings,
+						Label: size,
+					})
+					if changed {
+						setPrefs(PreferencesPatch{IslandSize: &picked})
+					}
+				}), size)
+				s.mark(c, accessoryRow(c, k, stays, "", func() {
+					seconds := saved.IslandResultSeconds
+					picked, changed, _ := popUpButton(c, popUp{
+						Options: []popUpOption{
+							{Value: "4", Label: L("%d seconds", 4)},
+							{Value: "8", Label: L("%d seconds", 8)},
+							{Value: "15", Label: L("%d seconds", 15)},
+						},
+						Value: strconv.Itoa(seconds),
+						Style: popUpSettings,
+						Label: stays,
+					})
+					if changed {
+						if n, err := strconv.Atoi(picked); err == nil {
+							setPrefs(PreferencesPatch{IslandResultSeconds: &n})
+						}
+					}
+				}), stays)
+			})
+		}
 		s.section(c, L("Appearance"), nil, func(k *card) {
 			appearance, appLanguage := appearanceEntry().row, appLanguageEntry().row
 			s.mark(c, accessoryRow(c, k, appearance, "", func() {
