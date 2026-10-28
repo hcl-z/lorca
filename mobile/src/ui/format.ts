@@ -140,7 +140,6 @@ export function lastSeen(seenUnix: number | undefined): string {
   return t("Last seen {count}d ago", { count: Math.floor(elapsed / 86400) });
 }
 
-/// The last thing worth previewing: tool calls never are, except a sent message.
 /// Who wrote a quoted message: the coding agent that wrote it, else the bot, the person, or You.
 export function quoteAuthorName(quote: ReplyTo, bots: Map<string, Bot>): string {
   if (quote.agent) return quote.agent.name || agentKindName(quote.agent.kind);
@@ -157,6 +156,17 @@ export function messageAuthorName(message: Message, bots: Map<string, Bot>): str
   return quoteAuthorName({ message_id: message.id, author: message.author, text: "" }, bots);
 }
 
+/// The agent behind the latest previewable message, when one spoke last: the chat list shows its
+/// mark beside the preview and its name inside it.
+export function previewAgent(chat: Chat): Message["agent"] | undefined {
+  for (let i = chat.messages.length - 1; i >= 0; i--) {
+    const message = chat.messages[i];
+    if (message.body.kind !== "tool" || isSentMessage(message.body)) return message.agent ?? undefined;
+  }
+  return undefined;
+}
+
+/// The last thing worth previewing: tool calls never are, except a sent message.
 export function preview(chat: Chat, bots: Map<string, Bot>): string {
   let shown: Message | undefined;
   for (let i = chat.messages.length - 1; i >= 0 && !shown; i--) {

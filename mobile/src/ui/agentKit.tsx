@@ -174,7 +174,7 @@ export function AgentHeader({ agent, tile = 32, size = 15, sub, trailing }: { ag
 }
 
 /// Stop: a small square on a round fill.
-export function StopButton({ busy, onPress, size = 30 }: { busy: boolean; onPress: () => void; size?: number }) {
+export function StopButton({ busy, onPress, size = 30, label }: { busy: boolean; onPress: () => void; size?: number; label?: string }) {
   const p = usePalette();
   return (
     <Pressable
@@ -182,7 +182,7 @@ export function StopButton({ busy, onPress, size = 30 }: { busy: boolean; onPres
       onPress={onPress}
       hitSlop={8}
       accessibilityRole="button"
-      accessibilityLabel={t("Stop")}
+      accessibilityLabel={label ?? t("Stop")}
       style={({ pressed }) => [styles.stop, { width: size, height: size, borderRadius: size / 2, backgroundColor: pressed ? alpha(accentColor("red", p.dark), 0.18) : p.code, opacity: busy ? 0.5 : 1 }]}
     >
       {busy ? <ActivityIndicator size="small" /> : <Symbol name="stop.fill" size={size * 0.36} color={p.secondaryLabel} />}

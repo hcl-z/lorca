@@ -56,7 +56,7 @@ export function ParticipantsSheet({
             trailing={
               <View style={styles.trailing}>
                 <AgentPill agent={agent} />
-                {agentIsRunning(agent) ? <StopButton busy={agentBusy(agent)} size={28} onPress={() => void onStopAgent(messageId)} /> : null}
+                {agentIsRunning(agent) ? <StopButton busy={agentBusy(agent)} size={28} label={t("Stop {agent}", { agent: agentName(agent) })} onPress={() => void onStopAgent(messageId)} /> : null}
               </View>
             }
           />
