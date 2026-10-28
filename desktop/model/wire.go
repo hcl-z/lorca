@@ -650,7 +650,7 @@ type WireBotMemory struct {
 	// The account's profile of the user, on the same Runner.
 	Profile *WireProfile `json:"profile"`
 	// Capture history contains facts and targets only, never source chats or quotes.
-	Capture *WireCaptureRun `json:"capture"`
+	Capture  *WireCaptureRun  `json:"capture"`
 	Captures []WireCaptureRun `json:"captures"`
 	// The newest housekeeping pass that moved lines and was not undone.
 	Tidy *struct {
