@@ -1,0 +1,23 @@
+desktop/overlay_test.go
+  s_f7eb74e3575bc1::t_045cad89fc074e 28,43-44
+  s_f7eb74e3575bc1::t_ee885a4751ad60 45
+  s_f7eb74e3575bc1::t_2f626f865c4c84 41,46-47
+desktop/settings_test.go
+  s_f7eb74e3575bc1::t_387aa149abf85b 332-339
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "130acefb54356e575396107500b3a66be49cfecb",
+  "prompts": {},
+  "sessions": {
+    "s_f7eb74e3575bc1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "453131d1-0daa-41fc-b6ed-3bb467194faa",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
