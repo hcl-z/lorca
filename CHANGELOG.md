@@ -8,6 +8,19 @@ phone app's.
 
 ## [Unreleased]
 
+## [1.0.33]
+
+- A coding agent's transcript on the desktop reads as a page of steps: what you sent it in a card that folds a long brief behind Show more, a thought as one line ("Thought for 3s") that opens to what it thought, each tool in the past or present tense with a run of reads and searches folded into "Explored 2 files, 1 search", what it said in Markdown, the plan as a checklist, and a footer of what its work changed and its branch. The agents working in a chat sit in a capsule in the header that opens a popover of its own; the floating agent windows are gone.
+- A long agent transcript opens on its newest page and asks for the page before the oldest as you scroll up, on the desktop and the phone; the desktop builds only the rows in view. An agent that keeps no entries still answers its text transcript.
+- A message taller than a bubble folds to its head behind a fade with Show more, and back with Show less; a long agent entry folds the same way. On the phone a command's output shows its last 200 lines with the rest behind Show all, and an edit its first 200.
+- The model catalog is refreshed from its sources and syncs daily: new models, and changed context windows, thinking levels, and rates.
+- The desktop takes images and files pasted from Finder or Explorer; a Mac app menu carries About, Check for Updates, Settings, Services, Hide, and Quit; Attention and Running tasks open as flyouts; sheets sit near the top and scale and fade as macOS 26's, and a sheet over another no longer flashes.
+- The inspector's Compact row shows its progress and why it failed, and a window restored from the Dock counts as watching its chat again, with no notification and no unread.
+- A stale roster deletes nothing that was made on another Device, and a Runner leaving the relay ends its turn on every Device at once.
+- Auto-review: a second pass cut off mid-thought decides from what it weighed, and one that cannot run asks you.
+- Drafts: a call with no recipient or text leaves no card in the chat; codemode: an unawaited search or call says so instead of reading as {}; and bound thinking stays out of requests after the open tasks' note.
+- The phone keeps its keyboard down when a sheet or an agent page takes the screen.
+
 ## [1.0.32]
 
 - The phone now takes part in a coding agent's chat as the desktop does: `@` it from the composer, and what you write reaches it as written, interrupting what it is doing. Its words are its own messages under its mark, its questions wait for you, and the bot no longer answers them for you. A reply is one message per turn, growing as it streams, even across tool calls and plans.
