@@ -1,0 +1,21 @@
+crates/agent/src/providers/anthropic.rs
+  s_f7eb74e3575bc1::t_2c3ef6c664eb36 792
+crates/agent/src/providers/openai_compat.rs
+  s_f7eb74e3575bc1::t_c5d3c755a0ba96 588
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "dd2ffa03218a2e35e3266eedef714bacc23b2c61",
+  "prompts": {},
+  "sessions": {
+    "s_f7eb74e3575bc1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "453131d1-0daa-41fc-b6ed-3bb467194faa",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
