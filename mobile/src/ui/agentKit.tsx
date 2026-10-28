@@ -4,13 +4,14 @@
 // facts of its session as a strip of cells over a meter of its context, what it does now on a
 // console of its own, and callouts for what it asks and how it failed.
 
-import { Image } from "expo-image";
 import { useEffect, useState, type ReactNode } from "react";
 import { ActivityIndicator, Linking, Platform, StyleSheet, Text, View } from "react-native";
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming, cancelAnimation } from "react-native-reanimated";
 import { agentBusy, agentContext, agentSetting, agentSince, agentTone, type AgentTone } from "../core/agentKit";
 import { engine } from "../core/engine";
 import { agentName, agentPlace, type AgentRun } from "../core/model";
+import { AGENT_MARK_VIEWBOX, agentBrandColor, agentMark } from "./agentMarks";
+import Svg, { Path } from "react-native-svg";
 import { t, tc } from "../i18n";
 import { haptic } from "./haptics";
 import { PopupMenu } from "./PopupMenu";
@@ -21,12 +22,6 @@ import { accentColor, usePalette } from "./theme";
 
 export const mono = Platform.OS === "ios" ? "Menlo" : "monospace";
 
-const MARKS = {
-  claude: require("../../assets/agentmarks/claude.svg"),
-  codexLight: require("../../assets/agentmarks/codex-light.svg"),
-  codexDark: require("../../assets/agentmarks/codex-dark.svg"),
-};
-
 /// `#rrggbb` at `a` opacity.
 export function alpha(hex: string, a: number): string {
   const n = parseInt(hex.slice(1, 7), 16);
@@ -36,10 +31,7 @@ export function alpha(hex: string, a: number): string {
 /// An agent's own color: Claude's terracotta, OpenAI's ink for Codex, Gemini's blue, and blue for
 /// the rest.
 export function agentBrand(kind: string, dark: boolean): string {
-  if (kind.startsWith("claude")) return "#D97757";
-  if (kind.startsWith("codex")) return dark ? "#F5F5F7" : "#1D1D1F";
-  if (kind === "gemini") return "#4C8DF6";
-  return accentColor("blue", dark);
+  return agentBrandColor(kind, dark, accentColor("blue", dark));
 }
 
 /// The colors of the tones of a state, as hex so they take a wash.
@@ -59,14 +51,22 @@ export function toneColor(tone: AgentTone, dark: boolean): string {
 }
 
 /// The agent's mark on a rounded square tinted in its color.
+/// An agent's mark from `agentMarks.ts`, in its brand color.
+export function AgentMark({ kind, size, color }: { kind: string; size: number; color: string }) {
+  return (
+    <Svg width={size} height={size} viewBox={AGENT_MARK_VIEWBOX}>
+      <Path d={agentMark(kind)} fill={color} />
+    </Svg>
+  );
+}
+
 export function AgentTile({ kind, size, round }: { kind: string; size: number; round?: boolean }) {
   const p = usePalette();
   const brand = agentBrand(kind, p.dark);
   const mark = size * 0.58;
-  const source = kind.startsWith("claude") ? MARKS.claude : kind.startsWith("codex") ? (p.dark ? MARKS.codexDark : MARKS.codexLight) : null;
   return (
     <View style={[styles.tile, { width: size, height: size, borderRadius: round ? size / 2 : size * 0.3, backgroundColor: alpha(brand, 0.13), borderColor: alpha(brand, 0.22) }]}>
-      {source ? <Image source={source} style={{ width: mark, height: mark }} contentFit="contain" /> : <Symbol name="terminal" size={mark} color={brand} weight="semibold" />}
+      <AgentMark kind={kind} size={mark} color={brand} />
     </View>
   );
 }
