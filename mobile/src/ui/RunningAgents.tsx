@@ -8,6 +8,7 @@
 import { useRouter } from "expo-router";
 import { memo, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { KeyboardController } from "react-native-keyboard-controller";
 import { agentNow, runningAgents } from "../core/agentKit";
 import { engine } from "../core/engine";
 import { agentName, type AgentRun, type Chat, type Message } from "../core/model";
@@ -70,8 +71,13 @@ function AgentFloat({ chat, message, agent, width, onClose, onActions }: { chat:
   return (
     <Float radius={18} style={{ width, overflow: "hidden" }}>
       <Pressable
-        onPress={() => router.push({ pathname: "/agent/[id]", params: { id: message.id, chat: message.chat_id } })}
+        onPress={() => {
+          // The agent page has no composer: leave the chat's keyboard down behind it.
+          void KeyboardController.dismiss();
+          router.push({ pathname: "/agent/[id]", params: { id: message.id, chat: message.chat_id } });
+        }}
         onLongPress={() => {
+          void KeyboardController.dismiss();
           haptic.longPress();
           onActions?.(message);
         }}
