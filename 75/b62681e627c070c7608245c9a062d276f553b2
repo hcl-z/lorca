@@ -1,0 +1,144 @@
+docs/architecture/agent-cards.md
+  s_25d443432cd2e6::t_04277a7df8b992 13
+  s_25d443432cd2e6::t_e2327fae83c79d 15
+  s_25d443432cd2e6::t_53f54b73d35b8a 7
+  s_25d443432cd2e6::t_69c77cc8d64f01 3
+crates/cli/src/coding/driver.rs
+  s_25d443432cd2e6::t_7f62d8aad17cd4 102-103
+desktop/agenttranscript.go
+  s_25d443432cd2e6::t_29308a49346152 589-590
+  s_25d443432cd2e6::t_7016b32fc769dd 548-552
+  s_25d443432cd2e6::t_8dc929512497f4 580-587
+  s_25d443432cd2e6::t_7de7e0a28d8655 537
+  s_25d443432cd2e6::t_aaaefeb6c1a6c1 540
+  s_25d443432cd2e6::t_9b307a95cce88c 98-100
+  s_25d443432cd2e6::t_296b8e26765eab 546,554,556,559-560,563-566,568,570,573-575
+  s_25d443432cd2e6::t_6134b67c926111 601-605
+  s_25d443432cd2e6::t_b752a13ff33998 623
+  s_25d443432cd2e6::t_890260b9ee6498 49-50
+  s_25d443432cd2e6::t_a2921eb307f4bb 5-6,16-21,146,152-153,156,160-165,175-181,186-199,201-204,206,209-253,255-353,355,358,361-372,374-375,378-387,389-392,396-399,401-436,438-451,459,481,491-497,499,502,504-510,512,514,518-524,526-532,535-536,538-539,541-545,547,557,588,591-600,606-609,611-620,622,624-645,647-656,658,710-723
+  s_25d443432cd2e6::t_c2fd3fe0a7a676 66
+desktop/agents_test.go
+  s_25d443432cd2e6::t_97eab87649e9e7 202
+  s_25d443432cd2e6::t_81f5cd83fa926c 176-178
+docs/architecture/coding-agents.md
+  s_25d443432cd2e6::t_410cac9e80e58e 57
+  s_25d443432cd2e6::t_f7747109ab8116 43
+  s_25d443432cd2e6::t_b7582a3fbc64c2 75
+  s_25d443432cd2e6::t_d6237fcd4f17f3 61
+crates/cli/src/coding/entries.rs
+  s_25d443432cd2e6::t_b4c7c506735512 36-41
+  s_25d443432cd2e6::t_014883757e2fdf 98-102
+desktop/agents.go
+  s_25d443432cd2e6::t_fc631c646587e4 405-408,410-411
+  s_25d443432cd2e6::t_aa3a0097359af8 391-402,409
+mobile/src/core/model.ts
+  s_25d443432cd2e6::t_5265323596b83d 433-434
+mobile/src/ui/RunningAgentsMenu.tsx
+  s_25d443432cd2e6::t_525f9427d1a04c 83
+  s_25d443432cd2e6::t_f5f27bb3132d27 1-82,84-129
+mobile/src/i18n/zh.ts
+  s_25d443432cd2e6::t_98aa0ed117643b 1097-1120
+desktop/agenttranscript_test.go
+  s_25d443432cd2e6::t_377836a0b328ef 1-65
+crates/cli/src/coding/tests.rs
+  s_25d443432cd2e6::t_c75351157b7807 569
+  s_25d443432cd2e6::t_7afcf4f0271482 14-22
+desktop/l10n/zh.go
+  s_25d443432cd2e6::t_261add5872ba12 1588-1611
+  s_25d443432cd2e6::t_e367a62c067c82 1612-1613
+desktop/model/agententries.go
+  s_25d443432cd2e6::t_39ab9b0b5a66ac 18-23
+  s_25d443432cd2e6::t_78ece164c438e0 65
+crates/cli/src/coding/tool.rs
+  s_25d443432cd2e6::t_c25db8974949b4 112
+mobile/src/ui/agentSteps.ts
+  s_25d443432cd2e6::t_9e521ad61e1916 1-101
+mobile/src/ui/agentSteps.test.ts
+  s_25d443432cd2e6::t_f3a400a0e1577a 1-40
+desktop/agentpip.go
+  s_25d443432cd2e6::t_11f1583fa61fc8 287-289
+mobile/app/agent/[id].tsx
+  s_25d443432cd2e6::t_e9877f83de662f 279-355
+  s_25d443432cd2e6::t_492544d5e347f1 129-131,134-135
+  s_25d443432cd2e6::t_30bf950d741d98 657-662
+  s_25d443432cd2e6::t_6abdfe7f2486e4 108-110
+  s_25d443432cd2e6::t_0254791237d788 52
+  s_25d443432cd2e6::t_dc445bb6e2dcae 15
+  s_25d443432cd2e6::t_82f00a15ee454f 534,546-547,549
+  s_25d443432cd2e6::t_4d376af59ece56 85-88
+  s_25d443432cd2e6::t_b0dc8ca0bee3e2 191,198-203
+  s_25d443432cd2e6::t_de4e21eec69e24 25
+crates/cli/src/coding/mod.rs
+  s_25d443432cd2e6::t_931fc6f976a25e 173-175
+  s_25d443432cd2e6::t_2741846b81cfa3 932
+  s_25d443432cd2e6::t_dd10de0c858095 944
+  s_25d443432cd2e6::t_b78523999227ea 592
+  s_25d443432cd2e6::t_67f1fbd2aa2a33 954
+  s_25d443432cd2e6::t_49449b386631d1 1164-1171
+  s_25d443432cd2e6::t_7f093b863e250c 74-75
+  s_25d443432cd2e6::t_9b0d7ef7fc3db3 843
+  s_25d443432cd2e6::t_0b6582211eb9b7 371
+  s_25d443432cd2e6::t_f35f07bb290c61 33
+  s_25d443432cd2e6::t_16247553a7a432 384,396,399
+  s_25d443432cd2e6::t_afd0cddef7ef22 264-273
+docs/architecture/phone-app.md
+  s_25d443432cd2e6::t_28760678dd5b8b 7
+docs/architecture/phone-ui.md
+  s_25d443432cd2e6::t_77659e2b6e49e7 5
+mobile/src/core/agentEntries.ts
+  s_25d443432cd2e6::t_1c420c6f9635fe 16-19
+crates/cli/src/model.rs
+  s_25d443432cd2e6::t_8be957d3a0c946 674-682
+  s_25d443432cd2e6::t_6b2737acc7bb9a 741-743
+crates/cli/src/coding/acp.rs
+  s_25d443432cd2e6::t_67639f23d51d8a 470
+  s_25d443432cd2e6::t_e10f0954ed32ef 791
+  s_25d443432cd2e6::t_5dc0f2ced88a57 223-224
+  s_25d443432cd2e6::t_14b9f91a9625c5 476,482
+  s_25d443432cd2e6::t_5b11a03eb2e661 146-147
+  s_25d443432cd2e6::t_839ca3dc303979 497-498,502
+  s_25d443432cd2e6::t_968ee322bf9e57 959,970,975,977
+  s_25d443432cd2e6::t_c42a26b035e959 199
+  s_25d443432cd2e6::t_c16af9121ef6ec 14
+  s_25d443432cd2e6::t_96ab6f47aa7bbf 912
+desktop/runningagents.go
+  s_25d443432cd2e6::t_3bfceb8543ad47 15,30,37-43,45-51
+  s_25d443432cd2e6::t_46840df497f8b9 1-9,18-20,22,24-29,31,33-36,44,52-53,70-71,73-74,99-103
+  s_25d443432cd2e6::t_a714fa4ade71c0 10-14,16-17,21,23,32,54-69,72,75-98
+desktop/mainwindow.go
+  s_25d443432cd2e6::t_c0a55045a4f838 932
+  s_25d443432cd2e6::t_692c229153e0e5 71
+mobile/app/(main)/chat/[id].tsx
+  s_25d443432cd2e6::t_085266015b7981 44
+  s_25d443432cd2e6::t_ce12c0f7190351 654
+  s_25d443432cd2e6::t_563aa628564978 690-692
+  s_25d443432cd2e6::t_3a439ba324038d 717
+  s_25d443432cd2e6::t_b47b3c77b5c70d 712
+crates/cli/src/coding/workspace.rs
+  s_25d443432cd2e6::t_caf2a6237167ac 124-149
+  s_25d443432cd2e6::t_c866e84aeb8fb3 223-224
+  s_25d443432cd2e6::t_b58523a1fc051e 10-11
+desktop/model/models.go
+  s_25d443432cd2e6::t_2996f6f5a989a5 1759-1765
+  s_25d443432cd2e6::t_b01e7cfc7ce13d 1793-1794
+desktop/overlay.go
+  s_25d443432cd2e6::t_d71cc145154649 187-197
+  s_25d443432cd2e6::t_bbe3e39faeae6a 135-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "75b62681e627c070c7608245c9a062d276f553b2",
+  "prompts": {},
+  "sessions": {
+    "s_25d443432cd2e6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1fb85433-56d2-4977-b592-59f43ee51b08",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
