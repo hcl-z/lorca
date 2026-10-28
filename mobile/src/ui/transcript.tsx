@@ -724,7 +724,7 @@ const QuestionRow = memo(function QuestionRow({ row, ask, isGroup, onDecide }: {
 /// sends on its tap; the rest send with Submit once each required field has an answer. Decline
 /// leaves the agent to go on without one. A refusal (offline, it no longer asks) shows why under the
 /// card. Answered, it keeps the question and says who answered and what, or why there is no answer.
-export const AgentAskRow = memo(function AgentAskRow({ row, ask, isGroup }: { row: Extract<Row, { type: "permission" }>; ask: agentAsk.AgentAsk; isGroup: boolean }) {
+export const AgentAskRow = memo(function AgentAskRow({ row, ask, isGroup, onAnswered }: { row: Extract<Row, { type: "permission" }>; ask: agentAsk.AgentAsk; isGroup: boolean; onAnswered?: () => void }) {
   useLanguage();
   const p = usePalette();
   const [draft, setDraft] = useState<agentAsk.AgentAskDraft>(agentAsk.emptyDraft);
@@ -740,6 +740,7 @@ export const AgentAskRow = memo(function AgentAskRow({ row, ask, isGroup }: { ro
     setProblem(null);
     haptic.send();
     work()
+      .then(() => onAnswered?.())
       .catch((error) => setProblem(error instanceof Error ? error.message : String(error)))
       .finally(() => setBusy(false));
   };
@@ -1133,11 +1134,15 @@ export const AgentRow = memo(function AgentRow({
   isGroup,
   onDecide,
   onStop,
+  onActions,
+  onOpenAsk,
 }: {
   row: Extract<Row, { type: "agent" }>;
   isGroup: boolean;
   onDecide: (message: Message, decision: "allow" | "always" | "deny") => void;
   onStop: (message: Message) => Promise<void>;
+  onActions?: (message: Message) => void;
+  onOpenAsk?: (message: Message) => void;
 }) {
   useLanguage();
   const p = usePalette();
@@ -1184,7 +1189,19 @@ export const AgentRow = memo(function AgentRow({
   return (
     <View style={[styles.messageRow, { paddingTop: row.groupStart ? 14 : 6 }]}>
       <View style={[styles.permission, styles.agentCard, { backgroundColor: p.botBubble }]}>
-        <AgentHeader agent={agent} trailing={agentIsRunning(agent) ? <StopButton busy={busy} onPress={() => void run(() => onStop(row.message))} /> : null} />
+        <AgentHeader
+          agent={agent}
+          trailing={
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+              {agentIsRunning(agent) ? <StopButton busy={busy} onPress={() => void run(() => onStop(row.message))} /> : null}
+              {onActions ? (
+                <Pressable onPress={() => onActions(row.message)} hitSlop={8} accessibilityRole="button" accessibilityLabel={t("Agent actions")} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
+                  <Symbol name="ellipsis" size={17} color={p.secondaryLabel} />
+                </Pressable>
+              ) : null}
+            </View>
+          }
+        />
         {agentStarted(agent) ? (
           <Pressable onPress={openTranscript} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })} accessibilityRole="button" accessibilityHint={t("Show the transcript")}>
             {body}
@@ -1224,6 +1241,7 @@ export const AgentRow = memo(function AgentRow({
                 {firstLine(askText)}
               </Text>
             ) : null}
+            {onOpenAsk && askCard ? <CardButton label={t("Answer")} icon="questionmark.circle" primary onPress={() => onOpenAsk(askCard)} /> : null}
           </Callout>
         ) : null}
         {!asks && agent.state === "failed" && agent.outcome ? (

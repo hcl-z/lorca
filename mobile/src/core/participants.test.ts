@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  agentAskCard,
   chatAgents,
   chatHasAgents,
   mentionTargets,
@@ -114,4 +115,21 @@ test("each agent kind has a name without its card", () => {
     unknown: "Coding agent",
   };
   for (const [kind, name] of Object.entries(names)) expect(agentKindName(kind)).toBe(name);
+});
+
+
+test("the agent's ask row is the one its card points to", () => {
+  const ask = { agent_id: "a1", kind: "claude", name: "Claude Code", row_id: "ask-1", message: "Which one?", fields: [] };
+  const card = {
+    id: "ask-1",
+    chat_id: "chat",
+    author: { kind: "bot", bot_id: "b1" },
+    body: { kind: "permission", plugin_id: "agent", plugin_name: "Claude Code", tool: "agent_ask", summary: "Claude Code asks", arguments: {}, decision: "pending", agent_ask: ask },
+    state: { kind: "complete" },
+    created_at: 1,
+  } as Message;
+  const run = agent("a1", "asking", 1);
+  run.asking = "ask-1";
+  expect(agentAskCard(chat([card]), run)?.id).toBe("ask-1");
+  expect(agentAskCard(chat([card]), agent("a2", "working", 2))).toBeUndefined();
 });

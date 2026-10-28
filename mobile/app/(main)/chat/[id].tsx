@@ -30,7 +30,7 @@ import { SoftScrollEdgeView } from "../../../modules/lorca-core/SoftScrollEdgeVi
 import { chatTitle, engine, type PickedFile } from "../../../src/core/engine";
 import { isLive, showsSpeakers, type AgentRun, type Bot, type Message } from "../../../src/core/model";
 import { showsSpeakersIn } from "../../../src/core/participants";
-import { chatAgents, mentionTargets } from "../../../src/core/participants";
+import { agentAskCard, chatAgents, mentionTargets } from "../../../src/core/participants";
 import {
   useBotMap,
   useChat,
@@ -45,11 +45,14 @@ import { ParticipantCluster } from "../../../src/ui/Avatar";
 import { Composer } from "../../../src/ui/Composer";
 import { RunningAgents } from "../../../src/ui/RunningAgents";
 import { ParticipantsSheet } from "../../../src/ui/ParticipantsSheet";
+import { AgentActionsSheet } from "../../../src/ui/AgentActionsSheet";
+import { AgentAskSheet } from "../../../src/ui/AgentAskSheet";
 import { CapsuleButton, Float, RoundButton } from "../../../src/ui/chrome";
 import { KeyboardFoot } from "../../../src/ui/KeyboardFoot";
 import { useWide } from "../../../src/ui/layout";
 import { Symbol } from "../../../src/ui/Symbol";
 import { usePalette, withAlpha } from "../../../src/ui/theme";
+import { haptic } from "../../../src/ui/haptics";
 import { quoteText } from "../../../src/ui/format";
 import { AnswerSheet } from "../../../src/ui/AnswerSheet";
 import { SecretSheet } from "../../../src/ui/SecretSheet";
@@ -345,6 +348,18 @@ export default function ChatScreen() {
   const agents = useMemo(() => (chat ? chatAgents(chat) : []), [mentionKey]);
   const [participantsOpen, setParticipantsOpen] = useState(false);
   const openParticipants = useCallback(() => setParticipantsOpen(true), []);
+  const [actionsFor, setActionsFor] = useState<Message | null>(null);
+  const [askFor, setAskFor] = useState<Message | null>(null);
+  const openAgentActions = useCallback((message: Message) => {
+    haptic.open();
+    setActionsFor(message);
+  }, []);
+  const openAsk = useCallback((message: Message) => setAskFor(message), []);
+  const actionsAgent = actionsFor?.body.kind === "tool" ? actionsFor.body.agent : undefined;
+  const askRow =
+    askFor?.body.kind === "permission"
+      ? { key: askFor.id, type: "permission" as const, message: askFor, body: askFor.body, bot: askFor.author.kind === "bot" ? bots.get(askFor.author.bot_id) : undefined, groupStart: false }
+      : undefined;
   // After the Mac app: "Message Chef", or the group's title with a hint that @ addresses one.
   const placeholder =
     !isGroup && members[0]
@@ -502,6 +517,8 @@ export default function ChatScreen() {
               isGroup={isGroup}
               onDecide={answerCard}
               onStop={stopAgent}
+              onActions={openAgentActions}
+              onOpenAsk={openAsk}
             />
           );
         case "working":
@@ -510,7 +527,7 @@ export default function ChatScreen() {
           return <StatusRow text={item.text} />;
       }
     },
-    [answerCard, answerCommand, fillSecret, bots, id, isGroup, speakers, openMarker, startReply, revealQuoted, flashId, stopCommand, startEdit, regenerate],
+    [answerCard, answerCommand, fillSecret, bots, id, isGroup, speakers, openMarker, startReply, revealQuoted, flashId, stopCommand, startEdit, regenerate, openAgentActions, openAsk],
   );
 
   if (!chat) {
@@ -635,7 +652,7 @@ export default function ChatScreen() {
             publishComposerExtra();
           }}
         >
-          <RunningAgents />
+          <RunningAgents onActions={openAgentActions} />
           <Composer
             mentionTargets={targets}
             placeholder={placeholder}
@@ -663,6 +680,29 @@ export default function ChatScreen() {
           onSave={(values) => engine.answerSecret(filling.chat_id, filling.id, values)}
         />
       ) : null}
+      <AgentActionsSheet
+        visible={!!actionsFor}
+        agent={actionsAgent}
+        onClose={() => setActionsFor(null)}
+        onOpenTranscript={() => {
+          const message = actionsFor;
+          setActionsFor(null);
+          if (message) setTimeout(() => router.push({ pathname: "/agent/[id]", params: { id: message.id, chat: message.chat_id } }), 260);
+        }}
+        onAnswer={
+          actionsAgent?.asking
+            ? () => {
+                const message = chat && actionsAgent ? agentAskCard(chat, actionsAgent) : undefined;
+                setActionsFor(null);
+                if (message) setTimeout(() => setAskFor(message), 260);
+              }
+            : undefined
+        }
+        onStop={() => {
+          if (actionsFor) void engine.stopAgent(actionsFor.chat_id, actionsFor.id);
+        }}
+      />
+      <AgentAskSheet visible={!!askFor} row={askRow} ask={askRow?.body.agent_ask} onClose={() => setAskFor(null)} />
       <ParticipantsSheet
         visible={participantsOpen}
         title={title}

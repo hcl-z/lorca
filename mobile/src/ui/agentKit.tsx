@@ -14,8 +14,8 @@ import { AGENT_MARK_VIEWBOX, agentBrandColor, agentMark } from "./agentMarks";
 import Svg, { Path } from "react-native-svg";
 import { t, tc } from "../i18n";
 import { haptic } from "./haptics";
-import { PopupMenu } from "./PopupMenu";
 import { Pressable } from "./Pressable";
+import { Sheet, SheetActionRow } from "./Sheet";
 import { Symbol } from "./Symbol";
 import { alert } from "./alert";
 import { accentColor, usePalette } from "./theme";
@@ -251,6 +251,7 @@ export function contextTint(share: number, dark: boolean): string {
 export function SpecStrip({ agent, chatId, messageId }: { agent: AgentRun; chatId: string; messageId: string }) {
   const p = usePalette();
   const [busy, setBusy] = useState(false);
+  const [control, setControl] = useState<AgentRun["controls"] extends (infer C)[] | undefined ? C | null : never>(null);
   if (agent.question) return null;
   const cost = agentSetting(agent, "Cost");
   const context = agentContext(agent);
@@ -288,17 +289,9 @@ export function SpecStrip({ agent, chatId, messageId }: { agent: AgentRun; chatI
             return (
               <View key={setting.name} style={[{ flexGrow: setting.name === "Model" ? 2 : 1, flexBasis: 0, minWidth: 0 }, i > 0 && { borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: p.separator, marginVertical: 9 }]}>
                 {control ? (
-                  <PopupMenu
-                    title={control.name}
-                    actions={control.choices.map((choice) => ({ id: choice.value, title: choice.name, state: choice.value === control.value ? "on" : "off" }))}
-                    onPressAction={({ nativeEvent }) => {
-                      if (nativeEvent.event !== control.value) change(control.what, control.name, nativeEvent.event);
-                    }}
-                  >
-                    <View style={{ opacity: busy ? 0.5 : 1 }} accessibilityRole="button" accessibilityLabel={`${setting.name}: ${value}`}>
-                      {cell}
-                    </View>
-                  </PopupMenu>
+                  <Pressable onPress={() => setControl(control)} style={{ opacity: busy ? 0.5 : 1 }} accessibilityRole="button" accessibilityLabel={`${setting.name}: ${value}`}>
+                    {cell}
+                  </Pressable>
                 ) : (
                   cell
                 )}
@@ -332,6 +325,19 @@ export function SpecStrip({ agent, chatId, messageId }: { agent: AgentRun; chatI
           ) : null}
         </View>
       ) : null}
+      <Sheet visible={!!control} onClose={() => setControl(null)} title={control?.name ?? ""}>
+        {control?.choices.map((choice) => (
+          <SheetActionRow
+            key={choice.value}
+            title={choice.name}
+            trailing={choice.value === control.value ? <Symbol name="checkmark" size={17} color={p.tint} weight="semibold" /> : null}
+            onPress={() => {
+              if (choice.value !== control.value) change(control.what, control.name, choice.value);
+              setControl(null);
+            }}
+          />
+        ))}
+      </Sheet>
     </View>
   );
 }

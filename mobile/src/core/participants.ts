@@ -73,3 +73,11 @@ export function mentionTargets(chat: Chat, bots: Map<string, Bot>, runnerSupport
 export function participantNames(bots: Bot[], agents: AgentRun[], max = 2): string[] {
   return [...bots.map((bot) => bot.name), ...agents.map(agentName)].filter(Boolean).slice(0, max);
 }
+
+
+/// The permission card the agent's `asking` points at, when it holds the agent's form.
+export function agentAskCard(chat: Chat, agent: AgentRun | undefined): Message | undefined {
+  if (!agent?.asking) return undefined;
+  const message = chat.messages.find((each) => each.id === agent.asking);
+  return message?.body.kind === "permission" && message.body.agent_ask ? message : undefined;
+}
