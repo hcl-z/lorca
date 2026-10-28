@@ -9,14 +9,16 @@
 // back; a tool that runs, one that failed, and the last one are open, and a tap opens or closes
 // any. What the agent asks, its own question's card or the card's Allow once and Deny, sits under
 // the transcript, answered here as in the chat. It asks the Runner again every five seconds for what
-// changed, and keeps to the end unless the user scrolled up to read.
+// changed, and keeps to the end unless the user scrolled up to read. It opens on the newest page
+// of entries and asks for the page before it when the top comes into view, so a long run mounts
+// a hundred entries, not a thousand.
 
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { memo, useCallback, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
-import { type AgentEntry, type AgentTool, mergeAgentEntries, toolFailed, toolRunning } from "../../src/core/agentEntries";
-import { agentBusy, agentSince, latestPlan, outputSpans, type OutputSpan } from "../../src/core/agentKit";
+import { type AgentEntry, type AgentTool, hasOlderEntries, mergeAgentEntries, toolFailed, toolRunning, type AgentTranscriptPage } from "../../src/core/agentEntries";
+import { agentBusy, agentSince, latestPlan, outputLines, spansForLines, type OutputSpan } from "../../src/core/agentKit";
 import { engine } from "../../src/core/engine";
 import { agentIsRunning, agentName, type AgentRun, type Message } from "../../src/core/model";
 import { useStore } from "../../src/core/store";
@@ -24,6 +26,7 @@ import { t, useLanguage } from "../../src/i18n";
 import { AgentHeader, AgentTile, Callout, PullRequestButton, SpecStrip, StopButton, alpha, mono, useNow } from "../../src/ui/agentKit";
 import { alert } from "../../src/ui/alert";
 import { Markdown } from "../../src/ui/Markdown";
+import { FoldedText } from "../../src/ui/FoldedText";
 import { CloseToolbar } from "../../src/ui/navigation";
 import { Symbol } from "../../src/ui/Symbol";
 import { AgentAskRow, CardButton, DECISION_ICONS } from "../../src/ui/transcript";
@@ -33,6 +36,12 @@ import { accentColor, usePalette } from "../../src/ui/theme";
 
 /// How often the transcript is asked for again while it is on screen.
 const REFRESH_MS = 5000;
+/// How many entries one page carries: a couple of screens, so the top loads with little wait.
+const AGENT_PAGE = 20;
+/// The lines of a command's output a folded view lays out, its last.
+const OUTPUT_LINES = 200;
+/// The lines of an edit's diff a folded view lays out.
+const DIFF_LINES = 200;
 const NODE = 24;
 
 export default function AgentScreen() {
@@ -52,8 +61,33 @@ export default function AgentScreen() {
   const [stopping, setStopping] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [askOpen, setAskOpen] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const scroll = useRef<FlashListRef<AgentEntry>>(null);
   const atEnd = useRef(true);
+  // What the list holds now, for the older page the top asks for while a refresh may be in
+  // flight: both merges read and write these, never a page behind.
+  const shown = useRef<AgentEntry[]>([]);
+  // The first entry the Runner keeps: what says whether a page before the oldest is left.
+  const firstKept = useRef<number | undefined>(undefined);
+  const olderLoading = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  /// A page put into the list: what changed, or the newest page of an older one, and the first
+  /// entry the Runner keeps from it.
+  const applyPage = useCallback((page: AgentTranscriptPage, fresh: boolean) => {
+    const next = mergeAgentEntries(fresh ? [] : shown.current, page);
+    shown.current = next;
+    firstKept.current = page.first;
+    setEntries(next);
+    setText(page.text);
+    setError(null);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -62,14 +96,13 @@ export default function AgentScreen() {
       let rev: number | undefined;
       const load = async () => {
         try {
-          const page = await engine.agentTranscript(chatId, id, rev);
+          // The newest page first; every refresh after it asks only for what changed.
+          const page = await engine.agentTranscript(chatId, id, rev, undefined, rev === undefined ? AGENT_PAGE : undefined);
           if (!live) return;
           // A Runner that counts afresh, as after a restart that kept no entries: all of them again.
           const fresh = rev !== undefined && (page.rev ?? 0) < rev;
-          setEntries((have) => mergeAgentEntries(fresh ? [] : have, page));
+          applyPage(page, fresh);
           rev = fresh ? undefined : page.rev;
-          setText(page.text);
-          setError(null);
         } catch (e) {
           // What was shown stays; the next try may reach the Runner.
           if (live) setError(e instanceof Error ? e.message : String(e));
@@ -81,8 +114,33 @@ export default function AgentScreen() {
         live = false;
         if (timer) clearTimeout(timer);
       };
-    }, [chatId, id]),
+    }, [applyPage, chatId, id]),
   );
+
+  /// The page before the oldest entry, when the reader scrolls up to the top. A reader at the end
+  /// is not asking for history: the sheet opens at the end, and the initial scroll is not a pull.
+  const loadOlder = useCallback(() => {
+    const oldest = shown.current[0]?.seq;
+    if (atEnd.current || olderLoading.current || oldest === undefined || !hasOlderEntries(shown.current, firstKept.current)) return;
+    olderLoading.current = true;
+    setLoadingOlder(true);
+    engine
+      .agentTranscript(chatId, id, undefined, oldest, AGENT_PAGE)
+      .then((page) => {
+        if (!mounted.current) return;
+        const next = mergeAgentEntries(shown.current, page);
+        shown.current = next;
+        firstKept.current = page.first;
+        setEntries(next);
+      })
+      .catch(() => {
+        // What was shown stays; the top asks again when it comes into view.
+      })
+      .finally(() => {
+        olderLoading.current = false;
+        if (mounted.current) setLoadingOlder(false);
+      });
+  }, [chatId, id]);
 
   const who = bot?.name ?? t("The bot");
   const lastTool = entries.reduce((last, entry, at) => (entry.tool && hasBody(entry.tool) ? at : last), -1);
@@ -115,6 +173,10 @@ export default function AgentScreen() {
         getItemType={(entry) => (entry.tool ? "tool" : entry.kind)}
         extraData={open}
         drawDistance={800}
+        // The page before the oldest entry, asked for when the top comes into view; the list
+        // keeps the reader's place as it lands (its maintainVisibleContentPosition is on).
+        onStartReached={loadOlder}
+        onStartReachedThreshold={1}
         contentContainerStyle={{ ...styles.content, paddingHorizontal: 16 + (width - column - 32) / 2 }}
         contentInsetAdjustmentBehavior="automatic"
         scrollEventThrottle={64}
@@ -128,6 +190,7 @@ export default function AgentScreen() {
         ListHeaderComponent={
           <>
             {agent && message ? <Overview agent={agent} message={message} entries={entries} stopping={stopping} onStop={stop} onActions={() => setActionsOpen(true)} /> : null}
+            {loadingOlder ? <Text style={{ color: p.secondaryLabel, fontSize: 13, paddingVertical: 8 }}>{t("Loading earlier…")}</Text> : null}
             <View style={{ height: 6 }} />
           </>
         }
@@ -414,7 +477,7 @@ function EntryContent({ entry, open, width, onToggle }: { entry: AgentEntry; ope
   const p = usePalette();
   switch (entry.kind) {
     case "said":
-      return <Markdown text={entry.text ?? ""} color={p.label} maxWidth={width} size={15} />;
+      return <FoldedText text={entry.text ?? ""} color={p.label} maxWidth={width} size={15} background={p.background} actionColor={p.link} expanded={open} onToggle={onToggle} />;
     case "plan": {
       const steps = entry.steps ?? [];
       const green = accentColor("green", p.dark);
@@ -494,6 +557,9 @@ function ToolView({ tool, open, onToggle }: { tool: AgentTool; open: boolean; on
   const removed = diffs.reduce((sum, diff) => sum + diff.removed, 0);
   const green = accentColor("green", p.dark);
   const red = accentColor("red", p.dark);
+  // A diff of hundreds of lines is laid out to its head until the reader asks for all of it.
+  const [allDiffs, setAllDiffs] = useState(false);
+  const truncated = diffs.some((diff) => diff.lines.length > DIFF_LINES);
   return (
     <View style={{ gap: 7 }}>
       <Pressable disabled={!body} onPress={onToggle} accessibilityRole="button" accessibilityState={{ expanded: shown }} style={styles.head}>
@@ -519,7 +585,7 @@ function ToolView({ tool, open, onToggle }: { tool: AgentTool; open: boolean; on
                 {diff.path}
               </Text>
               <View style={{ paddingBottom: 6 }}>
-                {diff.lines.map((line, at) => {
+                {(allDiffs ? diff.lines : diff.lines.slice(0, DIFF_LINES)).map((line, at) => {
                   const plus = line.startsWith("+");
                   const minus = line.startsWith("-");
                   return (
@@ -528,10 +594,18 @@ function ToolView({ tool, open, onToggle }: { tool: AgentTool; open: boolean; on
                     </Text>
                   );
                 })}
+                {!allDiffs && diff.lines.length > DIFF_LINES ? (
+                  <Text style={[styles.small, styles.diffLine, { color: p.tertiaryLabel, paddingVertical: 4 }]}>{t("… {count} more lines", { count: String(diff.lines.length - DIFF_LINES) })}</Text>
+                ) : null}
               </View>
             </View>
           ))
         : null}
+      {shown && truncated ? (
+        <Pressable onPress={() => setAllDiffs(!allDiffs)} accessibilityRole="button" style={{ paddingVertical: 4 }}>
+          <Text style={[styles.small, { color: p.link }]}>{allDiffs ? t("Show less") : t("Show all")}</Text>
+        </Pressable>
+      ) : null}
       {shown && !tool.output && diffs.length === 0 && tool.result ? (
         <View style={[styles.code, { backgroundColor: p.code }]}>
           <Text selectable style={[styles.mono, { color: p.label }]}>
@@ -563,26 +637,39 @@ function spanColor(span: OutputSpan, dark: boolean): string | undefined {
   return `rgb(${level(Math.floor(at / 36))},${level(Math.floor(at / 6) % 6)},${level(at % 6)})`;
 }
 
-/// A command's output in its colors, its last lines in view while it grows.
+/// A command's output in its colors, its last lines in view while it grows. The lines before them
+/// are laid out only when the reader asks for all of it, so a command that printed thousands of
+/// lines costs its tail.
 function OutputView({ output }: { output: string }) {
   const p = usePalette();
-  const lines = outputSpans(output);
+  const [all, setAll] = useState(false);
+  const lines = useMemo(() => outputLines(output), [output]);
+  const shown = all ? lines : lines.slice(-OUTPUT_LINES);
+  const spans = useMemo(() => spansForLines(all ? lines : lines.slice(-OUTPUT_LINES)), [lines, all]);
+  const hidden = lines.length - shown.length;
   const scroll = useRef<ScrollView>(null);
   return (
-    <ScrollView ref={scroll} style={[styles.code, styles.output, { backgroundColor: p.code }]} nestedScrollEnabled onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })}>
-      <Text selectable style={[styles.mono, { color: p.label }]}>
-        {lines.map((spans, at) => (
-          <Text key={at}>
-            {spans.map((span, i) => (
-              <Text key={i} style={{ color: spanColor(span, p.dark), fontWeight: span.bold ? "700" : undefined, opacity: span.dim ? 0.6 : undefined }}>
-                {span.text}
-              </Text>
-            ))}
-            {at < lines.length - 1 ? "\n" : ""}
-          </Text>
-        ))}
-      </Text>
-    </ScrollView>
+    <View style={[styles.code, { backgroundColor: p.code }]}>
+      {lines.length > OUTPUT_LINES ? (
+        <Pressable onPress={() => setAll(!all)} accessibilityRole="button" style={{ paddingBottom: 6 }}>
+          <Text style={[styles.small, { color: p.link }]}>{all ? t("Show less") : t("… {count} more lines", { count: String(hidden) })}</Text>
+        </Pressable>
+      ) : null}
+      <ScrollView ref={scroll} style={styles.output} nestedScrollEnabled onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })}>
+        <Text selectable style={[styles.mono, { color: p.label }]}>
+          {spans.map((line, at) => (
+            <Text key={at}>
+              {line.map((span, i) => (
+                <Text key={i} style={{ color: spanColor(span, p.dark), fontWeight: span.bold ? "700" : undefined, opacity: span.dim ? 0.6 : undefined }}>
+                  {span.text}
+                </Text>
+              ))}
+              {at < spans.length - 1 ? "\n" : ""}
+            </Text>
+          ))}
+        </Text>
+      </ScrollView>
+    </View>
   );
 }
 

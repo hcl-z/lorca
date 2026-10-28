@@ -16,13 +16,18 @@ import (
 // keeps: its steps in order, as Cursor shows an agent's run. What it was sent is a card that says
 // who wrote it; a thought is one line, "Thought for 3s", that opens to what it thought; a tool is
 // one line in the past or present tense, and a run of reads and searches folds into "Explored 3
-// files, 2 searches"; what it said is Markdown; its plan is a checklist; its notices, refusals,
-// and compactions are lines of their own. The view asks the Runner again every two seconds, five
-// through the relay, for what changed, and keeps to the end unless the user scrolled up to read.
+// files, 2 searches"; what it said is Markdown, a long one folded to its head with Show more under
+// it; its plan is a checklist; its notices, refusals, and compactions are lines of their own. The
+// view opens on the newest page of entries, asks the Runner again every two seconds, five through
+// the relay, for what changed, asks for the page before the oldest when the top comes into view,
+// and keeps to the end unless the user scrolled up to read.
 
 const (
 	// The live terminals one view has at most, the latest; an older open output is plain text.
 	entryScreens = 6
+	// The entries one page of a transcript carries: a couple of screens, so the top loads with
+	// little wait.
+	transcriptPage = 20
 	// A command's output grows to this many rows, then shows its last ones.
 	outputRows = 14
 	outputRow  = 15.5
@@ -34,14 +39,22 @@ type agentTranscript struct {
 	entries           []model.AgentEntry
 	rev               uint64
 	// text is the transcript as the bot reads it, shown by a Runner that keeps no entries.
-	text    string
-	err     string
-	loaded  bool
-	closed  bool
-	timer   *time.Timer
-	scroll  ui.ScrollState
-	open    map[uint64]bool
-	screens map[uint64]*agentScreen
+	text   string
+	err    string
+	loaded bool
+	closed bool
+	timer  *time.Timer
+	list   ui.ListState
+	// hasOlder says a page before the oldest entry here is left on the Runner; loadingOlder
+	// keeps one such page in flight.
+	hasOlder     bool
+	loadingOlder bool
+	open         map[uint64]bool
+	screens      map[uint64]*agentScreen
+	// folds is what each said entry's text comes to for a folded row, kept between frames.
+	folds map[uint64]foldedText
+	// fill is what the transcript stands on, which a folded entry's fade runs into.
+	fill ui.Color
 	// maxWidth keeps the entries to a reading width, centered, where the view is wide; 0 fills it.
 	maxWidth float32
 	// kind is the agent's, for its mark beside what it said; bot is who sends it its work.
@@ -61,7 +74,8 @@ func (t *agentTranscript) plan() []model.AgentStep {
 }
 
 func newAgentTranscript(chatID string, message *model.Message) *agentTranscript {
-	t := &agentTranscript{chatID: chatID, messageID: message.ID, remote: !store.RunsHere(message), open: map[uint64]bool{}, screens: map[uint64]*agentScreen{}, bot: botName(message)}
+	t := &agentTranscript{chatID: chatID, messageID: message.ID, remote: !store.RunsHere(message), open: map[uint64]bool{}, screens: map[uint64]*agentScreen{}, folds: map[uint64]foldedText{}, bot: botName(message)}
+	t.list.FollowEnd = true
 	if agent := model.AgentOf(message); agent != nil {
 		t.kind, t.card = agent.Kind, agent
 	}
@@ -78,7 +92,12 @@ func (t *agentTranscript) load() {
 		rev := t.rev
 		since = &rev
 	}
-	store.AgentTranscript(t.chatID, t.messageID, since, func(page model.AgentTranscriptPage, err error) {
+	// The newest page first; every refresh after it asks only for what changed.
+	limit := 0
+	if !t.loaded {
+		limit = transcriptPage
+	}
+	store.AgentTranscript(t.chatID, t.messageID, since, nil, limit, func(page model.AgentTranscriptPage, err error) {
 		if t.closed {
 			return
 		}
@@ -94,17 +113,32 @@ func (t *agentTranscript) load() {
 			t.load()
 			return
 		default:
-			atEnd := !t.loaded || t.scroll.Y >= t.scroll.MaxY-24
 			if page.Card != nil {
 				t.card = page.Card
 			}
-			entries, changed := model.MergeAgentEntries(t.entries, page)
+			entries, _ := model.MergeAgentEntries(t.entries, page)
 			t.entries, t.rev, t.text, t.loaded, t.err = entries, page.Rev, page.Text, true, ""
-			if changed && atEnd {
-				t.scroll.Y = 1 << 30
-			}
+			t.hasOlder = len(entries) > 0 && entries[0].Seq > page.First
 		}
 		t.schedule()
+	})
+}
+
+// loadOlder asks for the page before the oldest entry the view holds, once.
+func (t *agentTranscript) loadOlder() {
+	if t.closed || t.loadingOlder || !t.hasOlder || len(t.entries) == 0 {
+		return
+	}
+	t.loadingOlder = true
+	before := t.entries[0].Seq
+	store.AgentTranscript(t.chatID, t.messageID, nil, &before, transcriptPage, func(page model.AgentTranscriptPage, err error) {
+		t.loadingOlder = false
+		if t.closed || err != nil {
+			return
+		}
+		entries, _ := model.MergeAgentEntries(t.entries, page)
+		t.entries = entries
+		t.hasOlder = len(entries) > 0 && entries[0].Seq > page.First
 	})
 }
 
@@ -143,11 +177,21 @@ func hasBody(tool *model.AgentTool) bool {
 	return tool.Output != "" || len(tool.Diffs) > 0 || tool.Result != ""
 }
 
-// view draws the steps in a scroll, which the caller sizes.
+// view draws the steps as a list, which builds only the rows in view and keeps the reader's
+// place when a page of older entries lands above it; the caller sizes it.
 func (t *agentTranscript) view(c *ui.Context) ui.Element {
 	p := colors(c)
-	box := ui.Scroll(c).FillWidth().TextColor(p.Label)
-	box.TrackScroll(&t.scroll)
+	if len(t.entries) == 0 {
+		box := ui.Scroll(c).FillWidth().TextColor(p.Label)
+		box.Children(func() {
+			box := ui.Column(c).Padding(4, 2, 12, 2)
+			if t.maxWidth > 0 {
+				box.MaxWidth(t.maxWidth)
+			}
+			box.Children(func() { t.empty(c, p) })
+		})
+		return box
+	}
 	// The open outputs with a terminal of their own, the latest first; the rest give theirs up.
 	lastTool := uint64(0)
 	found := false
@@ -171,16 +215,47 @@ func (t *agentTranscript) view(c *ui.Context) ui.Element {
 			delete(t.screens, seq)
 		}
 	}
-	box.Children(func() {
-		ui.Row(c.Key("reading")).FillWidth().Justify(ui.Center).Children(func() {
-			column := ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Padding(4, 2, 12, 2)
+	steps := agentSteps(t.entries)
+	t.list.Key = func(i int) any { return steps[i].entry.Seq }
+	list := ui.List(c, &t.list, len(steps), func(i int) {
+		step := steps[i]
+		// Tool lines sit close together; the rest a paragraph apart.
+		top := float32(12)
+		switch {
+		case i == 0:
+			top = 0
+		case step.entry.Kind == "tool" && steps[i-1].entry.Kind == "tool":
+			top = 2
+		}
+		row := ui.Row(c.Key(fmt.Sprintf("step:%d", step.entry.Seq))).FillWidth().Justify(ui.Center).Margin(top, 0, 0, 0)
+		row.Children(func() {
+			column := ui.Column(c).Grow(1).Shrink(1).MinWidth(0)
 			if t.maxWidth > 0 {
 				column.MaxWidth(t.maxWidth)
 			}
-			column.Children(func() { t.transcript(c, lastTool, found, live) })
+			column.Children(func() { t.step(c, step, found && step.entry.Seq == lastTool, live) })
 		})
-	})
-	return box
+	}).Fill().Padding(4, 2, 12, 2).TextColor(p.Label)
+	// Nearing the first step: the page before it.
+	if first, last := t.list.Visible(); last >= first && first < 4 && t.hasOlder {
+		t.loadOlder()
+	}
+	return list
+}
+
+// empty draws what a transcript with no entries says: its text, an error, or that it is loading.
+func (t *agentTranscript) empty(c *ui.Context, p *palette) {
+	switch {
+	case t.text != "":
+		// A Runner that keeps no entries for it answers the bot's text.
+		transcriptText(c, p, t.text)
+	case t.err != "":
+		ui.Text(c, t.err).FontSize(12).TextColor(p.Label2)
+	case t.loaded:
+		ui.Text(c, L("Nothing yet")).FontSize(12).TextColor(p.Label2)
+	default:
+		ui.Text(c, L("Loading…")).FontSize(12).TextColor(p.Label2)
+	}
 }
 
 // agentStep is a line of the page: one entry, or a run of reads and searches folded into one.
@@ -435,7 +510,43 @@ func (t *agentTranscript) step(c *ui.Context, step agentStep, last bool, live ma
 		}
 		t.promptCard(c, author, e.Text, e.From == "user", open, func() { toggle(open) })
 	case e.Kind == "said":
-		markdownView(c, e.Text, markdownOptions{Size: 13})
+		width := t.maxWidth
+		if width <= 0 {
+			width = 620
+		}
+		width -= 24
+		fold, ok := t.folds[e.Seq]
+		if !ok || fold.text != e.Text {
+			fold = foldText(e.Text, width, 13, foldedHeight)
+			t.folds[e.Seq] = fold
+		}
+		if fold.folded && !t.open[e.Seq] {
+			// The head of what it said, fading into the transcript's fill, and Show more under it.
+			ui.Column(c.Key("fold")).FillWidth().Children(func() {
+				ui.Box(c).MaxHeight(foldedHeight).Clip().Children(func() {
+					markdownView(c, fold.prefix, markdownOptions{Size: 13})
+				})
+				ui.Box(c).Absolute().Left(0).Right(0).Bottom(0).Height(26).Gradient(t.fill.Alpha(0), t.fill, 180)
+			})
+			ui.Row(c).FillWidth().Justify(ui.Start).Children(func() {
+				more := ui.ButtonBase(c.Key(fmt.Sprintf("more:%d", e.Seq))).Padding(6, 0, 0, 0).FontSize(12).FontWeight(500).TextColor(p.Link).Cursor(ui.CursorPointer).Label(L("Show more")).FocusRing(false)
+				more.Children(func() { ui.Text(c, L("Show more")) })
+				if more.Clicked() {
+					t.open[e.Seq] = true
+				}
+			})
+		} else {
+			ui.Box(c).FillWidth().Padding(1, 0, 0, 0).Children(func() { markdownView(c, e.Text, markdownOptions{Size: 13}) })
+			if fold.folded {
+				ui.Row(c).FillWidth().Justify(ui.Start).Children(func() {
+					less := ui.ButtonBase(c.Key(fmt.Sprintf("less:%d", e.Seq))).Padding(6, 0, 0, 0).FontSize(12).FontWeight(500).TextColor(p.Label2).Cursor(ui.CursorPointer).Label(L("Show less")).FocusRing(false)
+					less.Children(func() { ui.Text(c, L("Show less")) })
+					if less.Clicked() {
+						t.open[e.Seq] = false
+					}
+				})
+			}
+		}
 	case e.Kind == "thought":
 		open := t.open[e.Seq]
 		text := L("Thought")

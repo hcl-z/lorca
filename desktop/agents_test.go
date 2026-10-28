@@ -174,7 +174,8 @@ func TestRenderAgentCard(t *testing.T) {
 	settle(tt)
 	renderBoth(t, tt, "agent-transcript")
 	// What it was sent and said is text, its reads and searches fold into one line, each tool is
-	// a line in the past or present tense, and the plan a checklist.
+	// a line in the past or present tense, and the plan a checklist. The transcript opens on its
+	// newest page, and this one's nine entries fit in it.
 	for _, want := range []string{"Fix the broken docs link on the download page, with a test.", "I'll find the link first.", "Explored 1 search", "Edited src/pages/download.astro", "Failed: bun test links", "Run the link test"} {
 		if !tt.HasText(want) {
 			t.Errorf("the transcript has no %q: %q", want, tt.Texts())
@@ -207,6 +208,16 @@ func TestRenderAgentCard(t *testing.T) {
 		t.Errorf("the edit did not open to its diff: %q", tt.Texts())
 	}
 	renderBoth(t, tt, "agent-transcript-diff")
+	// What it was sent and said is above the edit, drawn when the top comes into view.
+	for range 10 {
+		tt.Scroll(590, 380, 0, -400)
+		settle(tt)
+	}
+	for _, want := range []string{"Fix the broken docs link on the download page, with a test.", "I'll find the link first.", "Explored 1 search"} {
+		if !tt.HasText(want) {
+			t.Errorf("the transcript has no %q at its top: %q", want, tt.Texts())
+		}
+	}
 }
 
 func TestPagesOfATranscriptMergeInOrder(t *testing.T) {

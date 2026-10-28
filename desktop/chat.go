@@ -65,14 +65,29 @@ type chatState struct {
 	// actionsFor is the message whose toolbar the pointer is over, which keeps it up while the
 	// pointer crosses from the bubble to the toolbar, and is on it outside the row.
 	actionsFor string
+	// expanded holds the messages read whole after Show more, and folds the text each is folded
+	// to, kept between frames so a long message is measured once.
+	expanded map[string]bool
+	folds    map[string]foldedText
 }
 
 func (m *mainWindow) chatStateFor(chatID string) *chatState {
 	if m.chat == nil || m.chat.chatID != chatID {
-		m.chat = &chatState{chatID: chatID, composerHeight: composerFallback}
+		m.chat = &chatState{chatID: chatID, composerHeight: composerFallback, expanded: map[string]bool{}, folds: map[string]foldedText{}}
 		m.chat.list.FollowEnd = true
 	}
 	return m.chat
+}
+
+// scrollToMessage puts a message's row at the top of the transcript: Show more grows a bubble
+// downward, and the reader should see the message from its head, not its tail.
+func (s *chatState) scrollToMessage(id string) {
+	for i := range s.rows {
+		if s.rows[i].key == id {
+			s.list.ScrollTo(i, ui.Start)
+			return
+		}
+	}
 }
 
 // chatStoreChanged follows the store for the chat on screen: a new message clears the stopped
@@ -502,6 +517,24 @@ func (m *mainWindow) messageCell(c *ui.Context, chat *model.Chat, message *model
 				}
 				bubble.ContextMenu(replyMenu)
 			}
+			// The room the text has: the bubble's widest, less its padding, and the window's own.
+			textWidth := float32(maxBubbleWidth) - 36
+			if s.viewport.W > 0 {
+				if room := s.viewport.W - 2*horizontalInset - 36; room < textWidth {
+					textWidth = room
+				}
+			}
+			fold, ok := s.folds[message.ID]
+			if !ok || fold.text != text {
+				fold = foldText(text, textWidth, textMessage, foldedHeight)
+				s.folds[message.ID] = fold
+			}
+			action := p.Link
+			bubbleColor := p.BotBubble
+			if isUser {
+				action = p.InkText
+				bubbleColor = p.Ink
+			}
 			bubble.Children(func() {
 				if len(message.Attachments) > 0 {
 					below := float32(0)
@@ -511,7 +544,36 @@ func (m *mainWindow) messageCell(c *ui.Context, chat *model.Chat, message *model
 					attachmentTiles(c, chat.ID, message, isUser).Margin(0, 0, below, 0)
 				}
 				if text != "" {
-					markdownView(c, text, markdownOptions{OnUserBubble: isUser, Menu: replyMenu, Mentionable: mentionable(chat, message)}).Shrink(1)
+					if fold.folded && !s.expanded[message.ID] {
+						// The head of the message, fading into the bubble's own fill, and Show more
+						// under it as a link, as the Mac's long messages read.
+						ui.Column(c.Key("fold:" + message.ID)).FillWidth().Children(func() {
+							ui.Box(c).MaxHeight(foldedHeight).Clip().Children(func() {
+								markdownView(c, fold.prefix, markdownOptions{OnUserBubble: isUser, Menu: replyMenu, Mentionable: mentionable(chat, message)}).Shrink(1)
+							})
+							ui.Box(c).Absolute().Left(0).Right(0).Bottom(0).Height(28).Gradient(bubbleColor.Alpha(0), bubbleColor, 180)
+						})
+						ui.Row(c).FillWidth().Justify(ui.Start).Children(func() {
+							more := ui.ButtonBase(c.Key("more:"+message.ID)).Padding(6, 0, 0, 0).FontSize(12).FontWeight(500).TextColor(action).Cursor(ui.CursorPointer).Label(L("Show more")).FocusRing(false)
+							more.Children(func() { ui.Text(c, L("Show more")) })
+							if more.Clicked() {
+								s.expanded[message.ID] = true
+								s.scrollToMessage(message.ID)
+							}
+						})
+					} else {
+						markdownView(c, text, markdownOptions{OnUserBubble: isUser, Menu: replyMenu, Mentionable: mentionable(chat, message)}).Shrink(1)
+						if fold.folded {
+							ui.Row(c).FillWidth().Justify(ui.Start).Children(func() {
+								less := ui.ButtonBase(c.Key("less:"+message.ID)).Padding(6, 0, 0, 0).FontSize(12).FontWeight(500).TextColor(p.Label2).Cursor(ui.CursorPointer).Label(L("Show less")).FocusRing(false)
+								less.Children(func() { ui.Text(c, L("Show less")) })
+								if less.Clicked() {
+									s.expanded[message.ID] = false
+									s.scrollToMessage(message.ID)
+								}
+							})
+						}
+					}
 				}
 			})
 			if !message.EditedAt.IsZero() {

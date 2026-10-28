@@ -32,6 +32,13 @@ func (m *mainWindow) messageActions(c *ui.Context, chatID string, message *model
 		if text != "" {
 			copyButton(c, text, copyOptions{Symbol: "doc.on.doc", Tooltip: L("Copy message")}).Height(26).MinWidth(26).Radius(radiusCapsule)
 		}
+		// A message read whole folds back from its toolbar too, however far its text runs.
+		if s.expanded[message.ID] {
+			if hoverButton(c, hoverButtonOptions{Symbol: "chevron.up", Size: 14, Tooltip: L("Show less")}).Height(26).MinWidth(26).Radius(radiusCapsule).Clicked() {
+				delete(s.expanded, message.ID)
+				s.scrollToMessage(message.ID)
+			}
+		}
 		// The latest exchange of a direct chat runs again: Edit on the user's message, Regenerate on
 		// the bot's reply to it.
 		if store.CanEdit(chatID, message) {

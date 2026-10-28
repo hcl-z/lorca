@@ -59,6 +59,12 @@ export function mergeAgentEntries(have: AgentEntry[], page: AgentTranscriptPage)
   return next.length === have.length && next.every((entry, at) => entry === have[at]) ? have : next;
 }
 
+/// Whether the Runner keeps entries older than the oldest the app has: the first entry it keeps
+/// is before what the app got. A Runner that never answered a `first` has none to ask for.
+export function hasOlderEntries(entries: AgentEntry[], first: number | undefined): boolean {
+  return first !== undefined && entries.length > 0 && entries[0].seq > first;
+}
+
 /// A command's output as plain text: its colors and every other control sequence dropped, and a
 /// line a carriage return rewrote read as what it ended as.
 export function outputText(output: string): string {

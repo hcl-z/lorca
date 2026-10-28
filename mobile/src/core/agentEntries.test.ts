@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { type AgentEntry, mergeAgentEntries, outputText, toolFailed } from "./agentEntries";
+import { type AgentEntry, hasOlderEntries, mergeAgentEntries, outputText, toolFailed } from "./agentEntries";
 
 const said = (seq: number, text: string): AgentEntry => ({ seq, rev: seq, kind: "said", text });
 
@@ -21,4 +21,18 @@ test("a command's output reads as plain text, without its colors or anything els
   expect(outputText("\x1b[32m50%\r100%\x1b[0m\r\n\x1b]52;c;ZXZpbA==\x07next\x07\r\n")).toBe("100%\nnext");
   expect(toolFailed({ title: "x", status: "completed", exit_code: 1 })).toBe(true);
   expect(toolFailed({ title: "x", status: "completed", exit_code: 0 })).toBe(false);
+});
+
+test("a page before the oldest an app has lands in front of it, bounded by the first the Runner keeps", () => {
+  let have = mergeAgentEntries([], { text: "", entries: [said(5, "f"), said(6, "g")], first: 0 });
+  expect(hasOlderEntries(have, 0)).toBe(true);
+  have = mergeAgentEntries(have, { text: "", entries: [said(3, "d"), said(4, "e")], first: 0 });
+  expect(have.map((entry) => entry.seq)).toEqual([3, 4, 5, 6]);
+  expect(hasOlderEntries(have, 0)).toBe(true);
+  // A page that reaches the first entry kept leaves nothing older.
+  expect(hasOlderEntries(mergeAgentEntries(have, { text: "", entries: [said(0, "a"), said(1, "b")], first: 0 }), 0)).toBe(false);
+  // The Runner moved past what the app had: those entries go, and the first says so.
+  expect(mergeAgentEntries(have, { text: "", entries: [], first: 5 }).map((entry) => entry.seq)).toEqual([5, 6]);
+  expect(hasOlderEntries([], 0)).toBe(false);
+  expect(hasOlderEntries(have, undefined)).toBe(false);
 });

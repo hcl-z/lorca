@@ -69,6 +69,8 @@ const ROW_LINES: usize = 20;
 const KEEP_LINES: usize = 5000;
 /// What `coding.transcript` sends the apps, at most.
 const APP_LINES: usize = 2000;
+/// The most entries one `coding.transcript` page carries.
+const MAX_APP_ENTRIES: u64 = 200;
 /// What the bot reads at once, at most.
 const READ_LINES: usize = 200;
 /// How much of what an agent said its message in the chat carries; the transcript keeps it all.
@@ -1961,7 +1963,7 @@ pub(crate) async fn set_options(app: &Arc<App>, agent: &Arc<Agent>, wants: &[(St
 }
 
 /// `coding.transcript`, `coding.stop`, `coding.set`, and `coding.answer` for a card on this Runner, from the
-/// local app or a sealed request: `{ chat_id, message_id, since?, choice?, text?, what?, value? }`.
+/// local app or a sealed request: `{ chat_id, message_id, since?, before?, limit?, choice?, text?, what?, value? }`.
 pub async fn serve(app: &Arc<App>, verb: &str, body: &Value) -> Result<Value, String> {
     let chat_id = body["chat_id"].as_str().ok_or("missing chat_id")?;
     let message_id = body["message_id"].as_str().ok_or("missing message_id")?;
@@ -1970,9 +1972,22 @@ pub async fn serve(app: &Arc<App>, verb: &str, body: &Value) -> Result<Value, St
     let agent = app.coding_agents.by_row(chat_id, message_id).ok_or("That coding agent never started")?;
     match verb {
         "coding.transcript" => {
-            let text = agent.transcript.lock().unwrap().tail(APP_LINES).join("\n");
-            // The entries changed after the change the app has (`since`), all of them without it.
-            let (changed, rev, first) = agent.entries.lock().unwrap().since(body["since"].as_u64());
+            // The entries changed after the change the app has (`since`), else the newest page of
+            // the entries before `before` (all of them without it and without `limit`).
+            let since = body["since"].as_u64();
+            let before = body["before"].as_u64();
+            let limit = body["limit"].as_u64().map_or(usize::MAX, |limit| limit.clamp(1, MAX_APP_ENTRIES) as usize);
+            let (changed, rev, first, kept_no_entries) = {
+                let entries = agent.entries.lock().unwrap();
+                let kept_no_entries = entries.is_empty();
+                let (changed, rev, first) = match since {
+                    Some(since) => entries.since(Some(since)),
+                    None => entries.page(before, limit),
+                };
+                (changed, rev, first, kept_no_entries)
+            };
+            // An agent that keeps no entries answers the bot's text transcript instead.
+            let text = if kept_no_entries { agent.transcript.lock().unwrap().tail(APP_LINES).join("\n") } else { String::new() };
             Ok(json!({ "text": text, "card": app.coding_agents.card(app, &agent), "entries": changed, "rev": rev, "first": first }))
         }
         "coding.stop" => {

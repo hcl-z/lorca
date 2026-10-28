@@ -1158,6 +1158,25 @@ async fn the_model_and_effort_of_a_running_agent_change_without_starting_another
     assert!(late.contains("has ended") || late.contains("not running"), "{late}");
 }
 
+#[test]
+fn a_transcripts_pages_walk_back_from_the_newest_without_a_gap() {
+    let mut entries = entries::Entries::default();
+    for at in 0..250 {
+        entries.put(format!("said:{at}"), entries::Entry::text("said", format!("line {at}")));
+    }
+    let (newest, rev, first) = entries.page(None, 100);
+    assert_eq!(newest.len(), 100);
+    assert_eq!((newest[0].seq, newest[99].seq), (150, 249));
+    assert_eq!(first, 0);
+    assert!(rev > 0);
+    let (older, _, _) = entries.page(Some(newest[0].seq), 100);
+    assert_eq!((older[0].seq, older[99].seq), (50, 149));
+    let (oldest, _, _) = entries.page(Some(older[0].seq), 100);
+    assert_eq!((oldest[0].seq, oldest.last().unwrap().seq, oldest.len()), (0, 49, 50));
+    // Nothing is kept before the first entry.
+    assert!(entries.page(Some(0), 100).0.is_empty());
+}
+
 #[tokio::test]
 async fn the_apps_get_the_transcript_as_entries_with_a_commands_terminal_output() {
     let scratch = setup().await;
@@ -1179,8 +1198,25 @@ async fn the_apps_get_the_transcript_as_entries_with_a_commands_terminal_output(
     assert_eq!((command["title"].as_str(), command["status"].as_str(), command["exit_code"].as_i64()), (Some("cargo test"), Some("completed"), Some(0)));
     assert_eq!(command["output"].as_str().unwrap(), "\x1b[32mtest a ... ok\x1b[0m\r\ntoken none\r\n");
     assert_eq!(entries[3]["text"], "All **green**.");
-    // The bot reads the same output in words.
-    assert!(all["text"].as_str().unwrap().contains("  ⎿ test a ... ok"), "{}", all["text"]);
+    // An agent that keeps entries answers no text transcript; only what changed is resent.
+    assert!(all["text"].as_str().unwrap().is_empty());
+
+    // A page at a time: the newest entries, then the ones before them.
+    let newest = serve(app, "coding.transcript", &json!({ "chat_id": "chat", "message_id": row, "limit": 2 })).await.unwrap();
+    let newest = newest["entries"].as_array().unwrap();
+    assert_eq!(newest.len(), 2);
+    assert_eq!(newest[0]["kind"].as_str(), Some("tool"));
+    assert_eq!(newest[1]["text"], "All **green**.");
+    let before = newest[0]["seq"].as_u64().unwrap();
+    let older = serve(app, "coding.transcript", &json!({ "chat_id": "chat", "message_id": row, "before": before, "limit": 2 })).await.unwrap();
+    let older = older["entries"].as_array().unwrap();
+    let kinds: Vec<&str> = older.iter().map(|entry| entry["kind"].as_str().unwrap()).collect();
+    assert_eq!(kinds, ["sent", "said"]);
+    assert_eq!(older[1]["seq"].as_u64(), Some(1));
+    // Nothing is kept before the first entry.
+    let none_left = serve(app, "coding.transcript", &json!({ "chat_id": "chat", "message_id": row, "before": 0, "limit": 2 })).await.unwrap();
+    assert!(none_left["entries"].as_array().unwrap().is_empty());
+    assert_eq!(none_left["first"].as_u64(), Some(0));
 
     // Asked again with the change it has, it gets only what changed since.
     let rev = all["rev"].as_u64().unwrap();

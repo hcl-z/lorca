@@ -29,6 +29,8 @@ import { BotAvatar, ContactAvatar } from "./Avatar";
 import { daySeparator, firstLine, messageAuthorName, quoteAuthorName, workingActivity } from "./format";
 export { messageAuthorName, quoteAuthorName } from "./format";
 import { Markdown } from "./Markdown";
+import { FoldedText } from "./FoldedText";
+import type { MessageFrame } from "./longMessage";
 import { Button } from "./Button";
 import { Symbol } from "./Symbol";
 import { usePaneWidth } from "./layout";
@@ -159,6 +161,7 @@ export const MessageRow = memo(function MessageRow({
   onQuotePress,
   onEdit,
   onRegenerate,
+  onOpenMessage,
   flashing,
 }: {
   row: Extract<Row, { type: "message" }>;
@@ -168,6 +171,8 @@ export const MessageRow = memo(function MessageRow({
   onQuotePress?: (messageID: string) => void;
   onEdit?: (message: Message) => void;
   onRegenerate?: (message: Message) => void;
+  /// Reads the whole of a long message, from the bubble's place in the window.
+  onOpenMessage?: (message: Message, frame: MessageFrame) => void;
   flashing?: boolean;
 }) {
   const held = row.message.queued === true;
@@ -196,6 +201,13 @@ export const MessageRow = memo(function MessageRow({
   // Attachments and the text both fit that width.
   const columnWidth = Math.min(Math.floor(paneWidth * 0.8), BUBBLE_COLUMN_MAX);
   const attachmentWidth = columnWidth - 26 - (showsAvatar ? AVATAR + GUTTER : 0);
+  const bubble = useRef<View>(null);
+  // The fill behind the text: a folded message's fade runs into it.
+  const bubbleBackground = isYou ? p.userBubble : failed ? "rgba(255,59,48,0.14)" : p.botBubble;
+  const openWhole = useMemo(() => {
+    if (!onOpenMessage) return undefined;
+    return () => bubble.current?.measureInWindow((x, y, w, h) => onOpenMessage(message, { x, y, w, h }));
+  }, [message, onOpenMessage]);
   const quoteName = quote ? quoteAuthorName(quote, bots) : "";
   const agent = message.agent;
   const agentLabel = agent ? agent.name || agentKindName(agent.kind) : "";
@@ -245,15 +257,26 @@ export const MessageRow = memo(function MessageRow({
           </Animated.View>
         ) : (
         <Animated.View
+          ref={bubble}
           style={[
             styles.bubble,
-            isYou ? [styles.bubbleYou, { backgroundColor: p.userBubble }] : { backgroundColor: failed ? "rgba(255,59,48,0.14)" : p.botBubble },
+            isYou ? [styles.bubbleYou, { backgroundColor: bubbleBackground }] : { backgroundColor: bubbleBackground },
             pulsing,
             held && styles.held,
           ]}
         >
           {attachments.length > 0 && <AttachmentBlock attachments={attachments} onUserBubble={isYou} maxWidth={attachmentWidth} chatId={message.chat_id} messageId={message.id} />}
-          {text.length > 0 && <Markdown text={text} color={isYou ? p.userBubbleText : p.botBubbleText} maxWidth={attachmentWidth} sources={message.author.kind === "bot"} />}
+          {text.length > 0 && (
+            <FoldedText
+              text={text}
+              color={isYou ? p.userBubbleText : p.botBubbleText}
+              maxWidth={attachmentWidth}
+              sources={message.author.kind === "bot"}
+              background={bubbleBackground}
+              actionColor={isYou ? p.userBubbleText : p.link}
+              onToggle={openWhole}
+            />
+          )}
           {failed && (
             <View style={styles.bubbleFooter}>
               <Symbol name="exclamationmark.triangle.fill" size={11} color={p.red} />

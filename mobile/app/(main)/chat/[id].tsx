@@ -43,6 +43,8 @@ import { chatShown, scrollBegan, scrollEnded } from "../../../src/core/timing";
 import { t, useLanguage } from "../../../src/i18n";
 import { ParticipantCluster } from "../../../src/ui/Avatar";
 import { Composer } from "../../../src/ui/Composer";
+import { MessageReader } from "../../../src/ui/MessageReader";
+import type { MessageFrame } from "../../../src/ui/longMessage";
 import { RunningAgents } from "../../../src/ui/RunningAgents";
 import { ParticipantsSheet } from "../../../src/ui/ParticipantsSheet";
 import { AgentActionsSheet } from "../../../src/ui/AgentActionsSheet";
@@ -109,6 +111,9 @@ export default function ChatScreen() {
   const isWorking = useIsWorking(id);
   const hasTasks = useRunningTasks(id).length > 0;
   const status = useStore((s) => s.statuses[id] ?? null);
+  // A long message read whole, from the place its bubble stands.
+  const [reader, setReader] = useState<{ message: Message; frame: MessageFrame } | null>(null);
+  const openReader = useCallback((message: Message, frame: MessageFrame) => setReader({ message, frame }), []);
   const listRef = useRef<LegendListRef>(null);
   // The composer floats over the transcript and rides the keyboard (KeyboardFoot). The
   // list is never resized: the chat scroll view keeps a bottom inset for the composer and adds
@@ -505,6 +510,7 @@ export default function ChatScreen() {
               onQuotePress={revealQuoted}
               onEdit={startEdit}
               onRegenerate={regenerate}
+              onOpenMessage={openReader}
               flashing={flashId === item.message.id}
             />
           );
@@ -555,7 +561,7 @@ export default function ChatScreen() {
           return <StatusRow text={item.text} />;
       }
     },
-    [answerCard, answerCommand, fillSecret, bots, id, isGroup, speakers, openMarker, startReply, revealQuoted, flashId, stopCommand, startEdit, regenerate, openAgentActions, openAsk, openCommand, openQuestion],
+    [answerCard, answerCommand, fillSecret, bots, id, isGroup, speakers, openMarker, startReply, revealQuoted, flashId, stopCommand, startEdit, regenerate, openAgentActions, openAsk, openCommand, openQuestion, openReader],
   );
 
   if (!chat) {
@@ -766,6 +772,7 @@ export default function ChatScreen() {
         }}
         onStopAgent={(messageId) => engine.stopAgent(id, messageId)}
       />
+      {reader ? <MessageReader message={reader.message} frame={reader.frame} onClose={() => setReader(null)} /> : null}
     </View>
   );
 }

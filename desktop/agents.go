@@ -402,6 +402,7 @@ func (w *appWindow) presentAgentTranscript(chatID string, message *model.Message
 		})
 	}
 	w.present(func(c *ui.Context, s *sheet) {
+		t.fill = colors(c).Sheet
 		options := sheetOptions{
 			Width:    680,
 			Confirm:  L("Done"),

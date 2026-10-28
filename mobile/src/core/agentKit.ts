@@ -93,19 +93,24 @@ export interface OutputSpan {
   dim?: boolean;
 }
 
-/// A command's output as lines of colored spans, after its colors (`ESC [ … m`) only: every other
-/// control sequence is dropped, and a line a carriage return rewrote reads as what it ended as.
-export function outputSpans(output: string): OutputSpan[][] {
-  let style: Omit<OutputSpan, "text"> = {};
-  const lines = output
+/// A command's output as its terminal's lines: CRLF read as LF, a line a carriage return rewrote
+/// as what it ended as, and the blank lines it ends with dropped. A view that shows only the end
+/// takes its last lines before laying any of them out.
+export function outputLines(output: string): string[] {
+  return output
     .replace(/\r\n/g, "\n")
     .replace(/\n+$/, "")
-    .split("\n");
+    .split("\n")
+    .map((raw) => raw.slice(raw.lastIndexOf("\r") + 1));
+}
+
+/// Lines of colored spans, after their colors (`ESC [ … m`) only: every other control sequence is
+/// dropped, and style carries from one line to the next as it does in a terminal.
+export function spansForLines(lines: string[]): OutputSpan[][] {
+  let style: Omit<OutputSpan, "text"> = {};
   return lines.map((raw) => {
-    const line = raw
-      .slice(raw.lastIndexOf("\r") + 1)
-      // eslint-disable-next-line no-control-regex
-      .replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)?/g, "");
+    // eslint-disable-next-line no-control-regex
+    const line = raw.replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)?/g, "");
     const spans: OutputSpan[] = [];
     // eslint-disable-next-line no-control-regex
     const pattern = /\x1b\[([0-9;:]*)([@-~])/g;
@@ -126,6 +131,11 @@ export function outputSpans(output: string): OutputSpan[][] {
     push(line.slice(at));
     return spans.map((span) => Object.fromEntries(Object.entries(span).filter(([, value]) => value !== undefined)) as OutputSpan);
   });
+}
+
+/// A command's output as lines of colored spans, the whole of it.
+export function outputSpans(output: string): OutputSpan[][] {
+  return spansForLines(outputLines(output));
 }
 
 function applySgr(style: Omit<OutputSpan, "text">, params: string): Omit<OutputSpan, "text"> {
