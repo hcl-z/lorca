@@ -329,6 +329,14 @@ func TestSettingsReveal(t *testing.T) {
 
 func TestRenderSettingsWindow(t *testing.T) {
 	demoWindow(t)
+	// The general pane asks the updater; a test has none, so it stands in for its answers.
+	enabled, automatic, state := settingsUpdatesEnabled, settingsAutomaticSwitches, settingsUpdaterState
+	settingsUpdatesEnabled = func() bool { return true }
+	settingsAutomaticSwitches = func() bool { return true }
+	settingsUpdaterState = func() updaterState { return updaterState{} }
+	t.Cleanup(func() {
+		settingsUpdatesEnabled, settingsAutomaticSwitches, settingsUpdaterState = enabled, automatic, state
+	})
 	s := newSettingsWindow()
 	tt := ui.NewTester(s.frame(s.view), 560, 480)
 	tt.Frame()
