@@ -472,9 +472,10 @@ impl LocalStore {
     /// Every message of a chat in its order.
     pub fn all(&self, chat_id: &str) -> anyhow::Result<Vec<Message>> {
         let connection = self.connection.lock().unwrap();
-        let mut statement = connection
-            .prepare("SELECT message_json FROM messages WHERE chat_id = ?1 ORDER BY position")?;
-        let rows = statement.query_map([chat_id], |row| row.get::<_, String>(0))?;
+        let mut statement = connection.prepare(
+            "SELECT id, chat_id, position, message_json FROM messages WHERE chat_id = ?1 ORDER BY position",
+        )?;
+        let rows = statement.query_map([chat_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))?;
         collect_messages(rows)
     }
 
@@ -482,12 +483,12 @@ impl LocalStore {
     pub fn outputs(&self, chat_id: &str, task_id: Option<&str>) -> anyhow::Result<Vec<Message>> {
         let connection = self.connection.lock().unwrap();
         let mut statement = connection.prepare(
-            "SELECT message_json FROM messages WHERE chat_id = ?1
+            "SELECT id, chat_id, position, message_json FROM messages WHERE chat_id = ?1
              AND json_type(message_json, '$.output') = 'object'
              AND (?2 IS NULL OR json_extract(message_json, '$.output.task_id') = ?2)
              ORDER BY position",
         )?;
-        let rows = statement.query_map(params![chat_id, task_id], |row| row.get::<_, String>(0))?;
+        let rows = statement.query_map(params![chat_id, task_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))?;
         collect_messages(rows)
     }
 
@@ -512,32 +513,32 @@ impl LocalStore {
         };
         let (mut messages, cursor_found) = if let Some((sort_at, position)) = cursor {
             let mut statement = connection.prepare(
-                "SELECT message_json FROM messages
+                "SELECT id, chat_id, position, message_json FROM messages
                  WHERE chat_id = ?1 AND (sort_at > ?2 OR (sort_at = ?2 AND position > ?3))
                  ORDER BY sort_at, position",
             )?;
             let rows = statement.query_map(params![chat_id, sort_at, position], |row| {
-                row.get::<_, String>(0)
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
             })?;
             let messages = collect_messages(rows)?;
             (messages, true)
         } else if let Some(limit) = limit {
             let mut statement = connection.prepare(
-                "SELECT message_json FROM (
-                     SELECT message_json, sort_at, position FROM messages
+                "SELECT id, chat_id, position, message_json, sort_at FROM (
+                     SELECT id, chat_id, position, message_json, sort_at FROM messages
                      WHERE chat_id = ?1 ORDER BY sort_at DESC, position DESC LIMIT ?2
                  ) ORDER BY sort_at, position",
             )?;
             let rows = statement.query_map(params![chat_id, limit as i64], |row| {
-                row.get::<_, String>(0)
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
             })?;
             let messages = collect_messages(rows)?;
             (messages, false)
         } else {
             let mut statement = connection.prepare(
-                "SELECT message_json FROM messages WHERE chat_id = ?1 ORDER BY sort_at, position",
+                "SELECT id, chat_id, position, message_json FROM messages WHERE chat_id = ?1 ORDER BY sort_at, position",
             )?;
-            let rows = statement.query_map([chat_id], |row| row.get::<_, String>(0))?;
+            let rows = statement.query_map([chat_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))?;
             let messages = collect_messages(rows)?;
             (messages, false)
         };
@@ -567,13 +568,13 @@ impl LocalStore {
             None => i64::MAX,
         };
         let mut statement = connection.prepare(
-            "SELECT message_json FROM messages
+            "SELECT id, chat_id, position, message_json FROM messages
              WHERE chat_id = ?1 AND position < ?2
              ORDER BY position DESC LIMIT ?3",
         )?;
         let mut messages = collect_messages(
             statement.query_map(params![chat_id, end, (limit + 1) as i64], |row| {
-                row.get::<_, String>(0)
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
             })?,
         )?;
         let has_more = messages.len() > limit;
@@ -597,8 +598,8 @@ impl LocalStore {
         let total: i64 =
             connection.query_row("SELECT COUNT(*) FROM messages WHERE chat_id = ?1 AND position > ?2", params![chat_id, position], |row| row.get(0))?;
         let mut statement =
-            connection.prepare("SELECT message_json FROM messages WHERE chat_id = ?1 AND position > ?2 ORDER BY position DESC LIMIT ?3")?;
-        let mut messages = collect_messages(statement.query_map(params![chat_id, position, limit as i64], |row| row.get::<_, String>(0))?)?;
+            connection.prepare("SELECT id, chat_id, position, message_json FROM messages WHERE chat_id = ?1 AND position > ?2 ORDER BY position DESC LIMIT ?3")?;
+        let mut messages = collect_messages(statement.query_map(params![chat_id, position, limit as i64], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))?)?;
         messages.reverse();
         let left_out = (total as usize).saturating_sub(messages.len());
         Ok((messages, left_out))
@@ -613,8 +614,8 @@ impl LocalStore {
         let Some(newest) = newest else { return Ok(Vec::new()) };
         let align = align.max(1) as i64;
         let start = (newest - scan as i64).max(0) / align * align;
-        let mut statement = connection.prepare("SELECT message_json FROM messages WHERE chat_id = ?1 AND position >= ?2 ORDER BY position")?;
-        let messages = collect_messages(statement.query_map(params![chat_id, start], |row| row.get::<_, String>(0))?);
+        let mut statement = connection.prepare("SELECT id, chat_id, position, message_json FROM messages WHERE chat_id = ?1 AND position >= ?2 ORDER BY position")?;
+        let messages = collect_messages(statement.query_map(params![chat_id, start], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))?);
         messages
     }
 
@@ -631,10 +632,10 @@ impl LocalStore {
             return Ok(Vec::new());
         };
         let mut statement = connection.prepare(
-            "SELECT message_json FROM messages WHERE chat_id = ?1 AND position > ?2 ORDER BY position",
+            "SELECT id, chat_id, position, message_json FROM messages WHERE chat_id = ?1 AND position > ?2 ORDER BY position",
         )?;
         let rows =
-            statement.query_map(params![chat_id, position], |row| row.get::<_, String>(0))?;
+            statement.query_map(params![chat_id, position], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))?;
         collect_messages(rows)
     }
 
@@ -642,8 +643,8 @@ impl LocalStore {
     /// open.
     pub fn command_rows(&self) -> anyhow::Result<Vec<Message>> {
         let connection = self.connection.lock().unwrap();
-        let mut statement = connection.prepare("SELECT message_json FROM messages WHERE body_kind = 'tool' AND message_json LIKE '%\"run\":{%'")?;
-        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        let mut statement = connection.prepare("SELECT id, chat_id, position, message_json FROM messages WHERE body_kind = 'tool' AND message_json LIKE '%\"run\":{%'")?;
+        let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))?;
         collect_messages(rows)
     }
 
@@ -825,14 +826,14 @@ impl LocalStore {
     ) -> anyhow::Result<Vec<Message>> {
         let connection = self.connection.lock().unwrap();
         let mut statement = connection.prepare(
-            "SELECT message_json FROM messages
+            "SELECT id, chat_id, position, message_json FROM messages
              WHERE chat_id = ?1 AND body_kind = 'text' AND is_complete = 1
                AND (?2 IS NULL OR created_at >= ?2)
                AND (?3 IS NULL OR created_at <= ?3)
              ORDER BY position",
         )?;
         let rows = statement.query_map(params![chat_id, since, until], |row| {
-            row.get::<_, String>(0)
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
         })?;
         collect_messages(rows)
     }
@@ -849,7 +850,7 @@ impl LocalStore {
         let connection = self.connection.lock().unwrap();
         let mut statement = connection.prepare(
             "SELECT message_json FROM messages
-             WHERE body_kind IN ('text', 'handoff', 'notice', 'permission')
+             WHERE body_kind IN ('text', 'handoff', 'notice', 'permission', 'agent_message')
              ORDER BY created_at DESC, position DESC",
         )?;
         let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
@@ -1589,6 +1590,7 @@ fn message_search_text(message: &Message) -> Option<String> {
             format!("{text} {names}")
         }
         Body::Handoff { reason, .. } => reason.clone(),
+        Body::AgentMessage { text, .. } => text.clone(),
         Body::Notice { text, .. } => text.clone(),
         Body::Permission { summary, .. } => summary.clone(),
         Body::Draft { draft, .. } => format!("{} {} {}", draft.to.join(" "), draft.subject, draft.body),
@@ -1824,14 +1826,28 @@ fn load_device_seen(
     rows.collect::<rusqlite::Result<_>>().map_err(Into::into)
 }
 
+/// Decodes stored message rows. A row this version cannot decode (a body kind another Lorca
+/// wrote, or a damaged row) is skipped and logged: one bad row must not hide the rest of the
+/// chat from a turn, a page, or a search.
 fn collect_messages(
-    rows: impl Iterator<Item = rusqlite::Result<String>>,
+    rows: impl Iterator<Item = rusqlite::Result<(String, String, i64, String)>>,
 ) -> anyhow::Result<Vec<Message>> {
-    rows.map(|row| {
-        let json = row?;
-        serde_json::from_str(&json).context("decoding stored message")
-    })
-    .collect()
+    let mut messages = Vec::new();
+    let mut skipped = 0usize;
+    for row in rows {
+        let (id, chat_id, position, json) = row?;
+        match serde_json::from_str::<Message>(&json) {
+            Ok(message) => messages.push(message),
+            Err(error) => {
+                skipped += 1;
+                tracing::warn!(%error, %chat_id, message_id = %id, position, "skipping a stored message that does not decode");
+            }
+        }
+    }
+    if skipped > 0 {
+        tracing::warn!(skipped, "skipped stored messages that do not decode");
+    }
+    Ok(messages)
 }
 
 fn author_columns(author: &Author) -> (&'static str, Option<&str>) {
@@ -1848,6 +1864,7 @@ fn body_kind(body: &Body) -> &'static str {
         Body::Text { .. } => "text",
         Body::Tool { .. } => "tool",
         Body::Handoff { .. } => "handoff",
+        Body::AgentMessage { .. } => "agent_message",
         Body::Notice { .. } => "notice",
         Body::Permission { .. } => "permission",
         Body::Draft { .. } => "draft",
@@ -1965,6 +1982,48 @@ mod tests {
             messages.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(),
             vec!["steer"]
         );
+    }
+
+    #[test]
+    fn context_skips_messages_that_do_not_decode() {
+        let scratch = scratch();
+        scratch.0.upsert(&message("before", 1.0)).unwrap();
+        {
+            let connection = scratch.0.connection.lock().unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messages (id, chat_id, position, sort_at, created_at,
+                         author_kind, author_bot_id, body_kind, is_complete, text_nonempty, message_json)
+                     VALUES ('broken', 'chat', 2, 2.0, 2.0, 'bot', 'bot-1', 'unknown', 1, 1, ?1)",
+                    [r#"{"id":"broken","chat_id":"chat","author":{"kind":"bot","bot_id":"bot-1"},"body":{"kind":"from_the_future"},"state":{"kind":"complete"},"created_at":2.0}"#],
+                )
+                .unwrap();
+        }
+        scratch.0.upsert(&message("after", 3.0)).unwrap();
+        let (messages, _) = scratch.0.context("chat", None, Some(10)).unwrap();
+        assert_eq!(
+            messages.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(),
+            vec!["before", "after"]
+        );
+    }
+
+    #[test]
+    fn context_reads_an_upstream_agent_message() {
+        let scratch = scratch();
+        {
+            let connection = scratch.0.connection.lock().unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messages (id, chat_id, position, sort_at, created_at,
+                         author_kind, author_bot_id, body_kind, is_complete, text_nonempty, message_json)
+                     VALUES ('agent', 'chat', 1, 1.0, 1.0, 'bot', 'bot-1', 'agent_message', 1, 1, ?1)",
+                    [r#"{"id":"agent","chat_id":"chat","author":{"kind":"bot","bot_id":"bot-1"},"body":{"kind":"agent_message","agent_id":"agent-1","agent_kind":"claude","title":"A session","text":"Waiting."},"state":{"kind":"complete"},"created_at":1.0}"#],
+                )
+                .unwrap();
+        }
+        let (messages, _) = scratch.0.context("chat", None, Some(10)).unwrap();
+        assert_eq!(messages.len(), 1);
+        assert!(matches!(messages[0].body, Body::AgentMessage { .. }), "{:?}", messages[0].body);
     }
 
     #[test]
@@ -2125,6 +2184,21 @@ mod tests {
         deployed.body = Body::text("Finished something else");
         scratch.0.upsert(&deployed).unwrap();
         assert!(scratch.0.search_messages("deploy", 10).unwrap().is_empty());
+
+        let mut agent = message("agent", 3.0);
+        agent.body = Body::AgentMessage {
+            agent_id: "agent-1".into(),
+            agent_kind: "claude".into(),
+            title: "A session".into(),
+            text: "Reviewed the transcript".into(),
+            failed: false,
+        };
+        scratch.0.upsert(&agent).unwrap();
+        assert_eq!(
+            scratch.0.search_messages("reviewed transcript", 10).unwrap()[0].message_id,
+            "agent"
+        );
+
         scratch.0.remove("chat", "deployed").unwrap();
         assert!(scratch
             .0

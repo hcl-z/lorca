@@ -326,7 +326,7 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         cue: if job.kind == "room_turn" { Some(room_turn_cue(app, &chat, &bot, job)) } else if job.kind == SETUP_JOB { Some("[You were just created. Start setting yourself up with the user now.]".to_string()) } else { event.as_ref().map(|e| e.data.clone()).or(command_end.clone()).or(check_found).map(|cue| without_secrets(app, cue)) },
         setup: job.setup.as_ref().map(|setup| setup_cue(app, setup)),
     };
-    let (mut messages, mut cache_points) = with_turn_notes(messages, &notes);
+    let (mut messages, mut cache_points) = with_turn_notes(messages, &notes, trigger_message_cue(app, job));
 
     let sink = Arc::new(TurnSink(std::sync::Mutex::new(TurnState {
         app: app.clone(),
@@ -426,7 +426,7 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
                 Ok(Some(tokens_before)) => {
                     tracing::info!(bot = %bot.name, chat = %chat.meta.id, tokens_before, "the context overflowed; compacted and retried");
                     let latest = app.chat(&job.chat_id).unwrap_or(latest);
-                    (messages, cache_points) = with_turn_notes(transcript_for(app, &latest, &bot, &workdir), &notes);
+                    (messages, cache_points) = with_turn_notes(transcript_for(app, &latest, &bot, &workdir), &notes, trigger_message_cue(app, job));
                     let mut state = sink.0.lock().unwrap();
                     state.failed = false;
                     state.last_error = None;
@@ -1382,24 +1382,52 @@ fn turn_brief(app: &App, job: &Job, routine: Option<&Routine>, event: Option<&cr
 const TURN_BRIEF_MARKER: &str = "[This turn, from Lorca:";
 
 /// The rebuilt transcript followed by the turn's notes, and the transcript's cache points.
-fn with_turn_notes(mut messages: Vec<AgentMessage>, notes: &TurnNotes) -> (Vec<AgentMessage>, Vec<usize>) {
+/// `trigger_cue` stands in for an empty transcript: a failed rebuild, or a chat whose first
+/// message is this turn's trigger, must not turn into "Continue." and lose the message.
+fn with_turn_notes(
+    mut messages: Vec<AgentMessage>,
+    notes: &TurnNotes,
+    trigger_cue: Option<String>,
+) -> (Vec<AgentMessage>, Vec<usize>) {
     let cache_points = transcript_cache_points(&messages);
-    let ends_with_reply = messages.last().map(AgentMessage::is_assistant).unwrap_or(true);
+    let transcript_empty = messages.is_empty();
+    let ends_with_reply = messages.last().is_some_and(AgentMessage::is_assistant);
     if let Some(recent_work) = &notes.recent_work {
         messages.push(AgentMessage::User(UserMessage::text(recent_work.clone())));
     }
     if let Some(recalled) = &notes.recalled {
         messages.push(AgentMessage::User(UserMessage::text(recalled.clone())));
     }
-    match &notes.cue {
-        Some(cue) => messages.push(AgentMessage::User(UserMessage::text(cue.clone()))),
-        None if ends_with_reply => messages.push(AgentMessage::User(UserMessage::text("Continue."))),
-        None => {}
+    let cue = match &notes.cue {
+        Some(cue) => Some(cue.as_str()),
+        None if transcript_empty => trigger_cue.as_deref(),
+        None => None,
+    };
+    if let Some(cue) = cue {
+        messages.push(AgentMessage::User(UserMessage::text(cue)));
+    } else if ends_with_reply {
+        messages.push(AgentMessage::User(UserMessage::text("Continue.")));
     }
     if let Some(setup) = &notes.setup {
         messages.push(AgentMessage::User(UserMessage::text(setup.clone())));
     }
     (messages, cache_points)
+}
+
+/// The message that started the turn, as the cue an empty transcript falls back to. A normal
+/// direct turn carries the user's words in the transcript; when the transcript cannot be
+/// rebuilt they must still reach the model.
+fn trigger_message_cue(app: &App, job: &Job) -> Option<String> {
+    let message = app.message(&job.chat_id, &job.trigger_message_id)?;
+    if message.author != Author::You {
+        return None;
+    }
+    let Body::Text { text, .. } = &message.body else { return None };
+    let text = text.trim();
+    if text.is_empty() {
+        return None;
+    }
+    Some(format!("[The message that started this turn. Answer it:\n{text}]"))
 }
 
 /// A rebuilt transcript's cache points: its end, which later turns send again before notes of
@@ -2630,6 +2658,14 @@ fn transcript_bounded(app: &App, chat: &Chat, bot: &Bot, workdir: &std::path::Pa
             (Author::Bot { .. }, Body::Text { text, .. }) if message.agent.is_some() => {
                 let agent = message.agent.as_ref().expect("an agent message");
                 out.push(user(&format!("[{} (your coding agent {}, in the chat)]: {text}", agent.name, agent.id), timestamp));
+            }
+            // An upstream coding agent's report in the chat: the work it was asked for, not the
+            // bot's own words.
+            (Author::Bot { .. }, Body::AgentMessage { agent_id, agent_kind, text, .. }) => {
+                out.push(user(
+                    &format!("[{} (your coding agent {agent_id}, in the chat)]: {text}", agent_name(agent_kind)),
+                    timestamp,
+                ));
             }
             (Author::Bot { bot_id }, Body::Text { text, attachments, .. }) if message.output.is_some() => {
                 let output = message.output.as_ref().unwrap();
@@ -4424,7 +4460,7 @@ mod tests {
             cue: Some("[Your turn in the group …]".into()),
             setup: None,
         };
-        let (messages, points) = with_turn_notes(transcript.clone(), &notes);
+        let (messages, points) = with_turn_notes(transcript.clone(), &notes, None);
         assert_eq!(points, vec![4, 1], "the transcript's end, and the last turn's before the bot's reply");
         assert_eq!(
             messages[4..].iter().map(said).collect::<Vec<_>>(),
@@ -4432,13 +4468,43 @@ mod tests {
         );
 
         // A turn no new message opened goes on from the bot's reply.
-        let (messages, points) = with_turn_notes(transcript[..2].to_vec(), &none);
+        let (messages, points) = with_turn_notes(transcript[..2].to_vec(), &none, None);
         assert_eq!(points, vec![2, 1]);
         assert_eq!(said(messages.last().unwrap()), "Continue.");
 
         // A first turn caches its transcript alone.
-        let (messages, points) = with_turn_notes(vec![AgentMessage::user("hi")], &none);
+        let (messages, points) = with_turn_notes(vec![AgentMessage::user("hi")], &none, None);
         assert_eq!((points, messages.len()), (vec![1], 1));
+
+        // An empty transcript is not the bot's own reply: it must not become "Continue.".
+        let (messages, points) = with_turn_notes(Vec::new(), &none, None);
+        assert!(messages.is_empty(), "{messages:?}");
+        assert!(points.is_empty(), "{points:?}");
+    }
+
+    #[test]
+    fn an_empty_transcript_reads_the_turns_trigger_message() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        let chef = bot("b1", "Chef");
+        app.state.lock().unwrap().bots.push(chef);
+        app.state.lock().unwrap().chats.push(chat("dm", "dm", None, &["b1"]));
+        let trigger = said("dm", Author::You, "帮我拉lorca的main最新分支，然后开一个worktree", 1.0);
+        let job = crate::runtime::user_turn_job(app, "dm", "b1", &trigger.id);
+        app.upsert_message(trigger, false);
+        let cue = trigger_message_cue(app, &job).expect("the trigger message as a cue");
+        assert!(cue.contains("帮我拉lorca的main最新分支"), "{cue}");
+
+        let none = TurnNotes { recent_work: None, recalled: None, cue: None, setup: None };
+        let (messages, _) = with_turn_notes(Vec::new(), &none, Some(cue));
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        let AgentMessage::User(UserMessage { content, .. }) = &messages[0] else {
+            panic!("{messages:?}")
+        };
+        assert!(
+            matches!(&content[..], [ContentPart::Text { text }] if text.contains("帮我拉lorca的main最新分支")),
+            "{content:?}"
+        );
     }
 
     /// Answers each request with the next scripted reply, a tool call (`name {json}`) or text,
