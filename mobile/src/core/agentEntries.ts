@@ -13,10 +13,6 @@ export interface AgentEntry {
   level?: string;
   /** How a compaction stands: `in_progress`, `completed`, `failed`, or `cancelled`. */
   status?: string;
-  /** How long a thought took, in seconds, while it thinks. */
-  seconds?: number;
-  /** `user` on what the user sent the agent, absent on what the bot sent. */
-  from?: string;
   tool?: AgentTool;
   steps?: { text: string; done: boolean }[];
 }

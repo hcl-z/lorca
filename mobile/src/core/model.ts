@@ -450,8 +450,6 @@ export interface AgentRun {
   outcome?: string;
   /** The pull request it opened, when its transcript names one. */
   pull_request?: string;
-  /** What its work changed against the commit it started from. */
-  changes?: { files: number; added: number; removed: number };
   device?: string;
   /** When it started, in Unix seconds. */
   started_at?: number;
