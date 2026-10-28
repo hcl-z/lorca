@@ -6,7 +6,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { ActivityIndicator, Linking, Platform, StyleSheet, Text, View } from "react-native";
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming, cancelAnimation } from "react-native-reanimated";
+import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withTiming, cancelAnimation } from "react-native-reanimated";
 import { agentBusy, agentContext, agentSetting, agentSince, agentTone, type AgentTone } from "../core/agentKit";
 import { engine } from "../core/engine";
 import { agentName, agentPlace, type AgentRun } from "../core/model";
@@ -124,8 +124,9 @@ export function AgentPill({ agent }: { agent: AgentRun }) {
   const since = busy ? agentSince(agent, now) : "";
   const words = since ? `${agentWords(agent)} · ${since}` : agentWords(agent);
   const breath = useSharedValue(1);
+  const reduceMotion = useReducedMotion();
   useEffect(() => {
-    if (!busy) {
+    if (!busy || reduceMotion) {
       cancelAnimation(breath);
       breath.value = 1;
       return;
@@ -133,7 +134,7 @@ export function AgentPill({ agent }: { agent: AgentRun }) {
     breath.value = 0.35;
     breath.value = withRepeat(withTiming(1, { duration: 800, easing: Easing.inOut(Easing.ease) }), -1, true);
     return () => cancelAnimation(breath);
-  }, [busy, breath]);
+  }, [busy, breath, reduceMotion]);
   const dot = useAnimatedStyle(() => ({ opacity: breath.value }));
   return (
     <View style={[styles.pill, { backgroundColor: alpha(tint, 0.13) }]} accessibilityLabel={words}>
@@ -154,7 +155,7 @@ export function AgentHeader({ agent, tile = 32, size = 15, sub, trailing }: { ag
     <View style={styles.header}>
       <AgentTile kind={agent.kind} size={tile} />
       <View style={{ flex: 1, minWidth: 0, gap: 1 }}>
-        <Text style={{ color: p.label, fontSize: size, fontWeight: "600" }} numberOfLines={1}>
+        <Text style={{ color: agentBrand(agent.kind, p.dark), fontSize: size, fontWeight: "600" }} numberOfLines={1}>
           {agentName(agent)}
         </Text>
         {place ? (

@@ -29,6 +29,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SoftScrollEdgeView } from "../../../modules/lorca-core/SoftScrollEdgeView";
 import { chatTitle, engine, type PickedFile } from "../../../src/core/engine";
 import { isLive, showsSpeakers, type AgentRun, type Bot, type Message } from "../../../src/core/model";
+import { showsSpeakersIn } from "../../../src/core/participants";
 import { chatAgents, mentionTargets } from "../../../src/core/participants";
 import {
   useBotMap,
@@ -324,7 +325,7 @@ export default function ChatScreen() {
   );
   const isGroup = chat?.kind === "group";
   // A channel's conversation shows its speakers by name, as a group does.
-  const speakers = chat ? showsSpeakers(chat) : false;
+  const speakers = chat ? showsSpeakersIn(chat) : false;
   const title = chat ? chatTitle(chat) : t("Chat");
   // The agent card changes rarely; keep the composer's target list from changing with every
   // streamed word of a reply, or its memo would re-render on each one.
@@ -461,7 +462,7 @@ export default function ChatScreen() {
             <MessageRow
               row={item}
               bots={bots}
-              isGroup={speakers}
+              speakers={speakers}
               onReply={startReply}
               onQuotePress={revealQuoted}
               onEdit={startEdit}

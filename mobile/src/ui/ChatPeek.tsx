@@ -8,6 +8,7 @@ import { t, useLanguage } from "../i18n";
 import { AvatarCluster } from "./Avatar";
 import { usePalette } from "./theme";
 import { buildRows, DayRow, MarkerRow, MessageRow, NoticeRow } from "./transcript";
+import { showsSpeakersIn } from "../core/participants";
 
 const PEEK_MESSAGES = 6;
 const HEADER_HEIGHT = 48;
@@ -33,7 +34,7 @@ export function ChatPeek({ chat, bots, title }: { chat: Chat; bots: Map<string, 
                 case "day":
                   return <DayRow key={row.key} at={row.at} />;
                 case "message":
-                  return <MessageRow key={row.key} row={row} bots={bots} isGroup={showsSpeakers(chat)} />;
+                  return <MessageRow key={row.key} row={row} bots={bots} speakers={showsSpeakersIn(chat)} />;
                 case "marker":
                   return <MarkerRow key={row.key} row={row} />;
                 case "notice":

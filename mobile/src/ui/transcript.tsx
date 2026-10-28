@@ -10,17 +10,17 @@ import { Pressable } from "./Pressable";
 import * as Clipboard from "expo-clipboard";
 import { haptic } from "./haptics";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSequence, withSpring, withTiming } from "react-native-reanimated";
+import Animated, { FadeIn, LinearTransition, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withSequence, withSpring, withTiming } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { ShimmerView } from "../../modules/lorca-core/ShimmerView";
-import { agentIsRunning, agentName, agentStarted, assignedTo, canBeQuoted, isLive, isSentMessage, showsCard, showsSpeakers, type AgentRun, type AskQuestion, type Author, type Body, type Bot, type Chat, type CommandRun, type Message } from "../core/model";
+import { agentIsRunning, agentKindName, agentName, agentStarted, assignedTo, canBeQuoted, isLive, isSentMessage, showsCard, showsSpeakers, type AgentRun, type AskQuestion, type Author, type Body, type Bot, type Chat, type CommandRun, type Message } from "../core/model";
 import { engine } from "../core/engine";
 import { canRegenerate, rerunnable } from "../core/rerun";
 import { answerWords, askAnswer, sendsOnPick, togglePick } from "../core/ask";
 import * as agentAsk from "../core/agentAsk";
 import { agentBusy, agentSince, agentTail } from "../core/agentKit";
-import { AgentHeader, AgentTile, Callout, ConsoleTail, PullRequestButton, SpecStrip, StopButton, alpha, useNow } from "./agentKit";
+import { AgentHeader, AgentTile, Callout, ConsoleTail, PullRequestButton, SpecStrip, StopButton, agentBrand, alpha, useNow } from "./agentKit";
 import { useStore } from "../core/store";
 import { language, t, tc, useLanguage } from "../i18n";
 import { AttachmentBlock } from "./attachments";
@@ -154,7 +154,7 @@ function useSwipeToReply(onReply?: () => void) {
 export const MessageRow = memo(function MessageRow({
   row,
   bots,
-  isGroup,
+  speakers,
   onReply,
   onQuotePress,
   onEdit,
@@ -163,7 +163,7 @@ export const MessageRow = memo(function MessageRow({
 }: {
   row: Extract<Row, { type: "message" }>;
   bots: Map<string, Bot>;
-  isGroup: boolean;
+  speakers: boolean;
   onReply?: (message: Message) => void;
   onQuotePress?: (messageID: string) => void;
   onEdit?: (message: Message) => void;
@@ -189,7 +189,7 @@ export const MessageRow = memo(function MessageRow({
   const text = message.body.kind === "text" ? message.body.text : "";
   const attachments = message.body.kind === "text" ? (message.body.attachments ?? []) : [];
   const failed = message.state.kind === "failed";
-  const showsAvatar = isGroup && !isYou;
+  const showsAvatar = speakers && !isYou;
   // A bot's published output is a card of its own, without a bubble.
   const isOutput = isOutputCard(message);
   // The bubble column is 80% of the pane, up to a readable line; the bubble pads 13 a side.
@@ -197,6 +197,11 @@ export const MessageRow = memo(function MessageRow({
   const columnWidth = Math.min(Math.floor(paneWidth * 0.8), BUBBLE_COLUMN_MAX);
   const attachmentWidth = columnWidth - 26 - (showsAvatar ? AVATAR + GUTTER : 0);
   const quoteName = quote ? quoteAuthorName(quote, bots) : "";
+  const agent = message.agent;
+  const agentLabel = agent ? agent.name || agentKindName(agent.kind) : "";
+  const reduceMotion = useReducedMotion();
+  const appear = reduceMotion ? undefined : FadeIn.duration(180);
+  const settle = reduceMotion ? undefined : LinearTransition;
   const swipe = useSwipeToReply(reply);
   return (
     <View>
@@ -206,15 +211,18 @@ export const MessageRow = memo(function MessageRow({
     <Animated.View style={swipe.follow}>
     <View style={[styles.messageRow, { paddingTop: stackAbove ? 0 : groupStart ? 14 : 3 }, isYou ? styles.messageRowYou : styles.messageRowBot]}>
       {showsAvatar && (
-        <View style={{ width: AVATAR + GUTTER, alignSelf: "flex-end" }}>
-          {groupEnd && (contact !== undefined ? <ContactAvatar name={contact} size={AVATAR} /> : <BotAvatar bot={bot} size={AVATAR} />)}
-        </View>
+        <Animated.View entering={appear} layout={settle} style={{ width: AVATAR + GUTTER, alignSelf: "flex-end" }}>
+          {groupEnd &&
+            (agent ? <AgentTile kind={agent.kind} size={AVATAR} round /> : contact !== undefined ? <ContactAvatar name={contact} size={AVATAR} /> : <BotAvatar bot={bot} size={AVATAR} />)}
+        </Animated.View>
       )}
       <View style={[styles.bubbleColumn, { maxWidth: columnWidth }, isYou && styles.bubbleColumnYou]}>
         {showsName && (
-          <Text style={[styles.author, { color: p.secondaryLabel }]} numberOfLines={1}>
-            {contact ?? bot?.name ?? t("Bot")}
-          </Text>
+          <Animated.View entering={appear} layout={settle}>
+            <Text style={[styles.author, { color: agent ? agentBrand(agent.kind, p.dark) : p.secondaryLabel }]} numberOfLines={1}>
+              {agent ? agentLabel : (contact ?? bot?.name ?? t("Bot"))}
+            </Text>
+          </Animated.View>
         )}
         {quote && (
           <Pressable
@@ -224,9 +232,9 @@ export const MessageRow = memo(function MessageRow({
             accessibilityRole="button"
             accessibilityLabel={t("In reply to {name}: {text}", { name: quoteName, text: quote.text })}
           >
-            <Symbol name="arrowshape.turn.up.left.fill" size={10} color={p.tertiaryLabel} />
+            {quote.agent ? <AgentTile kind={quote.agent.kind} size={12} round /> : <Symbol name="arrowshape.turn.up.left.fill" size={10} color={p.tertiaryLabel} />}
             <Text style={[styles.quoteText, { color: p.secondaryLabel }]} numberOfLines={1}>
-              <Text style={styles.quoteName}>{quoteName}:</Text> {quote.text}
+              <Text style={[styles.quoteName, quote.agent ? { color: agentBrand(quote.agent.kind, p.dark) } : null]}>{quoteName}:</Text> {quote.text}
             </Text>
           </Pressable>
         )}
@@ -297,7 +305,7 @@ export const MessageRow = memo(function MessageRow({
   a.onEdit === b.onEdit &&
   a.onRegenerate === b.onRegenerate &&
   a.bots === b.bots &&
-  a.isGroup === b.isGroup &&
+  a.speakers === b.speakers &&
   a.onReply === b.onReply &&
   a.onQuotePress === b.onQuotePress &&
   a.flashing === b.flashing,
@@ -415,11 +423,6 @@ function SecretRow({ row, isGroup, onDecide, onFill }: { row: Extract<Row, { typ
   const caption = secretCaption(body);
   return (
     <View style={[styles.messageRow, { paddingTop: row.groupStart ? 14 : 6 }]}>
-      {showsAvatar && (
-        <View style={{ width: AVATAR + GUTTER, alignSelf: "flex-end" }}>
-          <BotAvatar bot={row.bot} size={AVATAR} />
-        </View>
-      )}
       <View style={[styles.permission, { backgroundColor: p.botBubble }]}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <Symbol name="key" size={16} color={pending ? p.tint : p.secondaryLabel} />
@@ -727,10 +730,9 @@ export const AgentAskRow = memo(function AgentAskRow({ row, ask, isGroup }: { ro
   const [draft, setDraft] = useState<agentAsk.AgentAskDraft>(agentAsk.emptyDraft);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const showsAvatar = isGroup && row.message.author.kind === "bot";
   const pending = row.body.decision === "pending";
   const who = row.bot?.name ?? t("The bot");
-  const width = Math.min(usePaneWidth() - 2 * INSET - (showsAvatar ? AVATAR + GUTTER : 0), 420) - 2 * 14;
+  const width = Math.min(usePaneWidth() - 2 * INSET, 420) - 2 * 14;
   const filled = (next: agentAsk.AgentAskDraft) => agentAsk.formValues(ask, next, t("Yes"), t("No"), t(", "));
   const act = (work: () => Promise<void>) => {
     if (busy) return;
@@ -762,11 +764,6 @@ export const AgentAskRow = memo(function AgentAskRow({ row, ask, isGroup }: { ro
           : t("{agent} stopped before it was answered", { agent: ask.name });
   return (
     <View style={[styles.messageRow, { paddingTop: row.groupStart ? 14 : 6 }]}>
-      {showsAvatar && (
-        <View style={{ width: AVATAR + GUTTER, alignSelf: "flex-end" }}>
-          <BotAvatar bot={row.bot} size={AVATAR} />
-        </View>
-      )}
       <View style={[styles.permission, { backgroundColor: p.botBubble }]}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
           <AgentTile kind={ask.kind} size={32} />
@@ -1149,7 +1146,6 @@ export const AgentRow = memo(function AgentRow({
   const [error, setError] = useState<string | null>(null);
   const { agent } = row;
   const question = agent.question;
-  const showsAvatar = isGroup && row.message.author.kind === "bot";
   const who = row.bot?.name ?? t("The bot");
   const name = agentName(agent);
   const asks = question && (question.kind === "start" || question.kind === "command") ? question : undefined;
@@ -1187,11 +1183,6 @@ export const AgentRow = memo(function AgentRow({
   );
   return (
     <View style={[styles.messageRow, { paddingTop: row.groupStart ? 14 : 6 }]}>
-      {showsAvatar && (
-        <View style={{ width: AVATAR + GUTTER, alignSelf: "flex-end" }}>
-          <BotAvatar bot={row.bot} size={AVATAR} />
-        </View>
-      )}
       <View style={[styles.permission, styles.agentCard, { backgroundColor: p.botBubble }]}>
         <AgentHeader agent={agent} trailing={agentIsRunning(agent) ? <StopButton busy={busy} onPress={() => void run(() => onStop(row.message))} /> : null} />
         {agentStarted(agent) ? (
