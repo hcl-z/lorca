@@ -1,0 +1,33 @@
+desktop/palette.go
+  s_25d443432cd2e6::t_6910bc3031ef1f 135
+desktop/updater.go
+  s_25d443432cd2e6::t_87306e5d1e8944 26-29
+desktop/commands.go
+  s_25d443432cd2e6::t_35c2d4da4d5946 359
+  s_25d443432cd2e6::t_910a1e0bc6b9d8 372
+  s_25d443432cd2e6::t_57b0f623c70338 155
+desktop/settings_general.go
+  s_25d443432cd2e6::t_dd12a7a0e2b688 171-183
+  s_25d443432cd2e6::t_2f5af21ab7435d 17-19
+  s_25d443432cd2e6::t_eeb54c5f4a7991 170
+docs/architecture/desktop-builds.md
+  s_25d443432cd2e6::t_a2321a018be050 7
+desktop/settings_test.go
+  s_25d443432cd2e6::t_a3626a5945e449 20,22,26-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "a05e1164349ce11c3e0b835ed8a8fed10d87c4ca",
+  "prompts": {},
+  "sessions": {
+    "s_25d443432cd2e6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1fb85433-56d2-4977-b592-59f43ee51b08",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
