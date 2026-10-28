@@ -1,0 +1,30 @@
+mobile/src/ui/ParticipantsSheet.tsx
+  s_b9e6899a28ad81::t_fdcdddbe87e7b3 59
+mobile/src/ui/ChatsScreen.tsx
+  s_b9e6899a28ad81::t_5ddec8d1d2095a 30,67,272,316,319-324,332,346
+mobile/src/ui/ChatRow.tsx
+  s_b9e6899a28ad81::t_20cef4468f12ca 13-14,26
+  s_b9e6899a28ad81::t_9f5aefdf138ea7 50-55
+mobile/src/ui/agentKit.tsx
+  s_b9e6899a28ad81::t_fdcdddbe87e7b3 177,185
+mobile/src/i18n/zh.ts
+  s_b9e6899a28ad81::t_7ad12c13c89aa8 478,1046
+mobile/src/ui/format.ts
+  s_b9e6899a28ad81::t_20cef4468f12ca 159-169
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "9b77a2314e6d44061993effecb326c219a3ffcc2",
+  "prompts": {},
+  "sessions": {
+    "s_b9e6899a28ad81": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9f769ae6-f904-41e2-aae4-1e185238e8bc",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
