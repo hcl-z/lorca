@@ -152,6 +152,9 @@ func (a *appDelegate) didFinishLaunching() {
 	}
 }
 
+// unreadBadge is the count on the app's icon: the unread replies of the chats that are not muted.
+func unreadBadge() int { return unreadTotal() }
+
 // storeChanged keeps what the app shows outside its windows in step with the store: the unread
 // badge and the tray's menu.
 func (a *appDelegate) storeChanged(event model.Event) {
@@ -161,7 +164,6 @@ func (a *appDelegate) storeChanged(event model.Event) {
 		// A muted chat keeps its count in the sidebar but leaves the badge alone.
 		setBadge(unreadTotal())
 	}
-	return count
 }
 
 func (a *appDelegate) finishStartup() {

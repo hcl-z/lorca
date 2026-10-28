@@ -350,8 +350,11 @@ type actionRowOptions struct {
 	Action  string
 	Mono    bool
 	Tooltip string
-	// Copied is the action having just copied something: a green check and its title.
+	// Copied is the action having just done its work (copied something): a green check and its
+	// title.
 	Copied bool
+	// Busy is the action under way: a spinner where it sits, and nothing to click until it ends.
+	Busy bool
 	// Second is an action before the main one, when the row has two.
 	Second string
 	Menu   func(*ui.Menu)
@@ -383,7 +386,9 @@ func actionRow(c *ui.Context, k *card, label string, o actionRowOptions) (ui.Ele
 		if o.Second != "" {
 			result.Second = linkButton(c, o.Second, false).Clicked()
 		}
-		if o.Action != "" {
+		if o.Busy {
+			spinner(c, 12).Label(o.Action)
+		} else if o.Action != "" {
 			b := actionButton(c, o.Action, o.Copied)
 			result.Action = b.Clicked()
 			if o.Menu != nil {

@@ -1619,4 +1619,6 @@ var zh = map[string]string{
 	"%d seconds":     "%d 秒",
 	"needs approval": "待批准",
 	"needs you":      "待你处理",
+	"Compacting…":    "正在压缩…",
+	"Compacted":      "已压缩",
 }
