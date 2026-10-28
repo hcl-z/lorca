@@ -166,6 +166,12 @@ async fn answer(app: &Arc<App>, from: &str, request: &Request) -> Result<Value, 
         verb if verb.starts_with("secrets.") => crate::secrets::serve(app, verb, body),
         #[cfg(feature = "runner")]
         "bash.stdin" | "bash.stop" | "bash.background" => crate::shell::serve(app, &request.verb, body).await,
+        // Stop in the chat reaches the bot's Runner, which stops its coding agents there too.
+        "chats.stop" => {
+            let chat_id = body["chat_id"].as_str().ok_or("missing chat_id")?;
+            crate::runtime::cancel_chat(app, chat_id);
+            Ok(json!({ "stopped": true }))
+        }
         // A coding agent's card on another Device: its transcript, Stop, and an answer to what it
         // asks.
         #[cfg(feature = "runner")]
@@ -341,5 +347,36 @@ pub(crate) mod tests {
         let here = on_runner(&asker.0, "elsewhere", "profile.read", json!({}), REQUEST_TIMEOUT, async |_| Ok(json!("here"))).await;
         assert_eq!(here.unwrap_err(), "elsewhere is offline.");
         assert_eq!(direct.asked.lock().unwrap().len(), 2, "a Runner that is not this Device is asked");
+    }
+}
+
+#[cfg(test)]
+mod chat_stop_tests {
+    use super::*;
+    use crate::app::RunningJob;
+    use crate::model::Request;
+
+    struct Scratch(std::path::PathBuf);
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[tokio::test]
+    async fn a_stop_request_cancels_the_chats_jobs() {
+        let home = std::env::temp_dir().join(format!("lorca-chat-stop-{}", uuid::Uuid::new_v4()));
+        let _scratch = Scratch(home.clone());
+        let app = App::load(crate::config::Config { home, port: 0 }).unwrap();
+        let cancel = tokio_util::sync::CancellationToken::new();
+        app.running_jobs.lock().unwrap().insert(
+            "job".into(),
+            RunningJob { chat_id: "chat".into(), bot_id: "b1".into(), routine_id: None, runner_id: None, cancel: cancel.clone(), activity: None },
+        );
+        let request = Request { id: "req".into(), verb: "chats.stop".into(), body: json!({ "chat_id": "chat" }) };
+        let answer = answer(&app, "phone", &request).await.unwrap();
+        assert_eq!(answer, json!({ "stopped": true }));
+        assert!(cancel.is_cancelled());
     }
 }

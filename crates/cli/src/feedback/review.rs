@@ -96,6 +96,7 @@ pub async fn run(app: &Arc<App>, bot_id: &str, periodic: bool) -> Result<Value, 
     // review its limits refuse does not start.
     let dm = app.dm_with(bot_id, None).map_err(|e| e.to_string())?;
     let job = crate::model::Job {
+        agent_message: None,
         id: format!("feedback-review-{}", uuid::Uuid::new_v4()),
         chat_id: dm.meta.id.clone(),
         bot_id: bot_id.into(),

@@ -252,6 +252,13 @@ pub struct Agent {
 struct SaidChat {
     /// The entry key of the segment being said, and its message.
     current: Option<(String, Message)>,
+    /// What the message held before the segment being said.
+    prefix: String,
+    /// What separates the segment being said from the prefix: a space inside one message, a
+    /// paragraph after a tool call, plan, or note.
+    separator: String,
+    /// A tool call, plan, or note came since the last words: the next ones start a paragraph.
+    paragraph: bool,
     /// When the open message was last written to the chat.
     flushed: Option<Instant>,
 }
@@ -325,34 +332,43 @@ impl Agent {
             return;
         }
         let redactions = crate::secrets::Redactions::load(app);
-        let mut project: Vec<(String, String)> = Vec::new();
+        let mut project: Vec<(String, String, bool)> = Vec::new();
+        let mut paragraph = self.said.lock().unwrap().paragraph;
         {
             let mut entries = self.entries.lock().unwrap();
             for (key, entry) in new {
                 let entry = entry.cleaned(|text| redactions.text(&text).unwrap_or(text));
-                // What it says is a message of its own in the chat; a tool, a plan, a note, or a
-                // new prompt closes the one it was saying.
+                // What it says is a message of its own in the chat. A tool, a plan, or a note
+                // separates the next words with a paragraph, but does not end the message: one
+                // turn is one message. A new prompt ends it, and the next turn starts another.
                 if entry.kind == "said" {
-                    project.push((key.clone(), entry.text.clone()));
-                } else if matches!(entry.kind.as_str(), "tool" | "plan" | "note" | "sent") {
-                    project.push((String::new(), String::new()));
+                    project.push((key.clone(), entry.text.clone(), paragraph));
+                    paragraph = false;
+                } else if entry.kind == "sent" {
+                    project.push((String::new(), String::new(), true));
+                    paragraph = false;
+                } else if matches!(entry.kind.as_str(), "tool" | "plan" | "note") {
+                    paragraph = true;
                 }
                 entries.put(key, entry);
             }
         }
-        for (key, text) in project {
+        self.said.lock().unwrap().paragraph = paragraph;
+        for (key, text, paragraph) in project {
             if key.is_empty() {
                 self.end_said(app);
             } else {
-                self.say_in_chat(app, &key, &text);
+                self.say_in_chat(app, &key, &text, paragraph);
             }
         }
         *self.active_at.lock().unwrap() = Instant::now();
     }
 
-    /// Its words in the chat: one message per `said` segment, growing as it streams and complete
-    /// when the segment is. `@Name` in the chat sends it here (`from_user`).
-    fn say_in_chat(&self, app: &App, key: &str, text: &str) {
+    /// Its words in the chat: one message for the turn, growing as it streams and complete when
+    /// the turn is. A new `said` segment continues the same message; a tool call, plan, or note
+    /// only makes the next segment start a paragraph, and a new user message ends it. `@Name` in
+    /// the chat sends it here (`from_user`).
+    fn say_in_chat(&self, app: &App, key: &str, text: &str, paragraph: bool) {
         let text = text.trim();
         if text.is_empty() {
             return;
@@ -362,26 +378,43 @@ impl Agent {
         let mut said = self.said.lock().unwrap();
         let same = matches!(&said.current, Some((open, _)) if open == key);
         if !same {
-            if let Some((_, mut message)) = said.current.take() {
-                message.state = crate::model::MessageState::Complete;
-                app.upsert_message(message, true);
-            }
-            let mut message = Message::new(&record.chat_id, Author::Bot { bot_id: record.bot_id }, Body::text(text));
+            // Keep the turn's one message, with its id and when it started: a new segment only
+            // grows its text. A tool call, plan, or note makes the next segment a paragraph.
+            let (mut message, prefix, separator) = match said.current.take() {
+                Some((_, message)) => {
+                    let Body::Text { text: body, .. } = &message.body else {
+                        return;
+                    };
+                    let prefix = body.clone();
+                    let separator = if paragraph { "\n\n".to_string() } else { " ".to_string() };
+                    (message, prefix, separator)
+                }
+                None => (
+                    Message::new(&record.chat_id, Author::Bot { bot_id: record.bot_id }, Body::text(text)),
+                    String::new(),
+                    String::new(),
+                ),
+            };
+            let body = format!("{prefix}{separator}{text}");
+            message.body = Body::text(body);
             message.agent = Some(author);
             message.state = crate::model::MessageState::Streaming;
             app.upsert_message(message.clone(), true);
+            said.prefix = prefix;
+            said.separator = separator;
             said.current = Some((key.to_string(), message));
             said.flushed = Some(Instant::now());
             return;
         }
         let due = said.flushed.is_none_or(|flushed| flushed.elapsed() >= CHAT_FLUSH);
+        let body = format!("{}{}{}", said.prefix, said.separator, text);
         let (_, message) = said.current.as_mut().expect("a said message");
         let changed = match &mut message.body {
-            Body::Text { text: body, .. } => {
-                if body.as_str() == text {
+            Body::Text { text: current, .. } => {
+                if current.as_str() == body {
                     false
                 } else {
-                    *body = text.to_string();
+                    *current = body;
                     true
                 }
             }
@@ -394,13 +427,16 @@ impl Agent {
         }
     }
 
-    /// The segment it was saying is over: its message in the chat is complete.
+    /// The turn it was saying is over: its message in the chat is complete.
     fn end_said(&self, app: &App) {
         let mut said = self.said.lock().unwrap();
         if let Some((_, mut message)) = said.current.take() {
             message.state = crate::model::MessageState::Complete;
             app.upsert_message(message, true);
         }
+        said.prefix.clear();
+        said.separator.clear();
+        said.paragraph = false;
         said.flushed = None;
     }
 
@@ -885,16 +921,21 @@ pub(crate) fn mentioned(app: &App, chat_id: &str, bot_id: &str, text: &str) -> O
             continue;
         }
         let agent_name = name(&record.kind);
-        let Some((at, _)) = text.match_indices('@').find(|(at, _)| crate::runtime::mention_at(text, *at, agent_name)) else {
+        let Some(words) = without_mention(agent_name, text) else {
             continue;
         };
-        let end = at + 1 + agent_name.len();
-        let words = format!("{}{}", &text[..at], &text[end..]).trim().to_string();
         if found.as_ref().is_none_or(|(other, _)| record.started_at > other.record().started_at) {
             found = Some((agent, words));
         }
     }
     found
+}
+
+/// `text` without the first `@name`, when it addresses that agent.
+fn without_mention(name: &str, text: &str) -> Option<String> {
+    let (at, _) = text.match_indices('@').find(|(at, _)| crate::runtime::mention_at(text, *at, name))?;
+    let end = at + 1 + name.len();
+    Some(format!("{}{}", &text[..at], &text[end..]).trim().to_string())
 }
 
 /// The user's message in the chat goes to the agent as it was written, the `@Name` taken out,
@@ -922,6 +963,38 @@ pub(crate) fn from_user(app: &Arc<App>, agent: &Arc<Agent>, text: &str, message_
     });
 }
 
+/// Delivers an `agent_message` job on this Runner: the user's message goes to the agent it
+/// addresses, with the `@Name` taken out, before any turn job or chat lock. A job for the same
+/// user message the agent is already answering is skipped, so a redelivery is harmless.
+#[cfg(feature = "runner")]
+pub(crate) fn from_job(app: &Arc<App>, job: &crate::model::Job) {
+    let Some(target) = &job.agent_message else { return };
+    let agent = app.coding_agents.find(&job.chat_id, &job.bot_id, &target.id);
+    let (agent, words) = match agent {
+        Some(agent) => {
+            let record = agent.record();
+            if !matches!(record.state.as_str(), "starting" | "working" | "idle" | "asking") {
+                return;
+            }
+            if record.direct && record.trigger_message_id == job.trigger_message_id {
+                return;
+            }
+            // A picked agent may be addressed by the id alone, without its `@Name` in the
+            // text; then the whole text is the message. A typed `@Name` is stripped as usual.
+            let words = without_mention(name(&record.kind), &target.text).unwrap_or_else(|| target.text.trim().to_string());
+            (agent, words)
+        }
+        None => {
+            let Some((agent, words)) = mentioned(app, &job.chat_id, &job.bot_id, &target.text) else { return };
+            (agent, words)
+        }
+    };
+    if words.is_empty() {
+        return;
+    }
+    from_user(app, &agent, &words, &job.trigger_message_id);
+}
+
 /// Gives the agent a message from the bot: to its running process, or to a new process on its
 /// session when its process is gone (it was done and stopped, or Lorca restarted).
 pub(crate) async fn send(app: &Arc<App>, agent: &Arc<Agent>, text: &str, interrupt: bool) -> Result<String, String> {
@@ -932,7 +1005,10 @@ pub(crate) async fn send(app: &Arc<App>, agent: &Arc<Agent>, text: &str, interru
         kept.news = None;
         kept.stalled = false;
     }
-    *agent.budget.lock().unwrap() = crate::budgets::current();
+    // A job outside a turn has no budget of its own: keep the one the agent already carries.
+    if let Some(budget) = crate::budgets::current() {
+        *agent.budget.lock().unwrap() = Some(budget);
+    }
     if let Some(driver) = agent.driver() {
         driver.send(text, interrupt).await?;
         *agent.active_at.lock().unwrap() = Instant::now();
@@ -1019,6 +1095,7 @@ async fn supervise(app: Arc<App>, agent: Arc<Agent>, mut events: mpsc::Unbounded
                 record.stalled = true;
                 record.news = Some(News::Stalled);
             }
+            agent.end_said(&app);
             agents.sync(&app, &agent);
             save(&app);
             wake(&app, &agent);
@@ -1485,6 +1562,7 @@ fn bot_answers_questions(record: &Record) -> bool {
 /// stopping, is an `Err`, and the card says which.
 async fn converse(app: &Arc<App>, agent: &Arc<Agent>, ask: Ask) -> Result<Option<serde_json::Map<String, Value>>, String> {
     // One question at a time, as a permission is asked.
+    agent.end_said(app);
     let _one = agent.asking.lock().await;
     if !agent.is_running() {
         return Err("Stopped".into());

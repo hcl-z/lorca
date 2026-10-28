@@ -261,6 +261,7 @@ async fn join(app: &Arc<App>, pairing_string: &str, device_name: Option<String>)
     let machine = Machine::generate();
     let (host_name, os, os_version, model) = host_facts();
     let device = Device {
+        agent_messages: false,
         id: machine.pubkey(),
         name: device_name.filter(|n| !n.trim().is_empty()).unwrap_or(host_name),
         model,

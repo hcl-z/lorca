@@ -17,6 +17,7 @@ import { t, useLanguage } from "../i18n";
 import { AgentPill, AgentTile, ContextHairline, StopButton, alpha } from "./agentKit";
 import { alert } from "./alert";
 import { Float } from "./chrome";
+import { haptic } from "./haptics";
 import { firstLine } from "./format";
 import { usePaneWidth } from "./layout";
 import { Pressable } from "./Pressable";
@@ -25,7 +26,7 @@ import { accentColor, usePalette } from "./theme";
 
 const CARD_MAX = 320;
 
-export const RunningAgents = memo(function RunningAgents() {
+export const RunningAgents = memo(function RunningAgents({ onActions }: { onActions?: (message: Message) => void }) {
   useLanguage();
   // Re-rendered only when the agents at work change: a message elsewhere leaves the cards alone.
   const running = useStore(useShallow((s) => runningAgents(s.chats).flatMap((each) => [each.chat, each.message])));
@@ -37,7 +38,7 @@ export const RunningAgents = memo(function RunningAgents() {
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.strip} style={{ flexGrow: 0 }} keyboardShouldPersistTaps="handled">
       {found.map(({ chat, message, agent }) => (
-        <AgentFloat key={message.id} chat={chat} message={message} agent={agent} width={width} onClose={() => setHidden((was) => ({ ...was, [message.id]: true }))} />
+        <AgentFloat key={message.id} chat={chat} message={message} agent={agent} width={width} onActions={onActions} onClose={() => setHidden((was) => ({ ...was, [message.id]: true }))} />
       ))}
     </ScrollView>
   );
@@ -50,7 +51,7 @@ function chatsOf(running: (Chat | Message)[]): Chat[] {
   return [...chats];
 }
 
-function AgentFloat({ chat, message, agent, width, onClose }: { chat: Chat; message: Message; agent: AgentRun; width: number; onClose: () => void }) {
+function AgentFloat({ chat, message, agent, width, onClose, onActions }: { chat: Chat; message: Message; agent: AgentRun; width: number; onClose: () => void; onActions?: (message: Message) => void }) {
   const p = usePalette();
   const router = useRouter();
   const [stopping, setStopping] = useState(false);
@@ -70,6 +71,10 @@ function AgentFloat({ chat, message, agent, width, onClose }: { chat: Chat; mess
     <Float radius={18} style={{ width, overflow: "hidden" }}>
       <Pressable
         onPress={() => router.push({ pathname: "/agent/[id]", params: { id: message.id, chat: message.chat_id } })}
+        onLongPress={() => {
+          haptic.longPress();
+          onActions?.(message);
+        }}
         accessibilityRole="button"
         accessibilityLabel={`${agentName(agent)}: ${now}`}
         accessibilityHint={t("Show the transcript")}

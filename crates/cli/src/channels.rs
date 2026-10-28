@@ -764,7 +764,7 @@ mod runner {
                     }
                 }
                 let reply_to = incoming.reply_to.as_deref().and_then(|external| by_external_id(app, &chat.meta.id, external)).and_then(|quoted| ReplyTo::quoting(&quoted));
-                let mut message = Message::new(&chat.meta.id, Author::Contact { name: incoming.sender.clone() }, Body::Text { text: incoming.text.clone(), attachments: incoming.attachments.clone(), mentions: Vec::new(), reply_to });
+                let mut message = Message::new(&chat.meta.id, Author::Contact { name: incoming.sender.clone() }, Body::Text { agents: Vec::new(), text: incoming.text.clone(), attachments: incoming.attachments.clone(), mentions: Vec::new(), reply_to });
                 message.id = id.clone();
                 message.external_id = Some(incoming.message_id.clone());
                 app.upsert_message(message, true);
@@ -980,7 +980,7 @@ mod runner {
         let Some(chat) = chat else { return };
         let Some(bot_id) = calling_bot.map(str::to_string).filter(|bot| chat.meta.bot_ids.contains(bot)).or_else(|| chat.meta.bot_ids.first().cloned()) else { return };
         let quoted = reply_to.and_then(|external| by_external_id(app, &chat.meta.id, external)).and_then(|message| ReplyTo::quoting(&message));
-        let mut message = Message::new(&chat.meta.id, Author::Bot { bot_id }, Body::Text { text: text.to_string(), attachments: Vec::new(), mentions: Vec::new(), reply_to: quoted });
+        let mut message = Message::new(&chat.meta.id, Author::Bot { bot_id }, Body::Text { agents: Vec::new(), text: text.to_string(), attachments: Vec::new(), mentions: Vec::new(), reply_to: quoted });
         message.external_id = Some(external_id.to_string());
         message.notification = Some(crate::attention::Notification::Quiet);
         app.upsert_message(message, true);

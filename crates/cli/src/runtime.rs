@@ -40,6 +40,22 @@ pub fn send_user_message(
     mentions: Vec<String>,
     reply_to: Option<String>,
 ) -> anyhow::Result<Message> {
+    send_user_message_with_agents(app, chat_id, text, message_id, attachments, mentions, Vec::new(), reply_to)
+}
+
+/// A user message that may address coding agents. The picked ids and the `@Name`s in `text` are
+/// resolved against the chat's open agent cards; a message with any target goes to those agents
+/// as an `agent_message` job and starts no bot turn. Everything else is the ordinary path.
+pub fn send_user_message_with_agents(
+    app: Arc<App>,
+    chat_id: &str,
+    text: &str,
+    message_id: Option<String>,
+    attachments: Vec<Attachment>,
+    mentions: Vec<String>,
+    agents: Vec<String>,
+    reply_to: Option<String>,
+) -> anyhow::Result<Message> {
     let text = text.trim();
     if text.is_empty() && attachments.is_empty() {
         anyhow::bail!("Empty message");
@@ -65,20 +81,124 @@ pub fn send_user_message(
         Some(ReplyTo { author: Author::Bot { bot_id }, .. }) => Some(bot_id.clone()),
         _ => None,
     };
-    let mut message = Message::new(chat_id, Author::You, Body::Text { text: text.to_string(), attachments, mentions: mentions.clone(), reply_to });
+    let targets = agent_targets(&app, &chat, text, &agents)?;
+    if !targets.is_empty() {
+        if text.is_empty() {
+            anyhow::bail!("Write a message for the coding agent");
+        }
+        // A message that is only the @Name has nothing for the agent to read.
+        let has_words = targets.iter().any(|target| {
+            let Some((at, _)) = text.match_indices('@').find(|(at, _)| mention_at(text, *at, &target.name)) else {
+                return !text.is_empty();
+            };
+            let end = at + 1 + target.name.len();
+            !format!("{}{}", &text[..at], &text[end..]).trim().is_empty()
+        });
+        if !has_words {
+            anyhow::bail!("Write a message for the coding agent");
+        }
+        for target in &targets {
+            let bot = app.bot(&target.bot_id).ok_or_else(|| anyhow::anyhow!("The agent's bot is no longer in this chat"))?;
+            if app.this_device_id().as_deref() != Some(bot.runner_id.as_str()) {
+                let runner = app
+                    .device(&bot.runner_id)
+                    .ok_or_else(|| anyhow::anyhow!("{} is assigned to a Runner this Device does not know yet.", bot.name))?;
+                if !runner.agent_messages {
+                    anyhow::bail!("Update {} to talk to coding agents.", runner.name);
+                }
+            }
+        }
+        let agent_ids: Vec<String> = targets.iter().map(|target| target.id.clone()).collect();
+        let mut message = Message::new(
+            chat_id,
+            Author::You,
+            Body::Text { agents: agent_ids, text: text.to_string(), attachments, mentions: mentions.clone(), reply_to },
+        );
+        if let Some(id) = message_id.filter(|id| !id.is_empty()) {
+            message.id = id;
+        }
+        app.upsert_message(message.clone(), true);
+        // No hear_user_message: this is not the bot's turn to steer, dismiss a question for, or
+        // stop. The agent reads it through its own job.
+        for target in targets {
+            dispatch_job(&app, agent_message_job(&app, &chat.meta.id, &target.bot_id, &message.id, &target.id, text));
+        }
+        return Ok(message);
+    }
+    let mut message = Message::new(
+        chat_id,
+        Author::You,
+        Body::Text { agents: Vec::new(), text: text.to_string(), attachments, mentions: mentions.clone(), reply_to },
+    );
     if let Some(id) = message_id.filter(|id| !id.is_empty()) {
         message.id = id;
     }
-    // `@Claude Code …` in the chat goes to the agent itself, as it was written, and starts no
-    // turn of the bot's: the agent is a participant the user can talk to.
-    #[cfg(feature = "runner")]
-    if let Some((agent, words)) = chat.meta.bot_ids.iter().find_map(|bot_id| crate::coding::mentioned(&app, &chat.meta.id, bot_id, text)) {
-        app.upsert_message(message.clone(), true);
-        crate::turns::hear_user_message(&app, &message);
-        crate::coding::from_user(&app, &agent, &words, &message.id);
-        return Ok(message);
-    }
     admit_user_message(app, &chat, message, &mentions, replied_bot.as_deref())
+}
+
+/// A coding agent a message addresses, and the bot that runs it.
+struct AgentTarget {
+    id: String,
+    name: String,
+    bot_id: String,
+}
+
+/// Resolve picked agent ids and `@Name`s against the chat's open agent cards. A picked id that
+/// is not an open card is refused; a typed name that is not one is left for the bot, as before.
+fn agent_targets(app: &App, chat: &Chat, text: &str, picked: &[String]) -> anyhow::Result<Vec<AgentTarget>> {
+    struct AgentCard {
+        id: String,
+        name: String,
+        bot_id: String,
+        started_at: f64,
+        open: bool,
+    }
+    let mut cards: Vec<AgentCard> = Vec::new();
+    for message in app.store.all(&chat.meta.id).unwrap_or_default() {
+        let Body::Tool { agent: Some(run), .. } = &message.body else { continue };
+        let Author::Bot { bot_id } = &message.author else { continue };
+        if run.id.is_empty() || !chat.meta.bot_ids.contains(bot_id) {
+            continue;
+        }
+        cards.push(AgentCard {
+            id: run.id.clone(),
+            name: run.display_name().to_string(),
+            bot_id: bot_id.clone(),
+            started_at: run.started_at.unwrap_or(0.0),
+            open: run.is_open(),
+        });
+    }
+    let mut targets: Vec<AgentTarget> = Vec::new();
+    for id in picked {
+        // A pick that raced the agent's end still keeps the message: the Runner has no open
+        // agent to take it, so the job is a no-op rather than a bot turn.
+        let Some(card) = cards.iter().find(|card| card.id == *id) else {
+            anyhow::bail!("Unknown coding agent");
+        };
+        if !targets.iter().any(|target| target.id == *id) {
+            targets.push(AgentTarget { id: id.clone(), name: card.name.clone(), bot_id: card.bot_id.clone() });
+        }
+    }
+    let mut typed: Vec<&AgentCard> = cards
+        .iter()
+        .filter(|card| card.open && text.match_indices('@').any(|(at, _)| mention_at(text, at, &card.name)))
+        .collect();
+    typed.sort_by(|a, b| b.started_at.total_cmp(&a.started_at));
+    for card in typed {
+        if !targets.iter().any(|target| target.id == card.id) {
+            targets.push(AgentTarget { id: card.id.clone(), name: card.name.clone(), bot_id: card.bot_id.clone() });
+        }
+    }
+    Ok(targets)
+}
+
+/// The job that hands one user message to one coding agent. It carries the text as typed; the
+/// Runner strips the agent's `@Name` before it sends it.
+pub(crate) fn agent_message_job(app: &Arc<App>, chat_id: &str, bot_id: &str, trigger_message_id: &str, agent_id: &str, text: &str) -> Job {
+    let mut job = Job::local(crate::model::AGENT_MESSAGE_JOB, chat_id, bot_id, &app.this_device_id().unwrap_or_default());
+    job.trigger_message_id = trigger_message_id.to_string();
+    job.agent_message = Some(crate::model::AgentMessage { id: agent_id.to_string(), text: text.to_string() });
+    job
 }
 
 fn admit_user_message(app: Arc<App>, chat: &Chat, message: Message, mentions: &[String], replied_bot: Option<&str>) -> anyhow::Result<Message> {
@@ -117,6 +237,9 @@ pub fn rerun_user_message(app: &Arc<App>, chat_id: &str, message_id: &str, text:
     let mut message = app.message(chat_id, message_id).ok_or("Unknown message")?;
     if message.author != Author::You || message.queued || !message.is_complete() {
         return Err("Only a message of yours runs again.".into());
+    }
+    if message.body.addresses_agent() {
+        return Err("A message to a coding agent cannot run again.".into());
     }
     let after = app.store.messages_after(chat_id, message_id).map_err(|error| error.to_string())?;
     if after.iter().any(|later| later.author == Author::You) {
@@ -217,6 +340,7 @@ pub fn cancel_chat(app: &Arc<App>, chat_id: &str) {
 
 pub(crate) fn user_turn_job(app: &Arc<App>, chat_id: &str, bot_id: &str, trigger_message_id: &str) -> Job {
     Job {
+        agent_message: None,
         id: format!("job-{}", uuid::Uuid::new_v4()),
         chat_id: chat_id.to_string(),
         bot_id: bot_id.to_string(),
@@ -241,6 +365,7 @@ pub(crate) fn user_turn_job(app: &Arc<App>, chat_id: &str, bot_id: &str, trigger
 /// `trigger_message_id` is the command's card.
 pub fn command_job(app: &App, chat_id: &str, bot_id: &str, card_id: &str) -> Job {
     Job {
+        agent_message: None,
         id: format!("job-{}", uuid::Uuid::new_v4()),
         chat_id: chat_id.to_string(),
         bot_id: bot_id.to_string(),
@@ -264,7 +389,8 @@ pub fn command_job(app: &App, chat_id: &str, bot_id: &str, card_id: &str) -> Job
 /// The turn in which a bot hears what a coding agent it runs did (`coding::wake`):
 /// `trigger_message_id` is the agent's card.
 pub fn agent_job(app: &App, chat_id: &str, bot_id: &str, card_id: &str) -> Job {
-    Job { kind: "agent".into(), ..command_job(app, chat_id, bot_id, card_id) }
+    Job {
+        agent_message: None, kind: "agent".into(), ..command_job(app, chat_id, bot_id, card_id) }
 }
 
 /// Members in chat order, with the ones the message mentions first, then the one whose message
@@ -454,6 +580,7 @@ async fn run_room(
                 continue;
             }
             let job = Job {
+                agent_message: None,
                 id: format!("job-{}", uuid::Uuid::new_v4()),
                 chat_id: chat_id.clone(),
                 bot_id: bot.id.clone(),
@@ -701,6 +828,14 @@ pub fn dispatch_job(app: &Arc<App>, job: Job) -> Dispatch {
 /// outcome goes back to the requesting Device when the job came from another one. It registers
 /// before taking the lock, so hard Stop also cancels jobs waiting behind another turn.
 pub fn spawn_local_job(app: Arc<App>, job: Job, remote_blob_id: Option<String>) {
+    #[cfg(feature = "runner")]
+    if job.kind == crate::model::AGENT_MESSAGE_JOB {
+        crate::coding::from_job(&app, &job);
+        if let Some(id) = remote_blob_id {
+            tokio::spawn(async move { crate::sync::delete_remote_blob(&app, &id).await });
+        }
+        return;
+    }
     if job.kind == "task" {
         match crate::tasks::claim(&app, &job) {
             Ok(true) => {},
@@ -1013,7 +1148,7 @@ mod tests {
 
         let reply = send_user_message(app.clone(), "chat", "yes, ship it", None, Vec::new(), Vec::new(), Some("msg-original".into())).unwrap();
         let Body::Text { reply_to: Some(quote), .. } = &reply.body else { panic!("no quote: {:?}", reply.body) };
-        assert_eq!(quote, &ReplyTo { message_id: "msg-original".into(), author: Author::Bot { bot_id: "b1".into() }, text: "The build passes. Ship it?".into() });
+        assert_eq!(quote, &ReplyTo { message_id: "msg-original".into(), author: Author::Bot { bot_id: "b1".into() }, text: "The build passes. Ship it?".into(), agent: None });
         assert_eq!(app.message("chat", &reply.id).map(|stored| stored.body), Some(reply.body.clone()));
 
         let error = send_user_message(app.clone(), "chat", "and this?", None, Vec::new(), Vec::new(), Some("msg-gone".into())).unwrap_err();
@@ -1031,6 +1166,7 @@ mod tests {
             "chat",
             Author::You,
             Body::Text {
+                agents: Vec::new(),
                 text: String::new(),
                 attachments: vec![Attachment { id: "f".into(), name: "plan.pdf".into(), mime: "application/pdf".into(), size: 1, width: None, height: None, sha256: None }],
                 mentions: Vec::new(),
@@ -1089,6 +1225,7 @@ mod tests {
         crate::identity::create(app, None).unwrap();
         let runner_keys = crate::keys::Machine::generate();
         app.state.lock().unwrap().devices.push(Device {
+            agent_messages: false,
             id: "runner".into(),
             name: "Runner".into(),
             model: String::new(),
@@ -1206,6 +1343,7 @@ mod tests {
         crate::identity::create(app, None).unwrap();
         let mac_keys = crate::keys::Machine::generate();
         app.state.lock().unwrap().devices.push(Device {
+            agent_messages: false,
             id: "mac".into(),
             name: "Mac".into(),
             model: String::new(),
@@ -1237,6 +1375,7 @@ mod tests {
         let machine_file = app.machine_file().unwrap();
         let dek = machine_file.dek().unwrap();
         let mac = Device {
+            agent_messages: true,
             id: "mac".into(),
             name: "Mac".into(),
             model: "MacBook Air (M5)".into(),
@@ -1280,6 +1419,7 @@ mod tests {
         app.upsert_message(message, false);
         assert!(app.claim_steering_message("chat", "message"));
         let job = Job {
+            agent_message: None,
             id: "replacement".into(),
             chat_id: "chat".into(),
             bot_id: "bot".into(),
@@ -1350,5 +1490,297 @@ mod tests {
 
         assert!(app.running_turns().is_empty());
         assert!(app.store.sent_jobs().unwrap().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod agent_send_tests {
+    use super::*;
+    use crate::model::{AgentMessage, AgentRun, Body, Device, AGENT_MESSAGE_JOB};
+    use lorca_agent::{AgentMessageQueue, QueueMode};
+
+    struct Scratch(Arc<App>, std::path::PathBuf);
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.1);
+        }
+    }
+
+    fn scratch() -> Scratch {
+        let home = std::env::temp_dir().join(format!("lorca-agent-send-{}", uuid::Uuid::new_v4()));
+        let app = App::load(crate::config::Config { home: home.clone(), port: 0 }).unwrap();
+        Scratch(app, home)
+    }
+
+    fn bot(id: &str, runner_id: &str) -> crate::model::Bot {
+        crate::model::Bot {
+            id: id.into(),
+            name: "Chef".into(),
+            description: String::new(),
+            symbol_name: String::new(),
+            accent: String::new(),
+            avatar: None,
+            runner_id: runner_id.into(),
+            provider: "deepseek".into(),
+            model: None,
+            thinking: None,
+            legacy_instructions: String::new(),
+            setting_up: false,
+            workdir: None,
+            permissions: None,
+            created_at: 0.0,
+        }
+    }
+
+    fn chat(bot_id: &str) -> crate::model::Chat {
+        crate::model::Chat {
+            meta: crate::model::ChatMeta {
+                id: "chat".into(),
+                kind: "dm".into(),
+                title: None,
+                bot_ids: vec![bot_id.into()],
+                owner_bot_id: None,
+                description: None,
+                is_pinned: false,
+                section_id: None,
+                is_hidden: false,
+                mute: None,
+                created_at: 1.0,
+                channel: None,
+            },
+            unread_count: 0,
+            usage: None,
+            compactions: Vec::new(),
+        }
+    }
+
+    fn agent_card(app: &Arc<App>, bot_id: &str, id: &str, name: &str) {
+        let run = AgentRun { id: id.into(), kind: "claude".into(), name: name.into(), state: "idle".into(), ..AgentRun::default() };
+        let card = Message::new(
+            "chat",
+            Author::Bot { bot_id: bot_id.into() },
+            Body::Tool {
+                name: "coding_agent".into(),
+                summary: "Claude Code".into(),
+                detail: String::new(),
+                is_running: false,
+                call_id: "call-1".into(),
+                arguments: serde_json::json!({}),
+                result: None,
+                is_error: false,
+                description: None,
+                target_bot_id: None,
+                script_command: None,
+                run: None,
+                agent: Some(run),
+            },
+        );
+        app.upsert_message(card, false);
+    }
+
+    fn setup() -> (Scratch, Arc<App>, crate::model::Bot) {
+        let scratch = scratch();
+        let app = scratch.0.clone();
+        crate::identity::create(&app, Some("Workbench".into())).unwrap();
+        let me = app.this_device_id().unwrap();
+        let bot = bot("b1", &me);
+        {
+            let mut state = app.state.lock().unwrap();
+            state.bots.push(bot.clone());
+            state.chats.push(chat("b1"));
+        }
+        agent_card(&app, "b1", "agent-1", "Claude Code");
+        (scratch, app, bot)
+    }
+
+    #[test]
+    fn a_message_to_an_agent_starts_no_bot_turn() {
+        let (_scratch, app, _bot) = setup();
+        let message = send_user_message_with_agents(
+            app.clone(),
+            "chat",
+            "@Claude Code status",
+            None,
+            Vec::new(),
+            Vec::new(),
+            vec!["agent-1".into()],
+            None,
+        )
+        .unwrap();
+        assert!(app.running_chat_ids().is_empty());
+        assert_eq!(message.body.agents(), ["agent-1"]);
+        assert!(app.message("chat", &message.id).is_some());
+    }
+
+    #[test]
+    fn an_agent_message_job_carries_its_text_and_its_target() {
+        let (_scratch, app, _bot) = setup();
+        let job = agent_message_job(&app, "chat", "b1", "msg-1", "agent-1", "@Claude Code status");
+        assert_eq!(job.kind, AGENT_MESSAGE_JOB);
+        assert_eq!(job.trigger_message_id, "msg-1");
+        assert_eq!(job.agent_message, Some(AgentMessage { id: "agent-1".into(), text: "@Claude Code status".into() }));
+    }
+
+    #[test]
+    fn an_agent_directed_message_does_not_steer_the_bot_turn() {
+        let (_scratch, app, _bot) = setup();
+        let queue = AgentMessageQueue::new(QueueMode::All);
+        app.register_steering_queue("chat", "job", queue.clone());
+        let message = send_user_message_with_agents(
+            app.clone(),
+            "chat",
+            "@Claude Code status",
+            None,
+            Vec::new(),
+            Vec::new(),
+            vec!["agent-1".into()],
+            None,
+        )
+        .unwrap();
+        assert!(queue.is_empty(), "the bot's turn is not steered");
+        assert!(!app.message("chat", &message.id).unwrap().queued);
+    }
+
+    #[test]
+    fn an_agent_directed_message_does_not_dismiss_the_bots_question() {
+        let (_scratch, app, _bot) = setup();
+        let (tx, _rx) = tokio::sync::oneshot::channel();
+        app.pending_permissions.lock().unwrap().insert("ask-1".into(), ("chat".into(), tx));
+        send_user_message_with_agents(
+            app.clone(),
+            "chat",
+            "@Claude Code status",
+            None,
+            Vec::new(),
+            Vec::new(),
+            vec!["agent-1".into()],
+            None,
+        )
+        .unwrap();
+        assert!(app.pending_permissions.lock().unwrap().contains_key("ask-1"), "the question still waits");
+    }
+
+    #[test]
+    fn an_agent_directed_message_leaves_the_bot_turn_to_finish() {
+        let (_scratch, app, _bot) = setup();
+        let queue = AgentMessageQueue::new(QueueMode::All);
+        app.register_steering_queue("chat", "job", queue.clone());
+        let cancel = tokio_util::sync::CancellationToken::new();
+        app.running_jobs.lock().unwrap().insert(
+            "job".into(),
+            crate::app::RunningJob {
+                chat_id: "chat".into(),
+                bot_id: "b1".into(),
+                routine_id: None,
+                runner_id: None,
+                cancel: cancel.clone(),
+                activity: None,
+            },
+        );
+        send_user_message_with_agents(
+            app.clone(),
+            "chat",
+            "@Claude Code status",
+            None,
+            Vec::new(),
+            Vec::new(),
+            vec!["agent-1".into()],
+            None,
+        )
+        .unwrap();
+        assert!(!cancel.is_cancelled(), "the bot turn is not stopped");
+        assert!(queue.is_empty(), "the bot turn is not steered");
+        assert!(!app.messages("chat").iter().any(|message| matches!(&message.body, Body::Notice { .. })), "no “stopped without replying” notice");
+    }
+
+    #[test]
+    fn a_message_to_an_agent_needs_words() {
+        let (_scratch, app, _bot) = setup();
+        let error = send_user_message_with_agents(
+            app.clone(),
+            "chat",
+            "",
+            None,
+            vec![Attachment { id: "f".into(), name: "plan.pdf".into(), mime: "application/pdf".into(), size: 1, width: None, height: None, sha256: None }],
+            Vec::new(),
+            vec!["agent-1".into()],
+            None,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("Write a message for the coding agent"), "{error}");
+    }
+
+    #[test]
+    fn an_unknown_agent_is_refused() {
+        let (_scratch, app, _bot) = setup();
+        let error = send_user_message_with_agents(app, "chat", "status", None, Vec::new(), Vec::new(), vec!["agent-nope".into()], None).unwrap_err();
+        assert!(error.to_string().contains("Unknown coding agent"), "{error}");
+    }
+
+    #[test]
+    fn an_old_runner_is_not_sent_an_agent_message() {
+        let (_scratch, app, _bot) = setup();
+        app.state.lock().unwrap().devices.push(Device { id: "old".into(), name: "Old".into(), os: "macos".into(), ..Device::default() });
+        {
+            let mut state = app.state.lock().unwrap();
+            for bot in &mut state.bots {
+                if bot.id == "b1" {
+                    bot.runner_id = "old".into();
+                }
+            }
+        }
+        let error = send_user_message_with_agents(app, "chat", "status", None, Vec::new(), Vec::new(), vec!["agent-1".into()], None).unwrap_err();
+        assert!(error.to_string().contains("Update Old"), "{error}");
+    }
+
+    #[test]
+    fn an_agent_that_ended_meanwhile_keeps_the_message() {
+        let (_scratch, app, _bot) = setup();
+        {
+            let mut card = app.messages("chat").into_iter().find(|message| matches!(&message.body, Body::Tool { agent: Some(_), .. })).unwrap();
+            if let Body::Tool { agent: Some(run), .. } = &mut card.body {
+                run.state = "stopped".into();
+            }
+            app.upsert_message(card, false);
+        }
+        let message = send_user_message_with_agents(
+            app.clone(),
+            "chat",
+            "@Claude Code status",
+            None,
+            Vec::new(),
+            Vec::new(),
+            vec!["agent-1".into()],
+            None,
+        )
+        .unwrap();
+        assert!(app.running_chat_ids().is_empty());
+        assert_eq!(message.body.agents(), ["agent-1"]);
+    }
+
+    #[test]
+    fn a_message_that_is_only_an_agent_name_is_refused() {
+        let (_scratch, app, _bot) = setup();
+        let error = send_user_message_with_agents(app, "chat", "@Claude Code", None, Vec::new(), Vec::new(), vec!["agent-1".into()], None).unwrap_err();
+        assert!(error.to_string().contains("Write a message for the coding agent"), "{error}");
+    }
+
+    #[test]
+    fn a_message_to_an_agent_cannot_run_again() {
+        let (_scratch, app, _bot) = setup();
+        let message = send_user_message_with_agents(
+            app.clone(),
+            "chat",
+            "@Claude Code status",
+            None,
+            Vec::new(),
+            Vec::new(),
+            vec!["agent-1".into()],
+            None,
+        )
+        .unwrap();
+        let error = rerun_user_message(&app, "chat", &message.id, None).unwrap_err();
+        assert_eq!(error, "A message to a coding agent cannot run again.");
     }
 }

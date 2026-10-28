@@ -704,6 +704,7 @@ impl App {
             plugins: self.plugins.lock().unwrap().statuses(),
             channels: self.channels.statuses(),
             version: config::VERSION.into(),
+            agent_messages: true,
             update: self.update_status(),
             updated_at: config::now_unix(),
         })

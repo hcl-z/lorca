@@ -10,7 +10,8 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTim
 import { isMuted, type Bot, type Chat } from "../core/model";
 import { t, useLanguage } from "../i18n";
 import { AvatarCluster } from "./Avatar";
-import { lastActivity, preview, stamp } from "./format";
+import { AgentTile } from "./agentKit";
+import { lastActivity, preview, previewAgent, stamp } from "./format";
 import { Symbol } from "./Symbol";
 import { Font, usePalette } from "./theme";
 
@@ -22,6 +23,7 @@ export const ChatRow = memo(function ChatRow({ chat, bots, title, working, respo
   const p = usePalette();
   const members = useMemo(() => chat.bot_ids.map((id) => bots.get(id)).filter((b): b is Bot => !!b), [chat.bot_ids, bots]);
   const unread = chat.unread_count;
+  const agent = previewAgent(chat);
   return (
     <Pressable onPress={onPress} onLongPress={onLongPress} style={({ pressed }) => [styles.row, { backgroundColor: pressed || selected ? p.fill : p.background }, selected !== undefined && styles.sidebarRow]}>
       <AvatarCluster bots={members} size={52} working={working} service={chat.channel?.service} />
@@ -45,9 +47,12 @@ export const ChatRow = memo(function ChatRow({ chat, bots, title, working, respo
               </Text>
             </View>
           ) : (
-            <Text style={[styles.preview, { color: p.secondaryLabel }]} numberOfLines={1}>
-              {preview(chat, bots)}
-            </Text>
+            <>
+              {agent ? <AgentTile kind={agent.kind} size={15} round /> : null}
+              <Text style={[styles.preview, { color: p.secondaryLabel }]} numberOfLines={1}>
+                {preview(chat, bots)}
+              </Text>
+            </>
           )}
           {unread > 0 && (
             <View style={[styles.badge, { backgroundColor: isMuted(chat) ? p.tertiaryLabel : p.ink }]} accessibilityLabel={t("{count} unread", { count: unread })}>

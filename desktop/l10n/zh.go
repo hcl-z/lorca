@@ -1590,6 +1590,7 @@ var zh = map[string]string{
 	"After the transcript · %@":            "对话记录之后 · %@",
 	"Every bot uses this skill":            "所有智能体都使用这个技能",
 	"Every bot on this Runner stops using this skill. Its folder stays in the skills folder's .trash for 30 days.": "这台 Runner 上的所有智能体都不再使用这个技能。它的文件夹会在技能文件夹的 .trash 里保留 30 天。",
+	"Coding agent":    "编码 agent",
 	"%@ finished":     "%@ 已完成",
 	"Answer in Lorca": "在 Lorca 中回答",
 	"Island":          "灵动岛",

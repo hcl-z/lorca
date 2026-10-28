@@ -10,6 +10,7 @@ import { channelProblem, listenSummary, serviceSymbol } from "../../src/ui/chann
 import { t, tc, useLanguage } from "../../src/i18n";
 import { AvatarCluster, BotAvatar } from "../../src/ui/Avatar";
 import { CheckRow, FieldRow, MenuRow, Row, Section, ToggleRow } from "../../src/ui/forms";
+import { SheetPicker } from "../../src/ui/Sheet";
 import { projectKindTitle, projectProblem, projectRowDetail } from "../../src/ui/project";
 import * as DocumentPicker from "expo-document-picker";
 import { pluginStateWord } from "../../src/ui/plugins";
@@ -66,6 +67,7 @@ export default function ChatInfoScreen() {
   const sharedSkills = useSharedSkills();
   const skills = useMemo(() => [...ownSkills, ...sharedSkills], [ownSkills, sharedSkills]);
   const [allSkills, setAllSkills] = useState(false);
+  const [modelOpen, setModelOpen] = useState(false);
   // The skills are folders on the bot's Runner: asked for as Details opens, and now and then
   // after, since a bot writes them as files.
   const skillsBotId = chat?.kind === "group" ? (chat.owner_bot_id ?? chat.bot_ids[0]) : chat?.bot_ids[0];
@@ -293,26 +295,7 @@ export default function ChatInfoScreen() {
               })),
             }}
           />
-          <Row
-            title={t("Model")}
-            menu={{
-              title: t("Model"),
-              value: modelValue,
-              choices: [
-                {
-                  title: defaultModel ? t("Default ({model})", { model: defaultModel }) : t("Default"),
-                  selected: !bot.model,
-                  onPress: () => pickModel(bot, undefined),
-                  dividerAfter: true,
-                },
-                ...offered.map((model) => ({
-                  title: model.name,
-                  selected: bot.model === model.id,
-                  onPress: () => pickModel(bot, model.id),
-                })),
-              ],
-            }}
-          />
+          <Row title={t("Model")} detail={modelValue} action={false} onPress={() => setModelOpen(true)} />
           {/* Only the levels this model takes; a model without any has no choice to make. */}
           {levels.length > 0 && (
             <Row
@@ -593,6 +576,20 @@ export default function ChatInfoScreen() {
         <Row title={t("Delete Chat")} icon="trash" destructive onPress={confirmDelete} />
       </Section>
     </ScrollView>
+    {bot ? (
+      <SheetPicker
+        visible={modelOpen}
+        title={t("Model")}
+        search={offered.length > 8}
+        selected={bot.model ?? ""}
+        options={[
+          { value: "", label: defaultModel ? t("Default ({model})", { model: defaultModel }) : t("Default") },
+          ...offered.map((model) => ({ value: model.id, label: model.name })),
+        ]}
+        onPick={(value) => pickModel(bot, value || undefined)}
+        onClose={() => setModelOpen(false)}
+      />
+    ) : null}
     </>
   );
 }

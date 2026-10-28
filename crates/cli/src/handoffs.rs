@@ -530,6 +530,7 @@ fn require_runner(app: &App, runner_id: &str) -> Result<(), String> {
 
 fn request_job(request: &HandoffRequest) -> Job {
     Job {
+        agent_message: None,
         id: request.job_id.clone(),
         chat_id: request.target_chat_id.clone(),
         bot_id: request.target_bot_id.clone(),

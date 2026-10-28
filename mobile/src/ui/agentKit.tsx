@@ -4,28 +4,23 @@
 // facts of its session as a strip of cells over a meter of its context, what it does now on a
 // console of its own, and callouts for what it asks and how it failed.
 
-import { Image } from "expo-image";
 import { useEffect, useState, type ReactNode } from "react";
 import { ActivityIndicator, Linking, Platform, StyleSheet, Text, View } from "react-native";
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming, cancelAnimation } from "react-native-reanimated";
+import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withTiming, cancelAnimation } from "react-native-reanimated";
 import { agentBusy, agentContext, agentSetting, agentSince, agentTone, type AgentTone } from "../core/agentKit";
 import { engine } from "../core/engine";
 import { agentName, agentPlace, type AgentRun } from "../core/model";
+import { AGENT_MARK_VIEWBOX, agentBrandColor, agentMark } from "./agentMarks";
+import Svg, { Path } from "react-native-svg";
 import { t, tc } from "../i18n";
 import { haptic } from "./haptics";
-import { PopupMenu } from "./PopupMenu";
 import { Pressable } from "./Pressable";
+import { Sheet, SheetActionRow } from "./Sheet";
 import { Symbol } from "./Symbol";
 import { alert } from "./alert";
 import { accentColor, usePalette } from "./theme";
 
 export const mono = Platform.OS === "ios" ? "Menlo" : "monospace";
-
-const MARKS = {
-  claude: require("../../assets/agentmarks/claude.svg"),
-  codexLight: require("../../assets/agentmarks/codex-light.svg"),
-  codexDark: require("../../assets/agentmarks/codex-dark.svg"),
-};
 
 /// `#rrggbb` at `a` opacity.
 export function alpha(hex: string, a: number): string {
@@ -36,10 +31,7 @@ export function alpha(hex: string, a: number): string {
 /// An agent's own color: Claude's terracotta, OpenAI's ink for Codex, Gemini's blue, and blue for
 /// the rest.
 export function agentBrand(kind: string, dark: boolean): string {
-  if (kind.startsWith("claude")) return "#D97757";
-  if (kind.startsWith("codex")) return dark ? "#F5F5F7" : "#1D1D1F";
-  if (kind === "gemini") return "#4C8DF6";
-  return accentColor("blue", dark);
+  return agentBrandColor(kind, dark, accentColor("blue", dark));
 }
 
 /// The colors of the tones of a state, as hex so they take a wash.
@@ -59,14 +51,22 @@ export function toneColor(tone: AgentTone, dark: boolean): string {
 }
 
 /// The agent's mark on a rounded square tinted in its color.
+/// An agent's mark from `agentMarks.ts`, in its brand color.
+export function AgentMark({ kind, size, color }: { kind: string; size: number; color: string }) {
+  return (
+    <Svg width={size} height={size} viewBox={AGENT_MARK_VIEWBOX}>
+      <Path d={agentMark(kind)} fill={color} />
+    </Svg>
+  );
+}
+
 export function AgentTile({ kind, size, round }: { kind: string; size: number; round?: boolean }) {
   const p = usePalette();
   const brand = agentBrand(kind, p.dark);
   const mark = size * 0.58;
-  const source = kind.startsWith("claude") ? MARKS.claude : kind.startsWith("codex") ? (p.dark ? MARKS.codexDark : MARKS.codexLight) : null;
   return (
     <View style={[styles.tile, { width: size, height: size, borderRadius: round ? size / 2 : size * 0.3, backgroundColor: alpha(brand, 0.13), borderColor: alpha(brand, 0.22) }]}>
-      {source ? <Image source={source} style={{ width: mark, height: mark }} contentFit="contain" /> : <Symbol name="terminal" size={mark} color={brand} weight="semibold" />}
+      <AgentMark kind={kind} size={mark} color={brand} />
     </View>
   );
 }
@@ -124,8 +124,9 @@ export function AgentPill({ agent }: { agent: AgentRun }) {
   const since = busy ? agentSince(agent, now) : "";
   const words = since ? `${agentWords(agent)} · ${since}` : agentWords(agent);
   const breath = useSharedValue(1);
+  const reduceMotion = useReducedMotion();
   useEffect(() => {
-    if (!busy) {
+    if (!busy || reduceMotion) {
       cancelAnimation(breath);
       breath.value = 1;
       return;
@@ -133,7 +134,7 @@ export function AgentPill({ agent }: { agent: AgentRun }) {
     breath.value = 0.35;
     breath.value = withRepeat(withTiming(1, { duration: 800, easing: Easing.inOut(Easing.ease) }), -1, true);
     return () => cancelAnimation(breath);
-  }, [busy, breath]);
+  }, [busy, breath, reduceMotion]);
   const dot = useAnimatedStyle(() => ({ opacity: breath.value }));
   return (
     <View style={[styles.pill, { backgroundColor: alpha(tint, 0.13) }]} accessibilityLabel={words}>
@@ -154,7 +155,7 @@ export function AgentHeader({ agent, tile = 32, size = 15, sub, trailing }: { ag
     <View style={styles.header}>
       <AgentTile kind={agent.kind} size={tile} />
       <View style={{ flex: 1, minWidth: 0, gap: 1 }}>
-        <Text style={{ color: p.label, fontSize: size, fontWeight: "600" }} numberOfLines={1}>
+        <Text style={{ color: agentBrand(agent.kind, p.dark), fontSize: size, fontWeight: "600" }} numberOfLines={1}>
           {agentName(agent)}
         </Text>
         {place ? (
@@ -173,7 +174,7 @@ export function AgentHeader({ agent, tile = 32, size = 15, sub, trailing }: { ag
 }
 
 /// Stop: a small square on a round fill.
-export function StopButton({ busy, onPress, size = 30 }: { busy: boolean; onPress: () => void; size?: number }) {
+export function StopButton({ busy, onPress, size = 30, label }: { busy: boolean; onPress: () => void; size?: number; label?: string }) {
   const p = usePalette();
   return (
     <Pressable
@@ -181,7 +182,7 @@ export function StopButton({ busy, onPress, size = 30 }: { busy: boolean; onPres
       onPress={onPress}
       hitSlop={8}
       accessibilityRole="button"
-      accessibilityLabel={t("Stop")}
+      accessibilityLabel={label ?? t("Stop")}
       style={({ pressed }) => [styles.stop, { width: size, height: size, borderRadius: size / 2, backgroundColor: pressed ? alpha(accentColor("red", p.dark), 0.18) : p.code, opacity: busy ? 0.5 : 1 }]}
     >
       {busy ? <ActivityIndicator size="small" /> : <Symbol name="stop.fill" size={size * 0.36} color={p.secondaryLabel} />}
@@ -250,6 +251,7 @@ export function contextTint(share: number, dark: boolean): string {
 export function SpecStrip({ agent, chatId, messageId }: { agent: AgentRun; chatId: string; messageId: string }) {
   const p = usePalette();
   const [busy, setBusy] = useState(false);
+  const [control, setControl] = useState<AgentRun["controls"] extends (infer C)[] | undefined ? C | null : never>(null);
   if (agent.question) return null;
   const cost = agentSetting(agent, "Cost");
   const context = agentContext(agent);
@@ -287,17 +289,9 @@ export function SpecStrip({ agent, chatId, messageId }: { agent: AgentRun; chatI
             return (
               <View key={setting.name} style={[{ flexGrow: setting.name === "Model" ? 2 : 1, flexBasis: 0, minWidth: 0 }, i > 0 && { borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: p.separator, marginVertical: 9 }]}>
                 {control ? (
-                  <PopupMenu
-                    title={control.name}
-                    actions={control.choices.map((choice) => ({ id: choice.value, title: choice.name, state: choice.value === control.value ? "on" : "off" }))}
-                    onPressAction={({ nativeEvent }) => {
-                      if (nativeEvent.event !== control.value) change(control.what, control.name, nativeEvent.event);
-                    }}
-                  >
-                    <View style={{ opacity: busy ? 0.5 : 1 }} accessibilityRole="button" accessibilityLabel={`${setting.name}: ${value}`}>
-                      {cell}
-                    </View>
-                  </PopupMenu>
+                  <Pressable onPress={() => setControl(control)} style={{ opacity: busy ? 0.5 : 1 }} accessibilityRole="button" accessibilityLabel={`${setting.name}: ${value}`}>
+                    {cell}
+                  </Pressable>
                 ) : (
                   cell
                 )}
@@ -331,6 +325,19 @@ export function SpecStrip({ agent, chatId, messageId }: { agent: AgentRun; chatI
           ) : null}
         </View>
       ) : null}
+      <Sheet visible={!!control} onClose={() => setControl(null)} title={control?.name ?? ""}>
+        {control?.choices.map((choice) => (
+          <SheetActionRow
+            key={choice.value}
+            title={choice.name}
+            trailing={choice.value === control.value ? <Symbol name="checkmark" size={17} color={p.tint} weight="semibold" /> : null}
+            onPress={() => {
+              if (choice.value !== control.value) change(control.what, control.name, choice.value);
+              setControl(null);
+            }}
+          />
+        ))}
+      </Sheet>
     </View>
   );
 }

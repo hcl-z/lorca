@@ -810,7 +810,7 @@ mod tests {
             id: id.into(),
             chat_id: "c".into(),
             author,
-            body: Body::Text { text: body.into(), attachments: Vec::new(), mentions: Vec::new(), reply_to: None },
+            body: Body::Text { agents: Vec::new(), text: body.into(), attachments: Vec::new(), mentions: Vec::new(), reply_to: None },
             state: crate::model::MessageState::Complete,
             created_at: at,
             promoted_at: None,

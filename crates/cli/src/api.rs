@@ -378,14 +378,16 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
             }
             let text = opt_string(&params, "text").unwrap_or_default();
             let mentions: Vec<String> = serde_json::from_value(params["mentions"].clone()).unwrap_or_default();
+            let agents: Vec<String> = serde_json::from_value(params["agents"].clone()).unwrap_or_default();
             let message =
-                runtime::send_user_message(
+                runtime::send_user_message_with_agents(
                     app.clone(),
                     &string(&params, "chat_id")?,
                     &text,
                     opt_string(&params, "message_id"),
                     attachments,
                     mentions,
+                    agents,
                     opt_string(&params, "reply_to"),
                 )
                     .map_err(|e| e.to_string())?;
@@ -423,7 +425,25 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
             Ok(json!({ "path": path }))
         }
         "chats.stop" => {
-            runtime::cancel_chat(app, &string(&params, "chat_id")?);
+            let chat_id = string(&params, "chat_id")?;
+            runtime::cancel_chat(app, &chat_id);
+            // A bot's coding agents live on its Runner. Stop there too; the local cancel is
+            // enough for this Device's turns, so an offline Runner only gets a notice.
+            if let Some(chat) = app.chat(&chat_id) {
+                let mut runners: Vec<String> = Vec::new();
+                for bot_id in &chat.meta.bot_ids {
+                    if let Some(bot) = app.bot(bot_id) {
+                        if app.this_device_id().as_deref() != Some(bot.runner_id.as_str()) && !runners.contains(&bot.runner_id) {
+                            runners.push(bot.runner_id.clone());
+                        }
+                    }
+                }
+                for runner_id in runners {
+                    if let Err(error) = requests::ask_within(app, &runner_id, "chats.stop", json!({ "chat_id": chat_id }), requests::REQUEST_TIMEOUT).await {
+                        app.notice(&chat_id, format!("The bot's work there could not be stopped: {error}"));
+                    }
+                }
+            }
             Ok(Value::Null)
         }
         // Regenerate, or edit and send again: the user's latest message in a direct chat, its

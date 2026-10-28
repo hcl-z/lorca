@@ -13,6 +13,7 @@ import { exactAnswer, ExactNumber, ExactObject, stringifyExact } from "./exactJs
 import { decodeEvent } from "./events";
 import { reviewEditParams } from "./reviewEdit";
 import { editedText, rerunnable } from "./rerun";
+import { chatsSendParams } from "./send";
 import type { AskAnswer } from "./ask";
 import { hostFacts } from "./host";
 import { connectedProviders, isRunner, PROVIDER_KINDS, orderProjectEntries, providerConnectMethod, sectionName, withReviewModel, sameDraft, skillInputOf, skillRecordOf, skillSummaryOf, type SkillRow, type SkillView, type Section, type PlaybookContent, type PlaybookRecord, type PlaybookScope, type ProjectContext, type ProjectEntry, type ProjectKind, type ProjectSource, type Attachment, type AutoReview, type Bot, type BudgetLimits, type BudgetState, type CallLimits, type Chat, type ChatMeta, type ChatSearchResults, type ChatUsage, type CustomAPI, type CustomModel, type DurableTask, type Message, type MessageDraft, type ReviewItem, type PluginDetail, type PluginStatus, type ProviderKind, type ProviderStatus, type SavedSecret, routinesAwaitingSetup } from "./model";
@@ -280,12 +281,12 @@ class Engine {
 
   // MARK: - Chats
 
-  /// Sends the user's message with its files and the bots picked by `@`; the core starts the
-  /// turns it calls for.
+  /// Sends the user's message with its files, the bots picked by `@`, and the coding agents it
+  /// addresses; the core starts the turns it calls for, or hands it to the agents.
   /// `replyTo` is the message the user answers, which the bot reads quoted.
-  async sendMessage(chatId: string, text: string, files: PickedFile[] = [], mentions: string[] = [], replyTo?: string): Promise<Message> {
+  async sendMessage(chatId: string, text: string, files: PickedFile[] = [], mentions: string[] = [], agents: string[] = [], replyTo?: string): Promise<Message> {
     const attachments = files.map((file) => ({ path: pathOf(file.uri), name: file.name, mime: file.mime, width: file.width, height: file.height }));
-    const { message } = await core.request<{ message: Message }>("chats.send", { chat_id: chatId, text, attachments, mentions, ...(replyTo ? { reply_to: replyTo } : {}) });
+    const { message } = await core.request<{ message: Message }>("chats.send", chatsSendParams(chatId, text, attachments, mentions, agents, replyTo));
     upsertMessage(message);
     setStatus(chatId, null);
     return message;

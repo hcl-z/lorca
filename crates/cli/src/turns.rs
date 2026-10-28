@@ -101,6 +101,11 @@ fn over_limits() -> Option<BeforeToolCallResult> {
 }
 
 pub(crate) async fn run_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) -> TurnOutcome {
+    // A message to a coding agent is delivered by `spawn_local_job` before this point; if one
+    // ever reaches here, it must not become a bot turn.
+    if job.kind == crate::model::AGENT_MESSAGE_JOB {
+        return TurnOutcome::Skipped;
+    }
     let budget = match crate::budgets::for_job(app, job) {
         Ok(context) => context,
         Err(reason) => {
@@ -613,7 +618,7 @@ fn steering_message(
     workdir: &std::path::Path,
     pixels: bool,
 ) -> Option<AgentMessage> {
-    let (Author::You, Body::Text { text, attachments, mentions, reply_to }) = (&message.author, &message.body) else { return None };
+    let (Author::You, Body::Text { text, attachments, mentions, reply_to, .. }) = (&message.author, &message.body) else { return None };
     let timestamp = (message.promoted_at.unwrap_or(message.created_at) * 1000.0) as u64;
     let text = user_words(app, bot, text, mentions, reply_to.as_ref());
     if attachments.is_empty() {
@@ -2623,10 +2628,13 @@ fn transcript_bounded(app: &App, chat: &Chat, bot: &Bot, workdir: &std::path::Pa
                 }
                 out.push(AgentMessage::User(UserMessage { content, timestamp }));
             }
-            (Author::You, Body::Text { text, attachments, mentions, reply_to }) if attachments.is_empty() => {
+            // A message the user addressed to a coding agent is the agent's request, not the
+            // bot's: an in-flight bot turn must not see it and answer it too.
+            (Author::You, Body::Text { agents, .. }) if !agents.is_empty() => {}
+            (Author::You, Body::Text { text, attachments, mentions, reply_to, .. }) if attachments.is_empty() => {
                 out.push(user(&user_words(app, bot, text, mentions, reply_to.as_ref()), timestamp))
             }
-            (Author::You, Body::Text { text, attachments, mentions, reply_to }) => {
+            (Author::You, Body::Text { text, attachments, mentions, reply_to, .. }) => {
                 // A file is named by its path in the workspace; an image is shown as well.
                 let mut content = Vec::new();
                 let words = user_words(app, bot, text, mentions, reply_to.as_ref());
@@ -4658,7 +4666,8 @@ mod tests {
         let dm = chat("dm", "dm", None, &["b1"]);
         app.state.lock().unwrap().bots.push(chef.clone());
         app.state.lock().unwrap().chats.push(dm.clone());
-        let job = Job { id: "job-trace".into(), kind: "turn".into(), ..room_job("dm", "b1") };
+        let job = Job {
+            agent_message: None, id: "job-trace".into(), kind: "turn".into(), ..room_job("dm", "b1") };
         let work = scratch.1.join("work");
         std::fs::create_dir_all(&work).unwrap();
         let scripted = Arc::new(Scripted { replies: std::sync::Mutex::new(vec![r#"ls {"path":"."}"#, "Done."]), requests: Default::default() });
@@ -4884,7 +4893,7 @@ mod tests {
         let app = &scratch.0;
         let (chef, scout) = (bot("b1", "Chef"), bot("b2", "Scout"));
         app.state.lock().unwrap().bots.extend([chef.clone(), scout.clone()]);
-        let quote = |author: Author| ReplyTo { message_id: "m".into(), author, text: "Ship on Friday?".into() };
+        let quote = |author: Author| ReplyTo { message_id: "m".into(), author, text: "Ship on Friday?".into(), agent: None };
 
         let reply = quote(Author::Bot { bot_id: "b1".into() });
         assert_eq!(user_words(app, &chef, "yes", &[], Some(&reply)), "[Replying to your message: \"Ship on Friday?\"]\nyes");
@@ -4896,7 +4905,7 @@ mod tests {
         let dm = chat("chat", "dm", None, &["b1"]);
         app.state.lock().unwrap().chats.push(dm.clone());
         let mut message = said("chat", Author::You, "yes", 1.0);
-        message.body = Body::Text { text: "yes".into(), attachments: Vec::new(), mentions: Vec::new(), reply_to: Some(reply) };
+        message.body = Body::Text { agents: Vec::new(), text: "yes".into(), attachments: Vec::new(), mentions: Vec::new(), reply_to: Some(reply) };
         app.upsert_message(message, false);
         let transcript = transcript_for(app, &dm, &chef, &scratch.1);
         let Some(AgentMessage::User(UserMessage { content, .. })) = transcript.last() else { panic!("{transcript:?}") };
@@ -4905,6 +4914,7 @@ mod tests {
 
     fn room_job(chat_id: &str, bot_id: &str) -> Job {
         Job {
+            agent_message: None,
             id: "job".into(),
             chat_id: chat_id.into(),
             bot_id: bot_id.into(),
@@ -5094,7 +5104,8 @@ mod tests {
         }
         let store = MemoryStore::for_bot(&app.config.home, &chef);
         let plain = room_job("dm", "b1");
-        let asked = Job { from_bot_id: Some("b2".into()), task_id: Some("task-1".into()), ..room_job("dm", "b1") };
+        let asked = Job {
+            agent_message: None, from_bot_id: Some("b2".into()), task_id: Some("task-1".into()), ..room_job("dm", "b1") };
         assert_eq!(system_prompt(app, &dm, &chef, &asked, &store, false, &[]), system_prompt(app, &dm, &chef, &plain, &store, false, &[]));
         assert_eq!(turn_brief(app, &plain, None, None), None);
 
@@ -5437,6 +5448,7 @@ mod tests {
         TurnState {
             app: app.clone(),
             job: Job {
+                agent_message: None,
                 id: "job-1".into(),
                 chat_id: "chat".into(),
                 bot_id: bot.id.clone(),
@@ -6346,6 +6358,7 @@ mod tests {
             state.bots.push(chef.clone());
             state.chats.push(chat("chat", "dm", None, &["b1"]));
             state.devices.push(Device {
+                agent_messages: false,
                 id: "phone".into(),
                 name: "Phone".into(),
                 model: String::new(),
@@ -6722,7 +6735,7 @@ mod tests {
         );
 
         let mut message = said("chat", Author::You, "", 1.0);
-        message.body = Body::Text { text: "ask @Chef".into(), attachments: Vec::new(), mentions: vec!["b2".into()], reply_to: None };
+        message.body = Body::Text { agents: Vec::new(), text: "ask @Chef".into(), attachments: Vec::new(), mentions: vec!["b2".into()], reply_to: None };
         app.upsert_message(message, false);
         let messages = transcript_for(app, &dm, &scout, &scratch.1);
         assert!(matches!(&messages[0], AgentMessage::User(m) if m.content.first().and_then(ContentPart::as_text) == Some("ask @Chef (id b2)")));
@@ -6945,7 +6958,8 @@ mod tests {
         let dm = chat("dm", "dm", None, &["b1"]);
         app.state.lock().unwrap().bots.push(chef.clone());
         app.state.lock().unwrap().chats.push(dm.clone());
-        let job = Job { kind: "turn".into(), ..room_job("dm", "b1") };
+        let job = Job {
+            agent_message: None, kind: "turn".into(), ..room_job("dm", "b1") };
         let store = MemoryStore::for_bot(&app.config.home, &chef);
         let names = |tools: &[Arc<dyn Tool>]| tools.iter().map(|tool| tool.name().to_string()).collect::<Vec<_>>();
         let make = |shape: TurnShape| {
@@ -7017,7 +7031,8 @@ mod tests {
         app.upsert_message(steer.clone(), false);
         assert!(app.claim_steering_message("chat", &steer.id), "the turn read it");
 
-        let job = Job { trigger_message_id: start.id.clone(), ..Job::local("turn", "chat", &chef.id, "runner") };
+        let job = Job {
+            agent_message: None, trigger_message_id: start.id.clone(), ..Job::local("turn", "chat", &chef.id, "runner") };
         let admitted = give_back_unanswered(app, &job, &dm, true, vec![steer.id.clone()]);
 
         assert!(admitted.is_some(), "the message gets its own turn");
@@ -7068,7 +7083,8 @@ mod tests {
         let mut held = said("chat", Author::You, "skip the slow suite", 2.0);
         held.queued = true;
         app.upsert_message(held.clone(), false);
-        let job = Job { trigger_message_id: start.id.clone(), ..Job::local("turn", "chat", &chef.id, "runner") };
+        let job = Job {
+            agent_message: None, trigger_message_id: start.id.clone(), ..Job::local("turn", "chat", &chef.id, "runner") };
 
         assert_eq!(stopped_unanswered(app, &job, &dm, Vec::new()), vec![held.id]);
     }
@@ -7118,5 +7134,30 @@ mod tests {
         assert_eq!(recovered, 0, "it was answered");
         assert!(app.message("chat", &steer.id).unwrap().promoted_at.is_some(), "an answered claim stays");
         assert!(app.running_jobs.lock().unwrap().is_empty(), "no new turn");
+    }
+
+    #[test]
+    fn the_bot_does_not_read_a_message_addressed_to_an_agent() {
+        let (scratch, chef) = chef_in_a_dm();
+        let app = &scratch.0;
+        let dm = app.chat("chat").unwrap();
+        let mut direct = said("chat", Author::You, "@Claude Code status", 1.0);
+        direct.body = Body::Text { text: "@Claude Code status".into(), attachments: Vec::new(), mentions: Vec::new(), agents: vec!["agent-1".into()], reply_to: None };
+        app.upsert_message(direct, false);
+        let messages = transcript_for(app, &dm, &chef, &scratch.1);
+        assert!(messages.is_empty(), "the bot read the agent's request: {messages:?}");
+    }
+
+    #[test]
+    fn the_bot_reads_the_agents_reply_as_one_message() {
+        let (scratch, chef) = chef_in_a_dm();
+        let app = &scratch.0;
+        let dm = app.chat("chat").unwrap();
+        let mut message = said("chat", Author::Bot { bot_id: "b1".into() }, "one", 1.0);
+        message.agent = Some(crate::model::AgentAuthor { id: "agent-1".into(), name: "Claude Code".into(), kind: "claude".into() });
+        app.upsert_message(message, false);
+        let messages = transcript_for(app, &dm, &chef, &scratch.1);
+        assert_eq!(messages.len(), 1);
+        assert!(matches!(&messages[0], AgentMessage::User(m) if m.content.first().and_then(ContentPart::as_text) == Some("[Claude Code (your coding agent agent-1, in the chat)]: one")));
     }
 }

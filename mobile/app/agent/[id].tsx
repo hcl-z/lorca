@@ -27,6 +27,8 @@ import { Markdown } from "../../src/ui/Markdown";
 import { CloseToolbar } from "../../src/ui/navigation";
 import { Symbol } from "../../src/ui/Symbol";
 import { AgentAskRow, CardButton, DECISION_ICONS } from "../../src/ui/transcript";
+import { AgentActionsSheet } from "../../src/ui/AgentActionsSheet";
+import { AgentAskSheet } from "../../src/ui/AgentAskSheet";
 import { accentColor, usePalette } from "../../src/ui/theme";
 
 /// How often the transcript is asked for again while it is on screen.
@@ -48,6 +50,8 @@ export default function AgentScreen() {
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Record<number, boolean>>({});
   const [stopping, setStopping] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [askOpen, setAskOpen] = useState(false);
   const scroll = useRef<FlashListRef<AgentEntry>>(null);
   const atEnd = useRef(true);
 
@@ -85,6 +89,10 @@ export default function AgentScreen() {
   const isOpen = (entry: AgentEntry, at: number) => open[entry.seq] ?? (!!entry.tool && (toolRunning(entry.tool) || toolFailed(entry.tool) || at === lastTool));
   const column = Math.min(width, 760) - 32;
   const toggle = useCallback((entry: AgentEntry, shown: boolean) => setOpen((was) => ({ ...was, [entry.seq]: !shown })), []);
+  const askRow =
+    askCard?.body.kind === "permission" && askCard.body.agent_ask
+      ? { key: askCard.id, type: "permission" as const, message: askCard, body: askCard.body, bot, groupStart: false }
+      : undefined;
   const stop = () => {
     if (!message || stopping) return;
     setStopping(true);
@@ -119,7 +127,7 @@ export default function AgentScreen() {
         }}
         ListHeaderComponent={
           <>
-            {agent && message ? <Overview agent={agent} message={message} entries={entries} stopping={stopping} onStop={stop} /> : null}
+            {agent && message ? <Overview agent={agent} message={message} entries={entries} stopping={stopping} onStop={stop} onActions={() => setActionsOpen(true)} /> : null}
             <View style={{ height: 6 }} />
           </>
         }
@@ -157,13 +165,30 @@ export default function AgentScreen() {
           </>
         }
       />
+      <AgentActionsSheet
+        visible={actionsOpen}
+        agent={agent}
+        showTranscript={false}
+        onClose={() => setActionsOpen(false)}
+        onOpenTranscript={() => setActionsOpen(false)}
+        onAnswer={
+          agent?.asking
+            ? () => {
+                setActionsOpen(false);
+                setTimeout(() => setAskOpen(true), 260);
+              }
+            : undefined
+        }
+        onStop={stop}
+      />
+      <AgentAskSheet visible={askOpen && !!askRow} row={askRow} ask={askRow?.body.agent_ask} onClose={() => setAskOpen(false)} />
     </View>
   );
 }
 
 /// The top of the sheet: the agent's header with Stop, then what it works on, where, its session,
 /// its plan, and its pull request.
-function Overview({ agent, message, entries, stopping, onStop }: { agent: AgentRun; message: Message; entries: AgentEntry[]; stopping: boolean; onStop: () => void }) {
+function Overview({ agent, message, entries, stopping, onStop, onActions }: { agent: AgentRun; message: Message; entries: AgentEntry[]; stopping: boolean; onStop: () => void; onActions: () => void }) {
   const p = usePalette();
   const now = useNow(agentBusy(agent));
   const since = agentSince(agent, now);
@@ -179,7 +204,20 @@ function Overview({ agent, message, entries, stopping, onStop }: { agent: AgentR
   );
   return (
     <View style={{ gap: 18 }}>
-      <AgentHeader agent={agent} tile={40} size={18} sub={agent.title || agent.task} trailing={agentIsRunning(agent) ? <StopButton busy={stopping} onPress={onStop} size={34} /> : null} />
+      <AgentHeader
+        agent={agent}
+        tile={40}
+        size={18}
+        sub={agent.title || agent.task}
+        trailing={
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+            {agentIsRunning(agent) ? <StopButton busy={stopping} onPress={onStop} size={34} /> : null}
+            <Pressable onPress={onActions} hitSlop={8} accessibilityRole="button" accessibilityLabel={t("Agent actions")} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
+              <Symbol name="ellipsis" size={20} color={p.secondaryLabel} />
+            </Pressable>
+          </View>
+        }
+      />
       {agent.task ? (
         <Section title={t("Task")}>
           <Text selectable style={{ color: p.label, fontSize: 15, lineHeight: 21 }}>

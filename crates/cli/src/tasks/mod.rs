@@ -596,6 +596,7 @@ fn run(app: &App, task: &mut Task, params: &Value) -> Result<Job, String> {
         started_at: now_secs(),
     });
     Ok(Job {
+        agent_message: None,
         id,
         chat_id,
         bot_id: task.owner_bot_id.clone(),

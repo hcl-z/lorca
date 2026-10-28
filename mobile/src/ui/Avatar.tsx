@@ -9,9 +9,10 @@ import { memo, useEffect } from "react";
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from "react-native-reanimated";
 import { engine } from "../core/engine";
-import type { Bot } from "../core/model";
+import type { AgentRun, Bot } from "../core/model";
 import { useStore } from "../core/store";
 import { Symbol } from "./Symbol";
+import { AgentTile } from "./agentKit";
 import { accentColors, usePalette } from "./theme";
 
 /// The file URI of the bot's profile image, once this phone has the bytes; asks the core for
@@ -144,6 +145,46 @@ export const AvatarCluster = memo(function AvatarCluster({ bots, size = 40, work
         <BotAvatar bot={bots[0]} size={small} />
       </View>
       {working && <PresenceDot size={size} ring={p.background} />}
+    </View>
+  );
+});
+
+/// The chat's speakers in its bar: its bots, then its active coding agents, two shown and the
+/// rest as +N. A DM with only its bot keeps the bot's own disc.
+export const ParticipantCluster = memo(function ParticipantCluster({
+  bots,
+  agents,
+  size = 30,
+  working = false,
+  service,
+}: {
+  bots: Bot[];
+  agents: AgentRun[];
+  size?: number;
+  working?: boolean;
+  service?: string;
+}) {
+  const p = usePalette();
+  const entries = [
+    ...bots.map((bot) => ({ key: `bot:${bot.id}`, node: (at: number) => <BotAvatar bot={bot} size={at} working={bots.length === 1 ? working : false} service={bots.length === 1 ? service : undefined} /> })),
+    ...agents.map((agent) => ({ key: `agent:${agent.id}`, node: (at: number) => <AgentTile kind={agent.kind} size={at} round /> })),
+  ];
+  if (entries.length === 0) return null;
+  if (entries.length === 1) return entries[0].node(size);
+  const small = size * 0.66;
+  const more = entries.length - 2;
+  return (
+    <View style={{ width: size, height: size }}>
+      <View style={{ position: "absolute", right: 0, top: 0 }}>{entries[1].node(small)}</View>
+      <View style={{ position: "absolute", left: 0, bottom: 0, width: small + 4, height: small + 4, borderRadius: (small + 4) / 2, backgroundColor: p.background, alignItems: "center", justifyContent: "center" }}>
+        {entries[0].node(small)}
+      </View>
+      {more > 0 ? (
+        <View style={{ position: "absolute", left: 0, top: 0, minWidth: 16, height: 16, paddingHorizontal: 3, borderRadius: 8, backgroundColor: p.background, alignItems: "center", justifyContent: "center" }}>
+          <Text style={{ fontSize: 9, fontWeight: "700", color: p.secondaryLabel }}>+{more}</Text>
+        </View>
+      ) : null}
+      {working ? <PresenceDot size={size} ring={p.background} /> : null}
     </View>
   );
 });
