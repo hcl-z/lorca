@@ -101,6 +101,11 @@ fn over_limits() -> Option<BeforeToolCallResult> {
 }
 
 pub(crate) async fn run_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) -> TurnOutcome {
+    // A message to a coding agent is delivered by `spawn_local_job` before this point; if one
+    // ever reaches here, it must not become a bot turn.
+    if job.kind == crate::model::AGENT_MESSAGE_JOB {
+        return TurnOutcome::Skipped;
+    }
     let budget = match crate::budgets::for_job(app, job) {
         Ok(context) => context,
         Err(reason) => {

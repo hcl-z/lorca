@@ -885,16 +885,21 @@ pub(crate) fn mentioned(app: &App, chat_id: &str, bot_id: &str, text: &str) -> O
             continue;
         }
         let agent_name = name(&record.kind);
-        let Some((at, _)) = text.match_indices('@').find(|(at, _)| crate::runtime::mention_at(text, *at, agent_name)) else {
+        let Some(words) = without_mention(agent_name, text) else {
             continue;
         };
-        let end = at + 1 + agent_name.len();
-        let words = format!("{}{}", &text[..at], &text[end..]).trim().to_string();
         if found.as_ref().is_none_or(|(other, _)| record.started_at > other.record().started_at) {
             found = Some((agent, words));
         }
     }
     found
+}
+
+/// `text` without the first `@name`, when it addresses that agent.
+fn without_mention(name: &str, text: &str) -> Option<String> {
+    let (at, _) = text.match_indices('@').find(|(at, _)| crate::runtime::mention_at(text, *at, name))?;
+    let end = at + 1 + name.len();
+    Some(format!("{}{}", &text[..at], &text[end..]).trim().to_string())
 }
 
 /// The user's message in the chat goes to the agent as it was written, the `@Name` taken out,
@@ -922,6 +927,38 @@ pub(crate) fn from_user(app: &Arc<App>, agent: &Arc<Agent>, text: &str, message_
     });
 }
 
+/// Delivers an `agent_message` job on this Runner: the user's message goes to the agent it
+/// addresses, with the `@Name` taken out, before any turn job or chat lock. A job for the same
+/// user message the agent is already answering is skipped, so a redelivery is harmless.
+#[cfg(feature = "runner")]
+pub(crate) fn from_job(app: &Arc<App>, job: &crate::model::Job) {
+    let Some(target) = &job.agent_message else { return };
+    let agent = app.coding_agents.find(&job.chat_id, &job.bot_id, &target.id);
+    let (agent, words) = match agent {
+        Some(agent) => {
+            let record = agent.record();
+            if !matches!(record.state.as_str(), "starting" | "working" | "idle" | "asking") {
+                return;
+            }
+            if record.direct && record.trigger_message_id == job.trigger_message_id {
+                return;
+            }
+            match without_mention(name(&record.kind), &target.text) {
+                Some(words) => (agent, words),
+                None => return,
+            }
+        }
+        None => {
+            let Some((agent, words)) = mentioned(app, &job.chat_id, &job.bot_id, &target.text) else { return };
+            (agent, words)
+        }
+    };
+    if words.is_empty() {
+        return;
+    }
+    from_user(app, &agent, &words, &job.trigger_message_id);
+}
+
 /// Gives the agent a message from the bot: to its running process, or to a new process on its
 /// session when its process is gone (it was done and stopped, or Lorca restarted).
 pub(crate) async fn send(app: &Arc<App>, agent: &Arc<Agent>, text: &str, interrupt: bool) -> Result<String, String> {
@@ -932,7 +969,10 @@ pub(crate) async fn send(app: &Arc<App>, agent: &Arc<Agent>, text: &str, interru
         kept.news = None;
         kept.stalled = false;
     }
-    *agent.budget.lock().unwrap() = crate::budgets::current();
+    // A job outside a turn has no budget of its own: keep the one the agent already carries.
+    if let Some(budget) = crate::budgets::current() {
+        *agent.budget.lock().unwrap() = Some(budget);
+    }
     if let Some(driver) = agent.driver() {
         driver.send(text, interrupt).await?;
         *agent.active_at.lock().unwrap() = Instant::now();

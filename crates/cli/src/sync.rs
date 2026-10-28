@@ -1276,7 +1276,11 @@ fn apply_chat_op(app: &Arc<App>, op: ChatBlob) {
             app.upsert_message(message, false);
             #[cfg(feature = "runner")]
             if let Some(message) = heard {
-                crate::turns::hear_user_message(app, &message);
+                // A message the user addressed to a coding agent is the agent's, not the bot's:
+                // it does not steer the turn in flight or dismiss its question.
+                if !message.body.addresses_agent() {
+                    crate::turns::hear_user_message(app, &message);
+                }
             }
         }
         ChatBlob::Remove { chat_id, message_id } => app.remove_message(&chat_id, &message_id, false),
@@ -1568,5 +1572,56 @@ mod tests {
             remember_applied(&mut app.state.lock().unwrap(), &blob.id);
         }
         assert!(!is_backlog(app, &messages));
+    }
+}
+
+#[cfg(test)]
+mod agent_sync_tests {
+    use super::*;
+    use crate::model::{Body, ChatBlob};
+    use lorca_agent::{AgentMessageQueue, QueueMode};
+
+    struct Scratch(std::path::PathBuf);
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn a_synced_agent_directed_message_does_not_steer() {
+        let home = std::env::temp_dir().join(format!("lorca-agent-sync-{}", uuid::Uuid::new_v4()));
+        let app = App::load(crate::config::Config { home: home.clone(), port: 0 }).unwrap();
+        let _scratch = Scratch(home);
+        crate::identity::create(&app, Some("Runner".into())).unwrap();
+        let queue = AgentMessageQueue::new(QueueMode::All);
+        app.register_steering_queue("chat", "job", queue.clone());
+        let message = Message::new(
+            "chat",
+            Author::You,
+            Body::Text { text: "@Claude Code status".into(), attachments: Vec::new(), mentions: Vec::new(), agents: vec!["agent-1".into()], reply_to: None },
+        );
+        apply_chat_op(&app, ChatBlob::Upsert { message: message.clone() });
+        assert!(queue.is_empty(), "the bot turn is not steered");
+        assert!(!app.message("chat", &message.id).unwrap().queued);
+    }
+
+    #[test]
+    fn an_ordinary_message_still_steers() {
+        let home = std::env::temp_dir().join(format!("lorca-agent-sync-{}", uuid::Uuid::new_v4()));
+        let app = App::load(crate::config::Config { home: home.clone(), port: 0 }).unwrap();
+        let _scratch = Scratch(home);
+        crate::identity::create(&app, Some("Runner".into())).unwrap();
+        let queue = AgentMessageQueue::new(QueueMode::All);
+        app.register_steering_queue("chat", "job", queue.clone());
+        let message = Message::new(
+            "chat",
+            Author::You,
+            Body::Text { text: "change course".into(), attachments: Vec::new(), mentions: Vec::new(), agents: Vec::new(), reply_to: None },
+        );
+        apply_chat_op(&app, ChatBlob::Upsert { message: message.clone() });
+        assert!(!queue.is_empty(), "an ordinary user message still steers");
+        assert!(app.message("chat", &message.id).unwrap().queued);
     }
 }
