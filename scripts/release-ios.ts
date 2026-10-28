@@ -61,8 +61,9 @@ delete env.EAS_BUILD_PROFILE
 
 // ---- 1. Rust core
 // The xcframework is gitignored and the dev loop may hold an older one, so a release builds its own.
-log(`${color.bold("core")} ${color.dim("release build for iOS")}`)
-await $`bun run core ios`.cwd(MOBILE).env(env)
+// The iPhone app runs the device slice; the dev loop also builds the simulator's.
+log(`${color.bold("core")} ${color.dim("release build for iOS, device slice")}`)
+await $`bun run core ios`.cwd(MOBILE).env({ ...env, LORCA_CORE_RELEASE: "1" })
 
 // ---- 2. production project
 log(`${color.bold("prebuild")} ${color.dim(`Lorca, ${BUNDLE_ID}, build ${buildNumber}`)}`)

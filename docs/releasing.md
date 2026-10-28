@@ -32,12 +32,13 @@ repository's own.
    releases there; each tag is made when its draft is published. A run on `main`, not on a tag,
    saves its Rust, Gradle, and Xcode caches where the next release restores them: a cache saved on
    a tag is seen by no other tag.
-4. When the workflows are done, publish the drafts: the CLI's as the latest release, the others not.
+4. When the workflows are done, publish the CLI and desktop drafts: the CLI's as the latest
+   release, the desktop app's not. The phone app's workflow publishes its own draft once both
+   platforms finish, without making it the latest.
 
    ```sh
    gh release edit cli-v1.0.17 --draft=false --latest
    gh release edit desktop-v1.0.17 --draft=false --latest=false
-   gh release edit mobile-v1.0.17 --draft=false --latest=false
    ```
 
 The repository's latest release has to be the CLI's: the install scripts download from
