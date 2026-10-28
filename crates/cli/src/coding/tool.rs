@@ -27,7 +27,8 @@ pub struct CodingAgentTool {
     /// The event behind the turn, when one started it: the owner's task for it, whose text the
     /// review weighs the agent's commands against instead of the event's.
     pub event: Option<crate::event_triggers::EventTask>,
-    /// Nobody is watching the turn that starts it: its questions are the bot's to answer.
+    /// Nobody watches the turn (a routine's run or an event's): its agents' questions have
+    /// nobody to answer them.
     pub unattended: bool,
 }
 

@@ -281,8 +281,14 @@ export default function ChatScreen() {
   const contentContainerStyle = useMemo(() => ({ paddingTop: topPad }), [topPad]);
 
   useFocusEffect(useCallback(() => {
+    // Coming back from an agent page or a sheet, the chat's composer starts with the keyboard
+    // down: a keyboard the screen left open behind it never gets its foot back down.
+    void KeyboardController.dismiss();
     useStore.setState({ openChatId: id });
     return () => {
+      // A sheet or the agent page takes the screen while the composer has the keyboard: leave it
+      // down rather than letting the chat come back with the foot still lifted.
+      void KeyboardController.dismiss();
       if (useStore.getState().openChatId === id)
         useStore.setState({ openChatId: null });
     };
@@ -360,12 +366,22 @@ export default function ChatScreen() {
   const [tasksOpen, setTasksOpen] = useState(false);
   const [questionFor, setQuestionFor] = useState<Message | null>(null);
   const openAgentActions = useCallback((message: Message) => {
+    void KeyboardController.dismiss();
     haptic.open();
     setActionsFor(message);
   }, []);
-  const openAsk = useCallback((message: Message) => setAskFor(message), []);
-  const openCommand = useCallback((message: Message) => setCommandFor(message), []);
-  const openQuestion = useCallback((message: Message) => setQuestionFor(message), []);
+  const openAsk = useCallback((message: Message) => {
+    void KeyboardController.dismiss();
+    setAskFor(message);
+  }, []);
+  const openCommand = useCallback((message: Message) => {
+    void KeyboardController.dismiss();
+    setCommandFor(message);
+  }, []);
+  const openQuestion = useCallback((message: Message) => {
+    void KeyboardController.dismiss();
+    setQuestionFor(message);
+  }, []);
   const questionRow =
     questionFor?.body.kind === "permission"
       ? { key: questionFor.id, type: "permission" as const, message: questionFor, body: questionFor.body, bot: questionFor.author.kind === "bot" ? bots.get(questionFor.author.bot_id) : undefined, groupStart: false }

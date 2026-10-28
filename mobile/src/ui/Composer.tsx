@@ -16,6 +16,7 @@ import * as ImagePicker from "expo-image-picker";
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Linking, Platform, ScrollView, StyleSheet, Text, TextInput, View, type ColorValue, type ImageSourcePropType, type StyleProp, type ViewStyle } from "react-native";
+import { KeyboardController } from "react-native-keyboard-controller";
 import { Pressable } from "./Pressable";
 import { ImagePasteView, type PastedImage } from "../../modules/lorca-core/ImagePasteView";
 import type { PickedFile } from "../core/engine";
@@ -318,6 +319,8 @@ export const Composer = memo(function Composer({
       label={t("Attach")}
       disabled={!!editing}
       onPress={() => {
+        // The attach sheet comes over the composer: the chat's keyboard goes down behind it.
+        void KeyboardController.dismiss();
         haptic.open();
         setAttachOpen(true);
       }}

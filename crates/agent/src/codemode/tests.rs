@@ -159,6 +159,14 @@ async fn searches_and_lookups_reach_tools_the_catalog_finds_late() {
                 return [found.length, found[0].name, described.includes('codemode tool declaration'), missing === undefined, id, ALL_TOOLS.length];";
     let result = run(&codemode, code).await;
     assert!(text_of(&result).ends_with("[1,\"late__lookup\",true,true,7,1]"), "{}", text_of(&result));
+    // A search or call the script forgot to await says so, instead of reading as `{}`.
+    for (code, what) in [
+        ("text(JSON.stringify(searchTools('lookup things')));", "searchTools()"),
+        ("return { found: tools.late__lookup({ id: 1 }) };", "tools.late__lookup()"),
+    ] {
+        let result = run(&codemode, code).await;
+        assert!(text_of(&result).contains(&format!("{what} returns a promise: await it")), "{}", text_of(&result));
+    }
 }
 
 #[derive(Default)]
@@ -323,7 +331,7 @@ async fn describe_namespace_lists_every_tool_of_a_group() {
     ];
     let catalog = StaticCatalog::with_entries(entries, vec![Namespace { name: "my-tools".into(), description: "Tools of mine".into() }]);
     let codemode = CodemodeTool::new(Arc::new(catalog), CodemodeOptions::default());
-    assert!(codemode.description().contains("`describeNamespace(name)` gives a namespace's description"), "{}", codemode.description());
+    assert!(codemode.description().contains("`await describeNamespace(name)` gives a namespace's description"), "{}", codemode.description());
     let code = "return [await describeNamespace('my_tools'), await describeNamespace('other'), await describeNamespace('nothing')];";
     let result = run(&codemode, code).await;
     let text = text_of(&result);

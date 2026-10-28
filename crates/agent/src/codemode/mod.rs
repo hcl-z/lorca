@@ -1096,8 +1096,8 @@ sandbox: top-level `await` and `return` work. No Node, file system, network, or 
 Globals:
 - `text(value)`, `image(dataUrlOrImageBlock)`, `console.log(...)`, and top-level `return` add output; `exit()` ends the script.
 - `store(key, value)` and `load(key)` keep JSON values for later scripts in this chat.
-- `ALL_TOOLS`, `searchTools(query, { limit?, namespace? })`, and `describeTool(name)` find tools that are not listed below. \
-`describeNamespace(name)` gives a namespace's description, its whole instructions, and every tool in it.";
+- `ALL_TOOLS`, `await searchTools(query, { limit?, namespace? })`, and `await describeTool(name)` find tools that are not listed below. \
+`await describeNamespace(name)` gives a namespace's description, its whole instructions, and every tool in it.";
 
 const MCP_RESULT_GUIDANCE: &str = "Shared MCP types. An MCP tool resolves to its whole `CallToolResult`: `structuredContent` when \
 its declaration types it, else `content`, usually one text block of JSON (`JSON.parse(result.content[0].text)`). `isError: true` \

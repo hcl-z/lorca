@@ -339,6 +339,21 @@ mod runner {
             );
         }
         let draft = read(tool, args);
+        // A call with no recipient or no text (a probe such as `create_draft({})`) has nothing to
+        // send, so it gets no card; the bot hears what to fill in.
+        let missing: Vec<&str> = [
+            (draft.to.is_empty(), tool.to.as_deref()),
+            (draft.body.trim().is_empty(), Some(tool.body.as_str())),
+        ]
+        .into_iter()
+        .filter_map(|(empty, key)| if empty { key } else { None })
+        .collect();
+        if !missing.is_empty() {
+            return crate::local_review::blocked(format!(
+                "Nothing was drafted: the call has no {}. Call it again with the whole message to put a draft in the chat.",
+                missing.join(" or ")
+            ));
+        }
         let mut arguments = args.clone();
         let staged = match stash(app, tool, &mut arguments) {
             Ok(()) => {

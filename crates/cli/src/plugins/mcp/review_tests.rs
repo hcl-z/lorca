@@ -415,7 +415,7 @@ async fn a_stopped_turn_leaves_no_draft() {
     assert!(queue::list(&app).unwrap().is_empty());
     // A draft that could not be staged takes its files with it.
     let tool = app.plugins.lock().unwrap().get("gmail-test").unwrap().manifest.tools.message("create_draft").cloned().unwrap();
-    let wrong = json!({ "to": ["ana@example.com"], "body": 5, "attachments": [{ "filename": "menu.txt", "content": "aGVsbG8=" }] });
+    let wrong = json!({ "to": ["ana@example.com"], "body": "Menu attached.", "attachments": [{ "filename": "menu.txt", "content": "aGVsbG8=" }, "menu.txt"] });
     let refused = crate::drafts::stage(&app, &bot, &chat_id, &trigger, "call-wrong", ("gmail-test", "gmail", "Gmail"), "create_draft", &tool, &wrong, &CancellationToken::new()).await;
     assert!(refused.reason.as_deref().unwrap().starts_with("Could not put the draft in the chat"), "{:?}", refused.reason);
     assert_eq!(std::fs::read_dir(home.join("drafts")).map(|files| files.count()).unwrap_or(0), 0, "no stashed file left");
@@ -456,6 +456,30 @@ async fn a_saved_secret_never_goes_into_a_draft_and_unattended_runs_ask_auto_rev
     let plain = json!({ "to": ["ana@example.com"], "body": "Weekly numbers attached." });
     assert!(before_call_until(&app, &chat_id, &trigger, &bot, "gmail-test", "create_draft", &plain, &CancellationToken::new(), true).await.is_none());
     assert!(queue::list(&app).unwrap().is_empty());
+    app.mcp.servers.lock().unwrap().clear();
+    let _ = std::fs::remove_dir_all(home);
+}
+
+#[tokio::test]
+async fn a_call_with_no_recipient_or_text_puts_no_draft_in_the_chat() {
+    let (app, home, bot, chat_id) = drafting_app("empty-draft");
+    install(&app, json!({ "id": "gmail-test", "name": "Gmail", "servers": { "gmail": { "type": "http", "url": "http://unused.invalid/mcp" } },
+        "tools": { "draft": ["create_draft"], "messages": [{ "tool": "create_draft", "kind": "email", "to": "to", "body": "body", "send": "gmail" }] } }));
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let create = json!({ "name": "create_draft", "description": "Create a draft", "inputSchema": { "type": "object", "properties": {
+        "to": { "type": "array", "items": { "type": "string" } }, "body": { "type": "string" } } } });
+    let _server = serve_fake(&app, "gmail-test", "gmail", vec![create], json!({ "content": [] }), seen.clone()).await;
+    let trigger = asked(&app, &chat_id, "Email hi@example.com a test");
+    for (arguments, missing) in [
+        (json!({}), "no to or body"),
+        (json!({ "body": "Hi" }), "no to."),
+        (json!({ "to": ["hi@example.com"], "body": "  " }), "no body."),
+    ] {
+        let refused = before_call(&app, &chat_id, &trigger, &bot, "gmail-test", "create_draft", &arguments).await.unwrap();
+        assert!(refused.block && refused.reason.as_deref().unwrap().contains(missing), "{:?}", refused.reason);
+    }
+    assert!(queue::list(&app).unwrap().is_empty(), "no empty draft card");
+    assert!(seen.lock().unwrap().iter().all(|call: &Value| call["method"] != "tools/call"));
     app.mcp.servers.lock().unwrap().clear();
     let _ = std::fs::remove_dir_all(home);
 }
