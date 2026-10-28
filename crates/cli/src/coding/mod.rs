@@ -1494,6 +1494,15 @@ async fn approve(app: &Arc<App>, agent: &Arc<Agent>, approval: Approval) -> Resu
         crate::plugins::review::Outcome::Held { reason, .. } => return Err(crate::plugins::review::agent_note(&reason)),
         crate::plugins::review::Outcome::Ask { reason, rule } => (reason, rule),
     };
+    // Nobody watches the run that started it, so a question would wait for no one.
+    if record.unattended {
+        let why = reason.as_deref().unwrap_or("Auto-review is off, so every command asks");
+        return Err(format!(
+            "This needs the user's permission ({why}), and nobody is watching the run that started you, so it did not run. Go on \
+             with work that does not depend on it, or stop and name this action exactly in your last message, so the bot that \
+             started you can ask the user."
+        ));
+    }
     // One question at a time, on its card.
     let _one = agent.asking.lock().await;
     if !agent.is_running() {
