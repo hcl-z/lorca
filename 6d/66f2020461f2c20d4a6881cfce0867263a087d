@@ -1,0 +1,21 @@
+docs/architecture/desktop-app.md
+  s_25d443432cd2e6::t_0776e0aaa8e501 8
+desktop/app.go
+  s_25d443432cd2e6::t_aeab5e010308c4 155-157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "6d66f2020461f2c20d4a6881cfce0867263a087d",
+  "prompts": {},
+  "sessions": {
+    "s_25d443432cd2e6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1fb85433-56d2-4977-b592-59f43ee51b08",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": null
+    }
+  }
+}
