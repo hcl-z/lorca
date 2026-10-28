@@ -1,0 +1,97 @@
+crates/agent/src/providers/anthropic.rs
+  s_f7eb74e3575bc1::t_97072cde11bf8f 374-376,379,381,384,390,393-400
+docs/architecture/plugins.md
+  s_f7eb74e3575bc1::t_97072cde11bf8f 8
+crates/agent/src/codemode/prelude.js
+  s_f7eb74e3575bc1::t_97072cde11bf8f 118-125,127-129,146-148
+docs/architecture/desktop-app.md
+  s_25d443432cd2e6::t_788c056df4b45d 7
+ARCHITECTURE.md
+  s_25d443432cd2e6::t_58cdeab606ca4d 77
+crates/cli/src/turns.rs
+  s_25d443432cd2e6::t_37e51362e9413d 4628
+  s_25d443432cd2e6::t_b332dea6867e65 4555-4556
+  s_25d443432cd2e6::t_37e733ae8ff45b 883
+  s_25d443432cd2e6::t_90f3d634eadbe6 4570
+  s_f7eb74e3575bc1::t_97072cde11bf8f 374,599-600,876-882,884-886,1014-1018,4530-4554,4557-4569,4571-4577
+mobile/src/ui/Composer.tsx
+  s_25d443432cd2e6::t_03693743c0ebf2 322-323
+  s_25d443432cd2e6::t_26dbc5c4cc1859 19
+crates/agent/src/agent_loop.rs
+  s_f7eb74e3575bc1::t_97072cde11bf8f 533,584-602,1104,1511-1563
+crates/agent/src/codemode/tests.rs
+  s_f7eb74e3575bc1::t_97072cde11bf8f 162-169,334
+crates/cli/src/drafts.rs
+  s_f7eb74e3575bc1::t_97072cde11bf8f 342-356
+crates/cli/src/coding/tool.rs
+  s_f7eb74e3575bc1::t_97072cde11bf8f 30-31
+crates/cli/src/coding/tests.rs
+  s_f7eb74e3575bc1::t_97072cde11bf8f 390-406
+crates/agent/src/codemode/mod.rs
+  s_f7eb74e3575bc1::t_97072cde11bf8f 1099-1100
+docs/architecture/coding-agents.md
+  s_f7eb74e3575bc1::t_97072cde11bf8f 29
+docs/architecture/protocols.md
+  s_f7eb74e3575bc1::t_385eb582ce2534 3,15
+crates/cli/src/plugins/review.rs
+  s_f7eb74e3575bc1::t_97072cde11bf8f 10-11,23,27,118-119,149-154,371,377-380,382-407,415,421,426,429,448,969-970,988-991,993,1063-1099
+docs/architecture/auto-review.md
+  s_f7eb74e3575bc1::t_97072cde11bf8f 51,53,59,67
+crates/cli/src/local_store.rs
+  s_f7eb74e3575bc1::t_97072cde11bf8f 135-137,270,1360,1544-1545
+docs/architecture/providers.md
+  s_f7eb74e3575bc1::t_97072cde11bf8f 9
+docs/architecture/tasks.md
+  s_f7eb74e3575bc1::t_97072cde11bf8f 47
+crates/cli/src/plugins/mcp/review_tests.rs
+  s_f7eb74e3575bc1::t_97072cde11bf8f 418,462-482
+crates/cli/src/model.rs
+  s_f7eb74e3575bc1::t_97072cde11bf8f 1478,1509-1513
+docs/architecture/runtime.md
+  s_25d443432cd2e6::t_15570e20f2e3e6 70
+  s_25d443432cd2e6::t_6f275eec5d631e 3
+mobile/app/(main)/chat/[id].tsx
+  s_25d443432cd2e6::t_92cfb30f411aba 289-291
+  s_25d443432cd2e6::t_a18919e8eed4f7 369,373-384
+  s_25d443432cd2e6::t_8c03c36574a2f5 284-286
+docs/architecture/local-ws.md
+  s_f7eb74e3575bc1::t_97072cde11bf8f 1-8,10-35
+  s_f7eb74e3575bc1::t_48ffd7b279fc49 9
+crates/cli/src/coding/mod.rs
+  s_f7eb74e3575bc1::t_97072cde11bf8f 1499-1507
+crates/cli/src/sync.rs
+  s_f7eb74e3575bc1::t_97072cde11bf8f 681,1202,1209,1212,1252,1258-1306,1445-1487,1579-1627
+mobile/src/ui/RunningAgents.tsx
+  s_25d443432cd2e6::t_3cb6e7ad947888 74-78,80
+  s_25d443432cd2e6::t_872b570a921a45 11
+docs/architecture/drafts.md
+  s_f7eb74e3575bc1::t_97072cde11bf8f 9
+crates/cli/src/plugins/review_prompt.rs
+  s_f7eb74e3575bc1::t_97072cde11bf8f 97-102
+crates/cli/src/app.rs
+  s_f7eb74e3575bc1::t_97072cde11bf8f 90-92,786,1069-1071,1074,1083-1084,1086-1088,1103,1118-1139,1318,1320-1321,1348,1489,1776
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "2bd3875910d3c45c6a71af82552e624099b3dc84",
+  "prompts": {},
+  "sessions": {
+    "s_25d443432cd2e6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1fb85433-56d2-4977-b592-59f43ee51b08",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    },
+    "s_f7eb74e3575bc1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "453131d1-0daa-41fc-b6ed-3bb467194faa",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
