@@ -74,7 +74,7 @@ One doc per subject under `docs/architecture/`, each read in one pass: `bun run 
 | [Identity](docs/architecture/identity.md) | Key pairs and the identity device, pairing and unpairing, Devices and Runners, what the relay sees, the account's provider credentials |
 | [Relay](docs/architecture/relay.md) | `crates/relay`: storage on SQLite or Postgres, files, housekeeping, quotas, metrics, rate limits, auth, tables and migrations, the blob, sync socket, and push APIs, deploys |
 | [Relay trust](docs/architecture/relay-trust.md) | What a Device takes from the relay and how it checks it: Device records, unpaired keys, signed envelopes, the challenge nonce, the pairing reply key, account key generations and rotation on unpair |
-| [Protocols](docs/architecture/protocols.md) | The app ↔ CLI websocket and the CLI ↔ relay requests and blobs |
+| [Protocols](docs/architecture/protocols.md) | Relay requests/blobs; [local websocket](docs/architecture/local-ws.md) |
 | [CLI (runtime)](docs/architecture/runtime.md) | The `lorca` binary and its data directory, installing it, its signed self-updates and `lorca service`, the agent loop and a turn on a Runner |
 | [Turn context](docs/architecture/turn-context.md) | A turn's system prompt, brief and notes, and the follow-up on announced work |
 | [Turn traces](docs/architecture/traces.md) | A turn's steps and end reason, `lorca traces` |
