@@ -20,6 +20,7 @@
     "phone-icons": "bun run scripts/phone-icons.ts",
     "check:docs": "bun run scripts/check-docs.ts",
     "check:catalog": "bun run scripts/check-catalog.ts",
+    "sync:models": "bun run scripts/sync-models.ts",
     "web": "bun run --cwd web dev",
     "web:build": "bun run --cwd web build",
     "web:deploy": "bun run --cwd web deploy",
