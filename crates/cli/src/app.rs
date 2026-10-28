@@ -87,6 +87,9 @@ pub struct State {
     /// The machine pubkeys of Devices unpaired from this account, from the roster and kept for
     /// good: no `machine` blob makes one a Device again and no envelope from one is opened.
     pub unpaired: std::collections::BTreeSet<String>,
+    /// The ids of the bots, chats, and routines deleted on any Device, from the roster and kept
+    /// for good: a roster that still lists one does not bring it back.
+    pub deleted: std::collections::BTreeSet<String>,
     pub last_seq: i64,
     /// Chats deleted here whose blobs the relay still has to drop.
     pub group_deletes: Vec<String>,
@@ -780,6 +783,7 @@ impl App {
                 shared_links: state.shared_links.clone(),
                 device_names: state.device_names.clone(),
                 unpaired: state.unpaired.clone(),
+                deleted: state.deleted.clone(),
                 updated_at: config::now_secs(),
             }
         };
@@ -1062,10 +1066,12 @@ impl App {
 
     /// Every turn in flight this Device knows of, by job id: what the other Devices list while
     /// the relay last saw them online, then this Device's own jobs, including one it sent to a
-    /// Runner that has not listed it yet.
+    /// Runner that has not listed it yet. A job sent to a Runner the relay's last machine list
+    /// shows offline is left out, as that Runner's own list is: its wait goes on, so a result
+    /// that comes later still counts.
     fn known_turns(&self) -> std::collections::BTreeMap<String, LiveTurn> {
         let mut turns = std::collections::BTreeMap::new();
-        {
+        let offline_runners: std::collections::HashSet<String> = {
             let state = self.state.lock().unwrap();
             for (device_id, listed) in &state.device_turns {
                 if state.turns_online.contains(device_id) {
@@ -1074,8 +1080,12 @@ impl App {
                     }
                 }
             }
-        }
+            state.listed_machines.keys().filter(|id| !state.turns_online.contains(*id)).cloned().collect()
+        };
         for (id, job) in self.running_jobs.lock().unwrap().iter() {
+            if job.runner_id.as_ref().is_some_and(|runner| offline_runners.contains(runner)) {
+                continue;
+            }
             turns.entry(id.clone()).or_insert_with(|| job.turn(id));
         }
         turns
@@ -1090,11 +1100,7 @@ impl App {
         }
         let mut announced = self.announced_turns.lock().unwrap();
         let known = self.known_turns();
-        for (id, turn) in announced.iter() {
-            if !known.contains_key(id) {
-                self.emit(Event::JobFinished { chat_id: turn.chat_id.clone(), bot_id: turn.bot_id.clone(), job_id: id.clone(), routine_id: turn.routine_id.clone() });
-            }
-        }
+        self.announce_ended(&announced, &known);
         for (id, turn) in &known {
             let before = announced.get(id);
             if before.is_none() {
@@ -1107,6 +1113,28 @@ impl App {
             }
         }
         *announced = known;
+    }
+
+    /// Tells the local app at once which of the turns it was told of this Device no longer
+    /// knows, and announces none: a Device the relay now shows offline lists nothing, and its
+    /// turns end here without waiting for the rest of the sync round, which a relay that drops
+    /// the session may never finish. What starts waits for `turns_changed` after the pull.
+    pub fn turns_ended(&self) {
+        if self.bulk_sync.load(Ordering::Relaxed) {
+            return;
+        }
+        let mut announced = self.announced_turns.lock().unwrap();
+        let known = self.known_turns();
+        self.announce_ended(&announced, &known);
+        announced.retain(|id, _| known.contains_key(id));
+    }
+
+    fn announce_ended(&self, announced: &std::collections::BTreeMap<String, LiveTurn>, known: &std::collections::BTreeMap<String, LiveTurn>) {
+        for (id, turn) in announced.iter() {
+            if !known.contains_key(id) {
+                self.emit(Event::JobFinished { chat_id: turn.chat_id.clone(), bot_id: turn.bot_id.clone(), job_id: id.clone(), routine_id: turn.routine_id.clone() });
+            }
+        }
     }
 
     /// A turn here started, ended, or changed what it is doing: the other Devices hear it
@@ -1287,7 +1315,10 @@ impl App {
             let deleted_bot = state.bots.iter().find(|bot| bot.id == id).cloned().ok_or_else(|| anyhow::anyhow!("Unknown bot"))?;
 
             state.bots.retain(|bot| bot.id != id);
+            let routines: Vec<String> = state.routines.iter().filter(|routine| routine.bot_id == id).map(|routine| routine.id.clone()).collect();
             state.routines.retain(|routine| routine.bot_id != id);
+            state.deleted.insert(id.to_string());
+            state.deleted.extend(routines);
             if let Some(avatar) = &deleted_bot.avatar {
                 self.drop_avatar(&mut state, &avatar.id);
             }
@@ -1314,6 +1345,7 @@ impl App {
             }
 
             state.chats.retain(|chat| !removed.contains(&chat.meta.id));
+            state.deleted.extend(removed.iter().cloned());
             queue_chat_deletes(&mut state, &removed);
             removed
         };
@@ -1454,6 +1486,7 @@ impl App {
         {
             let mut state = self.state.lock().unwrap();
             state.chats.retain(|c| c.meta.id != chat_id);
+            state.deleted.insert(chat_id.to_string());
             // The relay drops the chat's messages, read marks, and attachments in one call,
             // made by the sync cycle and retried until it lands. What was still waiting to go
             // up goes nowhere.
@@ -1740,6 +1773,7 @@ impl App {
             if state.routines.len() == before {
                 anyhow::bail!("Unknown routine");
             }
+            state.deleted.insert(id.to_string());
         }
         self.roster_changed(true);
         Ok(())
