@@ -3,10 +3,10 @@
 # this repository, after the version in mobile/app.config.ts, with the version's section of
 # CHANGELOG.md as its notes, then builds the Android APK, signed with the release keystore, and an
 # unsigned iPhone .ipa, which a sideloading tool signs with the user's own Apple ID, and uploads
-# both to the draft; the tag appears when the draft is published. Running on main keeps the Rust,
-# Gradle, and Xcode caches where the next release reads them. The iPhone build runs
-# `bun run release-ios`, the Android one `bun run release-android`. Publishing the draft, without
-# making it the latest release, which stays the CLI's, makes it the update Android apps install.
+# both to the draft. When both builds finish, the workflow publishes the draft without making it
+# the latest release, which stays the CLI's; publishing it makes it the update Android apps
+# install. Running on main keeps the Rust, Gradle, and Xcode caches where the next release reads
+# them. The iPhone build runs `bun run release-ios`, the Android one `bun run release-android`.
 # docs/releasing-mobile.md has the steps.
 name: Release phone app
 
@@ -127,10 +127,21 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-ios,aarch64-apple-ios-sim
-      - uses: Swatinem/rust-cache@v2
+          targets: aarch64-apple-ios
+      - name: Read the Rust version
+        id: rust
+        run: echo "version=$(rustc --version | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
+      # The target directory and the crate registry, kept across releases. The key does not
+      # change with Cargo.lock: a release's version bump rewrites it, but the dependencies do not.
+      - uses: actions/cache@v6
         with:
-          key: ios
+          path: |
+            target
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+          key: rust-${{ runner.os }}-${{ steps.rust.outputs.version }}-mobile-ios
+          restore-keys: rust-${{ runner.os }}-${{ steps.rust.outputs.version }}-mobile-
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
         working-directory: mobile
@@ -165,13 +176,24 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,x86_64-linux-android
+          targets: aarch64-linux-android
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-ndk
-      - uses: Swatinem/rust-cache@v2
+      - name: Read the Rust version
+        id: rust
+        run: echo "version=$(rustc --version | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
+      # The target directory and the crate registry, kept across releases. The key does not
+      # change with Cargo.lock: a release's version bump rewrites it, but the dependencies do not.
+      - uses: actions/cache@v6
         with:
-          key: android
+          path: |
+            target
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+          key: rust-${{ runner.os }}-${{ steps.rust.outputs.version }}-mobile-android
+          restore-keys: rust-${{ runner.os }}-${{ steps.rust.outputs.version }}-mobile-
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -201,3 +223,25 @@ jobs:
           TAG: ${{ needs.version.outputs.tag }}
           VERSION: ${{ needs.version.outputs.version }}
         run: gh release upload "$TAG" "dist/android/lorca-$VERSION-android.apk" --repo "$GITHUB_REPOSITORY" --clobber
+
+  # The draft is published only after both platforms the run asked for have uploaded. The tag
+  # appears here, and the phone's update window reads it; it does not become the latest release,
+  # which stays the CLI's.
+  publish:
+    needs: [version, draft, ios, android]
+    if: |
+      always() &&
+      needs.version.result == 'success' &&
+      needs.draft.result == 'success' &&
+      (needs.ios.result == 'success' || needs.ios.result == 'skipped') &&
+      (needs.android.result == 'success' || needs.android.result == 'skipped') &&
+      (needs.ios.result == 'success' || needs.android.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish ${{ needs.version.outputs.tag }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest=false
