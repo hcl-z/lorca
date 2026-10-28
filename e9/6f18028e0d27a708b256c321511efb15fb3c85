@@ -1,0 +1,27 @@
+mobile/src/ui/Composer.tsx
+  s_25d443432cd2e6::t_26dbc5c4cc1859 19
+  s_25d443432cd2e6::t_03693743c0ebf2 322-323
+mobile/app/(main)/chat/[id].tsx
+  s_25d443432cd2e6::t_a18919e8eed4f7 364,368-379
+  s_25d443432cd2e6::t_8c03c36574a2f5 279-281
+  s_25d443432cd2e6::t_92cfb30f411aba 284-286
+mobile/src/ui/RunningAgents.tsx
+  s_25d443432cd2e6::t_872b570a921a45 11
+  s_25d443432cd2e6::t_3cb6e7ad947888 74-78,80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "e96f18028e0d27a708b256c321511efb15fb3c85",
+  "prompts": {},
+  "sessions": {
+    "s_25d443432cd2e6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1fb85433-56d2-4977-b592-59f43ee51b08",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
