@@ -400,10 +400,10 @@ export function CardButton({ label, icon, primary = false, disabled = false, onP
   return <Button title={label} icon={icon} kind={primary ? "primary" : "secondary"} disabled={disabled} onPress={onPress} style={styles.cardButton} />;
 }
 
-export const PermissionRow = memo(function PermissionRow({ row, isGroup, onDecide, onFill, onOpenQuestion, onOpenCommand }: { row: Extract<Row, { type: "permission" }>; isGroup: boolean; onDecide: (message: Message, decision: "allow" | "always" | "deny") => void; onFill: (message: Message) => void; onOpenQuestion?: (message: Message) => void; onOpenCommand?: (message: Message) => void }) {
+export const PermissionRow = memo(function PermissionRow({ row, isGroup, onDecide, onFill, onOpenQuestion, onOpenAsk, onOpenCommand }: { row: Extract<Row, { type: "permission" }>; isGroup: boolean; onDecide: (message: Message, decision: "allow" | "always" | "deny") => void; onFill: (message: Message) => void; onOpenQuestion?: (message: Message) => void; onOpenAsk?: (message: Message) => void; onOpenCommand?: (message: Message) => void }) {
   if (row.body.tool === "secret" && row.body.secret) return <SecretRow row={row} isGroup={isGroup} onDecide={onDecide} onFill={onFill} />;
-  if (row.body.tool === "ask" && row.body.ask) return <QuestionRow row={row} ask={row.body.ask} isGroup={isGroup} onDecide={onDecide} onOpen={onOpenQuestion} />;
-  if (row.body.tool === "agent_ask" && row.body.agent_ask) return <AgentAskRow row={row} ask={row.body.agent_ask} isGroup={isGroup} />;
+  if (row.body.tool === "ask" && row.body.ask) return <QuestionRow row={row} ask={row.body.ask} isGroup={isGroup} onDecide={onDecide} onOpen={onOpenQuestion} compact />;
+  if (row.body.tool === "agent_ask" && row.body.agent_ask) return <AgentAskRow row={row} ask={row.body.agent_ask} isGroup={isGroup} compact onOpen={onOpenAsk} />;
   return <AskRow row={row} isGroup={isGroup} onDecide={onDecide} onOpenCommand={onOpenCommand} />;
 });
 
@@ -423,6 +423,11 @@ function SecretRow({ row, isGroup, onDecide, onFill }: { row: Extract<Row, { typ
   const caption = secretCaption(body);
   return (
     <View style={[styles.messageRow, { paddingTop: row.groupStart ? 14 : 6 }]}>
+      {showsAvatar && (
+        <View style={{ width: AVATAR + GUTTER, alignSelf: "flex-end" }}>
+          <BotAvatar bot={row.bot} size={AVATAR} />
+        </View>
+      )}
       <View style={[styles.permission, { backgroundColor: p.botBubble }]}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <Symbol name="key" size={16} color={pending ? p.tint : p.secondaryLabel} />
@@ -600,7 +605,7 @@ const AskRow = memo(function AskRow({ row, isGroup, onDecide, onOpenCommand }: {
 /// on its tap; several, or Other, send with Submit. Skip leaves the choice to the bot. A refusal
 /// from the Runner (offline, expired) puts the card back with why under it. Answered, it keeps the
 /// question and says what was picked.
-export const QuestionRow = memo(function QuestionRow({ row, ask, isGroup, onDecide, onOpen }: { row: Extract<Row, { type: "permission" }>; ask: AskQuestion; isGroup: boolean; onDecide: (message: Message, decision: "allow" | "always" | "deny") => void; onOpen?: (message: Message) => void }) {
+export const QuestionRow = memo(function QuestionRow({ row, ask, isGroup, onDecide, onOpen, compact }: { row: Extract<Row, { type: "permission" }>; ask: AskQuestion; isGroup: boolean; onDecide: (message: Message, decision: "allow" | "always" | "deny") => void; onOpen?: (message: Message) => void; compact?: boolean }) {
   useLanguage();
   const p = usePalette();
   const [picked, setPicked] = useState<number[]>([]);
@@ -642,16 +647,13 @@ export const QuestionRow = memo(function QuestionRow({ row, ask, isGroup, onDeci
         </View>
       )}
       <View style={[styles.permission, { backgroundColor: p.botBubble }]}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <Text style={[styles.caption, { color: p.secondaryLabel, flex: 1 }]}>{t("{who} asks you to choose", { who })}</Text>
-          {onOpen && pending ? (
-            <Pressable onPress={() => onOpen(row.message)} hitSlop={8} accessibilityRole="button" accessibilityLabel={t("Answer in a sheet")} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
-              <Symbol name="rectangle.expand.vertical" size={15} color={p.secondaryLabel} />
-            </Pressable>
-          ) : null}
-        </View>
+        <Text style={[styles.caption, { color: p.secondaryLabel }]}>{t("{who} asks you to choose", { who })}</Text>
         <Text style={[styles.questionText, { color: p.label }]}>{ask.question}</Text>
-        {pending ? (
+        {pending && compact && onOpen ? (
+          <View style={styles.cardButtons}>
+            <CardButton label={t("Answer")} icon="questionmark.circle" primary onPress={() => onOpen(row.message)} />
+          </View>
+        ) : pending ? (
           <>
             <View style={[styles.innerCard, styles.options, { backgroundColor: p.innerCard }]}>
               {ask.options.map((option, index) => {
@@ -731,7 +733,7 @@ export const QuestionRow = memo(function QuestionRow({ row, ask, isGroup, onDeci
 /// sends on its tap; the rest send with Submit once each required field has an answer. Decline
 /// leaves the agent to go on without one. A refusal (offline, it no longer asks) shows why under the
 /// card. Answered, it keeps the question and says who answered and what, or why there is no answer.
-export const AgentAskRow = memo(function AgentAskRow({ row, ask, isGroup, onAnswered }: { row: Extract<Row, { type: "permission" }>; ask: agentAsk.AgentAsk; isGroup: boolean; onAnswered?: () => void }) {
+export const AgentAskRow = memo(function AgentAskRow({ row, ask, isGroup, onAnswered, compact, onOpen }: { row: Extract<Row, { type: "permission" }>; ask: agentAsk.AgentAsk; isGroup: boolean; onAnswered?: () => void; compact?: boolean; onOpen?: (message: Message) => void }) {
   useLanguage();
   const p = usePalette();
   const [draft, setDraft] = useState<agentAsk.AgentAskDraft>(agentAsk.emptyDraft);
@@ -792,7 +794,11 @@ export const AgentAskRow = memo(function AgentAskRow({ row, ask, isGroup, onAnsw
           ) : null}
         </View>
         {ask.message ? <Markdown text={ask.message} color={p.label} maxWidth={width} size={15} /> : null}
-        {pending ? (
+        {pending && compact && onOpen ? (
+          <View style={styles.cardButtons}>
+            <CardButton label={t("Answer")} icon="questionmark.circle" primary onPress={() => onOpen(row.message)} />
+          </View>
+        ) : pending ? (
           <>
             {ask.fields.map((field) => {
               const choices = agentAsk.fieldChoices(field, t("Yes"), t("No"));

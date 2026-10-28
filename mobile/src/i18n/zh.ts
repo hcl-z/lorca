@@ -325,7 +325,6 @@ export const zh: Record<string, string> = {
   "Open transcript": "打开会话记录",
   "Answer question": "回答问题",
   "Question": "问题",
-  "Answer in a sheet": "在底部面板中回答",
   "Stop {agent}": "停止 {agent}",
   "Agent actions": "Agent 操作",
   "Coding agent": "编码 agent",

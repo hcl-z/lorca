@@ -19,7 +19,7 @@ export function chatAgents(chat: Chat): ChatAgent[] {
   const found: ChatAgent[] = [];
   for (const message of chat.messages) {
     const agent = message.body.kind === "tool" ? message.body.agent : undefined;
-    if (!agent || !agentIsOpen(agent) || agent.state === "checking" || seen.has(agent.id)) continue;
+    if (!agent || !agent.id || !agentIsOpen(agent) || agent.state === "checking" || seen.has(agent.id)) continue;
     seen.add(agent.id);
     found.push({ message, agent });
   }

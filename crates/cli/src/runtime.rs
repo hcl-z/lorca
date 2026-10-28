@@ -86,6 +86,17 @@ pub fn send_user_message_with_agents(
         if text.is_empty() {
             anyhow::bail!("Write a message for the coding agent");
         }
+        // A message that is only the @Name has nothing for the agent to read.
+        let has_words = targets.iter().any(|target| {
+            let Some((at, _)) = text.match_indices('@').find(|(at, _)| mention_at(text, *at, &target.name)) else {
+                return !text.is_empty();
+            };
+            let end = at + 1 + target.name.len();
+            !format!("{}{}", &text[..at], &text[end..]).trim().is_empty()
+        });
+        if !has_words {
+            anyhow::bail!("Write a message for the coding agent");
+        }
         for target in &targets {
             let bot = app.bot(&target.bot_id).ok_or_else(|| anyhow::anyhow!("The agent's bot is no longer in this chat"))?;
             if app.this_device_id().as_deref() != Some(bot.runner_id.as_str()) {
@@ -128,40 +139,54 @@ pub fn send_user_message_with_agents(
 /// A coding agent a message addresses, and the bot that runs it.
 struct AgentTarget {
     id: String,
+    name: String,
     bot_id: String,
 }
 
 /// Resolve picked agent ids and `@Name`s against the chat's open agent cards. A picked id that
 /// is not an open card is refused; a typed name that is not one is left for the bot, as before.
 fn agent_targets(app: &App, chat: &Chat, text: &str, picked: &[String]) -> anyhow::Result<Vec<AgentTarget>> {
-    let mut cards: Vec<(String, String, String, f64, bool)> = Vec::new();
+    struct AgentCard {
+        id: String,
+        name: String,
+        bot_id: String,
+        started_at: f64,
+        open: bool,
+    }
+    let mut cards: Vec<AgentCard> = Vec::new();
     for message in app.store.all(&chat.meta.id).unwrap_or_default() {
         let Body::Tool { agent: Some(run), .. } = &message.body else { continue };
         let Author::Bot { bot_id } = &message.author else { continue };
-        if !chat.meta.bot_ids.contains(bot_id) {
+        if run.id.is_empty() || !chat.meta.bot_ids.contains(bot_id) {
             continue;
         }
-        cards.push((run.id.clone(), run.display_name().to_string(), bot_id.clone(), run.started_at.unwrap_or(0.0), run.is_open()));
+        cards.push(AgentCard {
+            id: run.id.clone(),
+            name: run.display_name().to_string(),
+            bot_id: bot_id.clone(),
+            started_at: run.started_at.unwrap_or(0.0),
+            open: run.is_open(),
+        });
     }
     let mut targets: Vec<AgentTarget> = Vec::new();
     for id in picked {
         // A pick that raced the agent's end still keeps the message: the Runner has no open
         // agent to take it, so the job is a no-op rather than a bot turn.
-        let Some((_, _, bot_id, _, _)) = cards.iter().find(|(card_id, _, _, _, _)| card_id == id) else {
+        let Some(card) = cards.iter().find(|card| card.id == *id) else {
             anyhow::bail!("Unknown coding agent");
         };
         if !targets.iter().any(|target| target.id == *id) {
-            targets.push(AgentTarget { id: id.clone(), bot_id: bot_id.clone() });
+            targets.push(AgentTarget { id: id.clone(), name: card.name.clone(), bot_id: card.bot_id.clone() });
         }
     }
-    let mut typed: Vec<&(String, String, String, f64, bool)> = cards
+    let mut typed: Vec<&AgentCard> = cards
         .iter()
-        .filter(|(_, name, _, _, open)| *open && text.match_indices('@').any(|(at, _)| mention_at(text, at, name)))
+        .filter(|card| card.open && text.match_indices('@').any(|(at, _)| mention_at(text, at, &card.name)))
         .collect();
-    typed.sort_by(|a, b| b.3.total_cmp(&a.3));
-    for (id, _, bot_id, _, _) in typed {
-        if !targets.iter().any(|target| target.id == *id) {
-            targets.push(AgentTarget { id: id.clone(), bot_id: bot_id.clone() });
+    typed.sort_by(|a, b| b.started_at.total_cmp(&a.started_at));
+    for card in typed {
+        if !targets.iter().any(|target| target.id == card.id) {
+            targets.push(AgentTarget { id: card.id.clone(), name: card.name.clone(), bot_id: card.bot_id.clone() });
         }
     }
     Ok(targets)
@@ -1732,6 +1757,13 @@ mod agent_send_tests {
         .unwrap();
         assert!(app.running_chat_ids().is_empty());
         assert_eq!(message.body.agents(), ["agent-1"]);
+    }
+
+    #[test]
+    fn a_message_that_is_only_an_agent_name_is_refused() {
+        let (_scratch, app, _bot) = setup();
+        let error = send_user_message_with_agents(app, "chat", "@Claude Code", None, Vec::new(), Vec::new(), vec!["agent-1".into()], None).unwrap_err();
+        assert!(error.to_string().contains("Write a message for the coding agent"), "{error}");
     }
 
     #[test]

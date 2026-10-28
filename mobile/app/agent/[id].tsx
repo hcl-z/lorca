@@ -186,7 +186,6 @@ export default function AgentScreen() {
   );
 }
 
-/// The top of the sheet
 /// The top of the sheet: the agent's header with Stop, then what it works on, where, its session,
 /// its plan, and its pull request.
 function Overview({ agent, message, entries, stopping, onStop, onActions }: { agent: AgentRun; message: Message; entries: AgentEntry[]; stopping: boolean; onStop: () => void; onActions: () => void }) {

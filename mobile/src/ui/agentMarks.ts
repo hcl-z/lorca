@@ -28,47 +28,38 @@ const GENERIC =
 
 /// The mark of an agent's kind: Claude Code's and Codex's, whichever way they are driven, and a
 /// prompt for the agents without one of their own.
+const MARKS: Record<string, string> = {
+  claude: CLAUDE,
+  "claude-acp": CLAUDE,
+  codex: CODEX,
+  "codex-acp": CODEX,
+  gemini: GEMINI,
+  copilot: COPILOT,
+  cursor: CURSOR,
+  opencode: OPENCODE,
+  kimi: KIMI,
+};
+
 export function agentMark(kind: string): string {
-  switch (kind) {
-    case "claude":
-    case "claude-acp":
-      return CLAUDE;
-    case "codex":
-    case "codex-acp":
-      return CODEX;
-    case "gemini":
-      return GEMINI;
-    case "copilot":
-      return COPILOT;
-    case "cursor":
-      return CURSOR;
-    case "opencode":
-      return OPENCODE;
-    case "kimi":
-      return KIMI;
-    default:
-      return GENERIC;
-  }
+  return MARKS[kind] ?? GENERIC;
 }
 
 /// An agent's own color, with the desktop's brand map: Claude's terracotta, OpenAI's ink for
 /// Codex, Copilot, and Cursor, Gemini's blue, and the accent for OpenCode and Kimi.
+const BRANDS: Record<string, (dark: boolean, accent: string) => string> = {
+  claude: () => "#D97757",
+  "claude-acp": () => "#D97757",
+  codex: (dark) => (dark ? "#F5F5F7" : "#1D1D1F"),
+  "codex-acp": (dark) => (dark ? "#F5F5F7" : "#1D1D1F"),
+  gemini: () => "#4C8DF6",
+  copilot: (dark) => (dark ? "#F5F5F7" : "#1D1D1F"),
+  cursor: (dark) => (dark ? "#F5F5F7" : "#1D1D1F"),
+  opencode: (_dark, accent) => accent,
+  kimi: (_dark, accent) => accent,
+};
+
 export function agentBrandColor(kind: string, dark: boolean, accent: string): string {
-  switch (kind) {
-    case "claude":
-    case "claude-acp":
-      return "#D97757";
-    case "codex":
-    case "codex-acp":
-      return dark ? "#F5F5F7" : "#1D1D1F";
-    case "gemini":
-      return "#4C8DF6";
-    case "copilot":
-    case "cursor":
-      return dark ? "#F5F5F7" : "#1D1D1F";
-    default:
-      return accent;
-  }
+  return BRANDS[kind]?.(dark, accent) ?? accent;
 }
 
 export const AGENT_MARK_KINDS = ["claude", "claude-acp", "codex", "codex-acp", "gemini", "copilot", "cursor", "opencode", "kimi", "pi", "kiro", "unknown"] as const;

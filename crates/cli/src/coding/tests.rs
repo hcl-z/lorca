@@ -1288,3 +1288,46 @@ mod said_chat_tests {
         assert!(matches!(messages[0].state, MessageState::Complete));
     }
 }
+
+#[tokio::test]
+async fn an_agent_message_job_runs_before_the_chat_lock_and_only_once() {
+    let scratch = setup().await;
+    let app = &scratch.app;
+    let mut auto_review = app.auto_review();
+    auto_review.is_enabled = false;
+    app.set_auto_review(auto_review);
+    let tool = tool(&scratch);
+    let row = start_row(app, "call-1");
+    call(&tool, "call-1", json!({ "action": "start", "agent": "gemini", "folder": "shop", "prompt": "Work on it (slow)" })).await.unwrap();
+    card_when(app, &row, |card| card.state == "working").await;
+    let agent = app.coding_agents.of("chat", "b1").pop().unwrap();
+    let job = crate::runtime::agent_message_job(app, "chat", "b1", &row, &agent.id(), "(follow-up)");
+
+    // The chat lock is held: an agent message must still reach the agent before it.
+    let chat_lock = app.chat_lock("chat");
+    let lock = chat_lock.lock().await;
+    crate::runtime::spawn_local_job(app.clone(), job.clone(), None);
+    let said = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Some(message) = app.messages("chat").into_iter().find(|message| {
+                message.state == MessageState::Complete
+                    && message.agent.is_some()
+                    && matches!(&message.body, Body::Text { text, .. } if text.contains("Followed up."))
+            }) {
+                return message;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the agent took the message while the chat lock was held");
+    assert!(said.agent.is_some());
+    assert!(app.running_jobs.lock().unwrap().is_empty(), "no turn job was registered");
+
+    // The same user message delivered again is a no-op, not a second follow-up.
+    crate::runtime::spawn_local_job(app.clone(), job, None);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let replies = app.messages("chat").into_iter().filter(|message| message.agent.is_some() && matches!(&message.body, Body::Text { text, .. } if text.contains("Followed up."))).count();
+    assert_eq!(replies, 1);
+    drop(lock);
+}

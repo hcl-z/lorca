@@ -140,20 +140,24 @@ export function lastSeen(seenUnix: number | undefined): string {
   return t("Last seen {count}d ago", { count: Math.floor(elapsed / 86400) });
 }
 
-/// Who wrote a quoted message: the coding agent that wrote it, else the bot, the person, or You.
-export function quoteAuthorName(quote: ReplyTo, bots: Map<string, Bot>): string {
-  if (quote.agent) return quote.agent.name || agentKindName(quote.agent.kind);
-  const author = quote.author;
+/// An author's name: You, the bot, a contact, or Lorca itself.
+function authorName(author: ReplyTo["author"], bots: Map<string, Bot>): string {
   if (author.kind === "you") return t("You");
   if (author.kind === "bot") return bots.get(author.bot_id)?.name ?? t("Bot");
   if (author.kind === "contact") return author.name;
   return "Lorca";
 }
 
+/// Who wrote a quoted message: the coding agent that wrote it, else its author's name.
+export function quoteAuthorName(quote: ReplyTo, bots: Map<string, Bot>): string {
+  if (quote.agent) return quote.agent.name || agentKindName(quote.agent.kind);
+  return authorName(quote.author, bots);
+}
+
 /// Who wrote a message: an agent's own name when one wrote it, else its author's.
 export function messageAuthorName(message: Message, bots: Map<string, Bot>): string {
   if (message.agent) return message.agent.name || agentKindName(message.agent.kind);
-  return quoteAuthorName({ message_id: message.id, author: message.author, text: "" }, bots);
+  return authorName(message.author, bots);
 }
 
 /// The agent behind the latest previewable message, when one spoke last: the chat list shows its

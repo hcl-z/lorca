@@ -5,10 +5,11 @@ import { StyleSheet, Text, View } from "react-native";
 import { agentIsRunning, agentName, agentPlace, type AgentRun, type Bot } from "../core/model";
 import { agentBusy } from "../core/agentKit";
 import { useStore } from "../core/store";
-import { t } from "../i18n";
+import { t, useLanguage } from "../i18n";
 import { AgentPill, AgentTile, StopButton } from "./agentKit";
 import { BotAvatar } from "./Avatar";
 import { Sheet, SheetActionRow } from "./Sheet";
+import { SHEET_PRESETS } from "./sheetPresets";
 import { usePalette } from "./theme";
 
 export interface ParticipantAgent {
@@ -33,11 +34,12 @@ export function ParticipantsSheet({
   onOpenAgent: (messageId: string) => void;
   onStopAgent: (messageId: string) => Promise<void>;
 }) {
-  const p = usePalette();
+  const p = usePalette();  useLanguage();
+
   const devices = useStore((s) => s.devices);
   const runnerName = (id: string) => devices.find((device) => device.id === id)?.name;
   return (
-    <Sheet visible={visible} onClose={onClose} title={t("{title}, participants", { title })} scroll>
+    <Sheet visible={visible} onClose={onClose} title={t("{title}, participants", { title })} snapPoints={SHEET_PRESETS.participants} scroll>
       <Text style={[styles.section, { color: p.secondaryLabel }]}>{t("Bots")}</Text>
       {bots.map((bot) => (
         <SheetActionRow key={bot.id} tile={<BotAvatar bot={bot} size={28} />} title={bot.name} subtitle={runnerName(bot.runner_id)} />

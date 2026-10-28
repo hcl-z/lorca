@@ -47,6 +47,7 @@ import { RunningAgents } from "../../../src/ui/RunningAgents";
 import { ParticipantsSheet } from "../../../src/ui/ParticipantsSheet";
 import { AgentActionsSheet } from "../../../src/ui/AgentActionsSheet";
 import { AgentAskSheet } from "../../../src/ui/AgentAskSheet";
+import { afterDismiss } from "../../../src/ui/Sheet";
 import { CommandSheet, MessageSheet, QuestionSheet, TasksSheet } from "../../../src/ui/DetailSheets";
 import { CapsuleButton, Float, RoundButton } from "../../../src/ui/chrome";
 import { KeyboardFoot } from "../../../src/ui/KeyboardFoot";
@@ -338,15 +339,13 @@ export default function ChatScreen() {
     const runner = members[0] ? devices.find((device) => device.id === members[0].runner_id) : undefined;
     return !!runner?.agent_messages;
   }, [members, devices]);
-  const mentionKey = chat
+  const agentRosterKey = chat
     ? [chat.bot_ids.join(","), ...chatAgents(chat).map(({ agent }) => `${agent.id}:${agent.name ?? ""}:${agent.kind}:${agent.state}`)].join("|")
     : "";
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const targets = useMemo(() => (chat ? mentionTargets(chat, bots, runnerSupportsAgents) : []), [mentionKey, bots, runnerSupportsAgents]);
+  const targets = useMemo(() => (chat ? mentionTargets(chat, bots, runnerSupportsAgents) : []), [agentRosterKey, bots, runnerSupportsAgents]);
   const agentMentionable = targets.some((target) => target.kind === "agent");
   // The header and participants sheet read the open agents, not every streamed word.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const agents = useMemo(() => (chat ? chatAgents(chat) : []), [mentionKey]);
+  const agents = useMemo(() => (chat ? chatAgents(chat) : []), [agentRosterKey]);
   const [participantsOpen, setParticipantsOpen] = useState(false);
   const openParticipants = useCallback(() => setParticipantsOpen(true), []);
   const [actionsFor, setActionsFor] = useState<Message | null>(null);
@@ -505,6 +504,7 @@ export default function ChatScreen() {
               onDecide={answerCard}
               onFill={fillSecret}
               onOpenQuestion={openQuestion}
+              onOpenAsk={openAsk}
               onOpenCommand={openCommand}
             />
           );
@@ -700,14 +700,14 @@ export default function ChatScreen() {
         onOpenTranscript={() => {
           const message = actionsFor;
           setActionsFor(null);
-          if (message) setTimeout(() => router.push({ pathname: "/agent/[id]", params: { id: message.id, chat: message.chat_id } }), 260);
+          if (message) afterDismiss(() => router.push({ pathname: "/agent/[id]", params: { id: message.id, chat: message.chat_id } }));
         }}
         onAnswer={
           actionsAgent?.asking
             ? () => {
                 const message = chat && actionsAgent ? agentAskCard(chat, actionsAgent) : undefined;
                 setActionsFor(null);
-                if (message) setTimeout(() => setAskFor(message), 260);
+                if (message) afterDismiss(() => setAskFor(message));
               }
             : undefined
         }
@@ -724,7 +724,7 @@ export default function ChatScreen() {
         onClose={() => setTasksOpen(false)}
         onOpenCommand={(message) => {
           setTasksOpen(false);
-          setTimeout(() => router.push({ pathname: "/tasks/command/[id]", params: { id: message.id, chat: id } }), 260);
+          afterDismiss(() => router.push({ pathname: "/tasks/command/[id]", params: { id: message.id, chat: id } }));
         }}
       />
       <QuestionSheet
@@ -746,7 +746,7 @@ export default function ChatScreen() {
         onOpenAgent={(messageId) => {
           setParticipantsOpen(false);
           // The native sheet dismisses first; a route pushed mid-dismiss can be swallowed.
-          setTimeout(() => router.push(`/agent/${messageId}`), 260);
+          afterDismiss(() => router.push({ pathname: "/agent/[id]", params: { id: messageId, chat: id } }));
         }}
         onStopAgent={(messageId) => engine.stopAgent(id, messageId)}
       />

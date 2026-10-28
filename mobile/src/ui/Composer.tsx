@@ -127,7 +127,7 @@ export const Composer = memo(function Composer({
   const trigger = useMemo(() => mentionTrigger(text), [text]);
   const mention = useMemo(() => {
     if (!trigger) return null;
-    const prefix = trigger.query.trim().toLowerCase();
+    const prefix = trigger.query.toLowerCase();
     const matches = mentionTargets.filter((target) => !prefix || target.name.toLowerCase().startsWith(prefix));
     return matches.length ? { trigger, matches } : null;
   }, [trigger, mentionTargets]);

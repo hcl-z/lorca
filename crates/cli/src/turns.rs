@@ -2617,6 +2617,9 @@ fn transcript_bounded(app: &App, chat: &Chat, bot: &Bot, workdir: &std::path::Pa
                 }
                 out.push(AgentMessage::User(UserMessage { content, timestamp }));
             }
+            // A message the user addressed to a coding agent is the agent's request, not the
+            // bot's: an in-flight bot turn must not see it and answer it too.
+            (Author::You, Body::Text { agents, .. }) if !agents.is_empty() => {}
             (Author::You, Body::Text { text, attachments, mentions, reply_to, .. }) if attachments.is_empty() => {
                 out.push(user(&user_words(app, bot, text, mentions, reply_to.as_ref()), timestamp))
             }
@@ -7099,5 +7102,30 @@ mod tests {
         assert_eq!(recovered, 0, "it was answered");
         assert!(app.message("chat", &steer.id).unwrap().promoted_at.is_some(), "an answered claim stays");
         assert!(app.running_jobs.lock().unwrap().is_empty(), "no new turn");
+    }
+
+    #[test]
+    fn the_bot_does_not_read_a_message_addressed_to_an_agent() {
+        let (scratch, chef) = chef_in_a_dm();
+        let app = &scratch.0;
+        let dm = app.chat("chat").unwrap();
+        let mut direct = said("chat", Author::You, "@Claude Code status", 1.0);
+        direct.body = Body::Text { text: "@Claude Code status".into(), attachments: Vec::new(), mentions: Vec::new(), agents: vec!["agent-1".into()], reply_to: None };
+        app.upsert_message(direct, false);
+        let messages = transcript_for(app, &dm, &chef, &scratch.1);
+        assert!(messages.is_empty(), "the bot read the agent's request: {messages:?}");
+    }
+
+    #[test]
+    fn the_bot_reads_the_agents_reply_as_one_message() {
+        let (scratch, chef) = chef_in_a_dm();
+        let app = &scratch.0;
+        let dm = app.chat("chat").unwrap();
+        let mut message = said("chat", Author::Bot { bot_id: "b1".into() }, "one", 1.0);
+        message.agent = Some(crate::model::AgentAuthor { id: "agent-1".into(), name: "Claude Code".into(), kind: "claude".into() });
+        app.upsert_message(message, false);
+        let messages = transcript_for(app, &dm, &chef, &scratch.1);
+        assert_eq!(messages.len(), 1);
+        assert!(matches!(&messages[0], AgentMessage::User(m) if m.content.first().and_then(ContentPart::as_text) == Some("[Claude Code (your coding agent agent-1, in the chat)]: one")));
     }
 }

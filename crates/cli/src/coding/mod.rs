@@ -258,7 +258,7 @@ struct SaidChat {
     /// paragraph after a tool call, plan, or note.
     separator: String,
     /// A tool call, plan, or note came since the last words: the next ones start a paragraph.
-    hard: bool,
+    paragraph: bool,
     /// When the open message was last written to the chat.
     flushed: Option<Instant>,
 }
@@ -333,7 +333,7 @@ impl Agent {
         }
         let redactions = crate::secrets::Redactions::load(app);
         let mut project: Vec<(String, String, bool)> = Vec::new();
-        let mut hard = self.said.lock().unwrap().hard;
+        let mut paragraph = self.said.lock().unwrap().paragraph;
         {
             let mut entries = self.entries.lock().unwrap();
             for (key, entry) in new {
@@ -342,23 +342,23 @@ impl Agent {
                 // separates the next words with a paragraph, but does not end the message: one
                 // turn is one message. A new prompt ends it, and the next turn starts another.
                 if entry.kind == "said" {
-                    project.push((key.clone(), entry.text.clone(), hard));
-                    hard = false;
+                    project.push((key.clone(), entry.text.clone(), paragraph));
+                    paragraph = false;
                 } else if entry.kind == "sent" {
                     project.push((String::new(), String::new(), true));
-                    hard = false;
+                    paragraph = false;
                 } else if matches!(entry.kind.as_str(), "tool" | "plan" | "note") {
-                    hard = true;
+                    paragraph = true;
                 }
                 entries.put(key, entry);
             }
         }
-        self.said.lock().unwrap().hard = hard;
-        for (key, text, hard) in project {
+        self.said.lock().unwrap().paragraph = paragraph;
+        for (key, text, paragraph) in project {
             if key.is_empty() {
                 self.end_said(app);
             } else {
-                self.say_in_chat(app, &key, &text, hard);
+                self.say_in_chat(app, &key, &text, paragraph);
             }
         }
         *self.active_at.lock().unwrap() = Instant::now();
@@ -368,7 +368,7 @@ impl Agent {
     /// the turn is. A new `said` segment continues the same message; a tool call, plan, or note
     /// only makes the next segment start a paragraph, and a new user message ends it. `@Name` in
     /// the chat sends it here (`from_user`).
-    fn say_in_chat(&self, app: &App, key: &str, text: &str, hard: bool) {
+    fn say_in_chat(&self, app: &App, key: &str, text: &str, paragraph: bool) {
         let text = text.trim();
         if text.is_empty() {
             return;
@@ -386,7 +386,7 @@ impl Agent {
                         return;
                     };
                     let prefix = body.clone();
-                    let separator = if hard { "\n\n".to_string() } else { " ".to_string() };
+                    let separator = if paragraph { "\n\n".to_string() } else { " ".to_string() };
                     (message, prefix, separator)
                 }
                 None => (
@@ -436,7 +436,7 @@ impl Agent {
         }
         said.prefix.clear();
         said.separator.clear();
-        said.hard = false;
+        said.paragraph = false;
         said.flushed = None;
     }
 
@@ -979,10 +979,10 @@ pub(crate) fn from_job(app: &Arc<App>, job: &crate::model::Job) {
             if record.direct && record.trigger_message_id == job.trigger_message_id {
                 return;
             }
-            match without_mention(name(&record.kind), &target.text) {
-                Some(words) => (agent, words),
-                None => return,
-            }
+            // A picked agent may be addressed by the id alone, without its `@Name` in the
+            // text; then the whole text is the message. A typed `@Name` is stripped as usual.
+            let words = without_mention(name(&record.kind), &target.text).unwrap_or_else(|| target.text.trim().to_string());
+            (agent, words)
         }
         None => {
             let Some((agent, words)) = mentioned(app, &job.chat_id, &job.bot_id, &target.text) else { return };

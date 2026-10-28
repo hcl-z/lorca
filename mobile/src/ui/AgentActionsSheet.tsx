@@ -2,7 +2,7 @@
 // it where it runs. An action list, so it is the same bottom sheet on both platforms.
 
 import { agentIsRunning, agentName, type AgentRun } from "../core/model";
-import { t } from "../i18n";
+import { t, useLanguage } from "../i18n";
 import { ActionSheet, type SheetAction } from "./Sheet";
 
 export function AgentActionsSheet({
@@ -22,6 +22,7 @@ export function AgentActionsSheet({
   onStop: () => void;
   showTranscript?: boolean;
 }) {
+  useLanguage();
   const actions: SheetAction[] = showTranscript ? [{ label: t("Open transcript"), icon: "doc.text.magnifyingglass", onPress: onOpenTranscript }] : [];
   if (agent?.asking && onAnswer) actions.push({ label: t("Answer question"), icon: "questionmark.circle", onPress: onAnswer });
   if (agent && agentIsRunning(agent)) actions.push({ label: t("Stop {agent}", { agent: agentName(agent) }), icon: "stop.fill", destructive: true, onPress: onStop });

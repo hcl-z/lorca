@@ -496,31 +496,22 @@ export function agentName(agent: AgentRun): string {
 }
 
 /// The product name of a kind, when its card carries none.
+const AGENT_KIND_NAMES: Record<string, string> = {
+  claude: "Claude Code",
+  "claude-acp": "Claude Code",
+  codex: "Codex",
+  "codex-acp": "Codex",
+  gemini: "Gemini CLI",
+  copilot: "GitHub Copilot",
+  cursor: "Cursor",
+  opencode: "OpenCode",
+  kimi: "Kimi Code",
+  kiro: "Kiro",
+  pi: "pi",
+};
+
 export function agentKindName(kind: string): string {
-  switch (kind) {
-    case "claude":
-    case "claude-acp":
-      return "Claude Code";
-    case "codex":
-    case "codex-acp":
-      return "Codex";
-    case "gemini":
-      return "Gemini CLI";
-    case "copilot":
-      return "GitHub Copilot";
-    case "cursor":
-      return "Cursor";
-    case "opencode":
-      return "OpenCode";
-    case "kimi":
-      return "Kimi Code";
-    case "kiro":
-      return "Kiro";
-    case "pi":
-      return "pi";
-    default:
-      return "Coding agent";
-  }
+  return AGENT_KIND_NAMES[kind] ?? "Coding agent";
 }
 
 export function agentIsOpen(agent: AgentRun): boolean {

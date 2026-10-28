@@ -22,20 +22,17 @@ import { Pressable } from "./Pressable";
 import { Symbol } from "./Symbol";
 import { usePalette } from "./theme";
 import { haptic } from "./haptics";
-import { orderActions } from "./sheetPresets";
+import { SHEET_PRESETS, orderActions } from "./sheetPresets";
+import { t, useLanguage } from "../i18n";
 
 export type SheetRef = BottomSheetMethods;
 
-export function presentSheet(ref: { current: SheetRef | null }) {
-  ref.current?.present();
-}
+/// How long the native sheet takes to animate out; a caller that must present another sheet or
+/// push a route waits this long after setting `visible` false.
+export const SHEET_DISMISS_MS = 260;
 
-/// Close the sheet, then run `next` once the native dismiss animation had time to finish. Prefer
-/// the sheet's `onDismiss` when the caller already owns it; this is for the "dismiss, then push"
-/// cases a menu owns.
-export function dismissThen(ref: { current: SheetRef | null }, next: () => void) {
-  ref.current?.dismiss();
-  setTimeout(next, 260);
+export function afterDismiss(next: () => void) {
+  setTimeout(next, SHEET_DISMISS_MS);
 }
 
 export interface SheetProps {
@@ -85,7 +82,8 @@ export function Sheet({ visible, onClose, title, subtitle, snapPoints, scroll, c
   );
 }
 
-export function SheetHeader({ title, subtitle, onClose, closeLabel = "Close" }: { title: string; subtitle?: string; onClose?: () => void; closeLabel?: string }) {
+export function SheetHeader({ title, subtitle, onClose, closeLabel }: { title: string; subtitle?: string; onClose?: () => void; closeLabel?: string }) {
+  useLanguage();
   const p = usePalette();
   return (
     <View style={styles.header}>
@@ -96,7 +94,7 @@ export function SheetHeader({ title, subtitle, onClose, closeLabel = "Close" }: 
         {subtitle ? <Text style={[styles.subtitle, { color: p.secondaryLabel }]}>{subtitle}</Text> : null}
       </View>
       {onClose ? (
-        <Pressable accessibilityRole="button" accessibilityLabel={closeLabel} onPress={onClose} hitSlop={12} style={styles.close}>
+        <Pressable accessibilityRole="button" accessibilityLabel={closeLabel ?? t("Close")} onPress={onClose} hitSlop={12} style={styles.close}>
           <Symbol name="xmark" size={15} color={p.secondaryLabel} weight="semibold" />
         </Pressable>
       ) : null}
@@ -160,9 +158,9 @@ export function SheetActionRow({
   );
 }
 
-export function ActionSheet({ visible, title, subtitle, actions, onClose }: { visible: boolean; title?: string; subtitle?: string; actions: SheetAction[]; onClose: () => void }) {
+export function ActionSheet({ visible, title, subtitle, actions, onClose, snapPoints }: { visible: boolean; title?: string; subtitle?: string; actions: SheetAction[]; onClose: () => void; snapPoints?: (string | number)[] }) {
   return (
-    <Sheet visible={visible} onClose={onClose} title={title} subtitle={subtitle} snapPoints={undefined} scroll={actions.length > 6}>
+    <Sheet visible={visible} onClose={onClose} title={title} subtitle={subtitle} snapPoints={snapPoints ?? SHEET_PRESETS.actions} scroll={actions.length > 6}>
       {orderActions(actions).map((action) => (
         <SheetActionRow
           key={action.label}
@@ -172,7 +170,7 @@ export function ActionSheet({ visible, title, subtitle, actions, onClose }: { vi
           disabled={action.disabled}
           onPress={() => {
             onClose();
-            setTimeout(action.onPress, 0);
+            afterDismiss(action.onPress);
           }}
         />
       ))}
@@ -203,6 +201,7 @@ export function SheetPicker({
   onClose: () => void;
   search?: boolean;
 }) {
+  useLanguage();
   const p = usePalette();
   const [query, setQuery] = useState("");
   useEffect(() => {
@@ -210,12 +209,12 @@ export function SheetPicker({
   }, [visible]);
   const shown = query.trim() ? options.filter((option) => option.label.toLowerCase().includes(query.trim().toLowerCase())) : options;
   return (
-    <Sheet visible={visible} onClose={onClose} title={title} snapPoints={undefined}>
+    <Sheet visible={visible} onClose={onClose} title={title} snapPoints={SHEET_PRESETS.picker}>
       {search ? (
         <BottomSheetTextInput
           value={query}
           onChangeText={setQuery}
-          placeholder="Search"
+          placeholder={t("Search")}
           placeholderTextColor={p.tertiaryLabel as string}
           autoCorrect={false}
           style={[styles.search, { color: p.label, backgroundColor: p.fill }]}
@@ -238,54 +237,6 @@ export function SheetPicker({
           />
         )}
       />
-    </Sheet>
-  );
-}
-
-export function SheetPrompt({
-  visible,
-  title,
-  subtitle,
-  placeholder,
-  value,
-  submitLabel = "Save",
-  onSubmit,
-  onClose,
-}: {
-  visible: boolean;
-  title: string;
-  subtitle?: string;
-  placeholder?: string;
-  value?: string;
-  submitLabel?: string;
-  onSubmit: (value: string) => void;
-  onClose: () => void;
-}) {
-  const p = usePalette();
-  const [text, setText] = useState(value ?? "");
-  useEffect(() => {
-    if (visible) setText(value ?? "");
-  }, [visible, value]);
-  const submit = () => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    haptic.open();
-    onSubmit(trimmed);
-    onClose();
-  };
-  return (
-    <Sheet visible={visible} onClose={onClose} title={title} subtitle={subtitle}>
-      <BottomSheetTextInput
-        value={text}
-        onChangeText={setText}
-        placeholder={placeholder}
-        placeholderTextColor={p.tertiaryLabel as string}
-        autoFocus
-        returnKeyType="done"
-        onSubmitEditing={submit}
-        style={[styles.search, { color: p.label, backgroundColor: p.fill, marginHorizontal: 16 }]}
-      />
-      <SheetActionRow title={submitLabel} onPress={submit} disabled={!text.trim()} />
     </Sheet>
   );
 }

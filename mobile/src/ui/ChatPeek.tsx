@@ -3,12 +3,12 @@
 
 import { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { showsSpeakers, type Bot, type Chat } from "../core/model";
+import type { Bot, Chat } from "../core/model";
 import { t, useLanguage } from "../i18n";
-import { AvatarCluster } from "./Avatar";
+import { ParticipantCluster } from "./Avatar";
 import { usePalette } from "./theme";
 import { buildRows, DayRow, MarkerRow, MessageRow, NoticeRow } from "./transcript";
-import { showsSpeakersIn } from "../core/participants";
+import { chatAgents, showsSpeakersIn } from "../core/participants";
 
 const PEEK_MESSAGES = 6;
 const HEADER_HEIGHT = 48;
@@ -17,6 +17,7 @@ export function ChatPeek({ chat, bots, title }: { chat: Chat; bots: Map<string, 
   const { language } = useLanguage();
   const p = usePalette();
   const members = chat.bot_ids.map((id) => bots.get(id)).filter((b): b is Bot => !!b);
+  const agents = useMemo(() => chatAgents(chat).map(({ agent }) => agent), [chat]);
   const rows = useMemo(() => {
     const tail: Chat = { ...chat, messages: chat.messages.slice(-PEEK_MESSAGES) };
     return buildRows(tail, bots, [], false, null);
@@ -47,7 +48,7 @@ export function ChatPeek({ chat, bots, title }: { chat: Chat; bots: Map<string, 
         </View>
       </View>
       <View style={[styles.header, { backgroundColor: p.background, borderBottomColor: p.separator }]}>
-        <AvatarCluster bots={members} size={28} />
+        <ParticipantCluster bots={members} agents={agents} size={28} />
         <Text style={[styles.title, { color: p.label }]} numberOfLines={1}>
           {title}
         </Text>
