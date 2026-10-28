@@ -930,8 +930,10 @@ func (m *mainWindow) contentHeader(c *ui.Context, chatID, title, subtitle string
 			return
 		}
 		m.runningTasksButton(c, chatID)
-		m.attentionButton(c)
+		// The agents capsule before Attention: with it after, the press that opens Attention's
+		// popover is dismissed in the same frame.
 		m.runningAgentsButton(c)
+		m.attentionButton(c)
 	})
 	if chat != nil {
 		// The pill is centered on the content, whatever the header holds at its ends; the strip
