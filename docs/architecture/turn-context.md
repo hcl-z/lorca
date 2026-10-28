@@ -1,6 +1,6 @@
 # Turn context
 
-What a bot's turn sends the model besides the chat's transcript: its system prompt, the notes that close every request, and the note that asks once more for work a reply announced. The loop itself, and a turn on a Runner, are in [CLI (runtime)](runtime.md#agent-loop).
+The transcript includes a coding agent's chat messages as its delegate's words, tagged with the agent's name and id; its tool calls, thoughts, and full transcript are not, and the bot reads them with `coding_agent read`. What a bot's turn sends the model besides the chat's transcript: its system prompt, the notes that close every request, and the note that asks once more for work a reply announced. The loop itself, and a turn on a Runner, are in [CLI (runtime)](runtime.md#agent-loop).
 
 ## The system prompt
 
