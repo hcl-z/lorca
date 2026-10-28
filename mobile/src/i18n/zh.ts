@@ -328,7 +328,6 @@ export const zh: Record<string, string> = {
   "Answer question": "回答问题",
   "Stop {agent}": "停止 {agent}",
   "Agent actions": "Agent 操作",
-  "Answer": "回答",
   "Coding agent": "编码 agent",
   "Message from": "来自",
   "Message from {name}": "{name} 的消息",
