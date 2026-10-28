@@ -678,6 +678,7 @@ async fn refresh_presence(app: &Arc<App>, url: &str, token: &str) -> Result<(), 
             tracing::error!(%error, "dropping another Device's turns");
         }
     }
+    app.turns_ended();
     Ok(())
 }
 
@@ -1198,17 +1199,17 @@ fn apply_roster(app: &Arc<App>, mut roster: RosterBlob) {
     // Outside the state lock: it reads and writes this Runner's PROFILE.md.
     let kept_profile = crate::profile_sync::take(&app.config.home, roster.profile.take(), cfg!(feature = "runner"));
     let removed_bots: Vec<String>;
+    let kept_entries;
     {
         let mut state = app.state.lock().unwrap();
         // Unpaired keys stay unpaired, whatever an older roster says; one that left some out
         // gets them back from this Device.
         kept_unpaired = !state.unpaired.is_subset(&roster.unpaired);
         unpaired_grew = !roster.unpaired.is_subset(&state.unpaired);
-        state.unpaired.extend(roster.unpaired);
+        state.unpaired.extend(std::mem::take(&mut roster.unpaired));
         let unpaired = state.unpaired.clone();
         state.devices.retain(|device| this_device.as_ref() == Some(&device.id) || !unpaired.contains(&device.id));
-        let local_updated = state.chats.iter().map(|_| 0.0).fold(0.0, f64::max);
-        let _ = local_updated;
+        kept_entries = merge_roster_entries(&mut state, &mut roster);
         kept_checks = this_device.is_some_and(|this| crate::routines::keep_checks(&state.routines, &mut roster.routines, &roster.bots, &this));
         kept_workflows = crate::workflows::merge(&mut state.workflows, roster.workflows);
         kept_permissions = crate::permissions::keep_policies(&state.bots, &mut roster.bots);
@@ -1248,10 +1249,59 @@ fn apply_roster(app: &Arc<App>, mut roster: RosterBlob) {
     app.shell_sessions.close_orphans(app);
     #[cfg(feature = "runner")]
     app.coding_agents.close_orphans(app);
-    app.roster_changed(normalized_descriptions || kept_checks || kept_permissions || kept_workflows || kept_unpaired || kept_profile);
+    app.roster_changed(normalized_descriptions || kept_checks || kept_permissions || kept_workflows || kept_unpaired || kept_profile || kept_entries);
     if unpaired_grew {
         app.rotation_due.store(true, Ordering::Relaxed);
     }
+}
+
+/// Folds this Device's bots, chats, and routines into an incoming roster. Every Device writes
+/// the whole roster, so one that had not pulled yet (a phone back from the background) writes
+/// one without what another Device just made. What a roster leaves out stays unless some Device
+/// deleted it, and what any Device deleted goes. Answers whether this Device kept something
+/// the roster lacked, deletions included, so the merged roster goes up again.
+fn merge_roster_entries(state: &mut crate::app::State, roster: &mut RosterBlob) -> bool {
+    let kept_deletions = !state.deleted.is_subset(&roster.deleted);
+    state.deleted.extend(std::mem::take(&mut roster.deleted));
+    let deleted = &state.deleted;
+    roster.bots.retain(|bot| !deleted.contains(&bot.id));
+    roster.chats.retain(|chat| !deleted.contains(&chat.id));
+    roster.routines.retain(|routine| !deleted.contains(&routine.id) && !deleted.contains(&routine.bot_id));
+    // A group listed by a Device that missed one of its bots' deletion loses that bot here, as
+    // it did where the bot was deleted.
+    for chat in &mut roster.chats {
+        chat.bot_ids.retain(|id| !deleted.contains(id));
+        if chat.owner_bot_id.as_ref().is_some_and(|owner| deleted.contains(owner)) {
+            chat.owner_bot_id = chat.bot_ids.first().cloned();
+        }
+    }
+
+    let kept_bots: Vec<Bot> =
+        state.bots.iter().filter(|bot| !deleted.contains(&bot.id) && !roster.bots.iter().any(|listed| listed.id == bot.id)).cloned().collect();
+    let kept_some = kept_deletions || !kept_bots.is_empty();
+    roster.bots.extend(kept_bots);
+    let has_bot = |id: &String| roster.bots.iter().any(|bot| &bot.id == id);
+    // A placeholder kept for messages that came before their roster has no bots: it stays only
+    // while a roster lists its chat, as before.
+    let kept_chats: Vec<ChatMeta> = state
+        .chats
+        .iter()
+        .map(|chat| &chat.meta)
+        .filter(|meta| !deleted.contains(&meta.id) && !roster.chats.iter().any(|listed| listed.id == meta.id))
+        .filter(|meta| !meta.bot_ids.is_empty() && meta.bot_ids.iter().all(has_bot))
+        .cloned()
+        .collect();
+    let kept_routines: Vec<Routine> = state
+        .routines
+        .iter()
+        .filter(|routine| !deleted.contains(&routine.id) && !roster.routines.iter().any(|listed| listed.id == routine.id))
+        .filter(|routine| has_bot(&routine.bot_id))
+        .cloned()
+        .collect();
+    let kept_some = kept_some || !kept_chats.is_empty() || !kept_routines.is_empty();
+    roster.chats.extend(kept_chats);
+    roster.routines.extend(kept_routines);
+    kept_some
 }
 
 fn apply_chat_op(app: &Arc<App>, op: ChatBlob) {
@@ -1392,6 +1442,49 @@ mod tests {
         assert!(restarted.state.lock().unwrap().unpaired.contains(&laptop.device.id));
     }
 
+    /// A roster from a Device that had not pulled yet, as a phone back from the background
+    /// writes, keeps the bots, chats, and routines made since and goes up again with them; a
+    /// deletion on another Device holds against a roster that still lists what it deleted.
+    #[tokio::test]
+    async fn a_stale_roster_deletes_nothing_and_a_deletion_holds() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        crate::identity::create(app, Some("Runner".into())).unwrap();
+        let dek = app.dek().unwrap();
+        let latest = || -> RosterBlob {
+            let outbox = app.store.outbox().unwrap();
+            crate::crypto::decrypt_json(&dek, "roster", &outbox.iter().rev().find(|blob| blob.kind == "roster").unwrap().ciphertext).unwrap()
+        };
+        let stale = latest();
+        let lead = app.state.lock().unwrap().bots[0].clone();
+        let (scout, dm) = app.create_bot_with_dm(Bot { id: "scout".into(), name: "Scout".into(), ..lead.clone() }, None).unwrap();
+        let routine = app.insert_routine(serde_json::from_value(serde_json::json!({ "id": "", "bot_id": scout.id, "name": "Digest", "prompt": "Sum up the day", "schedule": "every 1h", "is_enabled": true, "enabled_at": 0.0, "created_at": 0.0 })).unwrap()).unwrap();
+
+        apply_roster(app, stale.clone());
+        let has = |app: &App| {
+            let state = app.state.lock().unwrap();
+            (state.bots.iter().any(|bot| bot.id == scout.id), state.chats.iter().any(|chat| chat.meta.id == dm.meta.id), state.routines.iter().any(|r| r.id == routine.id))
+        };
+        assert_eq!(has(app), (true, true, true), "the stale roster deleted nothing");
+        let merged = latest();
+        assert!(merged.bots.iter().any(|bot| bot.id == scout.id) && merged.chats.iter().any(|chat| chat.id == dm.meta.id) && merged.routines.iter().any(|r| r.id == routine.id), "and went up again with them");
+
+        // Deleted on another Device: that roster names the bot, its DM, and its routine.
+        let mut deleted = merged.clone();
+        deleted.bots.retain(|bot| bot.id != scout.id);
+        deleted.chats.retain(|chat| chat.id != dm.meta.id);
+        deleted.routines.clear();
+        deleted.deleted.extend([scout.id.clone(), dm.meta.id.clone(), routine.id.clone()]);
+        apply_roster(app, deleted);
+        assert_eq!(has(app), (false, false, false));
+        apply_roster(app, merged);
+        assert_eq!(has(app), (false, false, false), "a roster that still lists them brings none back");
+        assert!(latest().deleted.contains(&scout.id), "the deletion goes up again");
+
+        let restarted = App::load(Config { home: scratch.1.clone(), port: 0 }).unwrap();
+        assert!(restarted.state.lock().unwrap().deleted.contains(&scout.id));
+    }
+
     /// Sections, a hidden chat, a mute, and the chat a computer has in front reach the other
     /// Devices.
     #[tokio::test]
@@ -1480,6 +1573,58 @@ mod tests {
         assert_eq!(crate::attention::view(&upgraded.0).unwrap(), crate::attention::view(&sender.0).unwrap(), "records an older build skipped are recovered");
         pull_blobs(&upgraded.0, &url, "test", &upgraded.0.machine_file().unwrap()).await.unwrap();
         assert_eq!(backfills.load(Ordering::Relaxed), 1, "an empty account does not replay on every cycle");
+        server.abort();
+    }
+
+    /// A Runner that leaves the relay mid-turn ends its turns here as soon as the presence
+    /// refresh hears it, without waiting for the rest of the sync round: the turn it lists, and
+    /// the job this Device sent it and still waits on. Back online, it lists the turn again, and
+    /// the result that comes later ends it.
+    #[cfg(feature = "server")]
+    #[tokio::test]
+    async fn a_runner_leaving_the_relay_ends_its_turns_here_at_once() {
+        use axum::{routing::get, Json, Router};
+        use std::sync::atomic::AtomicBool;
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        let online = Arc::new(AtomicBool::new(true));
+        let listed = online.clone();
+        let relay = Router::new().route("/v1/machines", get(move || {
+            let online = listed.load(Ordering::Relaxed);
+            async move { Json(serde_json::json!({ "machines": [{ "machine_pubkey": "mac", "last_seen": 1, "created_at": 1, "online": online }], "now": crate::config::now_unix() })) }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, relay).await.unwrap() });
+        let turn = |job_id: &str| LiveTurn { job_id: job_id.into(), chat_id: "chat".into(), bot_id: "bot".into(), routine_id: None, activity: None };
+        let mut events = app.events.subscribe();
+        let mut heard = |pick: fn(Event) -> Option<String>| -> std::collections::BTreeSet<String> { std::iter::from_fn(|| events.try_recv().ok()).filter_map(pick).collect() };
+        let started = |event: Event| match event { Event::JobStarted { job_id, .. } => Some(job_id), _ => None };
+        let finished = |event: Event| match event { Event::JobFinished { job_id, .. } => Some(job_id), _ => None };
+        let ids = |ids: &[&str]| ids.iter().map(|id| id.to_string()).collect::<std::collections::BTreeSet<_>>();
+
+        app.running_jobs.lock().unwrap().insert(
+            "sent-job".into(),
+            crate::app::RunningJob { chat_id: "chat".into(), bot_id: "bot".into(), routine_id: None, runner_id: Some("mac".into()), cancel: Default::default(), activity: None },
+        );
+        refresh_presence(app, &url, "test").await.unwrap();
+        app.set_device_turns("mac", vec![turn("mac-job"), turn("sent-job")]);
+        assert_eq!(heard(started), ids(&["mac-job", "sent-job"]));
+
+        online.store(false, Ordering::Relaxed);
+        refresh_presence(app, &url, "test").await.unwrap();
+        assert_eq!(heard(finished), ids(&["mac-job", "sent-job"]), "the refresh alone tells the app");
+        assert!(app.running_turns().is_empty());
+        assert!(app.running_jobs.lock().unwrap().contains_key("sent-job"), "the wait for the result goes on");
+
+        online.store(true, Ordering::Relaxed);
+        refresh_presence(app, &url, "test").await.unwrap();
+        app.set_device_turns("mac", vec![turn("sent-job")]);
+        assert_eq!(heard(started), ids(&["sent-job"]));
+        app.set_device_turns("mac", Vec::new());
+        app.running_jobs.lock().unwrap().remove("sent-job");
+        app.turns_changed();
+        assert_eq!(heard(finished), ids(&["sent-job"]));
         server.abort();
     }
 
