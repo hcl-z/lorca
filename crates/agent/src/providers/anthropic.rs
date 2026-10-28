@@ -801,7 +801,7 @@ mod tests {
         );
         assert!(provider.supports_images(), "the catalog says Flash takes images");
         assert!(!AnthropicProvider::deepseek("k", Some("deepseek-v4-pro")).supports_images());
-        assert_eq!(provider.model_info().map(|i| i.context_window), Some(1_000_000));
+        assert_eq!(provider.model_info().map(|i| i.context_window), Some(1_048_576));
     }
 
     #[test]
