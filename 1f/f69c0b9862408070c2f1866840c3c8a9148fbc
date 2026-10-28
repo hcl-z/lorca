@@ -1,0 +1,23 @@
+docs/architecture/languages.md
+  s_d9912caa790da1::t_bcca40da2288c7 5
+mobile/app.config.ts
+  s_d9912caa790da1::t_87144d86bf6f41 19
+docs/architecture/desktop-app.md
+  s_d9912caa790da1::t_0273b846f59908 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "1ff69c0b9862408070c2f1866840c3c8a9148fbc",
+  "prompts": {},
+  "sessions": {
+    "s_d9912caa790da1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8110ddc8-f649-41f5-9157-b4fe7342df9c",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
