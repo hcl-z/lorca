@@ -27,6 +27,7 @@ import { Symbol } from "./Symbol";
 import { Font, usePalette, withAlpha } from "./theme";
 import { AndroidIcons } from "./navigation";
 import { alert, prompt } from "./alert";
+import { ActionSheet } from "./Sheet";
 import { chatListRows, groupOf, type ChatGroup, type ChatListRow } from "./chatList";
 
 // FlashList keeps the first visible row where it is when rows change, which for a list resting at
@@ -63,6 +64,7 @@ export function ChatsScreen({ sidebar = false }: { sidebar?: boolean }) {
   const [matches, setMatches] = useState<ChatSearchResults>({ chats: [], messages: [] });
   const [searching, setSearching] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [newOpen, setNewOpen] = useState(false);
   const insets = useSafeAreaInsets();
   const androidBar = insets.top + BAR + 8;
 
@@ -267,13 +269,7 @@ export function ChatsScreen({ sidebar = false }: { sidebar?: boolean }) {
           <Stack.Toolbar placement="right">
             <Stack.Toolbar.Button icon="magnifyingglass" accessibilityLabel={t("Search")} onPress={() => (searchOpen ? closeSearch() : setSearchOpen(true))} />
             <Stack.Toolbar.Spacer width={8} />
-            <Stack.Toolbar.Menu icon="plus" accessibilityLabel={t("New")}>
-              {newItems.map((item) => (
-                <Stack.Toolbar.MenuAction key={item.title} icon={item.icon as any} onPress={item.run}>
-                  {item.title}
-                </Stack.Toolbar.MenuAction>
-              ))}
-            </Stack.Toolbar.Menu>
+            <Stack.Toolbar.Button icon="plus" accessibilityLabel={t("New")} onPress={() => setNewOpen(true)} />
           </Stack.Toolbar>
           {status ? <Stack.Title asChild>{status}</Stack.Title> : null}
         </>
@@ -314,12 +310,18 @@ export function ChatsScreen({ sidebar = false }: { sidebar?: boolean }) {
             top={insets.top}
             status={status}
             needsAttention={needsAttention}
-            newItems={newItems}
             onSettings={() => router.push("/settings")}
             onAttention={() => router.push("/attention")}
             onSearch={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+            onNew={() => setNewOpen(true)}
           />
         ) : null}
+        <ActionSheet
+          visible={newOpen}
+          title={t("New")}
+          actions={newItems.map((item) => ({ label: item.title, icon: item.icon, onPress: item.run }))}
+          onClose={() => setNewOpen(false)}
+        />
       </View>
     </>
   );
@@ -327,12 +329,10 @@ export function ChatsScreen({ sidebar = false }: { sidebar?: boolean }) {
 
 /// Android's bar over the list, drawn by the app as the chat's is: the surface color fading into
 /// the list under round buttons, Settings and Attention at the start, Search and New at the end.
-function AndroidListBar({ top, status, needsAttention, newItems, onSettings, onAttention, onSearch }: { top: number; status: React.ReactNode; needsAttention: boolean; newItems: { android: ImageSourcePropType; title: string; run: () => void }[]; onSettings: () => void; onAttention: () => void; onSearch: () => void }) {
+function AndroidListBar({ top, status, needsAttention, onSettings, onAttention, onSearch, onNew }: { top: number; status: React.ReactNode; needsAttention: boolean; onSettings: () => void; onAttention: () => void; onSearch: () => void; onNew: () => void }) {
   useLanguage();
   const p = usePalette();
-  const menuRef = useRef<MenuComponentRef>(null);
   const surface = p.background as string;
-  const actions: MenuAction[] = newItems.map((item, index) => ({ id: String(index), title: item.title, image: item.android }));
   return (
     <View pointerEvents="box-none" style={[styles.androidBar, { height: top + BAR + 20 }]}>
       <LinearGradient pointerEvents="none" colors={[withAlpha(surface, 0.97), withAlpha(surface, 0.9), withAlpha(surface, 0)]} locations={[0, 0.7, 1]} style={StyleSheet.absoluteFill} />
@@ -343,9 +343,7 @@ function AndroidListBar({ top, status, needsAttention, newItems, onSettings, onA
           {status}
         </View>
         <RoundButton icon="magnifyingglass" label={t("Search")} onPress={onSearch} />
-        <PopupMenu ref={menuRef} actions={actions} onPressAction={({ nativeEvent }) => newItems[Number(nativeEvent.event)]?.run()}>
-          <RoundButton icon="plus" label={t("New")} onPress={() => menuRef.current?.show()} />
-        </PopupMenu>
+        <RoundButton icon="plus" label={t("New")} onPress={onNew} />
       </View>
     </View>
   );

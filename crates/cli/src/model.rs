@@ -53,6 +53,10 @@ pub struct Device {
     /// The `lorca` this Device runs, as `lorca --version` says it.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub version: String,
+    /// This Runner takes a message for a coding agent (`agent_message` jobs) and does not turn
+    /// it into a bot turn. A Device from before it does not, so the apps hide agents there.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub agent_messages: bool,
     /// How a CLI that replaces itself keeps current: one installed with the site's script. Unset
     /// where an app updates the CLI it carries, and on phones.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -373,6 +377,10 @@ pub enum Body {
         /// bot reads "@Scout (id bot-1a2b3c4d)", and a group offers them the first turns.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         mentions: Vec<String>,
+        /// The coding agents the user's `@Name`s address, by id, in the order picked: the message
+        /// goes to them, and no bot turn starts.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        agents: Vec<String>,
         /// The message the user answers with this one, quoted.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reply_to: Option<ReplyTo>,
@@ -635,6 +643,9 @@ pub struct ReplyTo {
     pub author: Author,
     /// Its text on one line, at most `REPLY_QUOTE_CHARS` characters, or the names of its files.
     pub text: String,
+    /// The coding agent that wrote it, when one did, so the quote shows the agent's mark.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<AgentAuthor>,
 }
 
 /// How much of a quoted message a reply keeps.
@@ -667,7 +678,7 @@ impl ReplyTo {
         if line.chars().count() > REPLY_QUOTE_CHARS {
             line = format!("{}…", line.chars().take(REPLY_QUOTE_CHARS).collect::<String>().trim_end());
         }
-        Some(ReplyTo { message_id: message.id.clone(), author: message.author.clone(), text: line })
+        Some(ReplyTo { message_id: message.id.clone(), author: message.author.clone(), text: line, agent: message.agent.clone() })
     }
 }
 
@@ -680,6 +691,16 @@ pub struct AgentChanges {
     pub removed: u32,
 }
 
+/// What a message to a coding agent carries to the Runner that runs it: the agent's id and the
+/// user's text as typed. The Runner strips the agent's `@Name` before it sends it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct AgentMessage {
+    pub id: String,
+    pub text: String,
+}
+
+/// The Job kind that hands a message to a coding agent rather than a bot turn.
+pub const AGENT_MESSAGE_JOB: &str = "agent_message";
 /// A coding agent (Claude Code, Codex, or another that speaks ACP) a bot runs on its Runner, as the card on the
 /// `coding_agent` row that started it shows it (`crate::coding`): Auto-review's question before
 /// it starts, what it works on and where, how it stands, its last lines, and what it asks.
@@ -817,6 +838,11 @@ pub struct AgentChoice {
 }
 
 impl AgentRun {
+    /// What the apps call it: the card's name, else the name of its kind.
+    pub fn display_name(&self) -> &str {
+        if self.name.is_empty() { agent_name(&self.kind) } else { &self.name }
+    }
+
     /// It has not ended: it may still ask, work, or take a follow-up.
     pub fn is_open(&self) -> bool {
         matches!(self.state.as_str(), "checking" | "asking" | "starting" | "working" | "idle")
@@ -1027,7 +1053,20 @@ impl CommandRun {
 
 impl Body {
     pub fn text(text: impl Into<String>) -> Self {
-        Body::Text { text: text.into(), attachments: Vec::new(), mentions: Vec::new(), reply_to: None }
+        Body::Text { text: text.into(), attachments: Vec::new(), mentions: Vec::new(), agents: Vec::new(), reply_to: None }
+    }
+
+    /// The coding agents a text message addresses, by id; none for every other body.
+    pub fn agents(&self) -> &[String] {
+        match self {
+            Body::Text { agents, .. } => agents,
+            _ => &[],
+        }
+    }
+
+    /// The user addressed at least one coding agent: the message is not bot work.
+    pub fn addresses_agent(&self) -> bool {
+        !self.agents().is_empty()
     }
 }
 
@@ -1048,6 +1087,22 @@ pub struct AgentAuthor {
     pub id: String,
     pub name: String,
     pub kind: String,
+}
+
+/// What every app calls a coding agent of `kind`, when its card does not carry a name.
+pub fn agent_name(kind: &str) -> &'static str {
+    match kind {
+        "claude" | "claude-acp" => "Claude Code",
+        "codex" | "codex-acp" => "Codex",
+        "gemini" => "Gemini CLI",
+        "copilot" => "GitHub Copilot",
+        "cursor" => "Cursor",
+        "opencode" => "OpenCode",
+        "kimi" => "Kimi Code",
+        "kiro" => "Kiro",
+        "pi" => "pi",
+        _ => "Coding agent",
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1547,6 +1602,10 @@ pub struct Job {
     /// did, `event` for a service event an event subscription's inbox admitted.
     pub kind: String,
     pub trigger_message_id: String,
+    /// `agent_message`: the coding agent the user addressed and the text as typed. The Runner
+    /// hands it to the agent before the turn job and chat lock, and starts no bot turn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_message: Option<AgentMessage>,
     /// A durable delegated request or the continuation that reads its report.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub handoff: Option<crate::handoffs::HandoffJob>,
@@ -1583,6 +1642,7 @@ impl Job {
     /// memory capture are: no trigger message, no handoff, no routine.
     pub fn local(kind: &str, chat_id: &str, bot_id: &str, requested_by: &str) -> Job {
         Job {
+            agent_message: None,
             id: format!("{kind}-{}", uuid::Uuid::new_v4()),
             chat_id: chat_id.into(),
             bot_id: bot_id.into(),
@@ -2010,5 +2070,61 @@ mod host_tests {
     fn the_host_name_is_what_hostname_prints() {
         let printed = std::process::Command::new("hostname").output().unwrap().stdout;
         assert_eq!(host_name().as_deref(), Some(String::from_utf8_lossy(&printed).trim()));
+    }
+}
+
+#[cfg(test)]
+mod agent_wire_tests {
+    use super::*;
+
+    #[test]
+    fn text_body_without_agents_still_serializes_as_before() {
+        assert_eq!(serde_json::to_value(Body::text("hi")).unwrap(), serde_json::json!({"kind": "text", "text": "hi"}));
+    }
+
+    #[test]
+    fn a_text_body_carries_the_coding_agents_it_addresses() {
+        let body: Body = serde_json::from_value(serde_json::json!({
+            "kind": "text", "text": "@Claude Code status", "agents": ["agent-1"]
+        }))
+        .unwrap();
+        assert_eq!(body.agents(), ["agent-1"]);
+        assert!(body.addresses_agent());
+    }
+
+    #[test]
+    fn a_quote_keeps_the_agent_behind_the_message() {
+        let mut message = Message::new("chat", Author::Bot { bot_id: "bot-1".into() }, Body::text("done"));
+        message.agent = Some(AgentAuthor { id: "agent-1".into(), name: "Claude Code".into(), kind: "claude".into() });
+        let quote = ReplyTo::quoting(&message).unwrap();
+        assert_eq!(quote.agent.unwrap().name, "Claude Code");
+    }
+
+    #[test]
+    fn each_agent_kind_has_a_name_without_its_card() {
+        assert_eq!(agent_name("gemini"), "Gemini CLI");
+        assert_eq!(agent_name("copilot"), "GitHub Copilot");
+        assert_eq!(agent_name("cursor"), "Cursor");
+        assert_eq!(agent_name("opencode"), "OpenCode");
+        assert_eq!(agent_name("kimi"), "Kimi Code");
+        assert_eq!(agent_name("pi"), "pi");
+        assert_eq!(agent_name("kiro"), "Kiro");
+        assert_eq!(agent_name("unknown"), "Coding agent");
+    }
+
+    #[test]
+    fn a_device_advertises_agent_messages() {
+        let device = Device { agent_messages: true, ..Device::default() };
+        assert_eq!(serde_json::to_value(&device).unwrap()["agent_messages"], true);
+    }
+
+    #[test]
+    fn a_job_carries_an_agent_message() {
+        let job = Job {
+            agent_message: Some(AgentMessage { id: "agent-1".into(), text: "@Claude Code status".into() }),
+            ..Job::local(AGENT_MESSAGE_JOB, "chat", "bot", "me")
+        };
+        assert_eq!(job.kind, "agent_message");
+        assert_eq!(job.agent_message.unwrap().id, "agent-1");
     }
 }

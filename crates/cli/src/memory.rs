@@ -507,6 +507,14 @@ impl MemoryStore {
         }
     }
 
+    /// The full entry fact containing one exact passage, for applying write policy to edits.
+    pub fn passage_fact(&self, old_text: &str) -> Result<String, MemoryError> {
+        let (text, at) = self.locate(old_text)?;
+        let start = text[..at].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let end = text[at..].find('\n').map(|i| at + i).unwrap_or(text.len());
+        Ok(fact_of(&text[start..end]))
+    }
+
     /// Rewrites one unique passage in place.
     pub fn replace(&self, old_text: &str, new_text: &str) -> Result<Change, MemoryError> {
         let new = normalise(new_text);
@@ -541,6 +549,48 @@ impl MemoryStore {
         self.save_index(updated)?;
         self.forget(&text[line_start..line_end])?;
         Ok(Change::Removed)
+    }
+
+    /// Removes one complete entry for a move to another memory store without marking the fact
+    /// forgotten. The caller records the returned line so an undo can put it back unchanged.
+    pub fn take_entry(&self, entry: &str) -> Result<String, MemoryError> {
+        let (text, at) = self.locate(entry)?;
+        let entry = entry.trim();
+        let line_start = text[..at].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let line_end = text[at..].find('\n').map(|i| at + i).unwrap_or(text.len());
+        if text[line_start..line_end].trim() != entry {
+            return Err(MemoryError::Invalid("Pass the complete entry line to move it.".into()));
+        }
+        let end = if line_end < text.len() { line_end + 1 } else { line_end };
+        let mut updated = text;
+        updated.replace_range(line_start..end, "");
+        self.save_index(updated)?;
+        Ok(entry.to_string())
+    }
+
+    /// Restores a complete entry previously taken for a move. It does not overwrite a newer
+    /// live fact with the same meaning.
+    pub fn restore_taken_entry(&self, entry: &str) -> Result<bool, MemoryError> {
+        let entry = entry.trim();
+        if !entry.starts_with("- ") || fact_of(entry).is_empty() {
+            return Err(MemoryError::Invalid("Pass the complete memory entry to restore.".into()));
+        }
+        let fact = fact_of(entry);
+        let text = self.read_index();
+        if text.lines().any(|line| {
+            let line = line.trim();
+            line.starts_with("- ") && !line.starts_with("- ~~") && fact_of(line).eq_ignore_ascii_case(&fact)
+        }) {
+            return Ok(false);
+        }
+        let mut updated = text;
+        if !updated.is_empty() && !updated.ends_with('\n') {
+            updated.push('\n');
+        }
+        updated.push_str(entry);
+        updated.push('\n');
+        self.save_index(updated)?;
+        Ok(true)
     }
 
     /// Records a line's fact as one the user asked to forget, so the write gate refuses it again.

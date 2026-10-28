@@ -1201,6 +1201,7 @@ pub fn tick(app: &Arc<App>) -> anyhow::Result<()> {
         });
         save_delivery(&tx, &key, item)?;
         let job = crate::model::Job {
+            agent_message: None,
             id: format!("event-{}", item.id),
             chat_id,
             bot_id: sub.config.bot_id.clone(),

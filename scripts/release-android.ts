@@ -28,10 +28,10 @@ if (process.argv.length > 2) die(`unknown argument: ${process.argv[2]}`)
 const PACKAGE = "app.lorca"
 // SHA-256 of the release key's certificate, as apksigner prints it.
 const CERTIFICATE_SHA256 = "dcc11cdcb6bbf9602cec70b39455984ed24f1d92fac3bd84b31e5e4dfa9a5751"
-// The ABIs the Rust core is built for (modules/lorca-core/build.ts): phones, and x86_64 for
-// Chromebooks and the emulator. React Native's own libraries follow, so the APK holds no ABI the
-// core cannot load on.
-const ABIS = "arm64-v8a,x86_64"
+// The release APK is arm64 only, what phones run; the dev build also takes x86_64 for the
+// emulator and Chromebooks. React Native's own libraries follow, so the APK holds no ABI the core
+// cannot load on.
+const ABIS = "arm64-v8a"
 
 const MOBILE = join(ROOT, "mobile")
 const BUILD_DIR = join(ROOT, "dist", "android")
@@ -79,8 +79,8 @@ if (!/^\d+\.\d+\.\d+$/.test(version)) die(`the version in mobile/app.config.ts i
 
 // ---- 1. Rust core
 // The shared libraries are gitignored and the dev loop may hold older ones, so a release builds its own.
-log(`${color.bold("core")} ${color.dim("release build for Android")}`)
-await $`bun run core android`.cwd(MOBILE).env(env)
+log(`${color.bold("core")} ${color.dim(`release build for Android, ${ABIS}`)}`)
+await $`bun run core android`.cwd(MOBILE).env({ ...env, LORCA_CORE_RELEASE: "1" })
 
 // ---- 2. production project
 log(`${color.bold("prebuild")} ${color.dim(`Lorca ${version} (${versionCode}), ${PACKAGE}`)}`)
@@ -117,7 +117,7 @@ android.injected.signing.key.password=${value(password)}
 `,
 )
 try {
-  await $`./gradlew :app:assembleRelease -PreactNativeArchitectures=${ABIS} -Pexpo.useLegacyPackaging=true`.cwd(ANDROID).env(env)
+  await $`./gradlew :app:assembleRelease -PreactNativeArchitectures=${ABIS} -Pexpo.useLegacyPackaging=true --build-cache --parallel`.cwd(ANDROID).env(env)
 } finally {
   await Bun.write(properties, unsigned)
 }
@@ -130,6 +130,8 @@ const pkg = badging.match(/^package: name='([^']+)' versionCode='(\d+)' versionN
 if (!pkg) die("aapt2 printed no package line")
 if (pkg[1] !== PACKAGE) die(`the APK is ${pkg[1]}, not ${PACKAGE}`)
 if (Number(pkg[2]) !== versionCode || pkg[3] !== version) die(`the APK is ${pkg[3]} (${pkg[2]}), expected ${version} (${versionCode})`)
+const nativeCode = badging.match(/^native-code: (.+)$/m)?.[1]?.replaceAll("'", "").trim()
+if (nativeCode !== "arm64-v8a") die(`the APK holds ${nativeCode || "no native code"}, not arm64-v8a`)
 // One "… certificate SHA-256 digest:" line per signer and signature scheme.
 const certs = await $`${apksigner} verify --print-certs ${built}`.env(env).text()
 const signers = [...new Set([...certs.matchAll(/certificate SHA-256 digest: ([0-9a-f]+)$/gm)].map((m) => m[1]))]

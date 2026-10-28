@@ -395,6 +395,7 @@ pub async fn handle(app: &Arc<App>, method: &str, params: &Value) -> Result<Valu
             let dm = app.dm_with(&bot_id, None).map_err(|e| e.to_string())?;
             let message = Message::new(&dm.meta.id, Author::You, Body::text(format!("Run a sample of {} for me to review. {}\nKeep its schedules paused. Present a draft in this chat; ask no question about enabling schedules.", setup.pack.name, setup.pack.sample_prompt)));
             let job = Job {
+                agent_message: None,
                 id: format!("job-{}", uuid::Uuid::new_v4()),
                 chat_id: dm.meta.id.clone(),
                 bot_id: bot_id.clone(),
@@ -921,6 +922,7 @@ mod tests {
         let bot_id = setup.bot_ids[&setup.pack.sample_specialist].clone();
         let dm = app.dm_with(&bot_id, None).unwrap();
         let job = Job {
+            agent_message: None,
             id: job_id.into(),
             chat_id: dm.meta.id.clone(),
             bot_id: bot_id.clone(),

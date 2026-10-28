@@ -109,20 +109,16 @@ with the certificate's SHA-256 above, once the developer account is verified.
    release's notes and the update alert's text, and the release stops without it.
 2. With `--push` it pushes `main` and starts the workflow on it; you can also run
    **Release phone app** by hand from the Actions tab. It drafts the release on the commit it runs
-   on, and publishing the draft makes the tag. A run on a commit other than the one an existing
-   `mobile-v<version>` tag names is refused, and so is a version whose release is already
-   published.
+   on, and publishes it once both platforms it was asked for have finished, which makes the tag. A
+   run on a commit other than the one an existing `mobile-v<version>` tag names is refused, and so
+   is a version whose release is already published.
 3. The workflow drafts `mobile-v<version>`, then builds the Android APK on Ubuntu and the iPhone
-   `.ipa` on a macOS runner side by side, each uploading into the draft. Runs on `main` keep the
-   Rust core's build, Gradle's caches, and for iOS Xcode's compilation cache and the installed pods
-   for the next release. Check the draft, then publish it without making it the latest release:
-
-   ```sh
-   gh release edit mobile-v1.0.1 --draft=false --latest=false
-   ```
-
-   On the release's page, untick **Set as the latest release** before **Publish release**.
-   Android apps see it at their next daily check.
+   `.ipa` on a macOS runner side by side, each uploading into the draft. When both finish, a final
+   job publishes the draft without making it the latest release, which stays the CLI's. Runs on
+   `main` keep the Rust core's build, Gradle's caches, and for iOS Xcode's compilation cache and
+   the installed pods for the next release. The iPhone build takes the device slice, and the APK is
+   arm64 only, what phones run; the dev loop still builds the simulator slice and x86_64 for the
+   emulator. Android apps see the release at their next daily check.
 
 A run by hand can release one platform:
 

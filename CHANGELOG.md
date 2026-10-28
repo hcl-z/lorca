@@ -8,6 +8,14 @@ phone app's.
 
 ## [Unreleased]
 
+## [1.0.32]
+
+- The phone now takes part in a coding agent's chat as the desktop does: `@` it from the composer, and what you write reaches it as written, interrupting what it is doing. Its words are its own messages under its mark, its questions wait for you, and the bot no longer answers them for you. A reply is one message per turn, growing as it streams, even across tool calls and plans.
+- The phone's quick menus, pickers, short forms, and details open as native bottom sheets: New, attach, participants, an agent's actions and question, model and effort, a message, a command, the running tasks, and chat info's model. Full agent transcripts and file viewers stay full screen.
+- A message to an agent no longer steers or stops the bot's turn, and an in-flight bot turn no longer sees or answers it.
+- A macOS island at the top of every display shows what the bots and coding agents are doing while the main window is out of sight: idle, working, the last result, and a question you can answer there. View > Island (Cmd-Shift-I) opens the first waiting question.
+- What a bot remembers now goes to the right place: lasting facts about you to your profile, a bot's work to its own memory, and a sensitive fact needs your words in the same message. The memory trace on the desktop and phone shows each capture's facts, where they went, and Undo; older captures still undo to the right file.
+
 ## [1.0.31]
 
 - A coding agent a bot starts now takes part in the chat: `@` it from the composer, and what you write reaches it as written, interrupting what it is doing. Its words appear as its own messages under its mark, and the bot reads them as its delegate's.

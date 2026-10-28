@@ -20,6 +20,8 @@ export function rerunnable(chat: Chat | undefined, responding: boolean): { asked
   if (at < 0) return null;
   const asked = chat.messages[at];
   if (asked.queued || asked.state.kind !== "complete" || asked.body.kind !== "text") return null;
+  // A message addressed to a coding agent is the agent's; a bot reply cannot run it again.
+  if (asked.body.agents?.length) return null;
   const after = chat.messages.slice(at + 1);
   for (const later of after) {
     if (later.body.kind === "draft" || later.output) return null;

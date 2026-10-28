@@ -141,6 +141,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      - name: Read the Rust version
+        id: rust
+        run: echo "version=$(rustc --version | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
       - uses: mlugg/setup-zig@v2
         if: runner.os == 'Linux'
         with:
@@ -149,11 +152,18 @@ jobs:
         if: runner.os == 'Linux'
         with:
           tool: cargo-zigbuild
-      # The registry and the built dependencies, kept between runs on main. The cache key names the
-      # target, and three of the builds run on Linux.
-      - uses: Swatinem/rust-cache@v2
+      # The target directory and the crate registry, kept across releases. The key does not change
+      # with Cargo.lock: a release's version bump rewrites it, but the dependencies do not.
+      - uses: actions/cache@v6
         with:
-          key: ${{ matrix.target }}
+          path: |
+            target
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            ~/.cache/zig
+          key: rust-${{ runner.os }}-${{ steps.rust.outputs.version }}-${{ matrix.target }}-${{ github.job }}
+          restore-keys: rust-${{ runner.os }}-${{ steps.rust.outputs.version }}-${{ matrix.target }}-
       - name: Build the CLI
         env:
           # A release build replaces itself with later releases (`lorca update`).
@@ -215,6 +225,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      - name: Read the Rust version
+        id: rust
+        run: echo "version=$(rustc --version | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
       - uses: mlugg/setup-zig@v2
         if: runner.os == 'Linux'
         with:
@@ -223,9 +236,18 @@ jobs:
         if: runner.os == 'Linux'
         with:
           tool: cargo-zigbuild
-      - uses: Swatinem/rust-cache@v2
+      # The target directory and the crate registry, kept across releases. The key does not change
+      # with Cargo.lock: a release's version bump rewrites it, but the dependencies do not.
+      - uses: actions/cache@v6
         with:
-          key: ${{ matrix.target }}-app
+          path: |
+            target
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            ~/.cache/zig
+          key: rust-${{ runner.os }}-${{ steps.rust.outputs.version }}-${{ matrix.target }}-${{ github.job }}
+          restore-keys: rust-${{ runner.os }}-${{ steps.rust.outputs.version }}-${{ matrix.target }}-
       - uses: actions/setup-go@v6
         with:
           go-version-file: desktop/go.mod

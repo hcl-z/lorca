@@ -11,6 +11,9 @@ const TARGET = join(ROOT, "target");
 const platforms = process.argv.slice(2).filter((a) => a === "ios" || a === "android");
 const wantIos = platforms.length === 0 || platforms.includes("ios");
 const wantAndroid = platforms.length === 0 || platforms.includes("android");
+// A release needs only what the shipped app runs on: the iPhone's device slice and arm64 Android.
+// The dev loop builds both slices; the release scripts set this.
+const release = process.env.LORCA_CORE_RELEASE === "1";
 
 async function run(cmd: string[], env: Record<string, string> = {}) {
   console.log("$", cmd.join(" "));
@@ -37,8 +40,8 @@ const hostLibrary = join(TARGET, process.platform === "darwin" ? "debug/liblorca
 const bindgen = ["cargo", "run", "-q", "-p", "lorca-mobile", "--features", "bindgen", "--bin", "uniffi-bindgen", "--", "generate", "--library", hostLibrary];
 
 if (wantIos) {
-  await run(["cargo", "build", "-p", "lorca-mobile", "--release", "--target", "aarch64-apple-ios"]);
-  await run(["cargo", "build", "-p", "lorca-mobile", "--release", "--target", "aarch64-apple-ios-sim"]);
+  const iosTargets = release ? ["aarch64-apple-ios"] : ["aarch64-apple-ios", "aarch64-apple-ios-sim"];
+  for (const target of iosTargets) await run(["cargo", "build", "-p", "lorca-mobile", "--release", "--target", target]);
   const generated = join(MODULE, "ios/generated");
   rmSync(generated, { recursive: true, force: true });
   await run([...bindgen, "--language", "swift", "--out-dir", generated]);
@@ -59,8 +62,7 @@ if (wantIos) {
   rmSync(xcframework, { recursive: true, force: true });
   await run([
     "xcodebuild", "-create-xcframework",
-    "-library", join(TARGET, "aarch64-apple-ios/release/liblorca_mobile.a"), "-headers", include,
-    "-library", join(TARGET, "aarch64-apple-ios-sim/release/liblorca_mobile.a"), "-headers", include,
+    ...iosTargets.flatMap((target) => ["-library", join(TARGET, target, "release/liblorca_mobile.a"), "-headers", include]),
     "-output", xcframework,
   ]);
 }
@@ -68,7 +70,8 @@ if (wantIos) {
 if (wantAndroid) {
   const jniLibs = join(MODULE, "android/src/main/jniLibs");
   rmSync(jniLibs, { recursive: true, force: true });
-  await run(["cargo", "ndk", "-t", "arm64-v8a", "-t", "x86_64", "-o", jniLibs, "build", "-p", "lorca-mobile", "--release"], { ANDROID_NDK_HOME: ndkHome() });
+  const abis = release ? ["arm64-v8a"] : ["arm64-v8a", "x86_64"];
+  await run(["cargo", "ndk", ...abis.flatMap((abi) => ["-t", abi]), "-o", jniLibs, "build", "-p", "lorca-mobile", "--release"], { ANDROID_NDK_HOME: ndkHome() });
   const java = join(MODULE, "android/src/main/java");
   rmSync(join(java, "uniffi"), { recursive: true, force: true });
   await run([...bindgen, "--language", "kotlin", "--no-format", "--out-dir", java]);

@@ -51,3 +51,9 @@ test("an edit sends new words only when they changed", () => {
   expect(editedText(message, "   ")).toBeUndefined();
   expect(editedText(message, undefined)).toBeUndefined();
 });
+
+test("a message to a coding agent cannot run again", () => {
+  const c = chat([asked({ body: { kind: "text", text: "@Claude Code status", agents: ["agent-1"] } }), reply()]);
+  expect(rerunnable(c, false)).toBeNull();
+  expect(canEdit(c, false, c.messages[0])).toBe(false);
+});

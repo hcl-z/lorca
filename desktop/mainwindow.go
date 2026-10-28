@@ -376,6 +376,8 @@ func (m *mainWindow) run(id string) {
 		m.palette.toggle()
 	case "attention":
 		m.toggleAttention()
+	case "island":
+		islandOpen()
 	case "toggleSidebar":
 		m.toggleSidebar()
 	case "toggleInspector":

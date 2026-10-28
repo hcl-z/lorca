@@ -187,7 +187,7 @@ pub fn publish(app: &App, chat_id: &str, bot_id: &str, workdir: &Path, request: 
         evidence: request.evidence,
     };
     let text = message_text(&output);
-    let mut message = Message::new(chat_id, Author::Bot { bot_id: bot_id.into() }, Body::Text { text, attachments, mentions: Vec::new(), reply_to: None });
+    let mut message = Message::new(chat_id, Author::Bot { bot_id: bot_id.into() }, Body::Text { text, attachments, mentions: Vec::new(), agents: Vec::new(), reply_to: None });
     message.output = Some(output);
     app.upsert_message(message.clone(), true);
     if app.message(chat_id, &message.id).is_none() {

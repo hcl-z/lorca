@@ -10,23 +10,24 @@ import { Pressable } from "./Pressable";
 import * as Clipboard from "expo-clipboard";
 import { haptic } from "./haptics";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSequence, withSpring, withTiming } from "react-native-reanimated";
+import Animated, { FadeIn, LinearTransition, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withSequence, withSpring, withTiming } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { ShimmerView } from "../../modules/lorca-core/ShimmerView";
-import { agentIsRunning, agentName, agentStarted, assignedTo, canBeQuoted, isLive, isSentMessage, showsCard, showsSpeakers, type AgentRun, type AskQuestion, type Author, type Body, type Bot, type Chat, type CommandRun, type Message } from "../core/model";
+import { agentIsRunning, agentKindName, agentName, agentStarted, assignedTo, canBeQuoted, isLive, isSentMessage, showsCard, showsSpeakers, type AgentRun, type AskQuestion, type Author, type Body, type Bot, type Chat, type CommandRun, type Message } from "../core/model";
 import { engine } from "../core/engine";
 import { canRegenerate, rerunnable } from "../core/rerun";
 import { answerWords, askAnswer, sendsOnPick, togglePick } from "../core/ask";
 import * as agentAsk from "../core/agentAsk";
 import { agentBusy, agentSince, agentTail } from "../core/agentKit";
-import { AgentHeader, AgentTile, Callout, ConsoleTail, PullRequestButton, SpecStrip, StopButton, alpha, useNow } from "./agentKit";
+import { AgentHeader, AgentTile, Callout, ConsoleTail, PullRequestButton, SpecStrip, StopButton, agentBrand, alpha, useNow } from "./agentKit";
 import { useStore } from "../core/store";
 import { language, t, tc, useLanguage } from "../i18n";
 import { AttachmentBlock } from "./attachments";
 import { OutputCard } from "./outputs";
 import { BotAvatar, ContactAvatar } from "./Avatar";
-import { daySeparator, firstLine, workingActivity } from "./format";
+import { daySeparator, firstLine, messageAuthorName, quoteAuthorName, workingActivity } from "./format";
+export { messageAuthorName, quoteAuthorName } from "./format";
 import { Markdown } from "./Markdown";
 import { Button } from "./Button";
 import { Symbol } from "./Symbol";
@@ -36,7 +37,6 @@ import { alert } from "./alert";
 import { draftStateWord, draftTitle, fileSize, sendable, type DraftBody } from "./drafts";
 import { secretCaption, secretTitle } from "./secrets";
 
-export const SEPARATOR_GAP_SECS = 15 * 60;
 const AVATAR = 28;
 const GUTTER = 8;
 /// A bubble stops growing here in a wide pane.
@@ -48,110 +48,8 @@ const NO_BOTS: Bot[] = [];
 const NOTICE_LINE = 17;
 const NOTICE_ICON = 14;
 
-export type Row =
-  | { key: string; type: "day"; at: number }
-  | { key: string; type: "message"; message: Message; groupStart: boolean; groupEnd: boolean; showsName: boolean; copyable: boolean; regenerable: boolean; editable: boolean; stackAbove: boolean; stackBelow: boolean; assigned: Bot[] }
-  | { key: string; type: "marker"; text: string; bot: Bot | undefined; tooltip?: string; groupStart: boolean }
-  | { key: string; type: "notice"; text: string; groupStart: boolean }
-  | { key: string; type: "permission"; message: Message; body: Extract<Body, { kind: "permission" }>; bot: Bot | undefined; groupStart: boolean }
-  | { key: string; type: "command"; message: Message; run: CommandRun; bot: Bot | undefined; groupStart: boolean }
-  | { key: string; type: "agent"; message: Message; agent: AgentRun; bot: Bot | undefined; groupStart: boolean }
-  | { key: string; type: "draft"; message: Message; body: DraftBody; bot: Bot | undefined; groupStart: boolean }
-  | { key: string; type: "working"; bots: Bot[] }
-  | { key: string; type: "status"; text: string };
-
-/// Builds the rows for a chat, the way the Mac app's ChatViewController does.
-export function buildRows(chat: Chat, bots: Map<string, Bot>, workingBotIds: string[], isWorking: boolean, status: string | null): Row[] {
-  const rows: Row[] = [];
-  let previous: Message | null = null;
-  let previousAuthorKey: string | null = null;
-  const shown = chat.messages.filter((m) => m.body.kind !== "tool" || !!m.body.agent || showsCard(m.body) || isSentMessage(m.body));
-  // The latest exchange's actions, under its messages: Copy and Regenerate under the bot's last
-  // reply, Edit under the user's message (`src/core/rerun.ts`).
-  const run = rerunnable(chat, isWorking);
-  const last = shown[shown.length - 1];
-  const latestReply = !isWorking && last?.author.kind === "bot" && last.body.kind === "text" && last.state.kind === "complete" && !last.output ? last.id : undefined;
-  for (let i = 0; i < shown.length; i++) {
-    const message = shown[i];
-    const separated = !previous || message.created_at - previous.created_at >= SEPARATOR_GAP_SECS;
-    if (separated) {
-      rows.push({ key: `day-${message.id}`, type: "day", at: message.created_at });
-      previousAuthorKey = null;
-    }
-    const authorKey = keyOf(message.author);
-    const groupStart = separated || authorKey !== previousAuthorKey;
-    switch (message.body.kind) {
-      case "text": {
-        const next = shown[i + 1];
-        const nextKey = next ? keyOf(next.author) : null;
-        const nextSeparated = next ? next.created_at - message.created_at >= SEPARATOR_GAP_SECS : true;
-        const groupEnd = nextSeparated || nextKey !== authorKey || next?.body.kind !== "text";
-        // A run of one bot's outputs joins into one list.
-        const output = isOutputCard(message);
-        rows.push({
-          key: message.id,
-          type: "message",
-          message,
-          groupStart,
-          groupEnd,
-          showsName: showsSpeakers(chat) && (message.author.kind === "bot" || message.author.kind === "contact") && groupStart,
-          copyable: message.id === latestReply && message.body.text.trim().length > 0,
-          regenerable: message.id === latestReply && canRegenerate(chat, isWorking, message),
-          editable: run?.asked.id === message.id,
-          assigned: chat.kind === "group" ? assignedTo(message, chat.bot_ids, bots) : NO_BOTS,
-          stackAbove: output && !groupStart && isOutputCard(shown[i - 1]),
-          stackBelow: output && !groupEnd && isOutputCard(next),
-        });
-        previousAuthorKey = authorKey;
-        break;
-      }
-      case "tool":
-        if (message.body.agent) {
-          const bot = message.author.kind === "bot" ? bots.get(message.author.bot_id) : undefined;
-          rows.push({ key: message.id, type: "agent", message, agent: message.body.agent, bot, groupStart });
-        } else if (message.body.run) {
-          const bot = message.author.kind === "bot" ? bots.get(message.author.bot_id) : undefined;
-          rows.push({ key: message.id, type: "command", message, run: message.body.run, bot, groupStart });
-        } else {
-          rows.push({ key: message.id, type: "marker", text: t("Messaged"), bot: bots.get(message.body.target_bot_id ?? ""), tooltip: message.body.detail, groupStart });
-        }
-        previousAuthorKey = null;
-        break;
-      case "handoff": {
-        // From a bot outside the chat, as a DM's request or a handoff's report: a message.
-        const incoming = chat.bot_ids.includes(message.body.to) && !chat.bot_ids.includes(message.body.from);
-        // To a bot outside the chat, as the request its bot sent: a message it sent.
-        const outgoing = chat.bot_ids.includes(message.body.from) && !chat.bot_ids.includes(message.body.to);
-        rows.push({
-          key: message.id,
-          type: "marker",
-          text: incoming ? t("Message from") : outgoing ? t("Messaged") : t("Handed off to"),
-          bot: bots.get(incoming ? message.body.from : message.body.to),
-          tooltip: message.body.reason,
-          groupStart,
-        });
-        previousAuthorKey = null;
-        break;
-      }
-      case "notice":
-        rows.push({ key: message.id, type: "notice", text: message.body.text, groupStart });
-        previousAuthorKey = null;
-        break;
-      case "permission":
-        rows.push({ key: message.id, type: "permission", message, body: message.body, bot: message.author.kind === "bot" ? bots.get(message.author.bot_id) : undefined, groupStart });
-        previousAuthorKey = null;
-        break;
-      case "draft":
-        rows.push({ key: message.id, type: "draft", message, body: message.body, bot: message.author.kind === "bot" ? bots.get(message.author.bot_id) : undefined, groupStart });
-        previousAuthorKey = null;
-        break;
-    }
-    previous = message;
-  }
-  if (isWorking) rows.push({ key: "working", type: "working", bots: workingBotIds.map((id) => bots.get(id)).filter((b): b is Bot => !!b) });
-  else if (status) rows.push({ key: "status", type: "status", text: status });
-  return rows;
-}
+import { buildRows, SEPARATOR_GAP_SECS, type Row } from "./transcriptRows";
+export { buildRows, SEPARATOR_GAP_SECS, type Row } from "./transcriptRows";
 
 /// `next` with every row that says what its predecessor of the same key said replaced by that
 /// predecessor, and `previous` itself when nothing changed. Rows are rebuilt on every event in
@@ -196,24 +94,9 @@ export const DayRow = memo(function DayRow({ at }: { at: number }) {
 /// Swiping a bubble this far to the right makes the draft a reply to it.
 const REPLY_SWIPE = 56;
 
-/// Who wrote a quoted message, as a reply's quote names them.
-export function quoteAuthorName(author: Author, bots: Map<string, Bot>): string {
-  if (author.kind === "you") return t("You");
-  if (author.kind === "bot") return bots.get(author.bot_id)?.name ?? t("Bot");
-  if (author.kind === "contact") return author.name;
-  return "Lorca";
-}
-
 /// A bot's published output, which shows as a card of its own.
 function isOutputCard(message: Message): boolean {
   return message.output !== undefined && message.author.kind !== "you";
-}
-
-/// Who a run of bubbles belongs to: the user, one bot, or one person outside Lorca.
-function keyOf(author: Author): string {
-  if (author.kind === "bot") return `bot:${author.bot_id}`;
-  if (author.kind === "contact") return `contact:${author.name}`;
-  return author.kind;
 }
 
 /// How far from the screen's left edge a drag stays the system's back gesture.
@@ -271,7 +154,7 @@ function useSwipeToReply(onReply?: () => void) {
 export const MessageRow = memo(function MessageRow({
   row,
   bots,
-  isGroup,
+  speakers,
   onReply,
   onQuotePress,
   onEdit,
@@ -280,7 +163,7 @@ export const MessageRow = memo(function MessageRow({
 }: {
   row: Extract<Row, { type: "message" }>;
   bots: Map<string, Bot>;
-  isGroup: boolean;
+  speakers: boolean;
   onReply?: (message: Message) => void;
   onQuotePress?: (messageID: string) => void;
   onEdit?: (message: Message) => void;
@@ -306,14 +189,19 @@ export const MessageRow = memo(function MessageRow({
   const text = message.body.kind === "text" ? message.body.text : "";
   const attachments = message.body.kind === "text" ? (message.body.attachments ?? []) : [];
   const failed = message.state.kind === "failed";
-  const showsAvatar = isGroup && !isYou;
+  const showsAvatar = speakers && !isYou;
   // A bot's published output is a card of its own, without a bubble.
   const isOutput = isOutputCard(message);
   // The bubble column is 80% of the pane, up to a readable line; the bubble pads 13 a side.
   // Attachments and the text both fit that width.
   const columnWidth = Math.min(Math.floor(paneWidth * 0.8), BUBBLE_COLUMN_MAX);
   const attachmentWidth = columnWidth - 26 - (showsAvatar ? AVATAR + GUTTER : 0);
-  const quoteName = quote ? quoteAuthorName(quote.author, bots) : "";
+  const quoteName = quote ? quoteAuthorName(quote, bots) : "";
+  const agent = message.agent;
+  const agentLabel = agent ? agent.name || agentKindName(agent.kind) : "";
+  const reduceMotion = useReducedMotion();
+  const appear = reduceMotion ? undefined : FadeIn.duration(180);
+  const settle = reduceMotion ? undefined : LinearTransition;
   const swipe = useSwipeToReply(reply);
   return (
     <View>
@@ -323,15 +211,18 @@ export const MessageRow = memo(function MessageRow({
     <Animated.View style={swipe.follow}>
     <View style={[styles.messageRow, { paddingTop: stackAbove ? 0 : groupStart ? 14 : 3 }, isYou ? styles.messageRowYou : styles.messageRowBot]}>
       {showsAvatar && (
-        <View style={{ width: AVATAR + GUTTER, alignSelf: "flex-end" }}>
-          {groupEnd && (contact !== undefined ? <ContactAvatar name={contact} size={AVATAR} /> : <BotAvatar bot={bot} size={AVATAR} />)}
-        </View>
+        <Animated.View entering={appear} layout={settle} style={{ width: AVATAR + GUTTER, alignSelf: "flex-end" }}>
+          {groupEnd &&
+            (agent ? <AgentTile kind={agent.kind} size={AVATAR} round /> : contact !== undefined ? <ContactAvatar name={contact} size={AVATAR} /> : <BotAvatar bot={bot} size={AVATAR} />)}
+        </Animated.View>
       )}
       <View style={[styles.bubbleColumn, { maxWidth: columnWidth }, isYou && styles.bubbleColumnYou]}>
         {showsName && (
-          <Text style={[styles.author, { color: p.secondaryLabel }]} numberOfLines={1}>
-            {contact ?? bot?.name ?? t("Bot")}
-          </Text>
+          <Animated.View entering={appear} layout={settle}>
+            <Text style={[styles.author, { color: agent ? agentBrand(agent.kind, p.dark) : p.secondaryLabel }]} numberOfLines={1}>
+              {agent ? agentLabel : (contact ?? bot?.name ?? t("Bot"))}
+            </Text>
+          </Animated.View>
         )}
         {quote && (
           <Pressable
@@ -341,9 +232,9 @@ export const MessageRow = memo(function MessageRow({
             accessibilityRole="button"
             accessibilityLabel={t("In reply to {name}: {text}", { name: quoteName, text: quote.text })}
           >
-            <Symbol name="arrowshape.turn.up.left.fill" size={10} color={p.tertiaryLabel} />
+            {quote.agent ? <AgentTile kind={quote.agent.kind} size={12} round /> : <Symbol name="arrowshape.turn.up.left.fill" size={10} color={p.tertiaryLabel} />}
             <Text style={[styles.quoteText, { color: p.secondaryLabel }]} numberOfLines={1}>
-              <Text style={styles.quoteName}>{quoteName}:</Text> {quote.text}
+              <Text style={[styles.quoteName, quote.agent ? { color: agentBrand(quote.agent.kind, p.dark) } : null]}>{quoteName}:</Text> {quote.text}
             </Text>
           </Pressable>
         )}
@@ -414,7 +305,7 @@ export const MessageRow = memo(function MessageRow({
   a.onEdit === b.onEdit &&
   a.onRegenerate === b.onRegenerate &&
   a.bots === b.bots &&
-  a.isGroup === b.isGroup &&
+  a.speakers === b.speakers &&
   a.onReply === b.onReply &&
   a.onQuotePress === b.onQuotePress &&
   a.flashing === b.flashing,
@@ -509,11 +400,11 @@ export function CardButton({ label, icon, primary = false, disabled = false, onP
   return <Button title={label} icon={icon} kind={primary ? "primary" : "secondary"} disabled={disabled} onPress={onPress} style={styles.cardButton} />;
 }
 
-export const PermissionRow = memo(function PermissionRow({ row, isGroup, onDecide, onFill }: { row: Extract<Row, { type: "permission" }>; isGroup: boolean; onDecide: (message: Message, decision: "allow" | "always" | "deny") => void; onFill: (message: Message) => void }) {
+export const PermissionRow = memo(function PermissionRow({ row, isGroup, onDecide, onFill, onOpenQuestion, onOpenAsk, onOpenCommand }: { row: Extract<Row, { type: "permission" }>; isGroup: boolean; onDecide: (message: Message, decision: "allow" | "always" | "deny") => void; onFill: (message: Message) => void; onOpenQuestion?: (message: Message) => void; onOpenAsk?: (message: Message) => void; onOpenCommand?: (message: Message) => void }) {
   if (row.body.tool === "secret" && row.body.secret) return <SecretRow row={row} isGroup={isGroup} onDecide={onDecide} onFill={onFill} />;
-  if (row.body.tool === "ask" && row.body.ask) return <QuestionRow row={row} ask={row.body.ask} isGroup={isGroup} onDecide={onDecide} />;
-  if (row.body.tool === "agent_ask" && row.body.agent_ask) return <AgentAskRow row={row} ask={row.body.agent_ask} isGroup={isGroup} />;
-  return <AskRow row={row} isGroup={isGroup} onDecide={onDecide} />;
+  if (row.body.tool === "ask" && row.body.ask) return <QuestionRow row={row} ask={row.body.ask} isGroup={isGroup} onDecide={onDecide} onOpen={onOpenQuestion} compact />;
+  if (row.body.tool === "agent_ask" && row.body.agent_ask) return <AgentAskRow row={row} ask={row.body.agent_ask} isGroup={isGroup} compact onOpen={onOpenAsk} />;
+  return <AskRow row={row} isGroup={isGroup} onDecide={onDecide} onOpenCommand={onOpenCommand} />;
 });
 
 /// A bot asking for a secret, as the Mac's card: who asks and where it goes, why, Fill In, which
@@ -563,7 +454,7 @@ function SecretRow({ row, isGroup, onDecide, onFill }: { row: Extract<Row, { typ
   );
 }
 
-const AskRow = memo(function AskRow({ row, isGroup, onDecide }: { row: Extract<Row, { type: "permission" }>; isGroup: boolean; onDecide: (message: Message, decision: "allow" | "always" | "deny") => void }) {
+const AskRow = memo(function AskRow({ row, isGroup, onDecide, onOpenCommand }: { row: Extract<Row, { type: "permission" }>; isGroup: boolean; onDecide: (message: Message, decision: "allow" | "always" | "deny") => void; onOpenCommand?: (message: Message) => void }) {
   useLanguage();
   const p = usePalette();
   const [copied, setCopied] = useState(false);
@@ -644,7 +535,7 @@ const AskRow = memo(function AskRow({ row, isGroup, onDecide }: { row: Extract<R
         </View>
         {pending && shell ? (
           <Pressable
-            onPress={() => router.push({ pathname: "/command/[id]", params: { id: row.message.id, chat: row.message.chat_id, title } })}
+            onPress={() => (onOpenCommand ? onOpenCommand(row.message) : router.push({ pathname: "/command/[id]", params: { id: row.message.id, chat: row.message.chat_id, title } }))}
             style={({ pressed }) => [styles.command, { backgroundColor: p.innerCard, opacity: pressed ? 0.6 : 1 }]}
             accessibilityRole="button"
             accessibilityLabel={t("Show the full command")}
@@ -714,7 +605,7 @@ const AskRow = memo(function AskRow({ row, isGroup, onDecide }: { row: Extract<R
 /// on its tap; several, or Other, send with Submit. Skip leaves the choice to the bot. A refusal
 /// from the Runner (offline, expired) puts the card back with why under it. Answered, it keeps the
 /// question and says what was picked.
-const QuestionRow = memo(function QuestionRow({ row, ask, isGroup, onDecide }: { row: Extract<Row, { type: "permission" }>; ask: AskQuestion; isGroup: boolean; onDecide: (message: Message, decision: "allow" | "always" | "deny") => void }) {
+export const QuestionRow = memo(function QuestionRow({ row, ask, isGroup, onDecide, onOpen, compact }: { row: Extract<Row, { type: "permission" }>; ask: AskQuestion; isGroup: boolean; onDecide: (message: Message, decision: "allow" | "always" | "deny") => void; onOpen?: (message: Message) => void; compact?: boolean }) {
   useLanguage();
   const p = usePalette();
   const [picked, setPicked] = useState<number[]>([]);
@@ -758,7 +649,11 @@ const QuestionRow = memo(function QuestionRow({ row, ask, isGroup, onDecide }: {
       <View style={[styles.permission, { backgroundColor: p.botBubble }]}>
         <Text style={[styles.caption, { color: p.secondaryLabel }]}>{t("{who} asks you to choose", { who })}</Text>
         <Text style={[styles.questionText, { color: p.label }]}>{ask.question}</Text>
-        {pending ? (
+        {pending && compact && onOpen ? (
+          <View style={styles.cardButtons}>
+            <CardButton label={t("Answer")} icon="questionmark.circle" primary onPress={() => onOpen(row.message)} />
+          </View>
+        ) : pending ? (
           <>
             <View style={[styles.innerCard, styles.options, { backgroundColor: p.innerCard }]}>
               {ask.options.map((option, index) => {
@@ -838,16 +733,15 @@ const QuestionRow = memo(function QuestionRow({ row, ask, isGroup, onDecide }: {
 /// sends on its tap; the rest send with Submit once each required field has an answer. Decline
 /// leaves the agent to go on without one. A refusal (offline, it no longer asks) shows why under the
 /// card. Answered, it keeps the question and says who answered and what, or why there is no answer.
-export const AgentAskRow = memo(function AgentAskRow({ row, ask, isGroup }: { row: Extract<Row, { type: "permission" }>; ask: agentAsk.AgentAsk; isGroup: boolean }) {
+export const AgentAskRow = memo(function AgentAskRow({ row, ask, isGroup, onAnswered, compact, onOpen }: { row: Extract<Row, { type: "permission" }>; ask: agentAsk.AgentAsk; isGroup: boolean; onAnswered?: () => void; compact?: boolean; onOpen?: (message: Message) => void }) {
   useLanguage();
   const p = usePalette();
   const [draft, setDraft] = useState<agentAsk.AgentAskDraft>(agentAsk.emptyDraft);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const showsAvatar = isGroup && row.message.author.kind === "bot";
   const pending = row.body.decision === "pending";
   const who = row.bot?.name ?? t("The bot");
-  const width = Math.min(usePaneWidth() - 2 * INSET - (showsAvatar ? AVATAR + GUTTER : 0), 420) - 2 * 14;
+  const width = Math.min(usePaneWidth() - 2 * INSET, 420) - 2 * 14;
   const filled = (next: agentAsk.AgentAskDraft) => agentAsk.formValues(ask, next, t("Yes"), t("No"), t(", "));
   const act = (work: () => Promise<void>) => {
     if (busy) return;
@@ -855,6 +749,7 @@ export const AgentAskRow = memo(function AgentAskRow({ row, ask, isGroup }: { ro
     setProblem(null);
     haptic.send();
     work()
+      .then(() => onAnswered?.())
       .catch((error) => setProblem(error instanceof Error ? error.message : String(error)))
       .finally(() => setBusy(false));
   };
@@ -879,11 +774,6 @@ export const AgentAskRow = memo(function AgentAskRow({ row, ask, isGroup }: { ro
           : t("{agent} stopped before it was answered", { agent: ask.name });
   return (
     <View style={[styles.messageRow, { paddingTop: row.groupStart ? 14 : 6 }]}>
-      {showsAvatar && (
-        <View style={{ width: AVATAR + GUTTER, alignSelf: "flex-end" }}>
-          <BotAvatar bot={row.bot} size={AVATAR} />
-        </View>
-      )}
       <View style={[styles.permission, { backgroundColor: p.botBubble }]}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
           <AgentTile kind={ask.kind} size={32} />
@@ -904,7 +794,11 @@ export const AgentAskRow = memo(function AgentAskRow({ row, ask, isGroup }: { ro
           ) : null}
         </View>
         {ask.message ? <Markdown text={ask.message} color={p.label} maxWidth={width} size={15} /> : null}
-        {pending ? (
+        {pending && compact && onOpen ? (
+          <View style={styles.cardButtons}>
+            <CardButton label={t("Answer")} icon="questionmark.circle" primary onPress={() => onOpen(row.message)} />
+          </View>
+        ) : pending ? (
           <>
             {ask.fields.map((field) => {
               const choices = agentAsk.fieldChoices(field, t("Yes"), t("No"));
@@ -1126,12 +1020,14 @@ export const CommandRow = memo(function CommandRow({
   onDecide,
   onAnswer,
   onStop,
+  onOpenCommand,
 }: {
   row: Extract<Row, { type: "command" }>;
   isGroup: boolean;
   onDecide: (message: Message, decision: "allow" | "always" | "deny") => void;
   onAnswer: (message: Message) => void;
   onStop: (message: Message) => Promise<void>;
+  onOpenCommand?: (message: Message) => void;
 }) {
   useLanguage();
   const p = usePalette();
@@ -1195,7 +1091,7 @@ export const CommandRow = memo(function CommandRow({
           ) : null}
         </View>
         <Pressable
-          onPress={() => router.push({ pathname: "/command/[id]", params: { id: row.message.id, chat: row.message.chat_id, title: t("{who}'s command", { who }) } })}
+          onPress={() => (onOpenCommand ? onOpenCommand(row.message) : router.push({ pathname: "/command/[id]", params: { id: row.message.id, chat: row.message.chat_id, title: t("{who}'s command", { who }) } }))}
           style={({ pressed }) => [styles.command, { backgroundColor: p.innerCard, opacity: pressed ? 0.6 : 1 }]}
           accessibilityRole="button"
           accessibilityLabel={t("Show the full command")}
@@ -1253,11 +1149,17 @@ export const AgentRow = memo(function AgentRow({
   isGroup,
   onDecide,
   onStop,
+  onActions,
+  onOpenAsk,
+  onOpenCommand,
 }: {
   row: Extract<Row, { type: "agent" }>;
   isGroup: boolean;
   onDecide: (message: Message, decision: "allow" | "always" | "deny") => void;
   onStop: (message: Message) => Promise<void>;
+  onActions?: (message: Message) => void;
+  onOpenAsk?: (message: Message) => void;
+  onOpenCommand?: (message: Message) => void;
 }) {
   useLanguage();
   const p = usePalette();
@@ -1266,7 +1168,6 @@ export const AgentRow = memo(function AgentRow({
   const [error, setError] = useState<string | null>(null);
   const { agent } = row;
   const question = agent.question;
-  const showsAvatar = isGroup && row.message.author.kind === "bot";
   const who = row.bot?.name ?? t("The bot");
   const name = agentName(agent);
   const asks = question && (question.kind === "start" || question.kind === "command") ? question : undefined;
@@ -1304,13 +1205,20 @@ export const AgentRow = memo(function AgentRow({
   );
   return (
     <View style={[styles.messageRow, { paddingTop: row.groupStart ? 14 : 6 }]}>
-      {showsAvatar && (
-        <View style={{ width: AVATAR + GUTTER, alignSelf: "flex-end" }}>
-          <BotAvatar bot={row.bot} size={AVATAR} />
-        </View>
-      )}
       <View style={[styles.permission, styles.agentCard, { backgroundColor: p.botBubble }]}>
-        <AgentHeader agent={agent} trailing={agentIsRunning(agent) ? <StopButton busy={busy} onPress={() => void run(() => onStop(row.message))} /> : null} />
+        <AgentHeader
+          agent={agent}
+          trailing={
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+              {agentIsRunning(agent) ? <StopButton busy={busy} onPress={() => void run(() => onStop(row.message))} /> : null}
+              {onActions ? (
+                <Pressable onPress={() => onActions(row.message)} hitSlop={8} accessibilityRole="button" accessibilityLabel={t("Agent actions")} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
+                  <Symbol name="ellipsis" size={17} color={p.secondaryLabel} />
+                </Pressable>
+              ) : null}
+            </View>
+          }
+        />
         {agentStarted(agent) ? (
           <Pressable onPress={openTranscript} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })} accessibilityRole="button" accessibilityHint={t("Show the transcript")}>
             {body}
@@ -1323,7 +1231,7 @@ export const AgentRow = memo(function AgentRow({
           <Callout tint={accentColor("orange", p.dark)} icon="hand.raised" title={agentTitle(agent, who)}>
             {asks.kind === "command" && asks.command ? (
               <Pressable
-                onPress={() => router.push({ pathname: "/command/[id]", params: { id: row.message.id, chat: row.message.chat_id, title: t("{who}'s command", { who: name }) } })}
+                onPress={() => (onOpenCommand ? onOpenCommand(row.message) : router.push({ pathname: "/command/[id]", params: { id: row.message.id, chat: row.message.chat_id, title: t("{who}'s command", { who: name }) } }))}
                 style={({ pressed }) => [styles.command, { backgroundColor: p.innerCard, opacity: pressed ? 0.6 : 1 }]}
                 accessibilityRole="button"
                 accessibilityLabel={t("Show the full command")}
@@ -1350,6 +1258,7 @@ export const AgentRow = memo(function AgentRow({
                 {firstLine(askText)}
               </Text>
             ) : null}
+            {onOpenAsk && askCard ? <CardButton label={t("Answer")} icon="questionmark.circle" primary onPress={() => onOpenAsk(askCard)} /> : null}
           </Callout>
         ) : null}
         {!asks && agent.state === "failed" && agent.outcome ? (
