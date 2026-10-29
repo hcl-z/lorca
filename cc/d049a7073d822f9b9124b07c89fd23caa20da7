@@ -1,0 +1,33 @@
+CHANGELOG.md
+  s_f7eb74e3575bc1::t_f51c20ff3e8987 11-20
+.github/workflows/release-mobile.yml
+  s_f7eb74e3575bc1::t_273b04e049cf8c 254
+  s_f7eb74e3575bc1::t_496b56bc0e3b08 118-121
+  s_f7eb74e3575bc1::t_74e928f14fab88 98,106-107
+  s_f7eb74e3575bc1::t_5601d79e658d0b 62-65
+docs/architecture/agent-cards.md
+  s_f7eb74e3575bc1::t_224cc74a56d8db 13
+mobile/app.config.ts
+  s_f7eb74e3575bc1::t_18708989ae4c68 5
+docs/architecture/phone-ui.md
+  s_f7eb74e3575bc1::t_407edf9c2f8cda 5
+  s_f7eb74e3575bc1::t_3faf4eede7ee00 7
+docs/architecture/phone-app.md
+  s_f7eb74e3575bc1::t_bb03d0c3268dac 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "ccd049a7073d822f9b9124b07c89fd23caa20da7",
+  "prompts": {},
+  "sessions": {
+    "s_f7eb74e3575bc1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "453131d1-0daa-41fc-b6ed-3bb467194faa",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
