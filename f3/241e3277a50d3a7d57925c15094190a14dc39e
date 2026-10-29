@@ -1,0 +1,45 @@
+mobile/src/core/store.test.ts
+  s_f7eb74e3575bc1::t_3f8078e2de04a9 2,7
+  s_f7eb74e3575bc1::t_69e12b8e87b8ea 73-98
+mobile/src/core/store.ts
+  s_f7eb74e3575bc1::t_a6ba8f9b9aa909 584
+  s_f7eb74e3575bc1::t_f1387981a0939c 328
+  s_f7eb74e3575bc1::t_fb72e3a409dad8 249
+  s_f7eb74e3575bc1::t_79ffc4e3413402 217-236
+  s_f7eb74e3575bc1::t_f21c59750e68cd 174
+  s_f7eb74e3575bc1::t_83f17cf01bcb85 346
+mobile/src/ui/longMessage.ts
+  s_f7eb74e3575bc1::t_b0fde0a814af1e 42-44,58-59,64-74
+mobile/app/(main)/chat/[id].tsx
+  s_f7eb74e3575bc1::t_3cb78d5ac82dde 35
+  s_f7eb74e3575bc1::t_651ca3d45f2cd8 631-633
+  s_f7eb74e3575bc1::t_9076fd39d5107a 508
+docs/architecture/phone-ui.md
+  s_f7eb74e3575bc1::t_20a06c4b528809 7
+docs/releasing-mobile.md
+  s_f7eb74e3575bc1::t_f52c5f8d302e02 114-118,121-122
+.github/workflows/release-mobile.yml
+  s_f7eb74e3575bc1::t_73ee446267826a 10-11
+  s_f7eb74e3575bc1::t_35767d2cce19e3 22-25
+  s_f7eb74e3575bc1::t_2b3032aa17c7cb 102
+  s_f7eb74e3575bc1::t_1e42a2641427e5 127-129
+  s_f7eb74e3575bc1::t_794addd08e47c2 262-266
+mobile/src/ui/tasks.ts
+  s_f7eb74e3575bc1::t_6153383e9ee721 8-9,14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "f3241e3277a50d3a7d57925c15094190a14dc39e",
+  "prompts": {},
+  "sessions": {
+    "s_f7eb74e3575bc1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "453131d1-0daa-41fc-b6ed-3bb467194faa",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
