@@ -4,7 +4,7 @@ import { chatOpening, markLaunch } from "../core/timing";
 import { type MenuAction, type MenuComponentRef } from "@expo/ui/community/menu";
 import { haptic } from "./haptics";
 import { PopupMenu } from "./PopupMenu";
-import { Link, Stack, useRouter } from "expo-router";
+import { Link, Stack, useIsFocused, useRouter } from "expo-router";
 import Swipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Platform, StyleSheet, Text, useWindowDimensions, type ImageSourcePropType, type StyleProp, type TextStyle, View } from "react-native";
@@ -46,7 +46,18 @@ export function ChatsScreen({ sidebar = false }: { sidebar?: boolean }) {
   // Only the sidebar lights the open chat; a phone's list would re-render under the chat it pushes.
   const openChatId = useStore((s) => (sidebar ? s.openChatId : null));
   const sidebarWidth = useSidebarWidth();
-  const chats = useStore((s) => s.chats);
+  // A phone's list stays under the chat it pushes. Its chats freeze there — the same array keeps
+  // the list and its scroll where they were, and no streamed word in the chat redraws the list —
+  // and it reads the account again as it comes back into view.
+  const focused = useIsFocused();
+  const lastChats = useRef<Chat[]>([]);
+  const chats = useStore((s) => {
+    if (focused || sidebar) {
+      lastChats.current = s.chats;
+      return s.chats;
+    }
+    return lastChats.current;
+  });
   const sections = useStore((s) => s.sections);
   const showsHidden = useStore((s) => s.showsHidden);
   const collapsesOthers = useStore((s) => s.collapsesOthers);

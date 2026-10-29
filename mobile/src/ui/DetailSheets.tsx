@@ -64,6 +64,17 @@ export function CommandSheet({ visible, message, onClose }: { visible: boolean; 
 
 export function TasksSheet({ visible, chatId, onClose, onOpenCommand }: { visible: boolean; chatId: string; onClose: () => void; onOpenCommand: (message: Message) => void }) {
   useLanguage();
+  return (
+    <Sheet visible={visible} onClose={onClose} title={t("Running tasks")} snapPoints={SHEET_PRESETS.picker} scroll>
+      {visible ? <TasksSheetBody chatId={chatId} onClose={onClose} onOpenCommand={onOpenCommand} /> : null}
+    </Sheet>
+  );
+}
+
+/// The sheet's rows stand only while it is up: its chat, its commands, and the clock that moves
+/// them cost nothing while it is closed.
+function TasksSheetBody({ chatId, onClose, onOpenCommand }: { chatId: string; onClose: () => void; onOpenCommand: (message: Message) => void }) {
+  useLanguage();
   const p = usePalette();
   const chat = useChat(chatId);
   const bots = useBotMap();
@@ -77,34 +88,30 @@ export function TasksSheet({ visible, chatId, onClose, onOpenCommand }: { visibl
     const run = message.body.kind === "tool" ? message.body.run : undefined;
     return running.includes(message) || (!!run && listed.current.has(message.id) && hasEnded(run));
   });
-  return (
-    <Sheet visible={visible} onClose={onClose} title={t("Running tasks")} snapPoints={SHEET_PRESETS.picker} scroll>
-      {tasks.length > 0 ? (
-        <Section>
-          {tasks.map((message) => {
-            const body = message.body.kind === "tool" ? message.body : undefined;
-            if (!body?.run) return null;
-            const bot = message.author.kind === "bot" ? bots.get(message.author.bot_id) : undefined;
-            const state = taskState(body.run, message.created_at, now);
-            return (
-              <Row
-                key={message.id}
-                icon="terminal"
-                title={body.description ?? firstLine(body.run.command)}
-                subtitle={chat?.kind === "group" ? `${bot?.name ?? t("The bot")} · ${state}` : state}
-                chevron
-                onPress={() => {
-                  onClose();
-                  afterDismiss(() => onOpenCommand(message));
-                }}
-              />
-            );
-          })}
-        </Section>
-      ) : (
-        <Text style={[styles.empty, { color: p.secondaryLabel }]}>{t("No commands are running.")}</Text>
-      )}
-    </Sheet>
+  return tasks.length > 0 ? (
+    <Section>
+      {tasks.map((message) => {
+        const body = message.body.kind === "tool" ? message.body : undefined;
+        if (!body?.run) return null;
+        const bot = message.author.kind === "bot" ? bots.get(message.author.bot_id) : undefined;
+        const state = taskState(body.run, message.created_at, now);
+        return (
+          <Row
+            key={message.id}
+            icon="terminal"
+            title={body.description ?? firstLine(body.run.command)}
+            subtitle={chat?.kind === "group" ? `${bot?.name ?? t("The bot")} · ${state}` : state}
+            chevron
+            onPress={() => {
+              onClose();
+              afterDismiss(() => onOpenCommand(message));
+            }}
+          />
+        );
+      })}
+    </Section>
+  ) : (
+    <Text style={[styles.empty, { color: p.secondaryLabel }]}>{t("No commands are running.")}</Text>
   );
 }
 

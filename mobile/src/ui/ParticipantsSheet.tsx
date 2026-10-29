@@ -34,12 +34,29 @@ export function ParticipantsSheet({
   onOpenAgent: (messageId: string) => void;
   onStopAgent: (messageId: string) => Promise<void>;
 }) {
-  const p = usePalette();  useLanguage();
+  const p = usePalette();
+  useLanguage();
+  return (
+    <Sheet visible={visible} onClose={onClose} title={t("{title}, participants", { title })} snapPoints={SHEET_PRESETS.participants} scroll>
+      {visible ? <ParticipantsBody bots={bots} agents={agents} onOpenAgent={onOpenAgent} onStopAgent={onStopAgent} /> : null}
+    </Sheet>
+  );
+}
 
+/// The sheet's rows stand only while it is up: its devices and the agents' clocks cost nothing
+/// while it is closed.
+function ParticipantsBody({ bots, agents, onOpenAgent, onStopAgent }: {
+  bots: Bot[];
+  agents: ParticipantAgent[];
+  onOpenAgent: (messageId: string) => void;
+  onStopAgent: (messageId: string) => Promise<void>;
+}) {
+  const p = usePalette();
+  useLanguage();
   const devices = useStore((s) => s.devices);
   const runnerName = (id: string) => devices.find((device) => device.id === id)?.name;
   return (
-    <Sheet visible={visible} onClose={onClose} title={t("{title}, participants", { title })} snapPoints={SHEET_PRESETS.participants} scroll>
+    <>
       <Text style={[styles.section, { color: p.secondaryLabel }]}>{t("Bots")}</Text>
       {bots.map((bot) => (
         <SheetActionRow key={bot.id} tile={<BotAvatar bot={bot} size={28} />} title={bot.name} subtitle={runnerName(bot.runner_id)} />
@@ -64,7 +81,7 @@ export function ParticipantsSheet({
           />
         ))
       )}
-    </Sheet>
+    </>
   );
 }
 
