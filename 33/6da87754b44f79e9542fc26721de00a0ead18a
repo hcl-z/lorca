@@ -1,0 +1,26 @@
+mobile/src/ui/tasks.ts
+  s_f7eb74e3575bc1::t_f2cf8298e5b17a 8-10,13-14,17
+mobile/src/ui/DetailSheets.tsx
+  s_f7eb74e3575bc1::t_3958324935c204 67-76,91-114
+mobile/src/ui/ParticipantsSheet.tsx
+  s_f7eb74e3575bc1::t_13593be19cddfa 37-44,46-55,59,84
+mobile/src/ui/ChatsScreen.tsx
+  s_f7eb74e3575bc1::t_882278f68b9dd4 49-60
+  s_f7eb74e3575bc1::t_9a5ebcbf1cfcff 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "336da87754b44f79e9542fc26721de00a0ead18a",
+  "prompts": {},
+  "sessions": {
+    "s_f7eb74e3575bc1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "453131d1-0daa-41fc-b6ed-3bb467194faa",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
