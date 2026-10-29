@@ -171,7 +171,7 @@ export function botById(id: string): Bot | undefined {
 }
 
 export function chatById(id: string): Chat | undefined {
-  return useStore.getState().chats.find((c) => c.id === id);
+  return indexOf(useStore.getState().chats).get(id);
 }
 
 export function deviceById(id: string): Device | undefined {
@@ -232,8 +232,18 @@ export function replaceSnapshot(snapshot: {
       const messages = c.messages ?? [];
       const old = loaded.get(c.id);
       const at = old && messages.length ? old.messages.findIndex((m) => m.id === messages[0].id) : -1;
-      const kept = at > 0 ? { messages: [...old!.messages.slice(0, at), ...messages], has_more: old!.has_more } : { messages };
-      return { ...c, ...kept, unread_count: c.unread_count ?? 0 };
+      const kept = at > 0 ? old!.messages.slice(0, at) : [];
+      const previous = at >= 0 ? new Map(old!.messages.slice(at).map((m) => [m.id, m])) : undefined;
+      // A message the snapshot says the same as the one held keeps its object: a resync then
+      // re-renders nothing that did not change.
+      const merged = messages.map((m) => {
+        const held = previous?.get(m.id);
+        return held && sameMessage(held, m) ? held : m;
+      });
+      const nextMessages = kept.length ? [...kept, ...merged] : merged;
+      const sameMessages = !!old && nextMessages.length === old.messages.length && nextMessages.every((m, i) => m === old.messages[i]);
+      const next: Chat = { ...c, messages: sameMessages ? old!.messages : nextMessages, has_more: at > 0 ? old!.has_more : c.has_more, unread_count: c.unread_count ?? 0 };
+      return old && sameFields(old, next) ? old : next;
     }),
     routines: snapshot.routines ?? [],
     tasks: snapshotTasks(snapshot.tasks ?? [], snapshot.has_identity && snapshot.identity_id === identityId ? held : []),
@@ -257,11 +267,14 @@ export function replaceSnapshot(snapshot: {
 /// records (cancelling one changes its state), and a snapshot can be older than a task a reply or
 /// an event delivered: a held task at a newer revision, or one the snapshot does not list, stays.
 export function snapshotTasks(incoming: DurableTask[], held: DurableTask[]): DurableTask[] {
+  const byId = new Map(held.map((task) => [task.id, task]));
+  const incomingIds = new Set<string>();
   const tasks = incoming.map((task) => {
-    const previous = held.find((each) => each.id === task.id);
+    incomingIds.add(task.id);
+    const previous = byId.get(task.id);
     return previous && previous.revision > task.revision ? previous : task;
   });
-  for (const previous of held) if (!incoming.some((task) => task.id === previous.id)) tasks.push(previous);
+  for (const previous of held) if (!incomingIds.has(previous.id)) tasks.push(previous);
   return tasks;
 }
 
@@ -282,6 +295,59 @@ function sameFields(a: Chat, b: Chat): boolean {
     return false;
   }
   return a.messages === b.messages;
+}
+
+/// Two small values that say the same thing.
+function sameJson(a: unknown, b: unknown): boolean {
+  return a === b || JSON.stringify(a) === JSON.stringify(b);
+}
+
+/// Whether a message says the same as the one held. A streamed reply compares its text rather
+/// than serializing the whole body on every flush; a tool card, whose output can be large but
+/// changes rarely, keeps the exact comparison.
+export function sameMessage(a: Message, b: Message): boolean {
+  if (a === b) return true;
+  if (
+    a.id !== b.id ||
+    a.chat_id !== b.chat_id ||
+    a.created_at !== b.created_at ||
+    a.promoted_at !== b.promoted_at ||
+    a.queued !== b.queued ||
+    a.edited_at !== b.edited_at ||
+    a.state.kind !== b.state.kind
+  )
+    return false;
+  if (a.state.kind === "failed" && b.state.kind === "failed" && a.state.error !== b.state.error) return false;
+  if (a.body.kind !== b.body.kind) return false;
+  if (a.agent !== b.agent) {
+    if (!a.agent || !b.agent || a.agent.id !== b.agent.id || a.agent.name !== b.agent.name || a.agent.kind !== b.agent.kind) return false;
+  }
+  if (a.output !== b.output) {
+    if (!a.output || !b.output || a.output.version !== b.output.version || a.output.name !== b.output.name || a.output.url !== b.output.url) return false;
+  }
+  if (a.body.kind === "text" && b.body.kind === "text") {
+    return (
+      a.body.text === b.body.text &&
+      sameJson(a.body.mentions, b.body.mentions) &&
+      sameJson(a.body.agents, b.body.agents) &&
+      sameJson(a.body.reply_to, b.body.reply_to) &&
+      sameJson(a.body.attachments, b.body.attachments) &&
+      sameJson(a.author, b.author)
+    );
+  }
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/// The chats by id, for the array held: a new `chats` array gets a new index, and an unchanged
+/// one answers from the same map.
+const chatIndexes = new WeakMap<Chat[], Map<string, Chat>>();
+function indexOf(chats: Chat[]): Map<string, Chat> {
+  let index = chatIndexes.get(chats);
+  if (!index) {
+    index = new Map(chats.map((chat) => [chat.id, chat]));
+    chatIndexes.set(chats, index);
+  }
+  return index;
 }
 
 function seenOf(devices: Device[]): Record<string, number> {
@@ -375,7 +441,7 @@ export function upsertMessage(message: Message, isNew = true): { added: boolean 
     if (index < 0) {
       added = true;
       next = { ...chat, messages: [...chat.messages, message] };
-    } else if (JSON.stringify(previous) !== JSON.stringify(message)) {
+    } else if (!sameMessage(previous, message)) {
       const messages = chat.messages.slice();
       messages[index] = message;
       next = { ...chat, messages };
@@ -411,17 +477,27 @@ export function removeMessage(chatId: string, messageId: string) {
 }
 
 export function removeChat(chatId: string) {
+  removeChats([chatId]);
+}
+
+/// Takes chats away in one update, so a roster that drops several pays one notification.
+export function removeChats(chatIds: string[]) {
+  if (!chatIds.length) return;
+  const gone = new Set(chatIds);
+  const drop = <T>(record: Record<string, T>): Record<string, T> => Object.fromEntries(Object.entries(record).filter(([key]) => !gone.has(key)));
   useStore.setState((s) => ({
-    chats: s.chats.filter((c) => c.id !== chatId),
-    statuses: omit(s.statuses, chatId),
-    thinking: omit(s.thinking, chatId),
-    retries: omit(s.retries, chatId),
-    outputs: omit(s.outputs, chatId),
-    projects: omit(s.projects, chatId),
+    chats: s.chats.filter((c) => !gone.has(c.id)),
+    statuses: drop(s.statuses),
+    thinking: drop(s.thinking),
+    retries: drop(s.retries),
+    outputs: drop(s.outputs),
+    projects: drop(s.projects),
   }));
 }
 
 export function setChatUsage(chatId: string, usage: ChatUsage) {
+  const chat = chatById(chatId);
+  if (!chat || sameJson(chat.usage, usage)) return;
   useStore.setState((s) => ({ chats: s.chats.map((c) => (c.id === chatId ? { ...c, usage } : c)) }));
 }
 
@@ -503,7 +579,7 @@ function pick<T>(record: Record<string, T>, keys: Set<string>): Record<string, T
 // MARK: - Hooks
 
 export function useChat(id: string): Chat | undefined {
-  return useStore((s) => s.chats.find((c) => c.id === id));
+  return useStore((s) => indexOf(s.chats).get(id));
 }
 
 /// The chat's outputs, the latest published first: the output messages loaded in the chat and

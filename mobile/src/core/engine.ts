@@ -37,6 +37,7 @@ import {
   patchChannel,
   channelById,
   removeChat,
+  removeChats,
   removeMessage,
   removeRoutine,
   replaceSnapshot,
@@ -210,7 +211,7 @@ class Engine {
         break;
       case "roster.changed": {
         const { removed } = applyRoster(event.roster);
-        for (const chatId of removed) removeChat(chatId);
+        removeChats(removed);
         break;
       }
       case "message.added":
