@@ -4,13 +4,14 @@
 // not its whole length. The full text is laid out only once the reader asks for it.
 
 import { LinearGradient } from "expo-linear-gradient";
+import { memo, useMemo } from "react";
 import { Pressable, StyleSheet, Text, View, type ColorValue } from "react-native";
 import { t, useLanguage } from "../i18n";
 import { collapsedPrefix, COLLAPSED_HEIGHT, isLongMessage } from "./longMessage";
 import { Markdown } from "./Markdown";
 import { Font } from "./theme";
 
-export function FoldedText({
+export const FoldedText = memo(function FoldedText({
   text,
   color,
   maxWidth,
@@ -38,11 +39,16 @@ export function FoldedText({
   height?: number;
 }) {
   useLanguage();
-  const long = !!onToggle && isLongMessage(text, maxWidth, size, height);
+  // A streamed message is not folded: its text grows on every flush, and the reader can open the
+  // whole of it when it ends. The scan stops at the fold height, so a long reply costs its head.
+  const { long, prefix } = useMemo(() => {
+    const isLong = !!onToggle && isLongMessage(text, maxWidth, size, height);
+    return { long: isLong, prefix: isLong ? collapsedPrefix(text) : text };
+  }, [text, maxWidth, size, height, onToggle]);
   const folded = long && !expanded;
   return (
     <View style={folded ? { maxHeight: height, overflow: "hidden" } : undefined}>
-      <Markdown text={folded ? collapsedPrefix(text) : text} color={color} maxWidth={maxWidth} size={size} sources={sources} />
+      <Markdown text={folded ? prefix : text} color={color} maxWidth={maxWidth} size={size} sources={sources} />
       {folded ? (
         <>
           <LinearGradient colors={["transparent", background]} style={styles.fade} pointerEvents="none" />
@@ -58,7 +64,7 @@ export function FoldedText({
       ) : null}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   fade: { position: "absolute", left: 0, right: 0, bottom: 32, height: 56 },

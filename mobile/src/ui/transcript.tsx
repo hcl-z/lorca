@@ -274,7 +274,7 @@ export const MessageRow = memo(function MessageRow({
               sources={message.author.kind === "bot"}
               background={bubbleBackground}
               actionColor={isYou ? p.userBubbleText : p.link}
-              onToggle={openWhole}
+              onToggle={message.state.kind === "streaming" ? undefined : openWhole}
             />
           )}
           {failed && (
@@ -325,6 +325,9 @@ export const MessageRow = memo(function MessageRow({
   a.row.editable === b.row.editable &&
   a.row.assigned.length === b.row.assigned.length &&
   a.row.assigned.every((bot, i) => bot === b.row.assigned[i]) &&
+  a.row.stackAbove === b.row.stackAbove &&
+  a.row.stackBelow === b.row.stackBelow &&
+  a.onOpenMessage === b.onOpenMessage &&
   a.onEdit === b.onEdit &&
   a.onRegenerate === b.onRegenerate &&
   a.bots === b.bots &&

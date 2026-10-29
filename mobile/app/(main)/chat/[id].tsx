@@ -213,7 +213,13 @@ export default function ChatScreen() {
   const [composerHeight, setComposerHeight] = useState(
     composerGuess - COMPOSER_GAP,
   );
+  // The end is checked while the finger moves, at most every 100 ms: reading the list's position
+  // on every frame put a native call on the JS thread during the scroll it was measuring.
+  const lastMeasure = useRef(0);
   const measureEnd = useCallback(() => {
+    const now = Date.now();
+    if (now - lastMeasure.current < 100) return;
+    lastMeasure.current = now;
     const state = listRef.current?.getState();
     if (!state || state.scrollLength === 0) return;
     setAwayFromEnd(state.contentLength - state.scrollLength - state.scroll > JUMP_DISTANCE);
@@ -230,8 +236,11 @@ export default function ChatScreen() {
     restTimer.current = setTimeout(() => {
       restTimer.current = null;
       scrollEnded();
+      // The last look at a scroll the throttle skipped still decides the disc.
+      lastMeasure.current = 0;
+      measureEnd();
     }, 50);
-  }, []);
+  }, [measureEnd]);
   const onMomentumScrollBegin = useCallback(() => {
     if (restTimer.current) clearTimeout(restTimer.current);
     restTimer.current = null;
@@ -357,6 +366,8 @@ export default function ChatScreen() {
   const agentMentionable = targets.some((target) => target.kind === "agent");
   // The header and participants sheet read the open agents, not every streamed word.
   const agents = useMemo(() => (chat ? chatAgents(chat) : []), [agentRosterKey]);
+  // The header's array keeps its identity while the agents do, so its memo holds through a stream.
+  const agentRuns = useMemo(() => agents.map(({ agent }) => agent), [agents]);
   const [participantsOpen, setParticipantsOpen] = useState(false);
   const openParticipants = useCallback(() => setParticipantsOpen(true), []);
   const [actionsFor, setActionsFor] = useState<Message | null>(null);
@@ -364,6 +375,7 @@ export default function ChatScreen() {
   const [messageFor, setMessageFor] = useState<Message | null>(null);
   const [commandFor, setCommandFor] = useState<Message | null>(null);
   const [tasksOpen, setTasksOpen] = useState(false);
+  const openTasks = useCallback(() => setTasksOpen(true), []);
   const [questionFor, setQuestionFor] = useState<Message | null>(null);
   const openAgentActions = useCallback((message: Message) => {
     void KeyboardController.dismiss();
@@ -477,10 +489,12 @@ export default function ChatScreen() {
   /// The whole message behind a "Messaged ◉ Name" marker, as a sheet.
   const openMarker = useCallback(
     (row: Extract<Row, { type: "marker" }>) => {
-      const message = chat?.messages.find((each) => each.id === row.key);
+      // Read at press time, so the callback stays the same through every streamed chunk of the chat.
+      const current = useStore.getState().chats.find((each) => each.id === id);
+      const message = current?.messages.find((each) => each.id === row.key);
       if (message) setMessageFor(message);
     },
-    [chat],
+    [id],
   );
 
   /// Answers a card. One whose answer cannot reach the bot's Runner asks again, and says why.
@@ -581,12 +595,12 @@ export default function ChatScreen() {
         id={id}
         title={title}
         members={members}
-        agents={agents.map(({ agent }) => agent)}
+        agents={agentRuns}
         onOpenParticipants={openParticipants}
         service={chat?.channel?.service}
         working={isWorking}
         hasTasks={hasTasks}
-        onTasks={() => setTasksOpen(true)}
+        onTasks={openTasks}
         wide={wide}
         top={insets.top}
       />
@@ -599,9 +613,9 @@ export default function ChatScreen() {
             renderScrollComponent={ChatScroll}
             data={rows}
             renderItem={renderItem}
-            // Items draw again when their row or this changes; the row callbacks and the pulsing
-            // quote live in renderItem.
-            extraData={renderItem}
+            // The rows keep their identity while they are unchanged (shareRows), so the data is
+            // what tells the list to draw again; an extraData that changed per streamed chunk made
+            // it draw every visible cell instead.
             keyExtractor={(row) => row.key}
             getItemType={(row) => row.type}
             estimatedItemSize={ESTIMATED_ROW}

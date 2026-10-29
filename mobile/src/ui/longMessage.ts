@@ -55,9 +55,27 @@ export function estimatedLines(text: string, width: number, size: number): numbe
   return lines;
 }
 
-/// Whether `text` stands taller than `height` at `width` and `size`.
+/// Whether `text` stands taller than `height` at `width` and `size`. The scan stops once the
+/// threshold is passed, so a long reply costs its head, not its whole length.
 export function isLongMessage(text: string, width: number, size: number, height = COLLAPSED_HEIGHT): boolean {
-  return estimatedLines(text, width, size) * size * LINE_HEIGHT > height;
+  const perLine = Math.max(6, Math.floor(width / (size * 0.55)));
+  const maxLines = Math.max(1, Math.ceil(height / (size * LINE_HEIGHT)));
+  let lines = 0;
+  let start = 0;
+  for (;;) {
+    const end = text.indexOf("\n", start);
+    const line = end < 0 ? text.slice(start) : text.slice(start, end);
+    if (line === "") {
+      lines += 1;
+    } else {
+      let units = 0;
+      for (const char of line) units += room(char.codePointAt(0)!);
+      lines += Math.max(1, Math.ceil(units / perLine));
+    }
+    if (lines > maxLines) return true;
+    if (end < 0) return false;
+    start = end + 1;
+  }
 }
 
 /// The head of `text` a folded message lays out: cut at a line where it can be, and a code fence
