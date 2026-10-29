@@ -275,6 +275,7 @@ export const MessageRow = memo(function MessageRow({
               background={bubbleBackground}
               actionColor={isYou ? p.userBubbleText : p.link}
               onToggle={message.state.kind === "streaming" ? undefined : openWhole}
+              streaming={message.state.kind === "streaming"}
             />
           )}
           {failed && (

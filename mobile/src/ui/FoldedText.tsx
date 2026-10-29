@@ -22,6 +22,7 @@ export const FoldedText = memo(function FoldedText({
   expanded = false,
   onToggle,
   height = COLLAPSED_HEIGHT,
+  streaming = false,
 }: {
   text: string;
   color: ColorValue;
@@ -37,6 +38,8 @@ export const FoldedText = memo(function FoldedText({
   /// Show more and Show less. Without it the text never folds.
   onToggle?: () => void;
   height?: number;
+  /// The text still streams: its measure is throttled and kept out of the size cache.
+  streaming?: boolean;
 }) {
   useLanguage();
   // A streamed message is not folded: its text grows on every flush, and the reader can open the
@@ -48,7 +51,7 @@ export const FoldedText = memo(function FoldedText({
   const folded = long && !expanded;
   return (
     <View style={folded ? { maxHeight: height, overflow: "hidden" } : undefined}>
-      <Markdown text={folded ? prefix : text} color={color} maxWidth={maxWidth} size={size} sources={sources} />
+      <Markdown text={folded ? prefix : text} color={color} maxWidth={maxWidth} size={size} sources={sources} streaming={streaming} />
       {folded ? (
         <>
           <LinearGradient colors={["transparent", background]} style={styles.fade} pointerEvents="none" />

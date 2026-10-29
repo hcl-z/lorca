@@ -93,7 +93,9 @@ export function sizeKey(text: string): string {
 
 /// The size the text takes within `maxWidth`, measured natively before the view renders. The
 /// view is sized from this, so a transcript's rows have their heights in their first layout.
-export function measureMarkdown(markdown: string, maxWidth: number, fontSize: number, codeFontSize: number, sourceChips: boolean) {
+/// `transient` measures without keeping the answer: a reply still streaming would fill the cache
+/// and its file with every flush's text.
+export function measureMarkdown(markdown: string, maxWidth: number, fontSize: number, codeFontSize: number, sourceChips: boolean, transient = false) {
   // Android sizes the text in sp, so the system's font scale is part of the answer.
   const key = sizeKey(`${maxWidth}|${fontSize}|${codeFontSize}|${PixelRatio.getFontScale()}|${sourceChips ? 1 : 0}|${markdown}`);
   const cache = sizes();
@@ -104,6 +106,7 @@ export function measureMarkdown(markdown: string, maxWidth: number, fontSize: nu
     return hit;
   }
   const size = native.measure(markdown, maxWidth, fontSize, codeFontSize, sourceChips);
+  if (transient) return size;
   cache.set(key, size);
   if (cache.size > MEASURED_LIMIT) cache.delete(cache.keys().next().value!);
   saveSoon();
