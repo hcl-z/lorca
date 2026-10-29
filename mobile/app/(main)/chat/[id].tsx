@@ -86,13 +86,19 @@ const FOCUS_GROWTH_GUESS = 36;
 /// How far from the end the transcript is scrolled before the jump-to-bottom disc shows.
 const JUMP_DISTANCE = 160;
 const JUMP_DISC = 36;
-/** How far past the viewport, in points, the transcript keeps its rows drawn. */
-const DRAW_DISTANCE = 1000;
+/** How far past the viewport, in points, the transcript keeps its rows drawn. A screen and a
+ * half is enough for a flick, and each row kept is a native text view and a gesture handler. */
+const DRAW_DISTANCE = 600;
 /** A typical row's height before it is measured: a bubble of a line or two. */
 const ESTIMATED_ROW = 72;
 /// The transcript follows its end while the reader rests within this share of the screen of it.
 const FOLLOW_THRESHOLD = 0.1;
 const SCROLL_OWNS_ANCHOR_SPACE = { anchoredEndSpaceOwnerInternal: "scroll" } as object;
+/// The list's stable props: a new object or callback on every streamed chunk re-renders its cells.
+const KEEP_VISIBLE_POSITION = { data: true };
+const FOLLOW_END = { animated: true };
+const rowKey = (row: Row) => row.key;
+const rowType = (row: Row) => row.type;
 const ANDROID_BAR_HEIGHT = 56;
 const ANDROID_FADE_HEIGHT = 24;
 
@@ -251,6 +257,14 @@ export default function ChatScreen() {
   const jumpToEnd = useCallback(() => {
     void listRef.current?.scrollToEnd({ animated: true });
   }, []);
+  // Stable list callbacks, so a streamed chunk does not hand the list new functions.
+  const onLoad = useCallback(() => {
+    loaded.current = true;
+    chatShown();
+  }, []);
+  const onStartReached = useCallback(() => {
+    if (loaded.current) void engine.loadOlder(id);
+  }, [id]);
   keyboardEndRef.current = (height) => {
     // The composer has expanded by now: what it grew by is what the next focus will need.
     const grown = composerActual.current - composerCompact.current;
@@ -616,19 +630,20 @@ export default function ChatScreen() {
             // The rows keep their identity while they are unchanged (shareRows), so the data is
             // what tells the list to draw again; an extraData that changed per streamed chunk made
             // it draw every visible cell instead.
-            keyExtractor={(row) => row.key}
-            getItemType={(row) => row.type}
+            keyExtractor={rowKey}
+            getItemType={rowType}
             estimatedItemSize={ESTIMATED_ROW}
+            recycleItems={false}
             // The chat opens at its last message, with no scroll to get there, and a transcript
             // shorter than the screen sits at its bottom, above the composer.
             initialScrollAtEnd
             alignItemsAtEnd
             // Arriving rows and rows that grow keep a reader at the end there, never under a
             // finger on the list; one who has scrolled up stays put and gets the disc.
-            maintainScrollAtEnd={{ animated: true }}
+            maintainScrollAtEnd={FOLLOW_END}
             maintainScrollAtEndThreshold={FOLLOW_THRESHOLD}
             // A page loaded above keeps the rows on screen where they are.
-            maintainVisibleContentPosition={{ data: true }}
+            maintainVisibleContentPosition={KEEP_VISIBLE_POSITION}
             anchoredEndSpace={anchoredEndSpace}
             // The space is the scroll view's inset (`blankSpace`), not padding in the list, as in
             // LegendList's KeyboardAwareLegendList; the prop is LegendList's internal one for it.
@@ -645,14 +660,9 @@ export default function ChatScreen() {
             // row until it is attached again.
             drawDistance={DRAW_DISTANCE}
             keyboardDismissMode="interactive"
-            onLoad={() => {
-              loaded.current = true;
-              chatShown();
-            }}
+            onLoad={onLoad}
             // Nearing the first message: the page before it, once the chat has opened at its end.
-            onStartReached={() => {
-              if (loaded.current) void engine.loadOlder(id);
-            }}
+            onStartReached={onStartReached}
             onStartReachedThreshold={1}
             onScroll={measureEnd}
             scrollEventThrottle={16}
