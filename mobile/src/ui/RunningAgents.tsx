@@ -52,7 +52,7 @@ function chatsOf(running: (Chat | Message)[]): Chat[] {
   return [...chats];
 }
 
-function AgentFloat({ chat, message, agent, width, onClose, onActions }: { chat: Chat; message: Message; agent: AgentRun; width: number; onClose: () => void; onActions?: (message: Message) => void }) {
+const AgentFloat = memo(function AgentFloat({ chat, message, agent, width, onClose, onActions }: { chat: Chat; message: Message; agent: AgentRun; width: number; onClose: () => void; onActions?: (message: Message) => void }) {
   const p = usePalette();
   const router = useRouter();
   const [stopping, setStopping] = useState(false);
@@ -73,11 +73,11 @@ function AgentFloat({ chat, message, agent, width, onClose, onActions }: { chat:
       <Pressable
         onPress={() => {
           // The agent page has no composer: leave the chat's keyboard down behind it.
-          void KeyboardController.dismiss();
+          if (KeyboardController.isVisible()) void KeyboardController.dismiss();
           router.push({ pathname: "/agent/[id]", params: { id: message.id, chat: message.chat_id } });
         }}
         onLongPress={() => {
-          void KeyboardController.dismiss();
+          if (KeyboardController.isVisible()) void KeyboardController.dismiss();
           haptic.longPress();
           onActions?.(message);
         }}
@@ -109,7 +109,7 @@ function AgentFloat({ chat, message, agent, width, onClose, onActions }: { chat:
       {asks ? <View style={{ height: 2, backgroundColor: orange }} /> : <ContextHairline agent={agent} />}
     </Float>
   );
-}
+});
 
 const styles = StyleSheet.create({
   strip: { gap: 8, paddingHorizontal: 12, paddingBottom: 8 },

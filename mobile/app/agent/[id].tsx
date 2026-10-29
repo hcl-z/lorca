@@ -16,7 +16,7 @@
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { type AgentEntry, type AgentTool, hasOlderEntries, mergeAgentEntries, toolFailed, toolRunning, type AgentTranscriptPage } from "../../src/core/agentEntries";
 import { agentSince, latestPlan, outputLines, spansForLines, type OutputSpan } from "../../src/core/agentKit";
 import { engine } from "../../src/core/engine";
@@ -659,7 +659,6 @@ function OutputView({ output }: { output: string }) {
   const shownLines = useMemo(() => (all ? lines : lines.slice(-OUTPUT_LINES)), [lines, all]);
   const spans = useMemo(() => spansForLines(shownLines), [shownLines]);
   const hidden = lines.length - shownLines.length;
-  const scroll = useRef<ScrollView>(null);
   return (
     <View style={[styles.code, { backgroundColor: p.code }]}>
       {lines.length > OUTPUT_LINES ? (
@@ -667,7 +666,9 @@ function OutputView({ output }: { output: string }) {
           <Text style={[styles.small, { color: p.link }]}>{all ? t("Show less") : t("… {count} more lines", { count: String(hidden) })}</Text>
         </Pressable>
       ) : null}
-      <ScrollView ref={scroll} style={styles.output} nestedScrollEnabled onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })}>
+      {/* The tail stands in the outer list: a scroll view inside a cell fights the list for the
+          gesture and keeps a nested scroll view per command. Show all lets the list scroll it. */}
+      <View style={all ? undefined : styles.output}>
         <Text selectable style={[styles.mono, { color: p.label }]}>
           {spans.map((line, at) => (
             <Text key={at}>
@@ -680,7 +681,7 @@ function OutputView({ output }: { output: string }) {
             </Text>
           ))}
         </Text>
-      </ScrollView>
+      </View>
     </View>
   );
 }

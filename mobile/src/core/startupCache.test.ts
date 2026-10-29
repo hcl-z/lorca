@@ -18,6 +18,9 @@ mock.module("expo-file-system", () => ({
     textSync() {
       return files.get(this.path)!;
     }
+    async text() {
+      return files.get(this.path)!;
+    }
     write(text: string) {
       files.set(this.path, text);
     }
@@ -73,22 +76,22 @@ test("a copy is offline, runs nothing, and holds no tasks", () => {
   expect(snapshot.tasks).toBeUndefined();
 });
 
-test("an unpaired phone keeps no copy", () => {
+test("an unpaired phone keeps no copy", async () => {
   expect(cachedSnapshotOf(state({ paired: false }))).toBeNull();
   saveCachedSnapshot(() => state({ paired: false }), { now: true });
-  expect(loadCachedSnapshot()).toBeNull();
+  expect(await loadCachedSnapshot()).toBeNull();
 });
 
-test("a copy written is read back, and unpairing removes it", () => {
+test("a copy written is read back, and unpairing removes it", async () => {
   saveCachedSnapshot(() => state(), { now: true });
   expect([...files.keys()]).toEqual(["/cache/snapshot-1.0.0-7.json"]);
-  expect(loadCachedSnapshot()?.identity_id).toBe("id");
+  expect((await loadCachedSnapshot())?.identity_id).toBe("id");
   clearCachedSnapshot();
-  expect(loadCachedSnapshot()).toBeNull();
+  expect(await loadCachedSnapshot()).toBeNull();
 });
 
-test("a file cut off mid-write is no copy", () => {
+test("a file cut off mid-write is no copy", async () => {
   files.set("/cache/snapshot-1.0.0-7.json", '{"has_identity":true,"chats":[');
-  expect(loadCachedSnapshot()).toBeNull();
+  expect(await loadCachedSnapshot()).toBeNull();
   files.clear();
 });

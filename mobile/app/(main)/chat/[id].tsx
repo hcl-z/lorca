@@ -307,12 +307,12 @@ export default function ChatScreen() {
   useFocusEffect(useCallback(() => {
     // Coming back from an agent page or a sheet, the chat's composer starts with the keyboard
     // down: a keyboard the screen left open behind it never gets its foot back down.
-    void KeyboardController.dismiss();
+    if (KeyboardController.isVisible()) void KeyboardController.dismiss();
     useStore.setState({ openChatId: id });
     return () => {
       // A sheet or the agent page takes the screen while the composer has the keyboard: leave it
       // down rather than letting the chat come back with the foot still lifted.
-      void KeyboardController.dismiss();
+      if (KeyboardController.isVisible()) void KeyboardController.dismiss();
       if (useStore.getState().openChatId === id)
         useStore.setState({ openChatId: null });
     };
@@ -393,20 +393,20 @@ export default function ChatScreen() {
   const openTasks = useCallback(() => setTasksOpen(true), []);
   const [questionFor, setQuestionFor] = useState<Message | null>(null);
   const openAgentActions = useCallback((message: Message) => {
-    void KeyboardController.dismiss();
+    if (KeyboardController.isVisible()) void KeyboardController.dismiss();
     haptic.open();
     setActionsFor(message);
   }, []);
   const openAsk = useCallback((message: Message) => {
-    void KeyboardController.dismiss();
+    if (KeyboardController.isVisible()) void KeyboardController.dismiss();
     setAskFor(message);
   }, []);
   const openCommand = useCallback((message: Message) => {
-    void KeyboardController.dismiss();
+    if (KeyboardController.isVisible()) void KeyboardController.dismiss();
     setCommandFor(message);
   }, []);
   const openQuestion = useCallback((message: Message) => {
-    void KeyboardController.dismiss();
+    if (KeyboardController.isVisible()) void KeyboardController.dismiss();
     setQuestionFor(message);
   }, []);
   const questionRow =
@@ -469,7 +469,7 @@ export default function ChatScreen() {
   const send = useCallback(
     (text: string, files: PickedFile[], mentions: string[], agents: string[] = []) => {
       // The anchor is measured against the screen without the keyboard.
-      void KeyboardController.dismiss();
+      if (KeyboardController.isVisible()) void KeyboardController.dismiss();
       if (editing) {
         const messageId = editing.id;
         setEditing(null);

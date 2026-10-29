@@ -80,6 +80,9 @@ class Engine {
   /// Snapshots on their way, and the events that arrived meanwhile (see `bootstrap`).
   private bootstraps = 0;
   private held: core.Frame[] = [];
+  /// Frames waiting for the next animation frame, and whether one is already asked for.
+  private queue: core.Frame[] = [];
+  private scheduled = false;
 
   // MARK: - Lifecycle
 
@@ -93,7 +96,7 @@ class Engine {
     core.onEvent((frame) => this.receive(frame));
     // The account as the last launch left it draws the chat list while the core opens it; the
     // first snapshot replaces it.
-    const cached = loadCachedSnapshot();
+    const cached = await loadCachedSnapshot();
     if (cached) {
       replaceSnapshot(cached);
       markLaunch("cacheApplied");
@@ -134,8 +137,29 @@ class Engine {
   }
 
   private receive(frame: core.Frame) {
-    if (this.bootstraps) this.held.push(frame);
-    else this.apply(frame.event, frame.data);
+    this.queue.push(frame);
+    if (this.scheduled) return;
+    this.scheduled = true;
+    // The frames that land in one frame apply together, so a snapshot and the roster, attention,
+    // and messages it brings notify and draw once. A frame a snapshot is waiting on is held, as
+    // before.
+    const run = () => {
+      this.scheduled = false;
+      for (const each of this.queue.splice(0)) {
+        if (this.bootstraps) {
+          this.held.push(each);
+          continue;
+        }
+        try {
+          this.apply(each.event, each.data);
+        } catch (error) {
+          console.warn(`applying ${each.event}`, error instanceof Error ? error.message : error);
+        }
+      }
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(run);
+    // A test's runtime has no frames to wait for: apply at once, as before.
+    else run();
   }
 
   /// Each held event on its own, as on arrival: one that fails keeps back none of the rest.

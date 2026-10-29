@@ -23,7 +23,7 @@ mock.module("react-native", () => ({
   AppState: { currentState: "active", addEventListener: (_: string, listener: typeof appState) => { appState = listener; } },
 }));
 mock.module("expo-web-browser", () => ({}));
-mock.module("./startupCache", () => ({ loadCachedSnapshot: () => null, saveCachedSnapshot: () => {}, clearCachedSnapshot: () => {} }));
+mock.module("./startupCache", () => ({ loadCachedSnapshot: async () => null, saveCachedSnapshot: () => {}, clearCachedSnapshot: () => {} }));
 mock.module("./host", () => ({ hostFacts: () => ({ name: "Phone", os: "ios", os_version: "", model: "" }) }));
 mock.module("./prefs", () => ({ loadPrefs: () => ({}), savePrefs: () => {}, coreHome: () => "/unused", pathOf: (p: string) => p, wipePrefs: () => {} }));
 mock.module("expo-application", () => ({}));

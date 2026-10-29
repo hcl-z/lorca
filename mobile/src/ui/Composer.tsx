@@ -320,7 +320,7 @@ export const Composer = memo(function Composer({
       disabled={!!editing}
       onPress={() => {
         // The attach sheet comes over the composer: the chat's keyboard goes down behind it.
-        void KeyboardController.dismiss();
+        if (KeyboardController.isVisible()) void KeyboardController.dismiss();
         haptic.open();
         setAttachOpen(true);
       }}

@@ -49,11 +49,13 @@ export function cachedSnapshotOf(s: StoreState): Snapshot | null {
   };
 }
 
-export function loadCachedSnapshot(): Snapshot | null {
+/// Reads the cached account off the JS thread: the file can hold hundreds of messages, and a
+/// launch should not wait for the parse before it draws.
+export async function loadCachedSnapshot(): Promise<Snapshot | null> {
   try {
     const file = cacheFile();
     if (!file.exists) return null;
-    const snapshot = JSON.parse(file.textSync()) as Snapshot;
+    const snapshot = JSON.parse(await file.text()) as Snapshot;
     return snapshot.has_identity && snapshot.identity_id && Array.isArray(snapshot.chats) ? snapshot : null;
   } catch {
     // A file from a run that ended mid-write: the launch waits for the core.
