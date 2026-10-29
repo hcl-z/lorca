@@ -425,6 +425,18 @@ pub enum Body {
         to: String,
         reason: String,
     },
+    /// What a coding agent said in the chat, as Lorca's upstream wrote it: its report to the
+    /// user, or why it ended on its own (`failed`). Kept so a `lorca.sqlite3` shared with a
+    /// Lorca that stores coding-agent messages this way still decodes.
+    AgentMessage {
+        agent_id: String,
+        /// `claude`, `codex`, `opencode`, `pi`, or `fx`.
+        agent_kind: String,
+        title: String,
+        text: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        failed: bool,
+    },
     Notice {
         text: String,
         /// Set on the "Routine · Name" marker that opens a routine's run.
@@ -1213,6 +1225,7 @@ impl Message {
             Body::Text { .. } => matches!(self.state, MessageState::Complete | MessageState::Failed { .. }),
             Body::Permission { .. } => self.is_complete() && self.confirmation().is_some(),
             Body::Tool { .. } => self.confirmation().is_some(),
+            Body::AgentMessage { failed, .. } => !failed,
             _ => false,
         }
     }
@@ -2095,6 +2108,32 @@ mod agent_wire_tests {
         .unwrap();
         assert_eq!(body.agents(), ["agent-1"]);
         assert!(body.addresses_agent());
+    }
+
+    #[test]
+    fn an_upstream_agent_message_body_decodes_and_keeps_its_kind() {
+        let json = serde_json::json!({
+            "id": "msg-1",
+            "chat_id": "chat-1",
+            "author": {"kind": "bot", "bot_id": "bot-1"},
+            "body": {
+                "kind": "agent_message",
+                "agent_id": "agent-1",
+                "agent_kind": "claude",
+                "title": "A session",
+                "text": "Waiting."
+            },
+            "state": {"kind": "complete"},
+            "created_at": 1.0
+        });
+        let message: Message = serde_json::from_value(json).expect("an agent_message body from upstream");
+        assert!(matches!(
+            &message.body,
+            Body::AgentMessage { agent_id, agent_kind, title, text, failed }
+                if agent_id == "agent-1" && agent_kind == "claude" && title == "A session" && text == "Waiting." && !failed
+        ));
+        let wire = serde_json::to_value(&message).unwrap();
+        assert_eq!(wire["body"]["kind"], "agent_message");
     }
 
     #[test]
