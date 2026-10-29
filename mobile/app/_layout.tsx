@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import * as Application from "expo-application";
 import { engine } from "../src/core/engine";
+import { preloadMarkdownSizes } from "../modules/lorca-core/MarkdownView";
 import { enableTiming } from "../src/core/timing";
 import { useStore } from "../src/core/store";
 import { startUpdateChecks } from "../src/core/updates";
@@ -31,6 +32,7 @@ export default function RootLayout() {
   const pendingLink = useStore((s) => s.pendingTemplateLink);
 
   useEffect(() => {
+    void preloadMarkdownSizes();
     void engine.start();
     startUpdateChecks();
   }, []);

@@ -67,6 +67,26 @@ function sizes(): Map<string, Size> {
   return measured;
 }
 
+let preloading: Promise<void> | null = null;
+/// Reads the saved sizes off the JS thread at launch, so the first chat opened does not wait for
+/// the file to be parsed and laid out.
+export function preloadMarkdownSizes(): Promise<void> {
+  if (measured) return Promise.resolve();
+  if (preloading) return preloading;
+  preloading = (async () => {
+    const map = new Map<string, Size>();
+    try {
+      const file = sizesFile();
+      if (file.exists) for (const [key, width, height] of JSON.parse(await file.text()) as [string, number, number][]) map.set(key, { width, height });
+    } catch {
+      // A file from a run that ended mid-write: measured again.
+    }
+    if (!measured) measured = map;
+    preloading = null;
+  })();
+  return preloading;
+}
+
 function saveSoon() {
   if (saveTimer) return;
   saveTimer = setTimeout(() => {

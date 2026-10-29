@@ -49,10 +49,23 @@ export function Sheet({ visible, onClose, title, subtitle, snapPoints, scroll, c
   const p = usePalette();
   const insets = useSafeAreaInsets();
   const ref = useRef<SheetRef>(null);
+  // A sheet stands only while it is up, and until its dismissal finishes: a screen that keeps
+  // several closed sheets in its tree would mount a native modal for each on every open.
+  const [mounted, setMounted] = useState(visible);
   useEffect(() => {
+    if (visible) {
+      setMounted(true);
+      return;
+    }
+    const timer = setTimeout(() => setMounted(false), SHEET_DISMISS_MS);
+    return () => clearTimeout(timer);
+  }, [visible]);
+  useEffect(() => {
+    if (!mounted) return;
     if (visible) ref.current?.present();
     else ref.current?.dismiss();
-  }, [visible]);
+  }, [visible, mounted]);
+  if (!mounted) return null;
   const body = (
     <>
       {title ? <SheetHeader title={title} subtitle={subtitle} onClose={onClose} /> : null}
