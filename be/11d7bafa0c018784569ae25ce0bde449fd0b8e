@@ -1,0 +1,34 @@
+mobile/src/ui/FoldedText.tsx
+  s_f7eb74e3575bc1::t_ac424275920866 7
+  s_f7eb74e3575bc1::t_47e3ec720724dd 42-47,51
+  s_f7eb74e3575bc1::t_175b57b336a5c7 67
+  s_f7eb74e3575bc1::t_743fedfe538c05 14
+mobile/src/ui/longMessage.ts
+  s_f7eb74e3575bc1::t_c77de9b67c1565 58-59,61-78
+mobile/app/(main)/chat/[id].tsx
+  s_f7eb74e3575bc1::t_bec90953cefa39 598,603
+  s_f7eb74e3575bc1::t_afc4da834e3681 239-241,243
+  s_f7eb74e3575bc1::t_8fdd969111a76c 369-370,378
+  s_f7eb74e3575bc1::t_9e265fd0fc5e4e 492-494,497
+  s_f7eb74e3575bc1::t_a8d556a0f30eb4 216-218,220-222
+  s_f7eb74e3575bc1::t_0251f9b9dda362 616-618
+mobile/src/ui/transcript.tsx
+  s_f7eb74e3575bc1::t_ced913d94c2afa 277
+  s_f7eb74e3575bc1::t_ebed69acf6c905 328-330
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "be11d7bafa0c018784569ae25ce0bde449fd0b8e",
+  "prompts": {},
+  "sessions": {
+    "s_f7eb74e3575bc1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "453131d1-0daa-41fc-b6ed-3bb467194faa",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
