@@ -220,7 +220,7 @@ func TestRenderProject(t *testing.T) {
 	m := demoWindow(t)
 	m.selectChat("chat-relay")
 	m.inspector.tab = tabProfile
-	tt := ui.NewTester(m.frame(m.view), 1180, 760)
+	tt := ui.NewTester(m.frame(m.view), 1180, 1000)
 	settle(tt)
 	// Without LORCA_RENDER the states are only built, which is quick.
 	shoot := func(name string) {

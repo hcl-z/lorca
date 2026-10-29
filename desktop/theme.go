@@ -17,7 +17,7 @@ type palette struct {
 	Separator, Placeholder, Link  ui.Color
 
 	Accent, AccentText ui.Color
-	// Ink fills the primary button, the user's bubble, and a switch that is on; InkText is drawn on it.
+	// Ink fills the primary button and a switch that is on; InkText is drawn on it. Blue fills the user's bubble, with AccentText on it.
 	Ink, InkText ui.Color
 	// Unread is the dot and count of a chat with unread messages.
 	Unread ui.Color
