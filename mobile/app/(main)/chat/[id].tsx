@@ -32,6 +32,7 @@ import { isLive, showsSpeakers, type AgentRun, type Bot, type Message } from "..
 import { showsSpeakersIn } from "../../../src/core/participants";
 import { agentAskCard, chatAgents, mentionTargets } from "../../../src/core/participants";
 import {
+  chatById,
   useBotMap,
   useChat,
   useIsWorking,
@@ -504,8 +505,7 @@ export default function ChatScreen() {
   const openMarker = useCallback(
     (row: Extract<Row, { type: "marker" }>) => {
       // Read at press time, so the callback stays the same through every streamed chunk of the chat.
-      const current = useStore.getState().chats.find((each) => each.id === id);
-      const message = current?.messages.find((each) => each.id === row.key);
+      const message = chatById(id)?.messages.find((each) => each.id === row.key);
       if (message) setMessageFor(message);
     },
     [id],
@@ -628,8 +628,9 @@ export default function ChatScreen() {
             data={rows}
             renderItem={renderItem}
             // The rows keep their identity while they are unchanged (shareRows), so the data is
-            // what tells the list to draw again; an extraData that changed per streamed chunk made
-            // it draw every visible cell instead.
+            // what tells the list to draw again. The quote's flash is not in a row, so it is the
+            // one thing the list has to hear about separately.
+            extraData={flashId}
             keyExtractor={rowKey}
             getItemType={rowType}
             estimatedItemSize={ESTIMATED_ROW}

@@ -171,7 +171,7 @@ export function botById(id: string): Bot | undefined {
 }
 
 export function chatById(id: string): Chat | undefined {
-  return indexOf(useStore.getState().chats).get(id);
+  return chatIndex(useStore.getState().chats).get(id);
 }
 
 export function deviceById(id: string): Device | undefined {
@@ -214,6 +214,26 @@ export function replaceSnapshot(snapshot: {
   const busy = new Set(Object.values(running).map((r) => r.chatId));
   const { thinking, retries, tasks: held, identityId, chats: before } = useStore.getState();
   const loaded = new Map(before.map((chat) => [chat.id, chat]));
+  // A snapshot carries each chat's newest messages. Older pages already loaded stay ahead of
+  // them, so a resync does not throw an open transcript back to the last page.
+  const chats = snapshot.chats.map((c) => {
+    const messages = c.messages ?? [];
+    const old = loaded.get(c.id);
+    const at = old && messages.length ? old.messages.findIndex((m) => m.id === messages[0].id) : -1;
+    const kept = at > 0 ? old!.messages.slice(0, at) : [];
+    const previous = at >= 0 ? new Map(old!.messages.slice(at).map((m) => [m.id, m])) : undefined;
+    // A message the snapshot says the same as the one held keeps its object: a resync then
+    // re-renders nothing that did not change.
+    const merged = messages.map((m) => {
+      const held = previous?.get(m.id);
+      return held && sameMessage(held, m) ? held : m;
+    });
+    const nextMessages = kept.length ? [...kept, ...merged] : merged;
+    const sameMessages = !!old && nextMessages.length === old.messages.length && nextMessages.every((m, i) => m === old.messages[i]);
+    const next: Chat = { ...c, messages: sameMessages ? old!.messages : nextMessages, has_more: at > 0 ? old!.has_more : c.has_more, unread_count: c.unread_count ?? 0 };
+    return old && sameFields(old, next) ? old : next;
+  });
+  const sameChats = chats.length === before.length && chats.every((chat, i) => chat === before[i]);
   useStore.setState({
     ready: true,
     paired: snapshot.has_identity,
@@ -226,25 +246,7 @@ export function replaceSnapshot(snapshot: {
     devices: snapshot.devices,
     device_seen: seenOf(snapshot.devices),
     bots: snapshot.bots,
-    // A snapshot carries each chat's newest messages. Older pages already loaded stay ahead of
-    // them, so a resync does not throw an open transcript back to the last page.
-    chats: snapshot.chats.map((c) => {
-      const messages = c.messages ?? [];
-      const old = loaded.get(c.id);
-      const at = old && messages.length ? old.messages.findIndex((m) => m.id === messages[0].id) : -1;
-      const kept = at > 0 ? old!.messages.slice(0, at) : [];
-      const previous = at >= 0 ? new Map(old!.messages.slice(at).map((m) => [m.id, m])) : undefined;
-      // A message the snapshot says the same as the one held keeps its object: a resync then
-      // re-renders nothing that did not change.
-      const merged = messages.map((m) => {
-        const held = previous?.get(m.id);
-        return held && sameMessage(held, m) ? held : m;
-      });
-      const nextMessages = kept.length ? [...kept, ...merged] : merged;
-      const sameMessages = !!old && nextMessages.length === old.messages.length && nextMessages.every((m, i) => m === old.messages[i]);
-      const next: Chat = { ...c, messages: sameMessages ? old!.messages : nextMessages, has_more: at > 0 ? old!.has_more : c.has_more, unread_count: c.unread_count ?? 0 };
-      return old && sameFields(old, next) ? old : next;
-    }),
+    chats: sameChats ? before : chats,
     routines: snapshot.routines ?? [],
     tasks: snapshotTasks(snapshot.tasks ?? [], snapshot.has_identity && snapshot.identity_id === identityId ? held : []),
     reviews: snapshot.reviews ?? [],
@@ -323,7 +325,7 @@ export function sameMessage(a: Message, b: Message): boolean {
     if (!a.agent || !b.agent || a.agent.id !== b.agent.id || a.agent.name !== b.agent.name || a.agent.kind !== b.agent.kind) return false;
   }
   if (a.output !== b.output) {
-    if (!a.output || !b.output || a.output.version !== b.output.version || a.output.name !== b.output.name || a.output.url !== b.output.url) return false;
+    if (!sameJson(a.output, b.output)) return false;
   }
   if (a.body.kind === "text" && b.body.kind === "text") {
     return (
@@ -341,7 +343,7 @@ export function sameMessage(a: Message, b: Message): boolean {
 /// The chats by id, for the array held: a new `chats` array gets a new index, and an unchanged
 /// one answers from the same map.
 const chatIndexes = new WeakMap<Chat[], Map<string, Chat>>();
-function indexOf(chats: Chat[]): Map<string, Chat> {
+function chatIndex(chats: Chat[]): Map<string, Chat> {
   let index = chatIndexes.get(chats);
   if (!index) {
     index = new Map(chats.map((chat) => [chat.id, chat]));
@@ -579,7 +581,7 @@ function pick<T>(record: Record<string, T>, keys: Set<string>): Record<string, T
 // MARK: - Hooks
 
 export function useChat(id: string): Chat | undefined {
-  return useStore((s) => indexOf(s.chats).get(id));
+  return useStore((s) => chatIndex(s.chats).get(id));
 }
 
 /// The chat's outputs, the latest published first: the output messages loaded in the chat and

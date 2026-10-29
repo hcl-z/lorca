@@ -111,10 +111,15 @@ with the certificate's SHA-256 above, once the developer account is verified.
    **Release phone app** by hand from the Actions tab. It drafts the release on the commit it runs
    on, and publishes it once both platforms it was asked for have finished, which makes the tag. A
    run on a commit other than the one an existing `mobile-v<version>` tag names is refused, and so
-   is a version whose release is already published.
+   is a version whose release is already published. A hand run may ask for a **prerelease**: a beta
+   branch's build, which the stable apps and the download page pass over (the same check that
+   passes over a prerelease above), and which the branch may rebuild. A beta keeps its version in
+   [`mobile/app.config.ts`](../mobile/app.config.ts) and runs the workflow with `-f
+   prerelease=true`; its tag still uses that version, so the next stable release takes the next one.
 3. The workflow drafts `mobile-v<version>`, then builds the Android APK on Ubuntu and the iPhone
    `.ipa` on a macOS runner side by side, each uploading into the draft. When both finish, a final
-   job publishes the draft without making it the latest release, which stays the CLI's. Runs on
+   job publishes the draft without making it the latest release, which stays the CLI's, as a
+   prerelease when the run asked for one. Runs on
    `main` keep the Rust core's build, Gradle's caches, and for iOS Xcode's compilation cache and
    the installed pods for the next release. The iPhone build takes the device slice, and the APK is
    arm64 only, what phones run; the dev loop still builds the simulator slice and x86_64 for the

@@ -39,27 +39,10 @@ function room(code: number): number {
 }
 
 /// The lines `text` wraps to at `width`, estimated from its characters and their room. Paragraph
-/// breaks and code lines count as the lines they are.
-export function estimatedLines(text: string, width: number, size: number): number {
+/// breaks and code lines count as the lines they are. Stops counting past `stopAfter`, for a
+/// caller that only asks whether the text is taller than that.
+function countLines(text: string, width: number, size: number, stopAfter = Infinity): number {
   const perLine = Math.max(6, Math.floor(width / (size * 0.55)));
-  let lines = 0;
-  for (const line of text.split("\n")) {
-    if (line === "") {
-      lines += 1;
-      continue;
-    }
-    let units = 0;
-    for (const char of line) units += room(char.codePointAt(0)!);
-    lines += Math.max(1, Math.ceil(units / perLine));
-  }
-  return lines;
-}
-
-/// Whether `text` stands taller than `height` at `width` and `size`. The scan stops once the
-/// threshold is passed, so a long reply costs its head, not its whole length.
-export function isLongMessage(text: string, width: number, size: number, height = COLLAPSED_HEIGHT): boolean {
-  const perLine = Math.max(6, Math.floor(width / (size * 0.55)));
-  const maxLines = Math.max(1, Math.ceil(height / (size * LINE_HEIGHT)));
   let lines = 0;
   let start = 0;
   for (;;) {
@@ -72,10 +55,23 @@ export function isLongMessage(text: string, width: number, size: number, height 
       for (const char of line) units += room(char.codePointAt(0)!);
       lines += Math.max(1, Math.ceil(units / perLine));
     }
-    if (lines > maxLines) return true;
-    if (end < 0) return false;
+    if (lines > stopAfter) return lines;
+    if (end < 0) return lines;
     start = end + 1;
   }
+}
+
+/// The lines `text` wraps to at `width`, estimated from its characters and their room. Paragraph
+/// breaks and code lines count as the lines they are.
+export function estimatedLines(text: string, width: number, size: number): number {
+  return countLines(text, width, size);
+}
+
+/// Whether `text` stands taller than `height` at `width` and `size`. The scan stops once the
+/// threshold is passed, so a long reply costs its head, not its whole length.
+export function isLongMessage(text: string, width: number, size: number, height = COLLAPSED_HEIGHT): boolean {
+  const maxLines = Math.max(1, Math.ceil(height / (size * LINE_HEIGHT)));
+  return countLines(text, width, size, maxLines) > maxLines;
 }
 
 /// The head of `text` a folded message lays out: cut at a line where it can be, and a code fence

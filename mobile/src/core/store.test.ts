@@ -1,10 +1,10 @@
 import { expect, mock, test } from "bun:test";
-import type { Bot, Chat, DurableTask } from "./model";
+import type { Bot, Chat, DurableTask, Message } from "./model";
 
 // The roster keeps what did not change: the screens memoize on these identities.
 mock.module("./prefs", () => ({ loadPrefs: () => ({}), savePrefs: () => {}, coreHome: () => "/unused", pathOf: (p: string) => p, wipePrefs: () => {} }));
 mock.module("expo-localization", () => ({ getLocales: () => [{ languageCode: "en", languageTag: "en-US" }] }));
-const { applyRoster, replaceSnapshot, useStore } = await import("./store");
+const { applyRoster, replaceSnapshot, sameMessage, useStore } = await import("./store");
 
 const bot: Bot = { id: "bot", name: "Chef", symbol_name: "sparkles", accent: "indigo" } as Bot;
 
@@ -69,4 +69,30 @@ test("a message keeps every other chat as it was", async () => {
   // A message ahead of its roster waits under a placeholder chat.
   upsertMessage(message("m2", "c", "early"));
   expect(useStore.getState().chats.map((c) => c.id)).toEqual(["a", "b", "c"]);
+});
+
+test("a snapshot that repeats a chat keeps it, messages and all", () => {
+  const message = (text: string) => ({ id: "m1", chat_id: "a", author: { kind: "bot", bot_id: "bot" }, body: { kind: "text", text }, state: { kind: "complete" }, created_at: 1 }) as Message;
+  const snapshot = (text: string) => ({ has_identity: true, identity_id: "me", this_device_id: "phone", relay_url: null, relay_connected: false, devices: [], bots: [bot], chats: [{ ...meta("a"), messages: [message(text)] }], running_turns: [] });
+  replaceSnapshot(snapshot("hi"));
+  const before = useStore.getState().chats;
+  replaceSnapshot(snapshot("hi"));
+  expect(useStore.getState().chats).toBe(before);
+  expect(useStore.getState().chats[0].messages[0]).toBe(before[0].messages[0]);
+  replaceSnapshot(snapshot("hello"));
+  const after = useStore.getState().chats;
+  expect(after).not.toBe(before);
+  expect(after[0]).not.toBe(before[0]);
+  expect(after[0].messages[0]).not.toBe(before[0].messages[0]);
+  expect(after[0].messages[0].body).toEqual({ kind: "text", text: "hello" } as never);
+});
+
+test("sameMessage compares the fields that changed", () => {
+  const message = (extra: Record<string, unknown> = {}) => ({ id: "m", chat_id: "a", author: { kind: "bot", bot_id: "bot" }, body: { kind: "text", text: "hi" }, state: { kind: "complete" }, created_at: 1, ...extra }) as Message;
+  expect(sameMessage(message(), message())).toBe(true);
+  expect(sameMessage(message(), message({ edited_at: 3 }))).toBe(false);
+  expect(sameMessage(message(), message({ state: { kind: "streaming" } }))).toBe(false);
+  expect(sameMessage(message(), message({ body: { kind: "text", text: "ho" } }))).toBe(false);
+  expect(sameMessage(message({ output: { id: "o", name: "a", mime: "x", bot_id: "bot", version: 1 } }), message({ output: { id: "o", name: "a", mime: "x", bot_id: "bot", version: 2 } }))).toBe(false);
+  expect(sameMessage(message({ output: { id: "o", name: "a", mime: "x", bot_id: "bot", version: 1 } }), message({ output: { id: "o", name: "a", mime: "x", bot_id: "bot", version: 1 } }))).toBe(true);
 });

@@ -34,7 +34,6 @@ export function ParticipantsSheet({
   onOpenAgent: (messageId: string) => void;
   onStopAgent: (messageId: string) => Promise<void>;
 }) {
-  const p = usePalette();
   useLanguage();
   return (
     <Sheet visible={visible} onClose={onClose} title={t("{title}, participants", { title })} snapPoints={SHEET_PRESETS.participants} scroll>

@@ -7,7 +7,8 @@
 # the latest release, which stays the CLI's; publishing it makes it the update Android apps
 # install. Running on main keeps the Rust, Gradle, and Xcode caches where the next release reads
 # them. The iPhone build runs `bun run release-ios`, the Android one `bun run release-android`.
-# docs/releasing-mobile.md has the steps.
+# A hand run may ask for a prerelease, a beta branch's build: stable apps pass it over, and the
+# branch may rebuild it. docs/releasing-mobile.md has the steps.
 name: Release phone app
 
 on:
@@ -18,6 +19,10 @@ on:
         type: choice
         options: [iOS and Android, iOS, Android]
         default: iOS and Android
+      prerelease:
+        description: Publish as a prerelease (a beta branch's build)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -94,6 +99,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.version.outputs.tag }}
           VERSION: ${{ needs.version.outputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
         run: |
           if ! state=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq 'if .isDraft then "draft" elif .isPrerelease then "prerelease" else "published" end' 2>/dev/null); then
             state=none
@@ -118,7 +124,9 @@ jobs:
               # Not the latest release, which stays the CLI's that install-cli.sh downloads. A
               # prerelease keeps stable phones from updating to it; a beta branch installs it
               # from its release page.
-              gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --prerelease --latest=false --target "$GITHUB_SHA" --title "Lorca for iPhone and Android $VERSION" --notes-file notes.md
+              flags=()
+              if [[ $PRERELEASE == true ]]; then flags+=(--prerelease); fi
+              gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --latest=false --target "$GITHUB_SHA" --title "Lorca for iPhone and Android $VERSION" --notes-file notes.md "${flags[@]}"
               ;;
           esac
 
@@ -251,4 +259,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.version.outputs.tag }}
-        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest=false --prerelease
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          flags=()
+          if [[ $PRERELEASE == true ]]; then flags+=(--prerelease); fi
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest=false "${flags[@]}"

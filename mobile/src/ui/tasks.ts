@@ -5,16 +5,13 @@ import { useEffect, useState } from "react";
 import type { CommandRun } from "../core/model";
 import { t } from "../i18n";
 
-/// The time now, moving on every second while the caller is on screen. An inactive clock keeps
-/// the time it was given and runs no interval.
-export function useNow(active = true): number {
+/// The time now, moving on every second while the caller is on screen.
+export function useNow(): number {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
-    if (!active) return;
-    setNow(Date.now());
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [active]);
+  }, []);
   return now;
 }
 
