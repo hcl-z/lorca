@@ -1,0 +1,95 @@
+desktop/sources.go
+  s_12fbf068d8db9a::t_200db569faa807 27-30,32-38
+  s_12fbf068d8db9a::t_15c6831f001d7a 39
+desktop/message_actions_test.go
+  s_12fbf068d8db9a::t_a0e6ff17430ca8 5,7
+  s_12fbf068d8db9a::t_f3c45bccf4e501 16-20,23
+desktop/render_test.go
+  s_12fbf068d8db9a::t_05fe75d085c778 144
+  s_12fbf068d8db9a::t_88bc6a9ae41831 166
+  s_12fbf068d8db9a::t_368aa66e1a61ef 116,126
+  s_12fbf068d8db9a::t_a55fa25febd2b3 238
+desktop/go.mod
+  s_12fbf068d8db9a::t_a4b5ad664fcdb6 7
+  s_12fbf068d8db9a::t_0559281e8bc2cf 3,8,11,17
+desktop/sidebar_test.go
+  s_12fbf068d8db9a::t_28740e68c75b80 116
+  s_12fbf068d8db9a::t_53c8af8671c421 109
+  s_12fbf068d8db9a::t_d94a74d3a10757 48
+desktop/project_test.go
+  s_12fbf068d8db9a::t_274de12af64106 223
+desktop/chat.go
+  s_12fbf068d8db9a::t_b6bbd7e74a5ae7 481,540-541,1026
+  s_12fbf068d8db9a::t_b864a0dd4a5491 627-629,632
+  s_12fbf068d8db9a::t_a760706e23eeac 557,570
+  s_12fbf068d8db9a::t_7cc513da08e952 527-535
+  s_12fbf068d8db9a::t_4065cc90b31ab1 571-575
+desktop/markdown_view.go
+  s_12fbf068d8db9a::t_16fd70437d6a6e 115-116
+  s_12fbf068d8db9a::t_4e194111fa6544 132-133
+  s_12fbf068d8db9a::t_1b91cfa013d4e4 145
+  s_12fbf068d8db9a::t_1ac8594a7a3c09 156-159,169
+  s_12fbf068d8db9a::t_6d88bf4d560743 300
+  s_12fbf068d8db9a::t_b6bbd7e74a5ae7 417-427,429,431
+  s_12fbf068d8db9a::t_92cc4df83d195d 6,11-12,15-22,25-30,34-35,49-56,75,77-87,91,99-106,110,112-114,117-131,134-144,146-155,160-163,166-168,170-178,180,183-239,241-246,249-289,304,320-321,360-362,364-403,405-406,409-411,413-416,428,430,434
+  s_12fbf068d8db9a::t_f7b4987f0f843a 305-319
+docs/architecture/links.md
+  s_12fbf068d8db9a::t_6c33aa4809d94f 9
+desktop/link_chips_test.go
+  s_12fbf068d8db9a::t_3f4813cb9d806c 10-12,14-15,18-19,23-27,29-41
+  s_12fbf068d8db9a::t_ceccd80e27eb20 1-3,5-9,16-17,20-21,43-44
+  s_12fbf068d8db9a::t_c382ca9a62c8db 22
+  s_12fbf068d8db9a::t_32e4589735b0e9 28
+  s_12fbf068d8db9a::t_1e9766749888c8 4
+  s_12fbf068d8db9a::t_01f45209baaae3 13,42
+desktop/sheet_mcp_test.go
+  s_12fbf068d8db9a::t_17e493283385fc 33-34
+  s_12fbf068d8db9a::t_b3946b8a11bad1 19
+  s_12fbf068d8db9a::t_70e0dde18257a8 37
+docs/architecture/desktop-app.md
+  s_12fbf068d8db9a::t_068e8b17712482 5
+  s_12fbf068d8db9a::t_976b92275bd6be 8
+  s_12fbf068d8db9a::t_1f4bf34684d92d 3
+  s_12fbf068d8db9a::t_9b2511ea9e7272 20
+desktop/theme.go
+  s_12fbf068d8db9a::t_b6bbd7e74a5ae7 20
+desktop/sheet_feedback_test.go
+  s_12fbf068d8db9a::t_c455ff40b48bc1 282-283
+  s_12fbf068d8db9a::t_22cb10e1aef74b 281,285
+  s_12fbf068d8db9a::t_eaca86f8f57437 275
+ARCHITECTURE.md
+  s_12fbf068d8db9a::t_ee1dde77473969 119
+  s_12fbf068d8db9a::t_25098ff0eb4413 120
+  s_12fbf068d8db9a::t_6adc7c6e5e3bb5 121
+desktop/app.go
+  s_12fbf068d8db9a::t_a3eb169b908776 95-101
+desktop/markdown_view_test.go
+  s_12fbf068d8db9a::t_d3620c4a25e2fd 172-181
+  s_12fbf068d8db9a::t_adcaa9f3287068 5
+  s_12fbf068d8db9a::t_0ac2907e023c8c 32-33,35-43,45,47-50,53-63
+  s_12fbf068d8db9a::t_7ecbc4d1f84941 44,46,51-52
+  s_12fbf068d8db9a::t_55075b633b70a4 13-22,25-26,29-31
+  s_12fbf068d8db9a::t_6dd60ca07e802d 23-24,27-28
+  s_12fbf068d8db9a::t_d48a14a0a852b6 34
+docs/architecture/island.md
+  s_12fbf068d8db9a::t_9b2511ea9e7272 1-2
+  s_12fbf068d8db9a::t_9eb9ad4f4fbd09 3
+desktop/go.sum
+  s_12fbf068d8db9a::t_8f976ba27b36c7 5-6,15-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "55081c9fca6def85fe3965b97d73fd3ca8874803",
+  "prompts": {},
+  "sessions": {
+    "s_12fbf068d8db9a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1c8541fd-6812-45f7-8dd2-2ffdb19e0232",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
