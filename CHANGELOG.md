@@ -8,6 +8,14 @@ phone app's.
 
 ## [Unreleased]
 
+## [1.0.35]
+
+- The desktop conversation is drawn by MyGo's markdown view: a reply comes in a word at a time as it streams, code blocks are highlighted, tables keep their columns, and Copy takes Markdown. A web link keeps its source chip and an `@name` its bot's color, while every other paragraph stays with MyGo's cache.
+- A source chip no longer splits at a hyphen, slash, underscore, or dot, or loses its icon when it starts a wrapped line.
+- The user's bubbles are blue, and `@names` read in their bot's color in every message, the user's own included.
+- Lorca's cloud icon is the app's mark in the desktop app, the phone app, and on the web, and Lorca Dev's tag is larger and stays in the corner.
+- A stored message that does not decode no longer hides the chat.
+
 ## [1.0.33]
 
 - A coding agent's transcript on the desktop reads as a page of steps: what you sent it in a card that folds a long brief behind Show more, a thought as one line ("Thought for 3s") that opens to what it thought, each tool in the past or present tense with a run of reads and searches folded into "Explored 2 files, 1 search", what it said in Markdown, the plan as a checklist, and a footer of what its work changed and its branch. The agents working in a chat sit in a capsule in the header that opens a popover of its own; the floating agent windows are gone.
