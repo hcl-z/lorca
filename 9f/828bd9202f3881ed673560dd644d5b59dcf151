@@ -1,0 +1,20 @@
+desktop/sheet_provider_test.go
+  s_12fbf068d8db9a::t_ab82167ee1c907 77
+  s_12fbf068d8db9a::t_6be34a457c186b 72-76,78-79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "9f828bd9202f3881ed673560dd644d5b59dcf151",
+  "prompts": {},
+  "sessions": {
+    "s_12fbf068d8db9a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1c8541fd-6812-45f7-8dd2-2ffdb19e0232",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
