@@ -1,0 +1,19 @@
+CHANGELOG.md
+  s_12fbf068d8db9a::t_1366249a01cbc0 11-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "02cf7a2fbec90e788dcffd6ae5bd90b8802fd745",
+  "prompts": {},
+  "sessions": {
+    "s_12fbf068d8db9a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1c8541fd-6812-45f7-8dd2-2ffdb19e0232",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
