@@ -18,12 +18,12 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { type AgentEntry, type AgentTool, hasOlderEntries, mergeAgentEntries, toolFailed, toolRunning, type AgentTranscriptPage } from "../../src/core/agentEntries";
-import { agentBusy, agentSince, latestPlan, outputLines, spansForLines, type OutputSpan } from "../../src/core/agentKit";
+import { agentSince, latestPlan, outputLines, spansForLines, type OutputSpan } from "../../src/core/agentKit";
 import { engine } from "../../src/core/engine";
 import { agentIsRunning, agentName, type AgentRun, type Message } from "../../src/core/model";
 import { useStore } from "../../src/core/store";
 import { t, useLanguage } from "../../src/i18n";
-import { AgentHeader, AgentTile, Callout, PullRequestButton, SpecStrip, StopButton, alpha, mono, useNow } from "../../src/ui/agentKit";
+import { AgentHeader, AgentTile, Callout, PullRequestButton, SpecStrip, StopButton, alpha, mono } from "../../src/ui/agentKit";
 import { alert } from "../../src/ui/alert";
 import { Markdown } from "../../src/ui/Markdown";
 import { FoldedText } from "../../src/ui/FoldedText";
@@ -43,6 +43,8 @@ const OUTPUT_LINES = 200;
 /// The lines of an edit's diff a folded view lays out.
 const DIFF_LINES = 200;
 const NODE = 24;
+/// Older entries land above the reader without moving what is on screen.
+const KEEP_POSITION = { disabled: false };
 
 export default function AgentScreen() {
   useLanguage();
@@ -70,6 +72,8 @@ export default function AgentScreen() {
   // The first entry the Runner keeps: what says whether a page before the oldest is left.
   const firstKept = useRef<number | undefined>(undefined);
   const olderLoading = useRef(false);
+  // A fresh run starts a new generation of pages: a page asked for before it lands nowhere.
+  const generation = useRef(0);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -81,6 +85,7 @@ export default function AgentScreen() {
   /// A page put into the list: what changed, or the newest page of an older one, and the first
   /// entry the Runner keeps from it.
   const applyPage = useCallback((page: AgentTranscriptPage, fresh: boolean) => {
+    if (fresh) generation.current += 1;
     const next = mergeAgentEntries(fresh ? [] : shown.current, page);
     shown.current = next;
     firstKept.current = page.first;
@@ -124,10 +129,12 @@ export default function AgentScreen() {
     if (atEnd.current || olderLoading.current || oldest === undefined || !hasOlderEntries(shown.current, firstKept.current)) return;
     olderLoading.current = true;
     setLoadingOlder(true);
+    const gen = generation.current;
     engine
       .agentTranscript(chatId, id, undefined, oldest, AGENT_PAGE)
       .then((page) => {
-        if (!mounted.current) return;
+        // A fresh run replaced what this page was asked for: its entries are not the run's.
+        if (!mounted.current || gen !== generation.current) return;
         const next = mergeAgentEntries(shown.current, page);
         shown.current = next;
         firstKept.current = page.first;
@@ -143,8 +150,8 @@ export default function AgentScreen() {
   }, [chatId, id]);
 
   const who = bot?.name ?? t("The bot");
-  const lastTool = entries.reduce((last, entry, at) => (entry.tool && hasBody(entry.tool) ? at : last), -1);
-  const isOpen = (entry: AgentEntry, at: number) => open[entry.seq] ?? (!!entry.tool && (toolRunning(entry.tool) || toolFailed(entry.tool) || at === lastTool));
+  const lastTool = useMemo(() => entries.reduce((last, entry, at) => (entry.tool && hasBody(entry.tool) ? at : last), -1), [entries]);
+  const isOpen = useCallback((entry: AgentEntry, at: number) => open[entry.seq] ?? (!!entry.tool && (toolRunning(entry.tool) || toolFailed(entry.tool) || at === lastTool)), [open, lastTool]);
   const column = Math.min(width, 760) - 32;
   const toggle = useCallback((entry: AgentEntry, shown: boolean) => setOpen((was) => ({ ...was, [entry.seq]: !shown })), []);
   const askRow =
@@ -159,6 +166,21 @@ export default function AgentScreen() {
       .catch((e) => alert(t("Could not stop {agent}", { agent: agent ? agentName(agent) : "" }), e instanceof Error ? e.message : String(e)))
       .finally(() => setStopping(false));
   };
+  const renderEntry = useCallback(
+    ({ item: entry, index: at }: { item: AgentEntry; index: number }) => (
+      <EntryRow
+        entry={entry}
+        kind={agent?.kind ?? ""}
+        who={who}
+        // The rail runs on to the next entry with a node.
+        rail={at + 1 < entries.length && entries[at + 1].kind !== "sent" && entries[at + 1].kind !== "log"}
+        open={isOpen(entry, at)}
+        width={column - NODE - 12}
+        onToggle={toggle}
+      />
+    ),
+    [agent?.kind, who, entries, isOpen, column, toggle],
+  );
 
   return (
     <View style={styles.screen}>
@@ -174,7 +196,8 @@ export default function AgentScreen() {
         extraData={open}
         drawDistance={800}
         // The page before the oldest entry, asked for when the top comes into view; the list
-        // keeps the reader's place as it lands (its maintainVisibleContentPosition is on).
+        // keeps the reader's place as it lands.
+        maintainVisibleContentPosition={KEEP_POSITION}
         onStartReached={loadOlder}
         onStartReachedThreshold={1}
         contentContainerStyle={{ ...styles.content, paddingHorizontal: 16 + (width - column - 32) / 2 }}
@@ -194,18 +217,7 @@ export default function AgentScreen() {
             <View style={{ height: 6 }} />
           </>
         }
-        renderItem={({ item: entry, index: at }) => (
-          <EntryRow
-            entry={entry}
-            kind={agent?.kind ?? ""}
-            who={who}
-            // The rail runs on to the next entry with a node.
-            rail={at + 1 < entries.length && entries[at + 1].kind !== "sent" && entries[at + 1].kind !== "log"}
-            open={isOpen(entry, at)}
-            width={column - NODE - 12}
-            onToggle={toggle}
-          />
-        )}
+        renderItem={renderEntry}
         ListEmptyComponent={
           text ? (
             <View style={[styles.code, { backgroundColor: p.code }]}>
@@ -253,9 +265,9 @@ export default function AgentScreen() {
 /// its plan, and its pull request.
 function Overview({ agent, message, entries, stopping, onStop, onActions }: { agent: AgentRun; message: Message; entries: AgentEntry[]; stopping: boolean; onStop: () => void; onActions: () => void }) {
   const p = usePalette();
-  const now = useNow(agentBusy(agent));
-  const since = agentSince(agent, now);
-  const plan = latestPlan(entries);
+  // The overview refreshes with the polls; its "Started 4m ago" needs minutes, not another clock.
+  const since = agentSince(agent, Date.now());
+  const plan = useMemo(() => latestPlan(entries), [entries]);
   const green = accentColor("green", p.dark);
   const fact = (icon: string, words: string, monospaced?: boolean) => (
     <View style={styles.fact}>
@@ -644,9 +656,9 @@ function OutputView({ output }: { output: string }) {
   const p = usePalette();
   const [all, setAll] = useState(false);
   const lines = useMemo(() => outputLines(output), [output]);
-  const shown = all ? lines : lines.slice(-OUTPUT_LINES);
-  const spans = useMemo(() => spansForLines(all ? lines : lines.slice(-OUTPUT_LINES)), [lines, all]);
-  const hidden = lines.length - shown.length;
+  const shownLines = useMemo(() => (all ? lines : lines.slice(-OUTPUT_LINES)), [lines, all]);
+  const spans = useMemo(() => spansForLines(shownLines), [shownLines]);
+  const hidden = lines.length - shownLines.length;
   const scroll = useRef<ScrollView>(null);
   return (
     <View style={[styles.code, { backgroundColor: p.code }]}>
