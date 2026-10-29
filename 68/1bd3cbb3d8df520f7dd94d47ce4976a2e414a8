@@ -1,0 +1,19 @@
+mobile/bun.lock
+  s_f1b890e1a44b33::t_1c879492df019d 645
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "681bd3cbb3d8df520f7dd94d47ce4976a2e414a8",
+  "prompts": {},
+  "sessions": {
+    "s_f1b890e1a44b33": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f50c9215-149f-48fb-8bef-96e9b63edfd0",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
