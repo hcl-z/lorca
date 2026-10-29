@@ -92,7 +92,13 @@ func (a *appDelegate) publishState() {
 
 func (a *appDelegate) didFinishLaunching() {
 	startupTrace("did finish launching")
-	l10n.Set(prefs.get().AppLanguage, mygo.App.Locale())
+	// The system's language is the one the user reads first; MyGo's Locale reports the app's own
+	// among the languages it is written in, which the app does not declare.
+	system := mygo.App.Locale()
+	if langs := mygo.App.PreferredLanguages(); len(langs) > 0 {
+		system = langs[0]
+	}
+	l10n.Set(prefs.get().AppLanguage, system)
 	a.cli = newCLIClient()
 	a.launcher = newLauncher()
 	store = model.NewStore(cliTransport{a.cli}, post, isMock())

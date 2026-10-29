@@ -2,30 +2,37 @@ package main
 
 import (
 	"net/url"
-	"strconv"
 	"strings"
+	"time"
 
 	"github.com/egoist/lorca/desktop/model"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/markdown"
+	"github.com/egoist/mygo/ui/markdown/parser"
 )
 
-// Message Markdown on screen, after the macOS app's MarkdownRenderer: every block a blank line's
-// worth from the next (a code box sits closer), list items two points apart, a bar for quotes, a
-// grid for a table (inside a list or quote its rows as lines, cells three spaces apart), and a
-// rule as a line of box-drawing characters. A message is one selection: a drag runs across its
-// paragraphs, lists, and code, and Copy joins them a line apart.
+// Message Markdown on screen: MyGo's markdown view draws CommonMark and the
+// GitHub extensions, incrementally and, for a reply still being written, at a
+// readable pace. A paragraph that holds a web link or an @mention is drawn by
+// the app instead, so the link keeps its source chip and the mention its bot's
+// color; every other paragraph stays with MyGo's own paragraph cache.
+//
+// A message is one selection: a drag runs across its paragraphs, lists, and
+// code, and Copy joins them a line apart.
 
 const (
-	// The room between a message's paragraphs. A reply often runs to several short ones, where a
-	// wider gap read as an empty line of its own; a document keeps its own, looser spacing.
-	paragraphGap = 10
-	codeGap      = 8
-	itemGap      = 2
+	// paragraphGap is how far a message's blocks stand apart, in ems. A reply
+	// often runs to several short paragraphs, where a wider gap reads as an
+	// empty line of its own.
+	paragraphGap = 0.65
+	// documentParagraphGap is a page's roomier spacing.
+	documentParagraphGap = 1.0
 )
 
 type markdownOptions struct {
-	// OnUserBubble keeps links in the bubble's text color on the accent fill.
+	// OnUserBubble keeps links in the bubble's text color on the ink fill, and
+	// leaves the paragraph to MyGo: a chip's fill does not suit the bubble.
 	OnUserBubble bool
 	// Size is the body's text size, textMessage by default.
 	Size float32
@@ -37,6 +44,14 @@ type markdownOptions struct {
 	// Document sets the text as a page to read rather than a message: roomier lines, headings that
 	// step down in size, a quote on a tinted ground, a hairline for a rule, a table in a frame.
 	Document bool
+}
+
+// messageReveal is how a reply being written comes in: a word at a time, at an
+// even pace, catching up with each chunk within CatchUp.
+var messageReveal = &markdown.Reveal{
+	Unit:    markdown.ByWord,
+	CatchUp: 400 * time.Millisecond,
+	Fade:    350 * time.Millisecond,
 }
 
 // openLink opens a link from a message: a web or mail link in the browser, anything else not at all.
@@ -57,16 +72,23 @@ func openLink(href string) {
 	go mygo.Shell.OpenExternal(u.String())
 }
 
-// markdownView builds a message body.
+// markdownView builds a message body that is finished.
 func markdownView(c *ui.Context, text string, o markdownOptions) ui.Element {
+	return markdownBody(c, text, o, false)
+}
+
+// markdownStream builds a message body still being written. Show it with
+// markdownView once it is complete, in the same place, so its parse carries on
+// and what is still being revealed comes in.
+func markdownStream(c *ui.Context, text string, o markdownOptions) ui.Element {
+	return markdownBody(c, text, o, true)
+}
+
+func markdownBody(c *ui.Context, text string, o markdownOptions, streaming bool) ui.Element {
 	if o.Size == 0 {
 		o.Size = textMessage
 	}
-	blocks := model.MarkdownBlocks(text)
-	body := ui.Column(c).Selectable().MinWidth(0).FontSize(o.Size).LineHeight(1.55)
-	if o.Document {
-		body.LineHeight(1.7)
-	}
+	body := ui.Column(c).Selectable().MinWidth(0).FontSize(o.Size).LineHeight(markdownLineHeight(o))
 	if o.Menu != nil {
 		body.ContextMenu(func(m *ui.Menu) {
 			o.Menu(m)
@@ -74,42 +96,197 @@ func markdownView(c *ui.Context, text string, o markdownOptions) ui.Element {
 			m.EditItems()
 		})
 	}
-	body.Children(func() { markdownBlocks(c, blocks, o, false) })
+	opts := markdownOptionsFor(c, o)
+	body.Children(func() {
+		if streaming {
+			markdown.Stream(c, text, opts)
+			return
+		}
+		markdown.View(c, text, opts)
+	})
 	return body
 }
 
-// blockGap is the room between a block and the one before it.
-func blockGap(previous, current model.Block, o markdownOptions) float32 {
+func markdownLineHeight(o markdownOptions) float32 {
 	if o.Document {
-		switch {
-		case current.Kind == model.BlockHeading && current.Level <= 2:
-			return 34
-		case current.Kind == model.BlockHeading:
-			return 26
-		case previous.Kind == model.BlockHeading:
-			return 10
-		case previous.Kind == model.BlockCode || current.Kind == model.BlockCode:
-			return 12
-		}
-		return 16
+		return 1.7
 	}
-	if previous.Kind == model.BlockCode || current.Kind == model.BlockCode {
-		return codeGap
-	}
-	return paragraphGap
+	return 1.55
 }
 
-func markdownBlocks(c *ui.Context, blocks []model.Block, o markdownOptions, nested bool) {
-	for i, block := range blocks {
-		top := float32(0)
-		if i > 0 {
-			top = blockGap(blocks[i-1], block, o)
-			if nested && o.Document {
-				top = min(top, 8)
+// markdownOptionsFor is the view's configuration for one message: its theme,
+// and the paragraph hook that keeps source chips and mentions. The options are
+// built per view because a message's role and mentionable bots differ; MyGo
+// keeps the parse itself in the element's state.
+func markdownOptionsFor(c *ui.Context, o markdownOptions) *markdown.Options {
+	opts := &markdown.Options{
+		Theme:          markdownTheme(c, o),
+		Extensions:     parser.Default,
+		OnLink:         openLink,
+		ShareSelection: true,
+		Reveal:         messageReveal,
+		CodeBlock: func(c *ui.Context, b *markdown.CodeBlockView) {
+			markdownCodeBlock(c, b, o)
+		},
+	}
+	opts.Block = func(c *ui.Context, d *parser.Document, i int) bool {
+		return markdownParagraph(c, d, i, o)
+	}
+	return opts
+}
+
+// markdownParagraph draws a paragraph with the app's spans when it holds a web
+// link or an @mention, and lets MyGo draw every other paragraph.
+func markdownParagraph(c *ui.Context, d *parser.Document, i int, o markdownOptions) bool {
+	if d.Block(i).Kind != parser.Paragraph {
+		return false
+	}
+	inlines := d.Inlines(i)
+	if !paragraphNeedsSpans(inlines, o.Mentionable, o.OnUserBubble) {
+		return false
+	}
+	spans := spansFromInlines(inlines)
+	if len(spans) == 0 {
+		return false
+	}
+	spansView(c, spans, o, false).FontSize(o.Size).LineHeight(markdownLineHeight(o))
+	return true
+}
+
+// paragraphNeedsSpans reports whether a paragraph holds a source link (in a
+// bot's message) or a mention, and nothing the span model cannot draw (inline
+// HTML, math, a picture, a footnote).
+func paragraphNeedsSpans(inlines []parser.Inline, mentionable []*model.Bot, user bool) bool {
+	for _, in := range inlines {
+		switch in.Kind {
+		case parser.HTML, parser.Math, parser.Image, parser.FootnoteRef:
+			return false
+		}
+	}
+	for _, in := range inlines {
+		switch in.Kind {
+		case parser.Link:
+			if !user && model.SourceHost(in.Dest) != "" {
+				return true
+			}
+		case parser.Text:
+			for _, bot := range mentionable {
+				if strings.Contains(in.Text, "@"+bot.Name) {
+					return true
+				}
 			}
 		}
-		markdownBlock(c, block, o, nested).Margin(top, 0, 0, 0)
 	}
+	return false
+}
+
+// spansFromInlines folds MyGo's inlines into the shared Span shape, so a
+// paragraph can be drawn with the app's own text, chips, and mention colors.
+func spansFromInlines(inlines []parser.Inline) []model.Span {
+	var out []model.Span
+	var walk func(k int, s model.Span)
+	walk = func(k int, s model.Span) {
+		in := inlines[k]
+		switch in.Kind {
+		case parser.Text:
+			s.Text = in.Text
+			addSpan(&out, s)
+		case parser.SoftBreak:
+			s.Text = " "
+			addSpan(&out, s)
+		case parser.LineBreak:
+			s.Text = "\n"
+			addSpan(&out, s)
+		case parser.Code:
+			s.Code = true
+			s.Text = in.Text
+			addSpan(&out, s)
+		case parser.Emphasis:
+			s.Italic = true
+			for j := k + 1; j < in.Next; j = inlines[j].Next {
+				walk(j, s)
+			}
+		case parser.Strong:
+			s.Bold = true
+			for j := k + 1; j < in.Next; j = inlines[j].Next {
+				walk(j, s)
+			}
+		case parser.Strikethrough:
+			s.Strike = true
+			for j := k + 1; j < in.Next; j = inlines[j].Next {
+				walk(j, s)
+			}
+		case parser.Link:
+			s.Link = in.Dest
+			start := len(out)
+			for j := k + 1; j < in.Next; j = inlines[j].Next {
+				walk(j, s)
+			}
+			if len(out) == start {
+				s.Text = in.Dest
+				addSpan(&out, s)
+			}
+		case parser.Image:
+			start := len(out)
+			for j := k + 1; j < in.Next; j = inlines[j].Next {
+				walk(j, s)
+			}
+			if len(out) == start {
+				s.Text = in.Title
+				if s.Text == "" {
+					s.Text = in.Dest
+				}
+				addSpan(&out, s)
+			}
+		case parser.HTML, parser.Math:
+			s.Text = in.Text
+			addSpan(&out, s)
+		case parser.FootnoteRef:
+			s.Text = "[" + in.Text + "]"
+			addSpan(&out, s)
+		}
+	}
+	for k := 0; k < len(inlines); k = inlines[k].Next {
+		walk(k, model.Span{})
+	}
+	return out
+}
+
+func addSpan(out *[]model.Span, s model.Span) {
+	if s.Text == "" {
+		return
+	}
+	if n := len(*out); n > 0 && sameSpan((*out)[n-1], s) {
+		(*out)[n-1].Text += s.Text
+		return
+	}
+	*out = append(*out, s)
+}
+
+func sameSpan(a, b model.Span) bool {
+	return a.Bold == b.Bold && a.Italic == b.Italic && a.Code == b.Code && a.Strike == b.Strike && a.Link == b.Link && a.Mention == b.Mention
+}
+
+// markdownCodeBlock is a code box with its language and a Copy, drawn with the
+// code MyGo highlighted: the same box the app draws elsewhere, with the
+// tokenizer's colors.
+func markdownCodeBlock(c *ui.Context, b *markdown.CodeBlockView, o markdownOptions) {
+	p := colors(c)
+	code := ui.Column(c).Radius(radiusMD).Background(p.Code).MinWidth(0).Clip()
+	if o.Document {
+		code.Border(1, p.Separator)
+	}
+	code.Children(func() {
+		ui.Row(c).Height(26).Padding(0, 4, 0, 10).Gap(6).MinWidth(0).Unselectable().Children(func() {
+			ui.Text(c, b.Language).Grow(1).Shrink(1).MinWidth(0).Font(monoFont).FontSize(11).TextColor(p.Label2).SingleLine()
+			if !b.Open {
+				copyButton(c, b.Code(), copyOptions{Symbol: "doc.on.doc", Tooltip: L("Copy code")})
+			}
+		})
+		ui.Box(c).Padding(0, 10, 9, 10).MinWidth(0).Children(func() {
+			b.Body(c)
+		})
+	})
 }
 
 // spansView builds a paragraph of spans, its links clickable.
@@ -119,14 +296,29 @@ func spansView(c *ui.Context, spans []model.Span, o markdownOptions, bold bool) 
 	var chips []*sourceChip
 	if !o.OnUserBubble {
 		spans = joinLinkSpans(spans)
-		spans = model.SplitMentions(spans, o.Mentionable)
 	}
+	spans = model.SplitMentions(spans, o.Mentionable)
 	para.Children(func() {
 		for _, span := range spans {
 			// An @Name of a member reads in the member's color, bold, as it does in the composer.
-			if bot := store.Bot(span.Mention); span.Mention != "" && bot != nil {
-				ui.Text(c, span.Text).FontWeight(600).TextColor(p.accentColor(bot.Accent))
-				continue
+			if span.Mention != "" {
+				var tint ui.Color
+				found := false
+				for _, member := range o.Mentionable {
+					if member != nil && member.ID == span.Mention {
+						tint, found = p.accentColor(member.Accent), true
+						break
+					}
+				}
+				if !found && store != nil {
+					if bot := store.Bot(span.Mention); bot != nil {
+						tint, found = p.accentColor(bot.Accent), true
+					}
+				}
+				if found {
+					ui.Text(c, span.Text).FontWeight(600).TextColor(tint)
+					continue
+				}
 			}
 			// A web link is a source chip; in the user's own bubble, which the chip's fill does not
 			// suit, and for any other link, it stays link text.
@@ -165,185 +357,79 @@ func spansView(c *ui.Context, spans []model.Span, o markdownOptions, bold bool) 
 	return para
 }
 
-func taskMarker(ordered bool, number int, checked *bool) string {
-	if checked != nil {
-		if *checked {
-			return "☑"
-		}
-		return "☐"
-	}
-	if ordered {
-		return strconv.Itoa(number) + "."
-	}
-	return "•"
-}
-
-// cellsLine is a table row as one line, its cells three spaces apart.
-func cellsLine(cells [][]model.Span) []model.Span {
-	var line []model.Span
-	for i, cell := range cells {
-		if i > 0 {
-			line = append(line, model.PlainSpan("   "))
-		}
-		line = append(line, cell...)
-	}
-	return line
-}
-
-func markdownBlock(c *ui.Context, block model.Block, o markdownOptions, nested bool) ui.Element {
+// markdownTheme is the markdown look of a message or a page, from the app's
+// palette. Sizes are in ems, as MyGo asks.
+func markdownTheme(c *ui.Context, o markdownOptions) *markdown.Theme {
 	p := colors(c)
-	switch block.Kind {
-	case model.BlockParagraph:
-		return spansView(c, block.Spans, o, false)
-	case model.BlockHeading:
-		h := spansView(c, block.Spans, o, true).FontWeight(700)
-		if o.Document {
-			// A page's headings step down from large to the body's size, the last two quieter.
-			scales := [...]float32{1.9, 1.5, 1.22, 1.06, 1, 1}
-			h.FontSize(o.Size * scales[min(max(block.Level, 1), 6)-1]).LineHeight(1.3)
-			if block.Level > 2 {
-				h.FontWeight(600)
-			}
-			if block.Level > 4 {
-				h.TextColor(p.Label2)
-			}
-			return h
-		}
-		if block.Level <= 2 {
-			h.FontSize(o.Size + 2)
-		}
-		return h
-	case model.BlockCode:
-		// A header of its language and a Copy that takes the whole block, apart from the selection.
-		code := ui.Column(c).Radius(radiusMD).Background(p.Code).MinWidth(0).Clip()
-		codeSize := float32(12)
-		if o.Document {
-			code.Border(1, p.Separator)
-			codeSize = 12.5
-		}
-		code.Children(func() {
-			ui.Row(c).Height(26).Padding(0, 4, 0, 10).Gap(6).MinWidth(0).Unselectable().Children(func() {
-				ui.Text(c, block.Language).Grow(1).Shrink(1).MinWidth(0).Font(monoFont).FontSize(11).TextColor(p.Label2).SingleLine()
-				copyButton(c, block.Text, copyOptions{Symbol: "doc.on.doc", Tooltip: L("Copy code")})
-			})
-			text := block.Text
-			if text == "" {
-				text = " "
-			}
-			ui.Box(c).Padding(0, 10, 9, 10).MinWidth(0).Children(func() {
-				ui.Text(c, text).Font(monoFont).FontSize(codeSize).LineHeight(1.42)
-			})
-		})
-		return code
-	case model.BlockList:
-		gap := float32(itemGap)
-		if o.Document {
-			gap = 6
-		}
-		list := ui.Column(c).Gap(gap).MinWidth(0)
-		list.Children(func() {
-			for i, item := range block.Items {
-				ui.Row(c).AlignItems(ui.Start).MinWidth(0).Children(func() {
-					// The marker stays out of the selection, so a copied list is its items' text.
-					ui.Text(c, taskMarker(block.Ordered, block.Start+i, item.Checked)).MinWidth(18).Padding(0, 4, 0, 0).NoWrap().Unselectable()
-					ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Children(func() {
-						markdownBlocks(c, item.Blocks, o, true)
-					})
-				})
-			}
-		})
-		return list
-	case model.BlockQuote:
-		if o.Document {
-			// A tinted ground with a bar at its edge, the words a shade quieter.
-			quote := ui.Row(c).AlignItems(ui.Stretch).MinWidth(0).Radius(radiusMD).Clip().Background(p.Code)
-			quote.Children(func() {
-				ui.Box(c).Width(3).Background(p.Label3)
-				ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Padding(10, 14).TextColor(p.Label2).Children(func() {
-					markdownBlocks(c, block.Blocks, o, true)
-				})
-			})
-			return quote
-		}
-		quote := ui.Row(c).AlignItems(ui.Stretch).Gap(8).MinWidth(0)
-		quote.Children(func() {
-			ui.Box(c).Width(2).Radius(1).Background(p.Label3)
-			ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Children(func() {
-				markdownBlocks(c, block.Blocks, o, true)
-			})
-		})
-		return quote
-	case model.BlockTable:
-		if nested {
-			rows := ui.Column(c).Gap(itemGap).MinWidth(0)
-			rows.Children(func() {
-				spansView(c, cellsLine(block.Header), o, true)
-				for _, row := range block.Rows {
-					spansView(c, cellsLine(row), o, false)
-				}
-			})
-			return rows
-		}
-		// The table scrolls sideways, so a cell is one line: wrapped cells measured the row's
-		// height at the width the table does not lay out at, and the row centred the shorter table
-		// in the taller space, a blank band above and below. Top-aligned as well, so any height
-		// the row is given over leaves it at the table's top.
-		wrap := ui.ScrollHorizontal(c).MaxWidthPercent(100).AlignItems(ui.Start)
-		if o.Document {
-			wrap.Radius(radiusMD).Clip().Border(1, p.Separator)
-		}
-		wrap.Children(func() {
-			tracks := make([]ui.Track, len(block.Header))
-			for i := range tracks {
-				tracks[i] = ui.FitContent()
-			}
-			ui.Grid(c).ColumnTracks(tracks...).FontSize(o.Size - 0.5).LineHeight(1.35).Children(func() {
-				cell := func(spans []model.Span, column int, header, first bool) {
-					box := ui.Box(c).Padding(6, 10).MinWidth(44)
-					if header {
-						box.BorderWidth(0, 0, 1, 0).BorderColor(p.Label3)
-						if o.Document {
-							box.Background(p.Code).BorderColor(p.Separator)
-						}
-					} else if !first {
-						box.BorderWidth(1, 0, 0, 0).BorderColor(p.Separator)
-					}
-					align := ui.Start
-					if column < len(block.Alignments) {
-						switch block.Alignments[column] {
-						case model.AlignCenter:
-							align = ui.Center
-						case model.AlignRight:
-							align = ui.End
-						}
-					}
-					box.Children(func() {
-						if len(spans) == 0 {
-							spans = []model.Span{model.PlainSpan(" ")}
-						}
-						spansView(c, spans, o, header).TextAlign(align).NoWrap()
-					})
-				}
-				for column, spans := range block.Header {
-					cell(spans, column, true, true)
-				}
-				for r, row := range block.Rows {
-					for column := range block.Header {
-						var spans []model.Span
-						if column < len(row) {
-							spans = row[column]
-						}
-						cell(spans, column, false, r == 0)
-					}
-				}
-			})
-		})
-		return wrap
-	case model.BlockRule:
-		if o.Document {
-			return ui.Box(c).FillWidth().Height(1).Background(p.Separator)
-		}
-		return ui.Text(c, strings.Repeat("─", 24)).TextColor(p.Label3).NoWrap()
+	th := &markdown.Theme{
+		FontSize:            o.Size,
+		CodeFont:            monoFont,
+		LineHeight:          markdownLineHeight(o),
+		CodeLineHeight:      1.42,
+		Text:                p.Label,
+		Muted:               p.Label2,
+		Link:                p.Link,
+		Strong:              p.Label,
+		StrongWeight:        600,
+		Code:                p.Label,
+		CodeBackground:      p.Code,
+		CodeSize:            0.875,
+		BlockSpacing:        paragraphGap,
+		ItemSpacing:         0.2,
+		ListIndent:          1.6,
+		QuoteBar:            p.Label3,
+		QuoteBarWidth:       2,
+		QuoteText:           p.Label2,
+		Rule:                p.Separator,
+		CodeBlockBackground: p.Code,
+		CodeBlockBorder:     ui.Transparent,
+		CodeBlockRadius:     radiusMD,
+		CodeBlockPadding:    0.85,
+		TableBorder:         p.Separator,
+		TableHeader:         ui.Transparent,
+		TableStripe:         ui.Transparent,
+		TableCellPadding:    [2]float32{0.55, 0.35},
+		TableMaxColumn:      24,
+		Mark:                p.Accent.Alpha(0.3),
+		Checkbox:            p.Accent,
 	}
-	return ui.Box(c)
+	if o.Document {
+		th.BlockSpacing = documentParagraphGap
+		th.ItemSpacing = 0.4
+		scales := [...]float32{1.9, 1.5, 1.22, 1.06, 1, 1}
+		for i := range th.Headings {
+			th.Headings[i] = markdown.HeadingStyle{Size: scales[i], Weight: 700, Color: p.Label, Top: 1.4, Bottom: 0.55}
+			if i >= 2 {
+				th.Headings[i].Weight = 600
+			}
+			if i >= 4 {
+				th.Headings[i].Color = p.Label2
+			}
+		}
+	} else {
+		for i := range th.Headings {
+			th.Headings[i] = markdown.HeadingStyle{Size: 1, Weight: 600, Color: p.Label, Top: 0.8, Bottom: 0.4}
+		}
+		th.Headings[0] = markdown.HeadingStyle{Size: 1.14, Weight: 700, Color: p.Label, Top: 0.8, Bottom: 0.4}
+		th.Headings[1] = th.Headings[0]
+	}
+	if o.OnUserBubble {
+		th.Text = p.AccentText
+		th.Muted = p.AccentText.Alpha(0.65)
+		th.Link = p.AccentText
+		th.Strong = p.AccentText
+		th.Code = p.AccentText
+		th.CodeBackground = p.AccentText.Alpha(0.14)
+		th.QuoteBar = p.AccentText.Alpha(0.35)
+		th.QuoteText = p.AccentText.Alpha(0.8)
+		th.Rule = p.AccentText.Alpha(0.3)
+		th.CodeBlockBackground = p.AccentText.Alpha(0.1)
+		th.TableBorder = p.AccentText.Alpha(0.25)
+		th.Mark = p.Accent.Alpha(0.3)
+		th.Checkbox = p.AccentText
+		for i := range th.Headings {
+			th.Headings[i].Color = p.AccentText
+		}
+	}
+	return th
 }

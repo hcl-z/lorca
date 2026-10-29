@@ -45,6 +45,7 @@ func TestChatSelectionPaintsOnPressFromOutsideSidebar(t *testing.T) {
 		t.Fatalf("the sidebar still has focus: %v", got)
 	}
 	tt.Press(row.X+row.W/2, row.Y+row.H/2)
+	tt.Advance(150 * time.Millisecond)
 	if m.selection.ChatID != next.ID || paintedSelection != next.ID {
 		t.Fatalf("selected %q, painted %q, want %q on pointer down", m.selection.ChatID, paintedSelection, next.ID)
 	}
@@ -105,13 +106,14 @@ func TestChatShortcutHints(t *testing.T) {
 	if tt.HasText(shortcutText("CmdOrCtrl+1")) {
 		t.Fatal("hints at once")
 	}
-	time.Sleep(300 * time.Millisecond)
+	tt.Advance(300 * time.Millisecond)
 	tt.Frame()
 	renderTo(t, tt, "sidebar-shortcut-hints")
 	if !tt.HasText(shortcutText("CmdOrCtrl+1")) || !tt.HasText(shortcutText("CmdOrCtrl+7")) {
 		t.Fatalf("no hints: %q", tt.Texts())
 	}
 	tt.HoldModifiers(0)
+	tt.Frame()
 	if tt.HasText(shortcutText("CmdOrCtrl+1")) {
 		t.Fatal("hints stayed")
 	}

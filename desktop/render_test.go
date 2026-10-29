@@ -113,6 +113,7 @@ func TestInspectorSlidesClosed(t *testing.T) {
 		}
 		m.toggleInspector()
 		tt.Frame()
+		tt.Advance(100 * time.Millisecond)
 		if _, ok := tt.Find(L("Close Details")); ok == reduce {
 			t.Fatalf("reduce motion %v: the inspector is drawn %v the frame after closing", reduce, ok)
 		}
@@ -122,7 +123,7 @@ func TestInspectorSlidesClosed(t *testing.T) {
 			}
 			renderTo(t, tt, "inspector-closing")
 		}
-		time.Sleep(700 * time.Millisecond)
+		tt.Advance(700 * time.Millisecond)
 		settle(tt)
 		if tt.HasText(L("Close Details")) {
 			t.Errorf("reduce motion %v: the inspector stayed", reduce)
@@ -140,6 +141,7 @@ func TestRenderInspectorTabs(t *testing.T) {
 	if err := tt.Click(L("Show Details")); err != nil {
 		t.Fatal(err)
 	}
+	tt.Advance(300 * time.Millisecond)
 	settle(tt)
 	if !m.userWantsInspector || !tt.HasText(L("Close Details")) {
 		t.Fatalf("the pill left the inspector closed: %q", tt.Texts())
@@ -161,6 +163,7 @@ func TestRenderInspectorTabs(t *testing.T) {
 	if err := tt.Click(L("Close Details")); err != nil {
 		t.Fatal(err)
 	}
+	tt.Advance(300 * time.Millisecond)
 	settle(tt)
 	if m.userWantsInspector {
 		t.Error("Close Details left the inspector open")
@@ -232,7 +235,7 @@ func settle(tt *ui.Tester) {
 
 // settleTransitions waits out the sheet's entrance and recoloring, which run on the clock.
 func settleTransitions(tt *ui.Tester) {
-	time.Sleep(250 * time.Millisecond)
+	tt.Advance(250 * time.Millisecond)
 	settle(tt)
 }
 

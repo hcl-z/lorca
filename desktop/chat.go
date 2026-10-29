@@ -478,7 +478,7 @@ func (m *mainWindow) messageCell(c *ui.Context, chat *model.Chat, message *model
 			bubbleBox = bubble.Bounds()
 			if isUser {
 				// A selection is the ink's text color, faint, where the accent's own highlight would vanish.
-				bubble.Background(p.Ink).TextColor(p.InkText).SelectionColor(p.InkText.Alpha(0.28))
+				bubble.Background(p.Blue).TextColor(p.AccentText).SelectionColor(p.AccentText.Alpha(0.28))
 			} else {
 				bubble.Background(p.BotBubble)
 			}
@@ -524,16 +524,21 @@ func (m *mainWindow) messageCell(c *ui.Context, chat *model.Chat, message *model
 					textWidth = room
 				}
 			}
-			fold, ok := s.folds[message.ID]
-			if !ok || fold.text != text {
-				fold = foldText(text, textWidth, textMessage, foldedHeight)
-				s.folds[message.ID] = fold
+			streaming := message.State.Kind == model.StateStreaming
+			fold := foldedText{text: text}
+			if !streaming {
+				if cached, ok := s.folds[message.ID]; ok && cached.text == text {
+					fold = cached
+				} else {
+					fold = foldText(text, textWidth, textMessage, foldedHeight)
+					s.folds[message.ID] = fold
+				}
 			}
 			action := p.Link
 			bubbleColor := p.BotBubble
 			if isUser {
-				action = p.InkText
-				bubbleColor = p.Ink
+				action = p.AccentText
+				bubbleColor = p.Blue
 			}
 			bubble.Children(func() {
 				if len(message.Attachments) > 0 {
@@ -549,7 +554,7 @@ func (m *mainWindow) messageCell(c *ui.Context, chat *model.Chat, message *model
 						// under it as a link, as the Mac's long messages read.
 						ui.Column(c.Key("fold:" + message.ID)).FillWidth().Children(func() {
 							ui.Box(c).MaxHeight(foldedHeight).Clip().Children(func() {
-								markdownView(c, fold.prefix, markdownOptions{OnUserBubble: isUser, Menu: replyMenu, Mentionable: mentionable(chat, message)}).Shrink(1)
+								markdownView(c, fold.prefix, markdownOptions{OnUserBubble: isUser, Menu: replyMenu, Mentionable: mentionable(chat)}).Shrink(1)
 							})
 							ui.Box(c).Absolute().Left(0).Right(0).Bottom(0).Height(28).Gradient(bubbleColor.Alpha(0), bubbleColor, 180)
 						})
@@ -562,7 +567,12 @@ func (m *mainWindow) messageCell(c *ui.Context, chat *model.Chat, message *model
 							}
 						})
 					} else {
-						markdownView(c, text, markdownOptions{OnUserBubble: isUser, Menu: replyMenu, Mentionable: mentionable(chat, message)}).Shrink(1)
+						opts := markdownOptions{OnUserBubble: isUser, Menu: replyMenu, Mentionable: mentionable(chat)}
+						if streaming {
+							markdownStream(c, text, opts).Shrink(1)
+						} else {
+							markdownView(c, text, opts).Shrink(1)
+						}
 						if fold.folded {
 							ui.Row(c).FillWidth().Justify(ui.Start).Children(func() {
 								less := ui.ButtonBase(c.Key("less:"+message.ID)).Padding(6, 0, 0, 0).FontSize(12).FontWeight(500).TextColor(p.Label2).Cursor(ui.CursorPointer).Label(L("Show less")).FocusRing(false)
@@ -614,15 +624,12 @@ func (m *mainWindow) messageCell(c *ui.Context, chat *model.Chat, message *model
 	})
 }
 
-// mentionable are the bots whose @Name reads as a chip in a message: the other members of a group,
-// in a bot's message there, which is how its owner hands each member a part.
-func mentionable(chat *model.Chat, message *model.Message) []*model.Bot {
-	if !chat.IsGroup() || message.Author.Kind != model.AuthorBot {
-		return nil
-	}
+// mentionable are the bots whose @Name reads in their color, in a bot's or the user's message: the
+// members of the chat.
+func mentionable(chat *model.Chat) []*model.Bot {
 	var bots []*model.Bot
 	for _, id := range chat.BotIDs {
-		if bot := store.Bot(id); bot != nil && id != message.Author.BotID {
+		if bot := store.Bot(id); bot != nil {
 			bots = append(bots, bot)
 		}
 	}
@@ -1016,7 +1023,7 @@ func attachmentTiles(c *ui.Context, chatID string, message *model.Message, onUse
 					} else {
 						tile = ui.ButtonBase(c.Key(attachment.ID)).Width(230).MaxWidthPercent(100).Height(46).Padding(0, 10).Gap(8).Radius(radiusLG).Background(p.Code)
 						if onUser {
-							tile.Background(p.InkText.Alpha(0.18))
+							tile.Background(p.AccentText.Alpha(0.18))
 						}
 						tile.Children(func() { card() })
 					}

@@ -24,11 +24,19 @@ const (
 
 // chipWords is a chip's text: a no-break space and room for the icon (two figure spaces) ahead of
 // the label, and the same behind it, so the fill has air around the icon and the label. The label's
-// own spaces do not break, so the icon never parts from it. A word joiner ends it: a line drops the
-// whitespace it ends with, no-break spaces too, which would leave a chip that ends a line without
-// its room behind the label.
+// own spaces do not break, and a word joiner follows each hyphen, slash, underscore, and dot, which
+// a line could otherwise break at: the icon never parts from the label, and the fill stays on one
+// line. A word joiner ends it: a line drops the whitespace it ends with, no-break spaces too, which
+// would leave a chip that ends a line without its room behind the label.
 func chipWords(label string) string {
-	return "\u00a0\u00a0\u2007\u2007\u00a0" + strings.ReplaceAll(label, " ", "\u00a0") + "\u00a0\u00a0\u2060"
+	label = strings.NewReplacer(
+		" ", "\u00a0",
+		"-", "-\u2060",
+		"/", "/\u2060",
+		"_", "_\u2060",
+		".", ".\u2060",
+	).Replace(label)
+	return "\u2060\u00a0\u00a0\u2007\u2007\u00a0" + label + "\u00a0\u00a0\u2060"
 }
 
 type faviconEntry struct{ bitmap *ui.Bitmap }

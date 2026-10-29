@@ -2,12 +2,64 @@ package main
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/egoist/lorca/desktop/model"
 	"github.com/egoist/mygo/ui"
 )
+
+// A reply still being written shows what its unfinished Markdown will most
+// likely become: an unclosed bold span reads bold, without its asterisks.
+func TestAStreamingReplyShowsItsUnfinishedMarkdown(t *testing.T) {
+	tt := ui.NewTester(func(c *ui.Context) {
+		applyTheme(c)
+		ui.Column(c).Padding(20).Width(360).Children(func() {
+			markdownStream(c, "A **bold", markdownOptions{})
+		})
+	}, 400, 200)
+	texts := tt.Texts()
+	joined := strings.Join(texts, "")
+	if !strings.Contains(joined, "bold") {
+		t.Fatalf("no bold word in %q", texts)
+	}
+	if strings.Contains(joined, "**") {
+		t.Errorf("the asterisks still show: %q", texts)
+	}
+}
+
+// A mention in the user's own bubble reads in its bot's color too.
+func TestAMentionInAUserBubbleIsColored(t *testing.T) {
+	bot := &model.Bot{ID: "bot-chef", Name: "Chef", Accent: "purple"}
+	tt := ui.NewTester(func(c *ui.Context) {
+		applyTheme(c)
+		p := colors(c)
+		ui.Column(c).Padding(20).Width(400).Background(p.Ink).TextColor(p.InkText).Children(func() {
+			markdownView(c, "Hi @Chef please check.", markdownOptions{OnUserBubble: true, Mentionable: []*model.Bot{bot}})
+		})
+	}, 460, 200)
+	tt.Frame()
+	tt.Frame()
+	text, ok := tt.Find("Hi @Chef please check.")
+	if !ok {
+		t.Fatalf("no message in %q", tt.Texts())
+	}
+	accent := lightPalette.accentColor(bot.Accent)
+	img := tt.Image()
+	tinted := 0
+	for y := int(text.Y); y < int(text.Y+text.H); y++ {
+		for x := int(text.X); x < int(text.X+text.W); x++ {
+			px := img.RGBAAt(x, y)
+			if absDiff(px.R, accent.R) < 24 && absDiff(px.G, accent.G) < 24 && absDiff(px.B, accent.B) < 24 {
+				tinted++
+			}
+		}
+	}
+	if tinted < 20 {
+		t.Errorf("the mention is not in Chef's color (%d pixels)", tinted)
+	}
+}
 
 // A drag runs across a message's paragraphs, list, and code, and Copy joins them a line apart,
 // without the list's markers.
@@ -117,13 +169,16 @@ func TestMessageTextMenu(t *testing.T) {
 
 // A message's paragraphs sit close, as they read in a chat; a document keeps its looser spacing.
 func TestMessageParagraphsSitClose(t *testing.T) {
-	paragraph := model.Block{Kind: model.BlockParagraph}
-	if gap := blockGap(paragraph, paragraph, markdownOptions{}); gap != paragraphGap || gap > 10 {
-		t.Fatalf("a message's paragraphs are %v apart, want %v", gap, paragraphGap)
-	}
-	if gap := blockGap(paragraph, paragraph, markdownOptions{Document: true}); gap != 16 {
-		t.Fatalf("a document's paragraphs are %v apart, want 16", gap)
-	}
+	tt := ui.NewTester(func(c *ui.Context) {
+		applyTheme(c)
+		if gap := markdownTheme(c, markdownOptions{}).BlockSpacing; gap != paragraphGap || gap > 0.7 {
+			t.Errorf("a message's paragraphs are %v em apart, want %v", gap, paragraphGap)
+		}
+		if gap := markdownTheme(c, markdownOptions{Document: true}).BlockSpacing; gap != documentParagraphGap {
+			t.Errorf("a document's paragraphs are %v em apart, want %v", gap, documentParagraphGap)
+		}
+	}, 100, 100)
+	tt.Frame()
 }
 
 // A wide table scrolls sideways and sits as close to the text around it as any other block: a cell

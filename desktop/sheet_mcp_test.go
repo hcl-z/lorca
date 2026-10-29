@@ -16,6 +16,7 @@ func sheetATester(t *testing.T, open func(m *mainWindow)) (*mainWindow, *ui.Test
 	runPosts()
 	tt.Frame()
 	open(m)
+	tt.Advance(300 * time.Millisecond)
 	sheetASettle(tt)
 	return m, tt
 }
@@ -29,8 +30,11 @@ func sheetASettle(tt *ui.Tester) {
 }
 
 // sheetAWait waits out the demo store's timers (a listing, a reconnect), then settles.
+// The sleep lets the store's goroutines answer; the advance moves the tester's own clock,
+// which animations and field debounces ride.
 func sheetAWait(tt *ui.Tester, d time.Duration) {
 	time.Sleep(d)
+	tt.Advance(d)
 	sheetASettle(tt)
 }
 

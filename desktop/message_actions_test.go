@@ -2,7 +2,9 @@ package main
 
 import (
 	"testing"
+	"time"
 
+	"github.com/egoist/lorca/desktop/model"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -11,12 +13,14 @@ import (
 func TestMessageToolbarFloatsBesideTheBubble(t *testing.T) {
 	m := demoWindow(t)
 	m.selectChat("chat-quill")
+	// A short bot message the sidebar's preview does not repeat, before the newest message.
+	chat := store.Chat("chat-quill")
+	note := &model.Message{ID: "test-toolbar", Author: model.BotAuthor("bot-quill"), Body: model.Body{Kind: model.BodyText, Text: "A short note."}, CreatedAt: time.Now()}
+	last := len(chat.Messages) - 1
+	chat.Messages = append(chat.Messages[:last], append([]*model.Message{note}, chat.Messages[last:]...)...)
 	tt := ui.NewTester(m.frame(m.view), 1180, 760)
 	settle(tt)
-	// The sidebar's preview says the same words; without it the transcript's are the only ones.
-	m.sidebarCollapsed = true
-	settle(tt)
-	words := "The email to Ana is ready above. Send it when it reads right."
+	words := "A short note."
 	text, ok := tt.Find(words)
 	if !ok {
 		t.Fatalf("no message in %q", tt.Texts())

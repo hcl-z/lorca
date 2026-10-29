@@ -116,8 +116,9 @@ One doc per subject under `docs/architecture/`, each read in one pass: `bun run 
 | [Providers](docs/architecture/providers.md) | Each model provider and its sign-in, custom providers, thinking levels, the model catalog and cost, compaction, retries |
 | [Budgets and connector limits](docs/architecture/budgets.md) | Limits on turns, tasks, and routines, stopping and resuming, price labels, shared plugin call limits |
 | [Sidebar sections and alerts](docs/architecture/sidebar.md) | Sections, hidden and muted chats in every app, and the chat a computer shows in front, which no phone is alerted about |
-| [Desktop app](docs/architecture/desktop-app.md) | The MyGo app for macOS, Windows, and Linux: its model, host, and native views, launching the CLI, windows and onboarding, settings, title bar, commands, motion |
-| [Desktop updates and builds](docs/architecture/desktop-builds.md) | The desktop app's updater and its releases, the development loop and its tests, builds for each platform and their signing |
+| [Desktop app](docs/architecture/desktop-app.md) | The MyGo app for macOS, Windows, and Linux: model, host, native views, onboarding, settings, title bar, commands, motion |
+| [Desktop updates and builds](docs/architecture/desktop-builds.md) | The desktop app's updater, releases, development loop, tests, builds and signing |
+| [The island](docs/architecture/island.md) | Top-of-display window: states |
 | [Phone app](docs/architecture/phone-app.md) | The Expo app over the Rust core: the native module, pairing, relay status, attachments, dictation, notifications, turns |
 | [Phone app look and layout](docs/architecture/phone-ui.md) | The phone's monochrome palette, round-button bars, chat list and search, composer and Stop, forms and sheets, transcript, cards and message actions, a tablet's two panes |
 | [Phone releases and updates](docs/architecture/phone-updates.md) | TestFlight builds, Android APK releases, and the Android app's self-update: the daily check and offer, the progress dialog, the package installer |

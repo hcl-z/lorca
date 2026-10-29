@@ -272,14 +272,17 @@ func TestFeedbackInTheDemo(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(1100 * time.Millisecond)
+	tt.Advance(300 * time.Millisecond)
 	settle(tt)
 	if !tt.HasText(L("Nothing to change right now.")) {
 		t.Fatalf("no answer to Look Now: %q", tt.Texts())
 	}
 
-	if err := tt.RightClick("Keep the brief to five bullets or fewer."); err != nil {
-		t.Fatal(err)
+	noteRect, ok := tt.Find("Keep the brief to five bullets or fewer.")
+	if !ok {
+		t.Fatal("no note to right-click")
 	}
+	tt.RightClickAt(noteRect.X+4, noteRect.Y+noteRect.H/2)
 	tt.Frame()
 	if want := []string{L("Show in Chat"), "-", L("Exclude"), L("Exclude Everything from “%@”", "Project Manager")}; !slices.Equal(tt.Menu(), want) {
 		t.Fatalf("menu %q, want %q", tt.Menu(), want)

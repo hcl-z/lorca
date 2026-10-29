@@ -69,7 +69,14 @@ func TestRenderCustomProviderSheet(t *testing.T) {
 	if !tt.HasText("OpenRouter connected.") {
 		t.Errorf("after Add: %q", tt.Texts())
 	}
-	sheetAWait(tt, 700*time.Millisecond)
+	// The store saves on its own goroutine; wait for its answer rather than a fixed sleep,
+	// which a slow CI runner can outlast.
+	deadline := time.Now().Add(5 * time.Second)
+	for (m.hasSheet() || saved == "") && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+		tt.Advance(50 * time.Millisecond)
+		sheetASettle(tt)
+	}
 	if m.hasSheet() || saved != "custom:openrouter" {
 		t.Errorf("saved %q, sheet up %v", saved, m.hasSheet())
 	}
