@@ -1,0 +1,27 @@
+mobile/src/ui/Markdown.tsx
+  s_f7eb74e3575bc1::t_4578e2ac6e4d15 6
+  s_f7eb74e3575bc1::t_3267c8a2af3929 15,24-33,35,41
+mobile/src/ui/transcript.tsx
+  s_f7eb74e3575bc1::t_c8d6ebd87fae43 278
+mobile/modules/lorca-core/MarkdownView.tsx
+  s_f7eb74e3575bc1::t_8be5445497e8f0 96-98,109
+mobile/src/ui/FoldedText.tsx
+  s_f7eb74e3575bc1::t_189952127a2dd5 25,41-42
+  s_f7eb74e3575bc1::t_57053e01984d5a 54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "0ae89b8081e6e31b39a256f30ed3a0834b47cfd2",
+  "prompts": {},
+  "sessions": {
+    "s_f7eb74e3575bc1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "453131d1-0daa-41fc-b6ed-3bb467194faa",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
