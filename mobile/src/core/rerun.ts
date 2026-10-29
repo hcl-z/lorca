@@ -8,8 +8,23 @@ import type { Chat, Message } from "./model";
 /// The user's message whose exchange can run again, with the rows after it: the user's latest
 /// message in a direct chat with no turn at work, whose reply left nothing the user still has to
 /// act on or that lives on elsewhere (a draft, a published output, work handed to another bot).
-export function rerunnable(chat: Chat | undefined, responding: boolean): { asked: Message; after: Message[] } | null {
-  if (!chat || chat.kind !== "dm" || chat.channel || responding) return null;
+type Rerun = { asked: Message; after: Message[] } | null;
+
+/// The answer for each chat object: a transcript asks twice a render (the rows and the latest
+/// reply), and the chat object stays the same until it changes.
+const byChat = new WeakMap<Chat, { responding: boolean; run: Rerun }>();
+
+export function rerunnable(chat: Chat | undefined, responding: boolean): Rerun {
+  if (!chat) return null;
+  const hit = byChat.get(chat);
+  if (hit && hit.responding === responding) return hit.run;
+  const run = findRerun(chat, responding);
+  byChat.set(chat, { responding, run });
+  return run;
+}
+
+function findRerun(chat: Chat, responding: boolean): Rerun {
+  if (chat.kind !== "dm" || chat.channel || responding) return null;
   let at = -1;
   for (let i = chat.messages.length - 1; i >= 0; i--) {
     if (chat.messages[i].author.kind === "you") {

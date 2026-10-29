@@ -13,8 +13,12 @@ export interface ChatAgent {
 }
 
 /// The chat's open coding agents, newest first. An agent Auto-review is still deciding on has no
-/// conversation yet; a checking card is not offered.
+/// conversation yet; a checking card is not offered. The answer is kept per chat object, which
+/// the transcript, the composer's `@` list, and the header all ask for in one render.
+const agentsByChat = new WeakMap<Chat, ChatAgent[]>();
 export function chatAgents(chat: Chat): ChatAgent[] {
+  const cached = agentsByChat.get(chat);
+  if (cached) return cached;
   const seen = new Set<string>();
   const found: ChatAgent[] = [];
   for (const message of chat.messages) {
@@ -23,7 +27,9 @@ export function chatAgents(chat: Chat): ChatAgent[] {
     seen.add(agent.id);
     found.push({ message, agent });
   }
-  return found.sort((a, b) => (b.agent.started_at ?? 0) - (a.agent.started_at ?? 0));
+  const sorted = found.sort((a, b) => (b.agent.started_at ?? 0) - (a.agent.started_at ?? 0));
+  agentsByChat.set(chat, sorted);
+  return sorted;
 }
 
 /// The chat has shown a coding agent at all: one is open, or one has written here and ended.
@@ -32,8 +38,13 @@ export function chatHasAgents(chat: Chat): boolean {
   return chat.messages.some((message) => !!message.agent || (message.body.kind === "tool" && !!message.body.agent));
 }
 
+const speakersByChat = new WeakMap<Chat, boolean>();
 export function showsSpeakersIn(chat: Chat): boolean {
-  return showsSpeakers(chat) || chatHasAgents(chat);
+  const cached = speakersByChat.get(chat);
+  if (cached !== undefined) return cached;
+  const shown = showsSpeakers(chat) || chatHasAgents(chat);
+  speakersByChat.set(chat, shown);
+  return shown;
 }
 
 /// The key a run of messages groups by: one per agent, bot, contact, or the user.
