@@ -1,0 +1,28 @@
+mobile/src/core/store.ts
+  s_f7eb74e3575bc1::t_e4239d7896c060 174
+  s_f7eb74e3575bc1::t_a9eacc744fe50b 582
+  s_f7eb74e3575bc1::t_6deab5c65ae8c7 300-352
+  s_f7eb74e3575bc1::t_ebf7ef5656eddf 235-246
+  s_f7eb74e3575bc1::t_a87885c52f3beb 270-271,273-274,277
+  s_f7eb74e3575bc1::t_234b00bdec67d7 444
+  s_f7eb74e3575bc1::t_24c5f2318c247e 480-487,489-494,499-500
+mobile/src/core/engine.ts
+  s_f7eb74e3575bc1::t_0f448280b3b874 40
+  s_f7eb74e3575bc1::t_ed591e72d9e839 214
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "b784db87f961b880143750cfd9cbc92ee1057d65",
+  "prompts": {},
+  "sessions": {
+    "s_f7eb74e3575bc1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "453131d1-0daa-41fc-b6ed-3bb467194faa",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
