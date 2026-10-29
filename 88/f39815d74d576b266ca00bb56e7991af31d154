@@ -1,0 +1,44 @@
+mobile/app/(main)/chat/[id].tsx
+  s_f7eb74e3575bc1::t_24c6fab8ec5283 310,315,396,401,405,409,472
+mobile/app/agent/[id].tsx
+  s_f7eb74e3575bc1::t_bf20941cd61c57 19
+  s_f7eb74e3575bc1::t_63900859579b54 669-671,684
+mobile/src/core/reading.test.ts
+  s_f7eb74e3575bc1::t_4b852f075ce146 26
+mobile/src/ui/RunningAgents.tsx
+  s_f7eb74e3575bc1::t_85750d5d001443 76,80
+  s_f7eb74e3575bc1::t_f5d1f6cfa42afa 112
+  s_f7eb74e3575bc1::t_2c1343b75a2b5e 55
+mobile/src/ui/Composer.tsx
+  s_f7eb74e3575bc1::t_8cecda2a3808ad 323
+docs/architecture/phone-app.md
+  s_f7eb74e3575bc1::t_1d809b843ba74e 7
+mobile/src/core/engine.ts
+  s_f7eb74e3575bc1::t_0112112e8b43c7 140-160
+  s_f7eb74e3575bc1::t_5ae0b90c651399 83-85
+  s_f7eb74e3575bc1::t_f6312af8b13888 161-162
+  s_f7eb74e3575bc1::t_cab339ef88c83a 99
+mobile/src/core/startupCache.test.ts
+  s_f7eb74e3575bc1::t_d2dd7ebc32020f 21-23
+  s_f7eb74e3575bc1::t_8f6f65bb0274c7 79,82,85,88,90,93,95
+docs/architecture/agent-cards.md
+  s_f7eb74e3575bc1::t_fad4be8c914d24 13
+mobile/src/core/startupCache.ts
+  s_f7eb74e3575bc1::t_19b0d562d43275 52-54,58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "88f39815d74d576b266ca00bb56e7991af31d154",
+  "prompts": {},
+  "sessions": {
+    "s_f7eb74e3575bc1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "453131d1-0daa-41fc-b6ed-3bb467194faa",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
