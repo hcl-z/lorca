@@ -1,0 +1,27 @@
+docs/architecture/phone-ui.md
+  s_f7eb74e3575bc1::t_b6b85992be386b 7
+  s_f7eb74e3575bc1::t_253f2a06adce56 5
+mobile/modules/lorca-core/MarkdownView.tsx
+  s_f7eb74e3575bc1::t_03d4d4dcbac7f7 70-89
+mobile/src/ui/Sheet.tsx
+  s_f7eb74e3575bc1::t_1eb2035f919997 52-54,56-64,67-68
+mobile/app/_layout.tsx
+  s_f7eb74e3575bc1::t_d280749bfa5281 9
+  s_f7eb74e3575bc1::t_021bcbdf35511e 35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "2ae22e06abf1b6e7d622bea7ab9f559e6cb076e6",
+  "prompts": {},
+  "sessions": {
+    "s_f7eb74e3575bc1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "453131d1-0daa-41fc-b6ed-3bb467194faa",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
