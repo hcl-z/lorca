@@ -16,7 +16,7 @@ export default (): ExpoConfig => {
   const adaptiveIcon = development ? "./assets/adaptive-icon-dev.png" : "./assets/adaptive-icon.png";
   const splash = development ? "./assets/splash-icon-dev.png" : "./assets/splash-icon.png";
   const favicon = development ? "./assets/favicon-dev.png" : "./assets/favicon.png";
-  const adaptiveIconBackgroundColor = development ? "#ffbe00" : "#3424f5";
+  const adaptiveIconBackgroundColor = "#479ffd";
   const splashBackgroundColor = "#f7f7f8";
   const darkSplashBackgroundColor = "#1c1c1e";
 
