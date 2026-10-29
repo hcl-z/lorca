@@ -59,8 +59,10 @@ jobs:
             echo "::error::$tag already tags $tagged: run this on that commit, or bump version in mobile/app.config.ts"
             exit 1
           fi
-          # This job's token cannot see drafts; the draft job takes an earlier run's draft.
-          if [[ $(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null) == false ]]; then
+          # This job's token cannot see drafts; the draft job takes an earlier run's draft, and a
+          # prerelease (a beta branch's build) may be rebuilt.
+          state=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq 'if .isDraft then "draft" elif .isPrerelease then "prerelease" else "published" end' 2>/dev/null || true)
+          if [[ $state == published ]]; then
             echo "::error::$tag is already published: bump version in mobile/app.config.ts"
             exit 1
           fi
@@ -93,13 +95,16 @@ jobs:
           TAG: ${{ needs.version.outputs.tag }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          if ! state=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq 'if .isDraft then "draft" else "published" end' 2>/dev/null); then
+          if ! state=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq 'if .isDraft then "draft" elif .isPrerelease then "prerelease" else "published" end' 2>/dev/null); then
             state=none
           fi
           case $state in
             published)
               echo "::error::$TAG was published while this ran, so it stays as it is"
               exit 1
+              ;;
+            prerelease)
+              # A beta branch may rebuild its prerelease; the uploads replace its assets below.
               ;;
             draft)
               # An earlier run's draft takes these builds, from this commit, and keeps its notes.
@@ -110,8 +115,10 @@ jobs:
                 import { extractReleaseNotes } from "./scripts/changelog.ts"
                 await Bun.write("notes.md", extractReleaseNotes(await Bun.file("CHANGELOG.md").text(), process.env.VERSION) + "\n")
               '
-              # Not the latest release, which stays the CLI's that install-cli.sh downloads.
-              gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --latest=false --target "$GITHUB_SHA" --title "Lorca for iPhone and Android $VERSION" --notes-file notes.md
+              # Not the latest release, which stays the CLI's that install-cli.sh downloads. A
+              # prerelease keeps stable phones from updating to it; a beta branch installs it
+              # from its release page.
+              gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --prerelease --latest=false --target "$GITHUB_SHA" --title "Lorca for iPhone and Android $VERSION" --notes-file notes.md
               ;;
           esac
 
@@ -244,4 +251,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.version.outputs.tag }}
-        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest=false
+        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest=false --prerelease

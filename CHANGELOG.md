@@ -8,6 +8,16 @@ phone app's.
 
 ## [Unreleased]
 
+## [1.0.34]
+
+A phone-only performance beta, published as a prerelease: the stable app does not update to it; install it from its release page.
+
+- The chat list under an open chat keeps the account it had until it is back in view, so a streamed reply no longer redraws it; closed Running tasks and Participants sheets no longer keep their chat, rows, or clock.
+- The transcript hands its list the same props every frame, so a streamed reply redraws only the row that changed; the chat's agents, speakers, and rerun answer once per chat, and the store compares a changed message's fields instead of serializing it.
+- A reply that still streams measures its Markdown at most four times a second, and those sizes stay out of the cache; a message folds only once it is complete, and the fold decision stops at the fold height.
+- The agent transcript computes its plan and the open tool once, drops a page asked for before a fresh run, and holds the reader's place while an older page loads.
+- A chat and its messages keep their objects through a snapshot when nothing changed, and the store looks a chat up by id.
+
 ## [1.0.33]
 
 - A coding agent's transcript on the desktop reads as a page of steps: what you sent it in a card that folds a long brief behind Show more, a thought as one line ("Thought for 3s") that opens to what it thought, each tool in the past or present tense with a run of reads and searches folded into "Explored 2 files, 1 search", what it said in Markdown, the plan as a checklist, and a footer of what its work changed and its branch. The agents working in a chat sit in a capsule in the header that opens a popover of its own; the floating agent windows are gone.
