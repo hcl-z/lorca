@@ -1,0 +1,24 @@
+mobile/app/(main)/chat/[id].tsx
+  s_f7eb74e3575bc1::t_48a503f6a504e7 89-91
+  s_f7eb74e3575bc1::t_ff8f446664e385 643,646
+  s_f7eb74e3575bc1::t_b3e0c9b7dff167 633-634,636
+  s_f7eb74e3575bc1::t_2deaed0acab9fa 260-267
+  s_f7eb74e3575bc1::t_dd8f4ebda9a512 97-101
+  s_f7eb74e3575bc1::t_8964dc5547b0d7 663,665
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "e5276bf146ac81e90e5b0f97c5e2d5030a1c0c85",
+  "prompts": {},
+  "sessions": {
+    "s_f7eb74e3575bc1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "453131d1-0daa-41fc-b6ed-3bb467194faa",
+        "model": "deepseek-v4-1-flash-261017"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
