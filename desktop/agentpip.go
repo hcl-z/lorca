@@ -294,6 +294,7 @@ func (m *mainWindow) agentFull(c *ui.Context, r model.RunningAgent, st *pipState
 							ui.Column(c).FillWidth().Margin(12, 0, 0, -horizontalInset).Children(func() { m.agentAskCard(c, chat, card, nil, true) })
 						}
 						m.agentAsk(c, p, agent, r.Chat.ID, id, botName(r.Message), asking, run)
+						view.composer(c, view.agent(agent))
 					})
 				})
 				m.agentSidebar(c, p, r, view, asking, run)

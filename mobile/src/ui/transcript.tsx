@@ -209,8 +209,6 @@ export const MessageRow = memo(function MessageRow({
     return () => bubble.current?.measureInWindow((x, y, w, h) => onOpenMessage(message, { x, y, w, h }));
   }, [message, onOpenMessage]);
   const quoteName = quote ? quoteAuthorName(quote, bots) : "";
-  const agent = message.agent;
-  const agentLabel = agent ? agent.name || agentKindName(agent.kind) : "";
   const reduceMotion = useReducedMotion();
   const appear = reduceMotion ? undefined : FadeIn.duration(180);
   const settle = reduceMotion ? undefined : LinearTransition;
@@ -225,14 +223,14 @@ export const MessageRow = memo(function MessageRow({
       {showsAvatar && (
         <Animated.View entering={appear} layout={settle} style={{ width: AVATAR + GUTTER, alignSelf: "flex-end" }}>
           {groupEnd &&
-            (agent ? <AgentTile kind={agent.kind} size={AVATAR} round /> : contact !== undefined ? <ContactAvatar name={contact} size={AVATAR} /> : <BotAvatar bot={bot} size={AVATAR} />)}
+            (contact !== undefined ? <ContactAvatar name={contact} size={AVATAR} /> : <BotAvatar bot={bot} size={AVATAR} />)}
         </Animated.View>
       )}
       <View style={[styles.bubbleColumn, { maxWidth: columnWidth }, isYou && styles.bubbleColumnYou]}>
         {showsName && (
           <Animated.View entering={appear} layout={settle}>
-            <Text style={[styles.author, { color: agent ? agentBrand(agent.kind, p.dark) : p.secondaryLabel }]} numberOfLines={1}>
-              {agent ? agentLabel : (contact ?? bot?.name ?? t("Bot"))}
+            <Text style={[styles.author, { color: p.secondaryLabel }]} numberOfLines={1}>
+              {contact ?? bot?.name ?? t("Bot")}
             </Text>
           </Animated.View>
         )}
@@ -244,9 +242,9 @@ export const MessageRow = memo(function MessageRow({
             accessibilityRole="button"
             accessibilityLabel={t("In reply to {name}: {text}", { name: quoteName, text: quote.text })}
           >
-            {quote.agent ? <AgentTile kind={quote.agent.kind} size={12} round /> : <Symbol name="arrowshape.turn.up.left.fill" size={10} color={p.tertiaryLabel} />}
+            <Symbol name="arrowshape.turn.up.left.fill" size={10} color={p.tertiaryLabel} />
             <Text style={[styles.quoteText, { color: p.secondaryLabel }]} numberOfLines={1}>
-              <Text style={[styles.quoteName, quote.agent ? { color: agentBrand(quote.agent.kind, p.dark) } : null]}>{quoteName}:</Text> {quote.text}
+              <Text style={styles.quoteName}>{quoteName}:</Text> {quote.text}
             </Text>
           </Pressable>
         )}

@@ -135,12 +135,6 @@ func cardFrameCentered(c *ui.Context, groupStart bool, label string, content fun
 	cardFrameIn(c, nil, groupStart, true, false, label, content)
 }
 
-// cardFrameAgent is an agent's card, indented as the agent's messages are, with the agent's own
-// tile and name inside it rather than the bot's avatar beside it.
-func cardFrameAgent(c *ui.Context, groupStart bool, label string, content func()) {
-	cardFrameIn(c, nil, groupStart, false, true, label, content)
-}
-
 func cardFrameIn(c *ui.Context, cardAvatar *avatarContent, groupStart, centered, indent bool, label string, content func()) {
 	p := colors(c)
 	top := float32(groupTopPadding)

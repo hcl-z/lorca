@@ -115,7 +115,7 @@ func (m *mainWindow) agentCard(c *ui.Context, chat *model.Chat, message *model.M
 	holder := ui.Box(c.Key("agent:" + message.ID))
 	st, run := m.agentAsker(holder, agent)
 	holder.Children(func() {
-		cardFrameAgent(c, groupStart, agentSpokenText(agent, name), func() {
+		cardFrame(c, cardAvatar, groupStart, agentSpokenText(agent, name), func() {
 			ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Children(func() {
 				agentHeader(c, p, agent, 30, 13.5, func() {
 					if agent.IsRunning() {
@@ -411,11 +411,14 @@ func (w *appWindow) presentAgentTranscript(chatID string, message *model.Message
 			Width:    680,
 			Confirm:  L("Done"),
 			NoCancel: true,
-			Header:   func() { t.header(c, w, t.agent(agent), st, run) },
-			Leading:  func() { agentFooter(c, t.agent(agent)) },
+			// Return in the composer sends to the agent; it does not close the sheet.
+			ReturnInContent: true,
+			Header:          func() { t.header(c, w, t.agent(agent), st, run) },
+			Leading:         func() { agentFooter(c, t.agent(agent)) },
 		}
 		result := sheetFrame(c, options, func() {
 			t.view(c).Height(460)
+			t.composer(c, t.agent(agent))
 		})
 		if result.Confirmed || result.Cancelled {
 			s.dismiss()

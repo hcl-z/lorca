@@ -284,9 +284,9 @@ class Engine {
   /// Sends the user's message with its files, the bots picked by `@`, and the coding agents it
   /// addresses; the core starts the turns it calls for, or hands it to the agents.
   /// `replyTo` is the message the user answers, which the bot reads quoted.
-  async sendMessage(chatId: string, text: string, files: PickedFile[] = [], mentions: string[] = [], agents: string[] = [], replyTo?: string): Promise<Message> {
+  async sendMessage(chatId: string, text: string, files: PickedFile[] = [], mentions: string[] = [], replyTo?: string): Promise<Message> {
     const attachments = files.map((file) => ({ path: pathOf(file.uri), name: file.name, mime: file.mime, width: file.width, height: file.height }));
-    const { message } = await core.request<{ message: Message }>("chats.send", chatsSendParams(chatId, text, attachments, mentions, agents, replyTo));
+    const { message } = await core.request<{ message: Message }>("chats.send", chatsSendParams(chatId, text, attachments, mentions, replyTo));
     upsertMessage(message);
     setStatus(chatId, null);
     return message;
@@ -1145,6 +1145,13 @@ class Engine {
   }
 
   // MARK: - Coding agents
+
+  /// Gives a coding agent what the user wrote on its page, on its bot's Runner: it takes it up once
+  /// it is done with what it does now, or starts again on its session. The bot does not see it, and
+  /// the chat shows none of it.
+  async sendToAgent(chatId: string, messageId: string, text: string) {
+    await core.request("coding.send", { chat_id: chatId, message_id: messageId, text });
+  }
 
   /// Stops a coding agent on its bot's Runner; its card says so once the Runner has.
   async stopAgent(chatId: string, messageId: string) {

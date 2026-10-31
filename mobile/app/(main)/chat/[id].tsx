@@ -29,7 +29,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SoftScrollEdgeView } from "../../../modules/lorca-core/SoftScrollEdgeView";
 import { chatTitle, engine, type PickedFile } from "../../../src/core/engine";
 import { isLive, showsSpeakers, type AgentRun, type Bot, type Message } from "../../../src/core/model";
-import { showsSpeakersIn } from "../../../src/core/participants";
 import { agentAskCard, chatAgents, mentionTargets } from "../../../src/core/participants";
 import {
   useBotMap,
@@ -341,20 +340,14 @@ export default function ChatScreen() {
   );
   const isGroup = chat?.kind === "group";
   // A channel's conversation shows its speakers by name, as a group does.
-  const speakers = chat ? showsSpeakersIn(chat) : false;
+  const speakers = chat ? showsSpeakers(chat) : false;
   const title = chat ? chatTitle(chat) : t("Chat");
-  // The agent card changes rarely; keep the composer's target list from changing with every
-  // streamed word of a reply, or its memo would re-render on each one.
-  const devices = useStore((s) => s.devices);
-  const runnerSupportsAgents = useMemo(() => {
-    const runner = members[0] ? devices.find((device) => device.id === members[0].runner_id) : undefined;
-    return !!runner?.agent_messages;
-  }, [members, devices]);
+  // The agent cards change rarely; keep the composer's target list and the header from changing
+  // with every streamed word of a reply, or their memos would re-render on each one.
   const agentRosterKey = chat
     ? [chat.bot_ids.join(","), ...chatAgents(chat).map(({ agent }) => `${agent.id}:${agent.name ?? ""}:${agent.kind}:${agent.state}`)].join("|")
     : "";
-  const targets = useMemo(() => (chat ? mentionTargets(chat, bots, runnerSupportsAgents) : []), [agentRosterKey, bots, runnerSupportsAgents]);
-  const agentMentionable = targets.some((target) => target.kind === "agent");
+  const targets = useMemo(() => (chat ? mentionTargets(chat, bots) : []), [agentRosterKey, bots]);
   // The header and participants sheet read the open agents, not every streamed word.
   const agents = useMemo(() => (chat ? chatAgents(chat) : []), [agentRosterKey]);
   const [participantsOpen, setParticipantsOpen] = useState(false);
@@ -394,11 +387,9 @@ export default function ChatScreen() {
   // After the Mac app: "Message Chef", or the group's title with a hint that @ addresses one.
   const placeholder =
     !isGroup && members[0]
-      ? agentMentionable
-        ? t("Message {name} — @ to address an agent", { name: members[0].name })
-        : t("Ask {name}", { name: members[0].name })
+      ? t("Ask {name}", { name: members[0].name })
       : targets.length > 1
-        ? t("Message {title} — @ to address a bot or agent", { title })
+        ? t("Message {title} — @ to address one bot", { title })
         : t("Message {name}", { name: title });
 
   /// The command whose answer sheet is up. The sheet reads the live row, so it goes when the
@@ -440,7 +431,7 @@ export default function ChatScreen() {
   // Stable while the reply target is, so the memoized composer skips the renders a streaming
   // reply causes.
   const send = useCallback(
-    (text: string, files: PickedFile[], mentions: string[], agents: string[] = []) => {
+    (text: string, files: PickedFile[], mentions: string[]) => {
       // The anchor is measured against the screen without the keyboard.
       void KeyboardController.dismiss();
       if (editing) {
@@ -452,7 +443,7 @@ export default function ChatScreen() {
       const replyTo = replying?.messageID;
       setReplying(null);
       engine
-        .sendMessage(id, text, files, mentions, agents, replyTo)
+        .sendMessage(id, text, files, mentions, replyTo)
         .then((message) => setAnchorKey(message.id))
         .catch((error) => {
           alert(

@@ -22,9 +22,6 @@ const text = (id: string, author: Message["author"], body: string, at = 1, patch
   ...patch,
 });
 
-const agentSaid = (id: string, run: AgentRun, body: string, at = 2): Message =>
-  text(id, { kind: "bot", bot_id: "b1" }, body, at, { agent: { id: run.id, name: run.name ?? "Claude Code", kind: run.kind } });
-
 const card = (id: string, run: AgentRun): Message => ({
   id,
   chat_id: "chat",
@@ -35,37 +32,21 @@ const card = (id: string, run: AgentRun): Message => ({
 });
 
 describe("transcript rows", () => {
-  test("agent messages group by their speaker, not the bot", () => {
-    const run = agent("a1", "Claude Code");
-    const messages = [text("u1", { kind: "you" }, "hi", 1), agentSaid("m1", run, "one", 2), agentSaid("m2", run, "two", 3), text("m3", { kind: "bot", bot_id: "b1" }, "three", 4)];
+  test("a DM reads without speakers, even with an agent at work in it", () => {
+    const messages = [card("c1", agent("a1", "Claude Code")), text("m1", { kind: "bot", bot_id: "b1" }, "one", 2), text("m2", { kind: "bot", bot_id: "b1" }, "two", 3)];
     const rows = buildRows(chat(messages), new Map([["b1", bot("b1", "Chef")]]), [], false, null).filter((row) => row.type === "message");
-    expect(rows.map((row) => row.groupStart)).toEqual([true, true, false, true]);
+    expect(rows.map((row) => row.showsName)).toEqual([false, false]);
+    expect(rows.map((row) => row.groupStart)).toEqual([true, false]);
   });
 
-  test("a DM with an agent shows the bot's and the agent's names", () => {
-    const run = agent("a1", "Claude Code");
-    const messages = [agentSaid("m1", run, "one", 2), text("m2", { kind: "bot", bot_id: "b1" }, "two", 3)];
+  test("a message an agent wrote into the chat before reads as its bot's", () => {
+    // From when an agent took part in the chat: its words carried `agent`, which no longer counts.
+    const old = { ...text("m1", { kind: "bot", bot_id: "b1" }, "one", 2), agent: { id: "a1", name: "Claude Code", kind: "claude" } } as Message;
+    const messages = [text("u1", { kind: "you" }, "hi", 1), old];
     const rows = buildRows(chat(messages), new Map([["b1", bot("b1", "Chef")]]), [], false, null).filter((row) => row.type === "message");
-    expect(rows.map((row) => row.showsName)).toEqual([true, true]);
-  });
-
-  test("an agent reply breaks the bot's bubble run", () => {
-    const run = agent("a1", "Claude Code");
-    const messages = [text("m1", { kind: "bot", bot_id: "b1" }, "one", 2), agentSaid("m2", run, "two", 3), text("m3", { kind: "bot", bot_id: "b1" }, "three", 4)];
-    const rows = buildRows(chat(messages), new Map([["b1", bot("b1", "Chef")]]), [], false, null).filter((row) => row.type === "message");
-    expect(rows.map((row) => row.groupStart)).toEqual([true, true, true]);
-  });
-
-  test("the latest reply is the bot's, not an agent's", () => {
-    const run = agent("a1", "Claude Code");
-    const messages = [text("u1", { kind: "you" }, "hi", 1), text("m1", { kind: "bot", bot_id: "b1" }, "one", 2), agentSaid("m2", run, "two", 3)];
-    const rows = buildRows(chat(messages), new Map([["b1", bot("b1", "Chef")]]), [], false, null).filter((row) => row.type === "message");
-    expect(rows.every((row) => !row.copyable && !row.regenerable)).toBe(true);
-  });
-
-  test("preview names the agent that spoke", () => {
-    const c = chat([agentSaid("m1", agent("a1", "Claude Code"), "status is green", 2)]);
-    expect(preview(c, new Map())).toBe("Claude Code: status is green");
+    expect(rows[1].type === "message" && rows[1].copyable).toBe(true);
+    expect(messageAuthorName(old, new Map([["b1", bot("b1", "Chef")]]))).toBe("Chef");
+    expect(preview(chat([old]), new Map())).toBe("one");
   });
 
   test("preview keeps the group's bot name", () => {
@@ -73,13 +54,9 @@ describe("transcript rows", () => {
     expect(preview(c, new Map([["b1", bot("b1", "Chef")]]))).toBe("Chef: all done");
   });
 
-  test("quotes and reply targets name the agent behind a bot message", () => {
-    const run = agent("a1", "Claude Code");
-    const said = agentSaid("m1", run, "one", 2);
-    const quote = { message_id: "m1", author: { kind: "bot" as const, bot_id: "b1" }, text: "one", agent: said.agent };
-    expect(quoteAuthorName(quote, new Map())).toBe("Claude Code");
-    expect(messageAuthorName(said, new Map())).toBe("Claude Code");
-    expect(messageAuthorName(text("m2", { kind: "bot", bot_id: "b1" }, "two"), new Map([["b1", bot("b1", "Chef")]]))).toBe("Chef");
+  test("a quote names the bot that wrote it", () => {
+    const quote = { message_id: "m1", author: { kind: "bot" as const, bot_id: "b1" }, text: "one" };
+    expect(quoteAuthorName(quote, new Map([["b1", bot("b1", "Chef")]]))).toBe("Chef");
   });
 
   test("an agent card itself is not a message bubble", () => {

@@ -3,12 +3,12 @@
 
 import { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import type { Bot, Chat } from "../core/model";
+import { showsSpeakers, type Bot, type Chat } from "../core/model";
 import { t, useLanguage } from "../i18n";
 import { ParticipantCluster } from "./Avatar";
 import { usePalette } from "./theme";
 import { buildRows, DayRow, MarkerRow, MessageRow, NoticeRow } from "./transcript";
-import { chatAgents, showsSpeakersIn } from "../core/participants";
+import { chatAgents } from "../core/participants";
 
 const PEEK_MESSAGES = 6;
 const HEADER_HEIGHT = 48;
@@ -35,7 +35,7 @@ export function ChatPeek({ chat, bots, title }: { chat: Chat; bots: Map<string, 
                 case "day":
                   return <DayRow key={row.key} at={row.at} />;
                 case "message":
-                  return <MessageRow key={row.key} row={row} bots={bots} speakers={showsSpeakersIn(chat)} />;
+                  return <MessageRow key={row.key} row={row} bots={bots} speakers={showsSpeakers(chat)} />;
                 case "marker":
                   return <MarkerRow key={row.key} row={row} />;
                 case "notice":

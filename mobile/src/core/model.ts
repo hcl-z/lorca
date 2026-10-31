@@ -71,9 +71,6 @@ export interface Device {
   update?: UpdateStatus | null;
   /// The relay lists the machine, but it never sent its `machine` blob: no name, no `os`.
   unknown?: boolean;
-  /// This Runner takes `agent_message` jobs for coding agents. A Device from before it does
-  /// not, so the app hides agents there.
-  agent_messages?: boolean;
 }
 
 /// A self-updating CLI's updates, as its Runner lists them in its `machine` blob.
@@ -247,14 +244,6 @@ export interface RoutineHealth {
 /// `contact` is someone outside Lorca, in a channel's conversation.
 export type Author = { kind: "you" } | { kind: "bot"; bot_id: string } | { kind: "system" } | { kind: "contact"; name: string };
 
-/// The coding agent that wrote a message for its bot: its id, what it is called, and its kind,
-/// for the mark and color. Kept with the message so the chat outlives the agent's record.
-export interface AgentAuthor {
-  id: string;
-  name: string;
-  kind: string;
-}
-
 export interface ChatSearchResults {
   chats: { chat_id: string; snippet: string }[];
   messages: { chat_id: string; message_id: string; snippet: string; author: Author; created_at: number }[];
@@ -299,8 +288,6 @@ export type Body =
       attachments?: Attachment[];
       /// The bots the user's `@Name`s address, by id.
       mentions?: string[];
-      /// The coding agents the user's `@Name`s address, by id: no bot turn starts.
-      agents?: string[];
       reply_to?: ReplyTo | null;
     }
   | {
@@ -601,8 +588,6 @@ export interface Message {
   edited_at?: number | null;
   /** A file or document link a bot published: this message is one version of it. */
   output?: Output;
-  /** The coding agent that wrote it for its bot, when one did. */
-  agent?: AgentAuthor | null;
 }
 
 /// A published output: `id` names it across its versions, the message carrying it is the version.
@@ -728,8 +713,6 @@ export interface ReplyTo {
   message_id: string;
   author: Author;
   text: string;
-  /** The coding agent that wrote the quoted message, when one did. */
-  agent?: AgentAuthor | null;
 }
 
 /// A finished text message, the user's or a bot's, which a reply can answer.

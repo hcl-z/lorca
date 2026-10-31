@@ -11,15 +11,6 @@ use crate::plugins::mcp::Decision;
 use lorca_agent::Tool;
 use tokio_util::sync::CancellationToken;
 
-#[test]
-fn a_long_answer_in_the_chat_is_cut_at_the_message_limit() {
-    let long = "x".repeat(MESSAGE_CHARS + 10);
-    let shown = chat_text(&long);
-    assert_eq!(shown.chars().count(), MESSAGE_CHARS + 1);
-    assert!(shown.ends_with('…'));
-    assert_eq!(chat_text("hi"), "hi");
-}
-
 /// An agent that speaks ACP, scripted, installed as `gemini` and as `npx`, which starts the
 /// adapters of Claude Code and Codex. A job asks to run `git push` (the answer decides how the
 /// tool call ends), opens a pull request, and is done; "(follow-up)" is answered at once,
@@ -646,8 +637,8 @@ async fn a_bot_cannot_answer_a_question_in_a_conversation_the_user_drives() {
     card_when(app, &row, |card| card.state == "idle").await;
     let agent = app.coding_agents.of("chat", "b1").pop().unwrap();
 
-    // The user talks to it directly, and it asks.
-    crate::coding::from_user(app, &agent, "(ask)", "msg-direct");
+    // The user talks to it on its page, and it asks.
+    serve(app, "coding.send", &json!({ "chat_id": "chat", "message_id": row, "text": "(ask)" })).await.unwrap();
     let card = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             if let Some(card) = app.messages("chat").into_iter().find(|message| matches!(&message.body, Body::Permission { tool, decision, .. } if tool == "agent_ask" && decision == "pending")) {
@@ -875,7 +866,7 @@ async fn an_agent_over_acp_asks_on_its_card_takes_messages_in_turn_and_resumes_i
 }
 
 #[tokio::test]
-async fn a_message_addressed_to_an_agent_cuts_in_and_its_answer_is_in_the_chat() {
+async fn the_user_writes_to_an_agent_on_its_page_and_neither_the_chat_nor_the_bot_sees_it() {
     let scratch = setup().await;
     let app = &scratch.app;
     let mut auto_review = app.auto_review();
@@ -884,43 +875,62 @@ async fn a_message_addressed_to_an_agent_cuts_in_and_its_answer_is_in_the_chat()
     let tool = tool(&scratch);
     let row = start_row(app, "call-1");
 
+    call(&tool, "call-1", json!({ "action": "start", "agent": "gemini", "folder": "shop", "prompt": "Hello (follow-up)" })).await.unwrap();
+    card_when(app, &row, |card| card.state == "idle").await;
+    let agent = app.coding_agents.of("chat", "b1").pop().unwrap();
+    let in_chat = app.messages("chat").len();
+    let read_before = agent.read(Some(200)).0;
+
+    // From the agent's page: it reaches the agent, and starts no bot turn.
+    let sent = serve(app, "coding.send", &json!({ "chat_id": "chat", "message_id": row, "text": "My own words (follow-up)" })).await.unwrap();
+    assert_eq!(sent["sent"], true);
+    assert!(agent.record().direct, "the user drives this turn");
+    assert!(app.running_chat_ids().is_empty(), "the bot runs no turn");
+    card_when(app, &row, |card| card.state == "idle" && card.output.as_deref().is_some_and(|output| output.matches("Followed up.").count() >= 2)).await;
+
+    // Its page shows what the user wrote and the answer; the chat shows neither.
+    let page = serve(app, "coding.transcript", &json!({ "chat_id": "chat", "message_id": row })).await.unwrap();
+    let entries = page["entries"].as_array().unwrap();
+    assert!(entries.iter().any(|entry| entry["kind"] == "sent" && entry["from"] == "user" && entry["text"] == "My own words (follow-up)"), "{entries:?}");
+    assert_eq!(app.messages("chat").len(), in_chat, "nothing new in the chat");
+    assert!(app.messages("chat").iter().all(|message| !matches!(&message.body, Body::Text { text, .. } if text.contains("Followed up."))));
+
+    // The bot reads the agent's answer, never the user's words, and is not woken for the turn.
+    let read = agent.read(Some(200)).0;
+    assert!(!read.contains("My own words"), "{read}");
+    assert!(read.len() > read_before.len() && read.contains("Followed up."), "{read}");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(agent.record().news.is_none(), "the bot was woken");
+
+    // The bot's own follow-up makes its being done news for the bot again.
+    call(&tool, "call-2", json!({ "action": "send", "id": agent.id(), "message": "From the bot (follow-up)" })).await.unwrap();
+    assert!(!agent.record().direct);
+
+    // A message needs words.
+    assert!(serve(app, "coding.send", &json!({ "chat_id": "chat", "message_id": row, "text": "  " })).await.is_err());
+    app.coding_agents.stop_chat(app, "chat");
+}
+
+#[tokio::test]
+async fn a_message_from_the_page_waits_for_the_turn_under_way() {
+    let scratch = setup().await;
+    let app = &scratch.app;
+    let mut auto_review = app.auto_review();
+    auto_review.is_enabled = false;
+    app.set_auto_review(auto_review);
+    let tool = tool(&scratch);
+    let row = start_row(app, "call-1");
     call(&tool, "call-1", json!({ "action": "start", "agent": "gemini", "folder": "shop", "prompt": "Work on it (slow)" })).await.unwrap();
     card_when(app, &row, |card| card.state == "working").await;
     let agent = app.coding_agents.of("chat", "b1").pop().unwrap();
-    let agent_name = name(&agent.record().kind);
 
-    // The user talks to it from the chat: `@Name` goes to the agent, not to the bot.
-    let message = crate::runtime::send_user_message(app.clone(), "chat", &format!("@{agent_name} (follow-up)"), None, Vec::new(), Vec::new(), None).unwrap();
-    assert_eq!(agent.record().trigger_message_id, message.id);
-    assert!(agent.record().direct, "the user drove this turn");
-    assert!(app.running_chat_ids().is_empty(), "the bot runs no turn");
-
-    // It cut in, and its answer is a message of its own in the chat.
-    let said = tokio::time::timeout(Duration::from_secs(10), async {
-        loop {
-            if let Some(message) = app.messages("chat").into_iter().find(|message| {
-                message.state == MessageState::Complete
-                    && message.agent.as_ref().is_some_and(|agent| agent.name == agent_name)
-                    && matches!(&message.body, Body::Text { text, .. } if text.contains("Followed up."))
-            }) {
-                return message;
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .expect("the agent's answer is in the chat");
-    assert_eq!(said.author, Author::Bot { bot_id: "b1".into() });
-    assert_eq!(said.state, MessageState::Complete);
-    assert_eq!(said.agent.as_ref().map(|agent| agent.kind.as_str()), Some("gemini"));
-
-    let transcript = agent.read(Some(100)).0;
-    assert!(transcript.contains("> (follow-up)") && transcript.contains("⎿ Interrupted"), "{transcript}");
-    // The bot has nothing to report: the user was talking to it directly.
-    card_when(app, &row, |card| card.state == "idle").await;
+    serve(app, "coding.send", &json!({ "chat_id": "chat", "message_id": row, "text": "Then this (follow-up)" })).await.unwrap();
     tokio::time::sleep(Duration::from_millis(300)).await;
-    assert!(agent.record().news.is_none(), "the bot was woken");
+    assert_eq!(agent.record().state, "working", "it does not cut in");
+    assert!(!acp_log().contains("prompt Then this"), "it waits for the turn under way");
+    app.coding_agents.stop_chat(app, "chat");
 }
+
 
 #[tokio::test]
 async fn an_acp_agent_refused_a_command_goes_on_and_one_that_says_nothing_is_not_called_done() {
@@ -989,14 +999,15 @@ async fn a_turn_the_user_drove_that_fails_still_tells_the_bot() {
     let chat_lock = app.chat_lock("chat");
     let held = chat_lock.lock().await;
 
-    call(&tool, "call-1", json!({ "action": "start", "agent": "gemini", "folder": "shop", "prompt": "Work on it (slow)" })).await.unwrap();
-    card_when(app, &row, |card| card.state == "working").await;
+    call(&tool, "call-1", json!({ "action": "start", "agent": "gemini", "folder": "shop", "prompt": "Hello (follow-up)" })).await.unwrap();
+    card_when(app, &row, |card| card.state == "idle").await;
     let agent = app.coding_agents.of("chat", "b1").pop().unwrap();
-    let agent_name = name(&agent.record().kind);
-    crate::runtime::send_user_message(app.clone(), "chat", &format!("@{agent_name} Say nothing (empty)"), None, Vec::new(), Vec::new(), None).unwrap();
+    // The finished start is news for the bot; hear it, so what follows is the page's.
+    let job = crate::runtime::agent_job(app, "chat", "b1", &row);
+    cue_when(app, &job, |cue| cue.contains(": done")).await;
+    serve(app, "coding.send", &json!({ "chat_id": "chat", "message_id": row, "text": "Say nothing (empty)" })).await.unwrap();
     card_when(app, &row, |card| card.error.is_some()).await;
     assert!(agent.record().direct);
-    let job = crate::runtime::agent_job(app, "chat", "b1", &row);
     cue_when(app, &job, |cue| cue.contains(": failed: Gemini CLI ended its turn without answering")).await;
     drop(held);
     app.coding_agents.stop_chat(app, "chat");
@@ -1303,161 +1314,3 @@ async fn the_apps_get_the_transcript_as_entries_with_a_commands_terminal_output(
     assert!(kept.iter().any(|entry| entry.tool.as_ref().is_some_and(|tool| tool.output.contains("test a"))));
 }
 
-mod said_chat_tests {
-    use super::*;
-
-    fn agent_text(app: &App) -> Vec<Message> {
-        app.messages("chat").into_iter().filter(|message| message.agent.is_some()).collect()
-    }
-
-    fn text(message: &Message) -> String {
-        match &message.body {
-            Body::Text { text, .. } => text.clone(),
-            _ => panic!("not a text message"),
-        }
-    }
-
-    #[tokio::test]
-    async fn an_agents_reply_is_one_chat_message_across_tool_calls() {
-        let scratch = setup().await;
-        let app = &scratch.app;
-        let agent = Agent::new(record(scratch.repo.clone()));
-        agent.put_entries(app, vec![("said:1".into(), entries::Entry::text("said", "part one"))]);
-        agent.put_entries(app, vec![("tool:1".into(), entries::Entry::text("tool", "Run"))]);
-        agent.put_entries(app, vec![("said:2".into(), entries::Entry::text("said", "part two"))]);
-        agent.put_entries(app, vec![("note:1".into(), entries::Entry::text("note", "done"))]);
-        agent.put_entries(app, vec![("said:3".into(), entries::Entry::text("said", "part three"))]);
-        agent.end_said(app);
-
-        let messages = agent_text(app);
-        assert_eq!(messages.len(), 1, "{messages:?}");
-        assert_eq!(text(&messages[0]), "part one\n\npart two\n\npart three");
-        assert!(matches!(messages[0].state, MessageState::Complete));
-        assert_eq!(messages[0].agent.as_ref().unwrap().name, "Claude Code");
-    }
-
-    #[tokio::test]
-    async fn a_thought_between_chunks_does_not_split_the_message() {
-        let scratch = setup().await;
-        let app = &scratch.app;
-        let agent = Agent::new(record(scratch.repo.clone()));
-        agent.put_entries(app, vec![("said:1".into(), entries::Entry::text("said", "one"))]);
-        agent.put_entries(app, vec![("thought:1".into(), entries::Entry::text("thought", "thinking"))]);
-        agent.put_entries(app, vec![("said:2".into(), entries::Entry::text("said", "two"))]);
-        agent.end_said(app);
-        let messages = agent_text(app);
-        assert_eq!(messages.len(), 1);
-        assert_eq!(text(&messages[0]), "one two");
-    }
-
-    #[tokio::test]
-    async fn a_message_id_change_does_not_split_the_message() {
-        let scratch = setup().await;
-        let app = &scratch.app;
-        let agent = Agent::new(record(scratch.repo.clone()));
-        agent.say_in_chat(app, "said:1", "one", false);
-        agent.say_in_chat(app, "said:2", "two", false);
-        agent.end_said(app);
-        let messages = agent_text(app);
-        assert_eq!(messages.len(), 1);
-        assert_eq!(text(&messages[0]), "one two");
-    }
-
-    #[tokio::test]
-    async fn the_first_words_show_before_the_turn_ends() {
-        let scratch = setup().await;
-        let app = &scratch.app;
-        let agent = Agent::new(record(scratch.repo.clone()));
-        agent.put_entries(app, vec![("said:1".into(), entries::Entry::text("said", "part one"))]);
-        let messages = agent_text(app);
-        assert_eq!(messages.len(), 1);
-        assert_eq!(text(&messages[0]), "part one");
-        assert!(matches!(messages[0].state, MessageState::Streaming));
-    }
-
-    #[tokio::test]
-    async fn the_streaming_message_keeps_its_id_until_complete() {
-        let scratch = setup().await;
-        let app = &scratch.app;
-        let agent = Agent::new(record(scratch.repo.clone()));
-        agent.put_entries(app, vec![("said:1".into(), entries::Entry::text("said", "one"))]);
-        let first = agent_text(app)[0].id.clone();
-        agent.put_entries(app, vec![("said:1".into(), entries::Entry::text("said", "one more"))]);
-        agent.put_entries(app, vec![("said:2".into(), entries::Entry::text("said", "two"))]);
-        let messages = agent_text(app);
-        assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0].id, first);
-        assert!(matches!(messages[0].state, MessageState::Streaming));
-    }
-
-    #[tokio::test]
-    async fn a_new_user_message_starts_a_new_agent_message() {
-        let scratch = setup().await;
-        let app = &scratch.app;
-        let agent = Agent::new(record(scratch.repo.clone()));
-        agent.put_entries(app, vec![("said:1".into(), entries::Entry::text("said", "one"))]);
-        agent.put_entries(app, vec![("sent:1".into(), entries::Entry::text("sent", "user"))]);
-        agent.put_entries(app, vec![("said:2".into(), entries::Entry::text("said", "two"))]);
-        agent.end_said(app);
-        let messages = agent_text(app);
-        assert_eq!(messages.len(), 2);
-        assert_eq!(text(&messages[0]), "one");
-        assert!(matches!(messages[0].state, MessageState::Complete));
-        assert_eq!(text(&messages[1]), "two");
-    }
-
-    #[tokio::test]
-    async fn a_stalled_or_ended_agent_completes_its_message() {
-        let scratch = setup().await;
-        let app = &scratch.app;
-        let agent = Agent::new(record(scratch.repo.clone()));
-        agent.put_entries(app, vec![("said:1".into(), entries::Entry::text("said", "one"))]);
-        agent.end_said(app);
-        let messages = agent_text(app);
-        assert_eq!(messages.len(), 1);
-        assert!(matches!(messages[0].state, MessageState::Complete));
-    }
-}
-
-#[tokio::test]
-async fn an_agent_message_job_runs_before_the_chat_lock_and_only_once() {
-    let scratch = setup().await;
-    let app = &scratch.app;
-    let mut auto_review = app.auto_review();
-    auto_review.is_enabled = false;
-    app.set_auto_review(auto_review);
-    let tool = tool(&scratch);
-    let row = start_row(app, "call-1");
-    call(&tool, "call-1", json!({ "action": "start", "agent": "gemini", "folder": "shop", "prompt": "Work on it (slow)" })).await.unwrap();
-    card_when(app, &row, |card| card.state == "working").await;
-    let agent = app.coding_agents.of("chat", "b1").pop().unwrap();
-    let job = crate::runtime::agent_message_job(app, "chat", "b1", &row, &agent.id(), "(follow-up)");
-
-    // The chat lock is held: an agent message must still reach the agent before it.
-    let chat_lock = app.chat_lock("chat");
-    let lock = chat_lock.lock().await;
-    crate::runtime::spawn_local_job(app.clone(), job.clone(), None);
-    let said = tokio::time::timeout(Duration::from_secs(10), async {
-        loop {
-            if let Some(message) = app.messages("chat").into_iter().find(|message| {
-                message.state == MessageState::Complete
-                    && message.agent.is_some()
-                    && matches!(&message.body, Body::Text { text, .. } if text.contains("Followed up."))
-            }) {
-                return message;
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .expect("the agent took the message while the chat lock was held");
-    assert!(said.agent.is_some());
-    assert!(app.running_jobs.lock().unwrap().is_empty(), "no turn job was registered");
-
-    // The same user message delivered again is a no-op, not a second follow-up.
-    crate::runtime::spawn_local_job(app.clone(), job, None);
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    let replies = app.messages("chat").into_iter().filter(|message| message.agent.is_some() && matches!(&message.body, Body::Text { text, .. } if text.contains("Followed up."))).count();
-    assert_eq!(replies, 1);
-    drop(lock);
-}

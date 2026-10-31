@@ -1825,6 +1825,13 @@ func (s *Store) StopAgent(chatID, messageID string, done func(error)) {
 	s.simple(done, "coding.stop", map[string]any{"chat_id": chatID, "message_id": messageID})
 }
 
+// SendToAgent gives a coding agent what the user wrote on its page, on its bot's Runner: it takes
+// it up once it is done with what it does now, or starts again on its session. The bot does not
+// see it, and the chat shows none of it.
+func (s *Store) SendToAgent(chatID, messageID, text string, done func(error)) {
+	s.simple(done, "coding.send", map[string]any{"chat_id": chatID, "message_id": messageID, "text": text})
+}
+
 // SetAgentOption changes the model (`what` is "model") or how hard (`"effort"`) a running coding
 // agent thinks, on its bot's Runner; its card shows the new value once the Runner has set it.
 func (s *Store) SetAgentOption(chatID, messageID, what, value string, done func(error)) {

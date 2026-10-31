@@ -29,21 +29,7 @@ func TestMentionRuns(t *testing.T) {
 	}
 }
 
-// A draft's mentions of the chat's coding agents are found whatever their case.
-func TestAgentMentionRuns(t *testing.T) {
-	gemini := &model.AgentRun{ID: "a1", Kind: "gemini", ProductName: "Gemini CLI"}
-	claude := &model.AgentRun{ID: "a2", Kind: "claude", ProductName: "Claude Code"}
-	got := agentMentionRuns([]rune("ask @gemini cli to fix it"), []*model.AgentRun{gemini, claude})
-	want := []agentMentionRun{{4, 15, gemini}}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %+v, want %+v", got, want)
-	}
-	if runs := agentMentionRuns([]rune("no mentions"), []*model.AgentRun{gemini}); len(runs) != 0 {
-		t.Errorf("found %+v", runs)
-	}
-}
-
-// The `@` menu lists the chat's open coding agents, newest first and once each.
+// The chat's header lists its open coding agents, newest first and once each.
 func TestChatAgentsListsOpenCardsNewestFirst(t *testing.T) {
 	card := func(id string, agent *model.AgentRun) *model.Message {
 		return &model.Message{ID: id, Author: model.BotAuthor("b"), Body: model.Body{Kind: model.BodyTool, Tool: &model.ToolInvocation{Agent: agent}}}

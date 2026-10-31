@@ -16,7 +16,9 @@
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { type AgentEntry, type AgentTool, hasOlderEntries, mergeAgentEntries, toolFailed, toolRunning, type AgentTranscriptPage } from "../../src/core/agentEntries";
 import { agentBusy, agentSince, latestPlan, outputLines, spansForLines, type OutputSpan } from "../../src/core/agentKit";
 import { engine } from "../../src/core/engine";
@@ -49,6 +51,7 @@ export default function AgentScreen() {
   const { id, chat: chatId } = useLocalSearchParams<{ id: string; chat: string }>();
   const router = useRouter();
   const p = usePalette();
+  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const message = useStore((s) => s.chats.find((chat) => chat.id === chatId)?.messages.find((each) => each.id === id));
   const agent = message?.body.kind === "tool" ? message.body.agent : undefined;
@@ -161,7 +164,7 @@ export default function AgentScreen() {
   };
 
   return (
-    <View style={styles.screen}>
+    <KeyboardAvoidingView behavior="padding" style={[styles.screen, { paddingBottom: insets.bottom }]}>
       <Stack.Screen options={{ title: agent ? agentName(agent) : t("Transcript") }} />
       <CloseToolbar label={Platform.OS === "android" ? t("Close") : t("Done")} onClose={() => router.dismiss()} />
       {/* A long run's transcript holds hundreds of entries: the list draws those near the screen,
@@ -244,7 +247,89 @@ export default function AgentScreen() {
         }
         onStop={stop}
       />
+      {agent && message ? (
+        <AgentComposer
+          agent={agent}
+          chatId={chatId}
+          messageId={message.id}
+          onSent={() => {
+            // What was sent shows at the end of the transcript once the agent takes it up.
+            atEnd.current = true;
+            scroll.current?.scrollToEnd({ animated: true });
+          }}
+        />
+      ) : null}
       <AgentAskSheet visible={askOpen && !!askRow} row={askRow} ask={askRow?.body.agent_ask} onClose={() => setAskOpen(false)} />
+    </KeyboardAvoidingView>
+  );
+}
+
+/// Whether a message can reach the agent: it is open and past its start, or it ended with a
+/// session to start again on. One Auto-review held, or nobody answered, never ran.
+function writable(agent: AgentRun): boolean {
+  return agent.state === "asking" || agent.state === "working" || agent.state === "idle" || agent.state === "exited" || agent.state === "failed" || agent.state === "stopped";
+}
+
+/// The foot of the page: the user writes the agent there, and only there. It takes the message
+/// up once it is done with what it does now, or starts again on its session; neither the chat nor
+/// the bot sees it. A message that did not go stays in the field, with why.
+function AgentComposer({ agent, chatId, messageId, onSent }: { agent: AgentRun; chatId: string; messageId: string; onSent: () => void }) {
+  const p = usePalette();
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const open = writable(agent);
+  const name = agentName(agent);
+  const send = () => {
+    const text = draft.trim();
+    if (!text || sending || !open) return;
+    setSending(true);
+    setProblem(null);
+    engine
+      .sendToAgent(chatId, messageId, text)
+      .then(() => {
+        // The draft goes once it went; what was typed meanwhile stays.
+        setDraft((current) => (current.trim() === text ? "" : current));
+        onSent();
+      })
+      .catch((e) => setProblem(e instanceof Error ? e.message : String(e)))
+      .finally(() => setSending(false));
+  };
+  const hint = problem
+    ? problem
+    : !open
+      ? t("{agent} cannot take a message.", { agent: name })
+      : agent.state === "working" || agent.state === "asking"
+        ? t("{agent} takes it up once it is done with what it does now.", { agent: name })
+        : agent.state === "exited" || agent.state === "failed" || agent.state === "stopped"
+          ? t("Sending starts {agent} again on its session.", { agent: name })
+          : null;
+  const canSend = open && !sending && draft.trim().length > 0;
+  return (
+    <View style={[styles.composer, { borderTopColor: p.separator, backgroundColor: p.background }]}>
+      <View style={styles.composerRow}>
+        <TextInput
+          value={draft}
+          onChangeText={setDraft}
+          editable={open && !sending}
+          placeholder={t("Message {name}", { name })}
+          placeholderTextColor={p.tertiaryLabel}
+          multiline
+          keyboardAppearance={p.dark ? "dark" : "light"}
+          style={[styles.composerField, { color: p.label, backgroundColor: p.fill }]}
+          accessibilityLabel={t("Message {name}", { name })}
+        />
+        <Pressable
+          onPress={send}
+          disabled={!canSend}
+          accessibilityRole="button"
+          accessibilityLabel={t("Send")}
+          style={({ pressed }) => [styles.composerSend, { backgroundColor: canSend ? p.ink : p.fill, opacity: pressed ? 0.7 : 1 }]}
+        >
+          {sending ? <ActivityIndicator size="small" color={p.inkText} /> : <Symbol name="arrow.up" size={16} color={canSend ? p.inkText : p.tertiaryLabel} weight="bold" />}
+        </Pressable>
+      </View>
+      {hint ? <Text style={[styles.composerHint, { color: problem ? p.red : p.tertiaryLabel }]}>{hint}</Text> : null}
     </View>
   );
 }
@@ -675,6 +760,11 @@ function OutputView({ output }: { output: string }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
+  composer: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8, gap: 5, borderTopWidth: StyleSheet.hairlineWidth },
+  composerRow: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
+  composerField: { flex: 1, minHeight: 38, maxHeight: 140, borderRadius: 19, paddingHorizontal: 14, paddingTop: 9, paddingBottom: 9, fontSize: 16 },
+  composerSend: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", marginBottom: 2 },
+  composerHint: { fontSize: 12, lineHeight: 16, paddingHorizontal: 6 },
   content: { padding: 16, paddingBottom: 48, gap: 0 },
   sectionTitle: { fontSize: 12.5, fontWeight: "600" },
   facts: { borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, gap: 8 },

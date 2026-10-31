@@ -61,6 +61,11 @@ type agentTranscript struct {
 	kind, bot string
 	// card is the agent as the transcript last answered it, for the header and the footer.
 	card *model.AgentRun
+	// draft is what the user writes the agent at the foot of its page; sending keeps one in
+	// flight, and sendErr says why the last one did not go.
+	draft   string
+	sending bool
+	sendErr string
 }
 
 // plan is the steps of the latest plan the agent made.
@@ -684,6 +689,85 @@ func (t *agentTranscript) promptCard(c *ui.Context, author, text string, mine, o
 		body := ui.Text(c, text).FontSize(12.5).LineHeight(1.4).Selectable()
 		if long && !open {
 			body.MaxLines(2)
+		}
+	})
+}
+
+// writable is whether a message can reach the agent: it is open and past its start, or it ended
+// with a session to start again on. One Auto-review held, or nobody answered, never ran.
+func writable(agent *model.AgentRun) bool {
+	switch agent.State {
+	case model.AgentAsking, model.AgentWorking, model.AgentIdle, model.AgentExited, model.AgentFailed, model.AgentStopped:
+		return true
+	}
+	return false
+}
+
+// composer is the foot of the agent's page: the user writes the agent there, and only there. It
+// takes the message up once it is done with what it does now, or starts again on its session;
+// neither the chat nor the bot sees it. A message that did not go stays in the field, with why.
+func (t *agentTranscript) composer(c *ui.Context, agent *model.AgentRun) {
+	p := colors(c)
+	open := writable(agent)
+	send := func() {
+		text := strings.TrimSpace(t.draft)
+		if text == "" || t.sending || !open {
+			return
+		}
+		t.sending, t.sendErr = true, ""
+		store.SendToAgent(t.chatID, t.messageID, text, func(err error) {
+			post(func() {
+				t.sending = false
+				if err != nil {
+					t.sendErr = model.ErrorText(err)
+					return
+				}
+				// The draft goes once it went; what was typed meanwhile stays.
+				if strings.TrimSpace(t.draft) == text {
+					t.draft = ""
+				}
+				t.list.FollowEnd = true
+				t.load()
+			})
+		})
+	}
+	placeholder := L("Message %@", agent.Name())
+	ui.Column(c.Key("agent-composer")).FillWidth().Gap(5).Margin(10, 0, 0, 0).Children(func() {
+		ui.Row(c).FillWidth().Gap(8).AlignItems(ui.End).Children(func() {
+			field := ui.TextAreaBase(c, &t.draft).Lines(1, 6).Grow(1).Shrink(1).MinWidth(0).Padding(7, 10).FontSize(13).LineHeight(1.4).
+				TextColor(p.Label).Placeholder(placeholder).Label(placeholder).Disabled(!open || t.sending)
+			fieldChrome(c, field, field.Focused() && open, false)
+			// Return sends; Shift-Return is a new line, and Return that ends a composition (as a
+			// Chinese input method's) only ends it.
+			composing := field.Composing()
+			field.HandleInput(func(ev ui.InputEvent) bool {
+				if ev.Kind == ui.InputKeyDown && !composing && ev.Key == ui.KeyEnter && ev.Mods == 0 {
+					send()
+					return true
+				}
+				return false
+			})
+			empty := strings.TrimSpace(t.draft) == ""
+			if pushButton(c.Key("agent-send"), L("Send"), pushOptions{Kind: buttonPrimary, Disabled: empty || !open || t.sending}).Clicked() {
+				send()
+			}
+		})
+		hint := ""
+		switch {
+		case t.sendErr != "":
+			hint = t.sendErr
+		case !open:
+			hint = L("%@ cannot take a message.", agent.Name())
+		case agent.State == model.AgentWorking || agent.State == model.AgentAsking:
+			hint = L("%@ takes it up once it is done with what it does now.", agent.Name())
+		case agent.State == model.AgentExited || agent.State == model.AgentFailed || agent.State == model.AgentStopped:
+			hint = L("Sending starts %@ again on its session.", agent.Name())
+		}
+		if hint != "" {
+			text := ui.Text(c, hint).FontSize(11).LineHeight(1.35).TextColor(p.Label3)
+			if t.sendErr != "" {
+				text.TextColor(p.Red)
+			}
 		}
 	})
 }

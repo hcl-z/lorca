@@ -476,7 +476,11 @@ async fn drive(setup: Setup, transport: Transport, events: Events, mut commands:
                     if let Some((text, from)) = queue.pop_front() {
                         shared.said.lock().unwrap().message.clear();
                         shared.produced.store(false, Ordering::SeqCst);
-                        let _ = events.send(Event::Lines(lines::sent(&text)));
+                        // What the user writes on the agent's page is theirs: the bot's transcript
+                        // has the agent's answer, not the message.
+                        if from != "user" {
+                            let _ = events.send(Event::Lines(lines::sent(&text)));
+                        }
                         end_segment(&shared);
                         shared.turn.fetch_add(1, Ordering::SeqCst);
                         put(&events, &shared, None, Entry::sent(text.trim(), &from));

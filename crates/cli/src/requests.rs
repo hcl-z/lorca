@@ -175,7 +175,7 @@ async fn answer(app: &Arc<App>, from: &str, request: &Request) -> Result<Value, 
         // A coding agent's card on another Device: its transcript, Stop, and an answer to what it
         // asks.
         #[cfg(feature = "runner")]
-        "coding.transcript" | "coding.stop" | "coding.set" | "coding.answer" => crate::coding::serve(app, &request.verb, body).await,
+        "coding.transcript" | "coding.send" | "coding.stop" | "coding.set" | "coding.answer" => crate::coding::serve(app, &request.verb, body).await,
         #[cfg(feature = "runner")]
         "routines.regenerate_key" => {
             let id = body["id"].as_str().ok_or("missing id")?;

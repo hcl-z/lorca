@@ -1,9 +1,9 @@
 // The transcript's pure row builder: what a message is in the list, how a run of one speaker's
 // words groups, and which reply is the latest. Kept apart from the views so it is plain to test.
 
-import { assignedTo, isSentMessage, showsCard, type AgentRun, type Body, type Bot, type Chat, type CommandRun, type Message } from "../core/model";
+import { assignedTo, isSentMessage, showsCard, showsSpeakers, type AgentRun, type Body, type Bot, type Chat, type CommandRun, type Message } from "../core/model";
 import { canRegenerate, rerunnable } from "../core/rerun";
-import { showsSpeakersIn, speakerKey } from "../core/participants";
+import { speakerKey } from "../core/participants";
 import { t } from "../i18n";
 import type { DraftBody } from "./drafts";
 
@@ -31,7 +31,7 @@ function isOutputCard(message: Message): boolean {
 /// Builds the rows for a chat, the way the Mac app's ChatViewController does.
 export function buildRows(chat: Chat, bots: Map<string, Bot>, workingBotIds: string[], isWorking: boolean, status: string | null): Row[] {
   const rows: Row[] = [];
-  const speakers = showsSpeakersIn(chat);
+  const speakers = showsSpeakers(chat);
   let previous: Message | null = null;
   let previousAuthorKey: string | null = null;
   const shown = chat.messages.filter((m) => m.body.kind !== "tool" || !!m.body.agent || showsCard(m.body) || isSentMessage(m.body));
@@ -39,7 +39,7 @@ export function buildRows(chat: Chat, bots: Map<string, Bot>, workingBotIds: str
   // reply, Edit under the user's message (`src/core/rerun.ts`).
   const run = rerunnable(chat, isWorking);
   const last = shown[shown.length - 1];
-  const latestReply = !isWorking && last?.author.kind === "bot" && !last.agent && last.body.kind === "text" && last.state.kind === "complete" && !last.output ? last.id : undefined;
+  const latestReply = !isWorking && last?.author.kind === "bot" && last.body.kind === "text" && last.state.kind === "complete" && !last.output ? last.id : undefined;
   for (let i = 0; i < shown.length; i++) {
     const message = shown[i];
     const separated = !previous || message.created_at - previous.created_at >= SEPARATOR_GAP_SECS;
@@ -63,7 +63,7 @@ export function buildRows(chat: Chat, bots: Map<string, Bot>, workingBotIds: str
           message,
           groupStart,
           groupEnd,
-          showsName: speakers && (message.author.kind === "bot" || message.author.kind === "contact" || !!message.agent) && groupStart,
+          showsName: speakers && (message.author.kind === "bot" || message.author.kind === "contact") && groupStart,
           copyable: message.id === latestReply && message.body.text.trim().length > 0,
           regenerable: message.id === latestReply && canRegenerate(chat, isWorking, message),
           editable: run?.asked.id === message.id,

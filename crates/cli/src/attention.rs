@@ -601,7 +601,6 @@ fn wake_coordinator(app: &Arc<App>, item: &Item, reporter: &str, hops: u32) {
     crate::runtime::start_turn(
         app,
         Job {
-            agent_message: None,
             id: format!("job-{}", uuid::Uuid::new_v4()),
             chat_id: dm.meta.id,
             bot_id: item.coordinator_bot_id.clone(),

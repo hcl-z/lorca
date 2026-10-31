@@ -378,16 +378,14 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
             }
             let text = opt_string(&params, "text").unwrap_or_default();
             let mentions: Vec<String> = serde_json::from_value(params["mentions"].clone()).unwrap_or_default();
-            let agents: Vec<String> = serde_json::from_value(params["agents"].clone()).unwrap_or_default();
             let message =
-                runtime::send_user_message_with_agents(
+                runtime::send_user_message(
                     app.clone(),
                     &string(&params, "chat_id")?,
                     &text,
                     opt_string(&params, "message_id"),
                     attachments,
                     mentions,
-                    agents,
                     opt_string(&params, "reply_to"),
                 )
                     .map_err(|e| e.to_string())?;
@@ -987,15 +985,15 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
             .await
         }
 
-        // A coding agent's card: its transcript, Stop, and an answer to what it asks. Here when the
-        // bot runs here, else sealed to its Runner.
-        "coding.transcript" | "coding.stop" | "coding.set" | "coding.answer" => {
+        // A coding agent's card: its transcript, a message from the user on its page, Stop, and an
+        // answer to what it asks. Here when the bot runs here, else sealed to its Runner.
+        "coding.transcript" | "coding.send" | "coding.stop" | "coding.set" | "coding.answer" => {
             let chat_id = string(&params, "chat_id")?;
             let message_id = string(&params, "message_id")?;
             let message = app.message(&chat_id, &message_id).ok_or("Unknown message")?;
             let Author::Bot { bot_id } = &message.author else { return Err("That row has no coding agent".into()) };
             let bot = app.bot(bot_id).ok_or("Unknown bot")?;
-            let body = json!({ "chat_id": chat_id, "message_id": message_id, "values": params["values"], "decline": params["decline"], "what": params["what"], "value": params["value"], "since": params["since"] });
+            let body = json!({ "chat_id": chat_id, "message_id": message_id, "text": params["text"], "values": params["values"], "decline": params["decline"], "what": params["what"], "value": params["value"], "since": params["since"] });
             requests::on_runner(app, &bot.runner_id, method, body, requests::REQUEST_TIMEOUT, async |body| {
                 #[cfg(feature = "runner")]
                 return crate::coding::serve(app, method, &body).await;

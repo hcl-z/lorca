@@ -313,19 +313,11 @@ type WireMessage struct {
 		Kind  string  `json:"kind"`
 		Error *string `json:"error"`
 	} `json:"state"`
-	CreatedAt    float64          `json:"created_at"`
-	Queued       *bool            `json:"queued"`
-	Output       *Output          `json:"output"`
-	Notification NotificationTag  `json:"notification"`
-	EditedAt     *float64         `json:"edited_at"`
-	Agent        *WireAgentAuthor `json:"agent"`
-}
-
-// WireAgentAuthor is the coding agent that wrote a message for its bot.
-type WireAgentAuthor struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Kind string `json:"kind"`
+	CreatedAt    float64         `json:"created_at"`
+	Queued       *bool           `json:"queued"`
+	Output       *Output         `json:"output"`
+	Notification NotificationTag `json:"notification"`
+	EditedAt     *float64        `json:"edited_at"`
 }
 
 type WireChatUsage struct {
@@ -974,9 +966,6 @@ func ToMessage(wire WireMessage) *Message {
 	}
 	if wire.EditedAt != nil {
 		message.EditedAt = seconds(*wire.EditedAt)
-	}
-	if wire.Agent != nil {
-		message.Agent = &AgentAuthor{ID: wire.Agent.ID, Name: wire.Agent.Name, Kind: wire.Agent.Kind}
 	}
 	body := wire.Body
 	switch body.Kind {
