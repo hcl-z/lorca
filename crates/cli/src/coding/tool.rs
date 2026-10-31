@@ -36,7 +36,8 @@ const DESCRIPTION: &str = "Hand a coding job to a coding agent on your Runner an
 an agent that speaks ACP (Gemini CLI, OpenCode, Kimi Code, GitHub Copilot, Cursor, Kiro, pi; pi runs its commands without asking, so none of them is reviewed). `start` runs one on `prompt` \
 in a git worktree of `folder` (default: your working directory): a new worktree on a branch of its own, or the one `worktree` names, \
 so it never edits the user's checkout; a folder that is not a repository is worked in as it is. It returns the agent's id at once and works on its own; you get a turn when it is done, \
-stalls, or exits, with its last message and the outputs Lorca published from its work (its diff and its pull request), \
+fails its turn (it refused, ran out of tokens or steps, said nothing, or errored; it still runs and takes a follow-up), stalls, or exits, \
+with its state, why, its last message, and the outputs Lorca published from its work (its diff and its pull request), \
 whose references you can cite as task evidence. `read` shows its transcript since you last read it (or its last `lines`), `send` gives \
 it `message`, taken up once it is done with what it does now, or at once with `interrupt: true`, which stops that first; a stopped \
 agent starts again on its session. `stop` ends it, `list` shows your agents in this chat, and `commands` lists the slash commands and \
@@ -273,7 +274,7 @@ impl CodingAgentTool {
             None => super::home_relative(&place.folder),
         };
         Ok(format!(
-            "Started {} ({id}) in {place}. It works on its own; you get a turn when it is done, stalls, or exits. Meanwhile coding_agent read {id} shows its transcript, send gives it a follow-up, and stop ends it.",
+            "Started {} ({id}) in {place}. It works on its own; you get a turn when it is done, fails its turn, stalls, or exits. Meanwhile coding_agent read {id} shows its transcript, send gives it a follow-up, and stop ends it.",
             name(&kind)
         ))
     }
@@ -354,8 +355,12 @@ fn state_words(record: &super::Record) -> String {
         "starting" => "starting".into(),
         "working" if record.stalled => "working, but has shown nothing new for a while".into(),
         "working" => "working".into(),
-        "idle" => "done, waiting for a follow-up".into(),
+        "idle" => match &record.error {
+            Some(error) => format!("failed ({error}), waiting for a follow-up"),
+            None => "done, waiting for a follow-up".into(),
+        },
         "asking" => "waiting for the user's answer on its card".into(),
+        "failed" => format!("ended with an error ({})", record.outcome.as_deref().unwrap_or("failed")),
         _ => format!("ended ({})", record.outcome.as_deref().unwrap_or(&record.state)),
     }
 }

@@ -448,6 +448,8 @@ export interface AgentRun {
   title?: string;
   output?: string;
   outcome?: string;
+  /** Why its last turn failed, while it waits idle after it and takes a follow-up. */
+  error?: string;
   /** The pull request it opened, when its transcript names one. */
   pull_request?: string;
   device?: string;

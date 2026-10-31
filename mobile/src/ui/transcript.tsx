@@ -1284,10 +1284,10 @@ export const AgentRow = memo(function AgentRow({
             {onOpenAsk && askCard ? <CardButton label={t("Answer")} icon="questionmark.circle" primary onPress={() => onOpenAsk(askCard)} /> : null}
           </Callout>
         ) : null}
-        {!asks && agent.state === "failed" && agent.outcome ? (
+        {!asks && ((agent.state === "failed" && agent.outcome) || (agent.state === "idle" && agent.error)) ? (
           <Callout tint={accentColor("red", p.dark)} icon="xmark.circle.fill" title={tc("Failed", "coding agent")}>
             <Text selectable style={[styles.reasonText, { color: p.secondaryLabel }]} numberOfLines={4}>
-              {agent.outcome}
+              {agent.state === "idle" ? agent.error : agent.outcome}
             </Text>
           </Callout>
         ) : null}

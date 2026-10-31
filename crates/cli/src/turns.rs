@@ -2321,7 +2321,7 @@ pub fn system_sections(
             "\nFor a larger coding job in a repository on this Runner (a feature, a fix with tests, a refactor), or when the user \
              asks for Claude Code or Codex, start a coding agent with coding_agent; it works in a git worktree while you \
              supervise. Check its work against the request. Once you start one, tell the \
-             user what you started; when you hear it is done, stalled, or cut off, tell them how it went.\n",
+             user what you started; when you hear it is done, failed, stalled, ended, or cut off, tell them how it went.\n",
         );
     }
     if let Some(runner) = runner {

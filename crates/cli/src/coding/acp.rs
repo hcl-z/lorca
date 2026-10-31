@@ -488,9 +488,12 @@ async fn drive(setup: Setup, transport: Transport, events: Events, mut commands:
                 tokio::select! {
                     result = async { running.as_mut().unwrap().await }, if running.is_some() => {
                         running = None;
-                        let said = turn_ended(spec, &events, &shared, result, std::mem::take(&mut interrupting));
+                        let ended = turn_ended(spec, &events, &shared, result, std::mem::take(&mut interrupting));
                         if queue.is_empty() {
-                            let _ = events.send(Event::Idle(said));
+                            let _ = events.send(match ended {
+                                Ok(said) => Event::Idle(said),
+                                Err(failure) => Event::Failed(failure),
+                            });
                         }
                     }
                     command = commands.recv() => match command {
@@ -572,8 +575,9 @@ fn patch_current(options: &mut Value, applied: &[(String, String)]) {
 }
 
 /// A prompt came back. Writes how it ended into the transcript, and answers what the bot hears:
-/// the agent's last message, or why there was none.
-fn turn_ended(spec: &Spec, events: &Events, shared: &Shared, result: Result<PromptResponse, agent_client_protocol::Error>, interrupted: bool) -> Option<String> {
+/// the agent's last message, or why the turn failed. A turn Lorca cancelled for a message that
+/// cuts in is not a failure.
+fn turn_ended(spec: &Spec, events: &Events, shared: &Shared, result: Result<PromptResponse, agent_client_protocol::Error>, interrupted: bool) -> Result<Option<String>, String> {
     let mut out = flush(shared);
     let mut failure: Option<String> = None;
     match &result {
@@ -600,10 +604,13 @@ fn turn_ended(spec: &Spec, events: &Events, shared: &Shared, result: Result<Prom
     if interrupted_line {
         note(events, shared, "  ⎿ Interrupted".into());
     }
-    if let Some(failure) = &failure {
-        note(events, shared, format!("Error: {failure}"));
+    match failure {
+        Some(failure) => {
+            note(events, shared, format!("Error: {failure}"));
+            Err(failure)
+        }
+        None => Ok(last_said(shared)),
     }
-    failure.or_else(|| last_said(shared))
 }
 
 /// Answers a permission request: Lorca decides it as it decides a command, and only a choice
@@ -1788,6 +1795,7 @@ mod tests {
                             let _ = reply.send(Err("not in a test".into()));
                         }
                         Event::Idle(said) => return said,
+                        Event::Failed(why) => return Some(format!("failed: {why}")),
                         _ => {}
                     }
                 }
@@ -1843,6 +1851,7 @@ mod tests {
                             let _ = reply.send(if allow { Ok(()) } else { Err("not in a test".into()) });
                         }
                         Event::Idle(said) => return said,
+                        Event::Failed(why) => return Some(format!("failed: {why}")),
                         _ => {}
                     }
                 }
