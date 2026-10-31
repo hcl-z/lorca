@@ -1,0 +1,89 @@
+desktop/model/wire.go
+  s_49bd479ba04779::t_aa3971053c2ab5 1027
+  s_49bd479ba04779::t_59a120f59c81e8 158
+docs/architecture/questions.md
+  s_49bd479ba04779::t_27fec39a565b85 34
+mobile/src/ui/transcript.tsx
+  s_49bd479ba04779::t_6b7396cd82bd7e 1287,1290
+crates/cli/src/turns.rs
+  s_49bd479ba04779::t_802da39b4e216b 2324
+desktop/agents.go
+  s_49bd479ba04779::t_c00c668e0799fe 275-279,281
+crates/cli/src/coding/tool.rs
+  s_49bd479ba04779::t_6b2f90beb5fa24 277
+  s_49bd479ba04779::t_336f117f6771fc 358-361,363
+  s_49bd479ba04779::t_be4b03696dcf3c 39-40
+docs/architecture/agent-cards.md
+  s_49bd479ba04779::t_1ce8d6d5178619 5
+crates/cli/src/coding/acp.rs
+  s_49bd479ba04779::t_8e040a2e3e17d1 1798
+  s_49bd479ba04779::t_fcfef606f02785 1854
+  s_49bd479ba04779::t_d600dd178d3520 578-580
+  s_49bd479ba04779::t_03756d298d4304 607-612
+  s_49bd479ba04779::t_25ef903a7b5c5e 491,493-496
+mobile/src/core/model.ts
+  s_49bd479ba04779::t_975f814c3bb2dc 451-452
+desktop/model/models.go
+  s_49bd479ba04779::t_485bf6efb83f86 1809-1810
+crates/cli/src/coding/mod.rs
+  s_49bd479ba04779::t_07c772a3c96214 634
+  s_49bd479ba04779::t_5cbb33e0b7db58 892
+  s_49bd479ba04779::t_e0f4f3de823372 118-120,123-128
+  s_49bd479ba04779::t_a7a2f09e15c9e4 1214
+  s_49bd479ba04779::t_cdbdf5225acbbf 1248-1252
+  s_49bd479ba04779::t_65e4990cfbc5cf 610
+  s_49bd479ba04779::t_6f394ff37dca73 6
+  s_49bd479ba04779::t_6d355c3eb0a3a8 1362
+  s_49bd479ba04779::t_527fa908b93aea 1427
+  s_49bd479ba04779::t_af50c1a9537c39 1415-1423,1430-1431,1433-1436,1438
+  s_49bd479ba04779::t_3b1b9f3184d6db 1283-1324
+  s_49bd479ba04779::t_78e1866fa478d6 178-180
+  s_49bd479ba04779::t_7fab2f4e9d1576 1426
+crates/cli/src/coding/tests.rs
+  s_49bd479ba04779::t_a58b73e18f0d5d 117-121
+  s_49bd479ba04779::t_1a7b1b81159ed2 983-985
+  s_49bd479ba04779::t_4e19d587892f44 1000
+  s_49bd479ba04779::t_92bd9b2a16b686 515
+  s_49bd479ba04779::t_e0cd01c3e68f41 1100
+  s_49bd479ba04779::t_15e5cacf7a26f2 948,950-951,953-957,959-966,968-982,986-998,1005-1008
+  s_49bd479ba04779::t_4e82cf281362c1 401-402
+  s_49bd479ba04779::t_55eaf2847b4237 606
+  s_49bd479ba04779::t_2f40dd925bcdd2 967
+  s_49bd479ba04779::t_2b6bec312d8f28 484
+  s_49bd479ba04779::t_96985e9c2cfa38 26-27
+  s_49bd479ba04779::t_08065074ab5864 958
+  s_49bd479ba04779::t_2e0777db9901d5 321-335
+  s_49bd479ba04779::t_7afda193c241a3 949
+crates/cli/src/coding/driver.rs
+  s_49bd479ba04779::t_c997aa7f9d611c 27-30
+crates/cli/src/model.rs
+  s_49bd479ba04779::t_04123203bf1594 876
+  s_49bd479ba04779::t_34cb5cbff360cb 752-755
+  s_49bd479ba04779::t_a9ab987818573a 2019
+  s_49bd479ba04779::t_00818139959d68 2051-2054
+  s_49bd479ba04779::t_8f76381772a199 895
+docs/architecture/tools.md
+  s_49bd479ba04779::t_6d269737564294 27
+docs/architecture/coding-agents.md
+  s_49bd479ba04779::t_6a2b8559e66657 21
+  s_49bd479ba04779::t_40b16970035253 51
+  s_49bd479ba04779::t_a19d5e203e6523 3
+  s_49bd479ba04779::t_1d12bca78d2f96 61-63
+  s_49bd479ba04779::t_ccaf2b6e7f6361 73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "0c78e64727ba05a609b010b697943e1b09b6b193",
+  "prompts": {},
+  "sessions": {
+    "s_49bd479ba04779": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "78524d38-ea2d-40ab-908f-a24c2e78fe38",
+        "model": "claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
