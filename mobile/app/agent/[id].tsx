@@ -21,8 +21,8 @@ import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { type AgentEntry, type AgentTool, hasOlderEntries, mergeAgentEntries, toolFailed, toolRunning, type AgentTranscriptPage } from "../../src/core/agentEntries";
 import { agentBusy, agentSince, latestPlan, outputLines, spansForLines, type OutputSpan } from "../../src/core/agentKit";
-import { engine } from "../../src/core/engine";
-import { agentIsRunning, agentName, type AgentRun, type Message } from "../../src/core/model";
+import { engine, type PickedFile } from "../../src/core/engine";
+import { agentIsRunning, agentName, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, type AgentRun, type Message } from "../../src/core/model";
 import { useStore } from "../../src/core/store";
 import { t, useLanguage } from "../../src/i18n";
 import { AgentHeader, AgentTile, Callout, PullRequestButton, SpecStrip, StopButton, alpha, mono, useNow } from "../../src/ui/agentKit";
@@ -33,6 +33,11 @@ import { CloseToolbar } from "../../src/ui/navigation";
 import { Symbol } from "../../src/ui/Symbol";
 import { AgentAskRow, CardButton, DECISION_ICONS } from "../../src/ui/transcript";
 import { AgentActionsSheet } from "../../src/ui/AgentActionsSheet";
+import { AttachmentBlock } from "../../src/ui/attachments";
+import { AttachSheet, type AttachSource } from "../../src/ui/AttachSheet";
+import { ImagePasteView, type PastedImage } from "../../modules/lorca-core/ImagePasteView";
+import * as ImagePicker from "expo-image-picker";
+import { Image } from "expo-image";
 import { AgentAskSheet } from "../../src/ui/AgentAskSheet";
 import { accentColor, usePalette } from "../../src/ui/theme";
 
@@ -206,6 +211,8 @@ export default function AgentScreen() {
             rail={at + 1 < entries.length && entries[at + 1].kind !== "sent" && entries[at + 1].kind !== "log"}
             open={isOpen(entry, at)}
             width={column - NODE - 12}
+            chatId={chatId}
+            messageId={id}
             onToggle={toggle}
           />
         )}
@@ -272,24 +279,69 @@ function writable(agent: AgentRun): boolean {
 
 /// The foot of the page: the user writes the agent there, and only there. It takes the message
 /// up once it is done with what it does now, or starts again on its session; neither the chat nor
-/// the bot sees it. A message that did not go stays in the field, with why.
+/// the bot sees it. An agent that takes images (`images`) takes them too: from the photo library,
+/// the camera, or a paste, shown above the field until they go. A message that did not go stays in
+/// the field, with why.
 function AgentComposer({ agent, chatId, messageId, onSent }: { agent: AgentRun; chatId: string; messageId: string; onSent: () => void }) {
   const p = usePalette();
   const [draft, setDraft] = useState("");
+  const [images, setImages] = useState<PickedFile[]>([]);
+  const [attachOpen, setAttachOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const open = writable(agent);
+  const takesImages = !!agent.images;
   const name = agentName(agent);
+  const add = (files: PickedFile[]) => {
+    const refused: string[] = [];
+    setImages((current) => {
+      const next = [...current];
+      for (const file of files) {
+        if (!file.mime.startsWith("image/")) refused.push(t("{name} is not an image.", { name: file.name }));
+        else if (file.size !== undefined && file.size > MAX_ATTACHMENT_BYTES) refused.push(t("{name} is larger than {size} MB.", { name: file.name, size: MAX_ATTACHMENT_BYTES / 1024 / 1024 }));
+        else if (next.length >= MAX_ATTACHMENTS) refused.push(t("At most {count} files per message.", { count: MAX_ATTACHMENTS }));
+        else next.push(file);
+      }
+      return next;
+    });
+    setProblem(refused.length ? [...new Set(refused)].join(" ") : null);
+  };
+  const pick = async (source: AttachSource) => {
+    if (source === "camera") {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        setProblem(t("Allow the camera for Lorca in Settings to take a photo."));
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.85 });
+      if (!result.canceled) add(result.assets.map(imageAsset));
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsMultipleSelection: true, selectionLimit: Math.max(1, MAX_ATTACHMENTS - images.length), quality: 0.85 });
+    if (!result.canceled) add(result.assets.map(imageAsset));
+  };
+  const paste = (pasted: PastedImage[]) => {
+    if (!takesImages || !open) return;
+    const stamp = new Date().toISOString().slice(0, 19).replace("T", " ").replace(/:/g, ".");
+    add(
+      pasted.map((image, index) => {
+        const extension = image.mime === "image/jpeg" ? "jpg" : image.mime.slice("image/".length).split("+")[0] || "png";
+        return { ...image, name: `Pasted Image ${stamp}${pasted.length > 1 ? ` ${index + 1}` : ""}.${extension}` };
+      }),
+    );
+  };
   const send = () => {
     const text = draft.trim();
-    if (!text || sending || !open) return;
+    const attached = images;
+    if ((!text && attached.length === 0) || sending || !open) return;
     setSending(true);
     setProblem(null);
     engine
-      .sendToAgent(chatId, messageId, text)
+      .sendToAgent(chatId, messageId, text, attached)
       .then(() => {
-        // The draft goes once it went; what was typed meanwhile stays.
+        // What went leaves the field; what was typed or added meanwhile stays.
         setDraft((current) => (current.trim() === text ? "" : current));
+        setImages((current) => current.filter((file) => !attached.includes(file)));
         onSent();
       })
       .catch((e) => setProblem(e instanceof Error ? e.message : String(e)))
@@ -304,21 +356,52 @@ function AgentComposer({ agent, chatId, messageId, onSent }: { agent: AgentRun; 
         : agent.state === "exited" || agent.state === "failed" || agent.state === "stopped"
           ? t("Sending starts {agent} again on its session.", { agent: name })
           : null;
-  const canSend = open && !sending && draft.trim().length > 0;
+  const canSend = open && !sending && (draft.trim().length > 0 || images.length > 0);
   return (
     <View style={[styles.composer, { borderTopColor: p.separator, backgroundColor: p.background }]}>
+      {images.length > 0 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.composerImages}>
+          {images.map((file, index) => (
+            <View key={`${file.uri}-${index}`}>
+              <Image source={{ uri: file.uri }} style={[styles.composerThumb, { backgroundColor: p.fill }]} contentFit="cover" />
+              <Pressable
+                onPress={() => setImages((current) => current.filter((_, at) => at !== index))}
+                hitSlop={12}
+                style={styles.composerRemove}
+                accessibilityRole="button"
+                accessibilityLabel={t("Remove {name}", { name: file.name })}
+              >
+                <Symbol name="xmark" size={9} color="#FFFFFF" weight="bold" />
+              </Pressable>
+            </View>
+          ))}
+        </ScrollView>
+      ) : null}
       <View style={styles.composerRow}>
-        <TextInput
-          value={draft}
-          onChangeText={setDraft}
-          editable={open && !sending}
-          placeholder={t("Message {name}", { name })}
-          placeholderTextColor={p.tertiaryLabel}
-          multiline
-          keyboardAppearance={p.dark ? "dark" : "light"}
-          style={[styles.composerField, { color: p.label, backgroundColor: p.fill }]}
-          accessibilityLabel={t("Message {name}", { name })}
-        />
+        {takesImages ? (
+          <Pressable
+            onPress={() => setAttachOpen(true)}
+            disabled={!open || sending}
+            accessibilityRole="button"
+            accessibilityLabel={t("Attach images")}
+            style={({ pressed }) => [styles.composerSend, { backgroundColor: p.fill, opacity: !open || sending ? 0.4 : pressed ? 0.7 : 1 }]}
+          >
+            <Symbol name="photo" size={16} color={p.label} />
+          </Pressable>
+        ) : null}
+        <ImagePasteView onPasteImages={({ nativeEvent }) => paste(nativeEvent.files)} style={{ flex: 1 }}>
+          <TextInput
+            value={draft}
+            onChangeText={setDraft}
+            editable={open && !sending}
+            placeholder={t("Message {name}", { name })}
+            placeholderTextColor={p.tertiaryLabel}
+            multiline
+            keyboardAppearance={p.dark ? "dark" : "light"}
+            style={[styles.composerField, { color: p.label, backgroundColor: p.fill }]}
+            accessibilityLabel={t("Message {name}", { name })}
+          />
+        </ImagePasteView>
         <Pressable
           onPress={send}
           disabled={!canSend}
@@ -330,8 +413,21 @@ function AgentComposer({ agent, chatId, messageId, onSent }: { agent: AgentRun; 
         </Pressable>
       </View>
       {hint ? <Text style={[styles.composerHint, { color: problem ? p.red : p.tertiaryLabel }]}>{hint}</Text> : null}
+      <AttachSheet visible={attachOpen} imagesOnly onClose={() => setAttachOpen(false)} onPick={(source) => void pick(source)} />
     </View>
   );
+}
+
+function imageAsset(asset: ImagePicker.ImagePickerAsset): PickedFile {
+  const name = asset.fileName ?? `Photo ${new Date().toISOString().slice(0, 19).replace("T", " ").replace(/:/g, ".")}.jpg`;
+  return {
+    uri: asset.uri,
+    name,
+    mime: asset.mimeType ?? (name.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg"),
+    size: asset.fileSize ?? undefined,
+    width: asset.width,
+    height: asset.height,
+  };
 }
 
 /// The top of the sheet: the agent's header with Stop, then what it works on, where, its session,
@@ -458,7 +554,7 @@ function hasBody(tool: AgentTool): boolean {
 /// One entry of the transcript: on the rail beside its node, or, for what was sent, a turn's start.
 /// Drawn again only when its entry, its place, or whether it is open changes: the sheet refreshes
 /// every few seconds, and most refreshes change one entry or none.
-const EntryRow = memo(function EntryRow({ entry, kind, who, rail, open, width, onToggle }: { entry: AgentEntry; kind: string; who: string; rail: boolean; open: boolean; width: number; onToggle: (entry: AgentEntry, open: boolean) => void }) {
+const EntryRow = memo(function EntryRow({ entry, kind, who, rail, open, width, chatId, messageId, onToggle }: { entry: AgentEntry; kind: string; who: string; rail: boolean; open: boolean; width: number; chatId: string; messageId: string; onToggle: (entry: AgentEntry, open: boolean) => void }) {
   const p = usePalette();
   const blue = accentColor("blue", p.dark);
   if (entry.kind === "sent") {
@@ -467,12 +563,15 @@ const EntryRow = memo(function EntryRow({ entry, kind, who, rail, open, width, o
         <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
           <Symbol name="paperplane" size={12} color={blue} />
           <Text style={{ color: blue, fontSize: 12, fontWeight: "600" }} numberOfLines={1}>
-            {t("{who} asked", { who })}
+            {entry.from === "user" ? t("You asked") : t("{who} asked", { who })}
           </Text>
         </View>
-        <Text selectable style={{ color: p.label, fontSize: 15, lineHeight: 21 }}>
-          {entry.text}
-        </Text>
+        {entry.text ? (
+          <Text selectable style={{ color: p.label, fontSize: 15, lineHeight: 21 }}>
+            {entry.text}
+          </Text>
+        ) : null}
+        {entry.attachments?.length ? <AttachmentBlock attachments={entry.attachments} onUserBubble={false} maxWidth={width} chatId={chatId} messageId={messageId} /> : null}
       </View>
     );
   }
@@ -764,6 +863,9 @@ const styles = StyleSheet.create({
   composerRow: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
   composerField: { flex: 1, minHeight: 38, maxHeight: 140, borderRadius: 19, paddingHorizontal: 14, paddingTop: 9, paddingBottom: 9, fontSize: 16 },
   composerSend: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", marginBottom: 2 },
+  composerImages: { gap: 12, paddingTop: 6, paddingBottom: 2, paddingHorizontal: 4 },
+  composerThumb: { width: 56, height: 56, borderRadius: 10 },
+  composerRemove: { position: "absolute", top: -5, right: -5, width: 18, height: 18, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.7)" },
   composerHint: { fontSize: 12, lineHeight: 16, paddingHorizontal: 6 },
   content: { padding: 16, paddingBottom: 48, gap: 0 },
   sectionTitle: { fontSize: 12.5, fontWeight: "600" },

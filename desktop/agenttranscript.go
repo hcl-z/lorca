@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -66,6 +67,8 @@ type agentTranscript struct {
 	draft   string
 	sending bool
 	sendErr string
+	// images are what goes with the draft, for an agent that takes them.
+	images []model.OutgoingAttachment
 }
 
 // plan is the steps of the latest plan the agent made.
@@ -513,7 +516,7 @@ func (t *agentTranscript) step(c *ui.Context, step agentStep, last bool, live ma
 		if e.From == "user" {
 			author = L("You")
 		}
-		t.promptCard(c, author, e.Text, e.From == "user", open, func() { toggle(open) })
+		t.promptCard(c, author, e.Text, e.Attachments, e.From == "user", open, func() { toggle(open) })
 	case e.Kind == "said":
 		width := t.maxWidth
 		if width <= 0 {
@@ -651,7 +654,7 @@ func (t *agentTranscript) toolBody(c *ui.Context, p *palette, e *model.AgentEntr
 // promptCard is what the agent was sent, under who wrote it: "You" in the accent's tint for what
 // the user wrote, else the bot that passed it on. A long one, as the first brief is, folds past
 // two lines, with a chevron on its author line to open or close it.
-func (t *agentTranscript) promptCard(c *ui.Context, author, text string, mine, open bool, toggle func()) {
+func (t *agentTranscript) promptCard(c *ui.Context, author, text string, images []model.AgentAttachment, mine, open bool, toggle func()) {
 	p := colors(c)
 	long := strings.Count(text, "\n") >= 2 || len([]rune(text)) > 200
 	card := ui.Column(c).Gap(4).Padding(9, 12, 10, 12).Radius(radiusMD).Background(p.BotBubble).Border(1, p.BotBubbleBorder)
@@ -686,9 +689,26 @@ func (t *agentTranscript) promptCard(c *ui.Context, author, text string, mine, o
 				symbol(c, name, 10, 2).TextColor(p.Label3)
 			}
 		})
-		body := ui.Text(c, text).FontSize(12.5).LineHeight(1.4).Selectable()
-		if long && !open {
-			body.MaxLines(2)
+		if text != "" {
+			body := ui.Text(c, text).FontSize(12.5).LineHeight(1.4).Selectable()
+			if long && !open {
+				body.MaxLines(2)
+			}
+		}
+		// The images that went with it, small, as the composer showed them.
+		if len(images) > 0 {
+			ui.Row(c.Key("sent-images")).Wrap().Gap(6).Margin(2, 0, 0, 0).Children(func() {
+				for _, image := range images {
+					attachment := model.Attachment{ID: image.ID, Name: image.Name, Mime: image.Mime, Size: image.Size, Width: image.Width, Height: image.Height}
+					ui.Box(c.Key(image.ID)).Size(64, 64).Radius(8).Clip().Background(p.ComposerControl).Tooltip(image.Name).Children(func() {
+						if bitmap := loadBitmap(store.LocalFile(attachment, t.chatID, t.messageID)); bitmap != nil {
+							ui.Image(c, bitmap).Size(64, 64).Fit(ui.Cover)
+						} else {
+							ui.Row(c).Size(64, 64).Center().TextColor(p.Label3).Children(func() { symbol(c, "photo", 16, 2) })
+						}
+					})
+				}
+			})
 		}
 	})
 }
@@ -705,38 +725,136 @@ func writable(agent *model.AgentRun) bool {
 
 // composer is the foot of the agent's page: the user writes the agent there, and only there. It
 // takes the message up once it is done with what it does now, or starts again on its session;
-// neither the chat nor the bot sees it. A message that did not go stays in the field, with why.
-func (t *agentTranscript) composer(c *ui.Context, agent *model.AgentRun) {
+// neither the chat nor the bot sees it. An agent that takes images (`Images`) takes them too:
+// pasted, dropped on the field, or chosen with the photo button, shown above the field until they
+// go. A message that did not go stays in the field, with why.
+func (t *agentTranscript) composer(c *ui.Context, w *appWindow, agent *model.AgentRun) {
 	p := colors(c)
 	open := writable(agent)
+	images := agent.Images
 	send := func() {
 		text := strings.TrimSpace(t.draft)
-		if text == "" || t.sending || !open {
+		attached := slices.Clone(t.images)
+		if (text == "" && len(attached) == 0) || t.sending || !open {
 			return
 		}
 		t.sending, t.sendErr = true, ""
-		store.SendToAgent(t.chatID, t.messageID, text, func(err error) {
+		store.SendToAgent(t.chatID, t.messageID, text, attached, func(err error) {
 			post(func() {
 				t.sending = false
 				if err != nil {
 					t.sendErr = model.ErrorText(err)
 					return
 				}
-				// The draft goes once it went; what was typed meanwhile stays.
+				// What went leaves the field; what was typed or added meanwhile stays.
 				if strings.TrimSpace(t.draft) == text {
 					t.draft = ""
 				}
+				t.images = slices.DeleteFunc(t.images, func(item model.OutgoingAttachment) bool {
+					return slices.ContainsFunc(attached, func(sent model.OutgoingAttachment) bool { return sent.Attachment.ID == item.Attachment.ID })
+				})
 				t.list.FollowEnd = true
 				t.load()
 			})
 		})
 	}
+	// Only images, and only for an agent that takes them; the rest get one line of why.
+	add := func(files []fileInfo) {
+		var refused []string
+		for _, info := range files {
+			switch {
+			case !info.IsFile:
+				refused = append(refused, L("%@ is not a file.", info.Name))
+			case !strings.HasPrefix(info.Mime, "image/"):
+				refused = append(refused, L("%@ is not an image.", info.Name))
+			case info.Size > maxAttachmentBytes:
+				refused = append(refused, L("%@ is larger than %d MB.", info.Name, maxAttachmentBytes/1024/1024))
+			case len(t.images) >= maxAttachments:
+				refused = append(refused, L("At most %d files per message.", maxAttachments))
+			default:
+				t.images = append(t.images, composerOutgoing(info))
+			}
+		}
+		t.sendErr = strings.Join(slices.Compact(refused), " ")
+	}
+	paste := func(text string) bool {
+		if !images || !open {
+			return false
+		}
+		if paths, err := clipboardFiles(); err == nil && len(paths) > 0 {
+			var files []fileInfo
+			for _, path := range paths {
+				files = append(files, inspect(path))
+			}
+			add(files)
+			return true
+		}
+		if text != "" {
+			return false
+		}
+		data := clipboardImage()
+		if len(data) == 0 {
+			return false
+		}
+		if info, err := savePasted("image.png", data); err == nil {
+			add([]fileInfo{info})
+		}
+		return true
+	}
 	placeholder := L("Message %@", agent.Name())
 	ui.Column(c.Key("agent-composer")).FillWidth().Gap(5).Margin(10, 0, 0, 0).Children(func() {
+		if len(t.images) > 0 {
+			removed := -1
+			ui.Row(c.Key("agent-images")).Wrap().GapX(14).GapY(8).Padding(6, 4, 2, 4).Children(func() {
+				for i, item := range t.images {
+					ui.Box(c.Key(item.Attachment.ID)).Tooltip(item.Attachment.Name).Children(func() {
+						ui.Box(c).Size(56, 56).Radius(10).Clip().Background(p.ComposerControl).Children(func() {
+							if bitmap := loadBitmap(item.Path); bitmap != nil {
+								ui.Image(c, bitmap).Size(56, 56).Fit(ui.Cover)
+							}
+						})
+						remove := ui.ButtonBase(c).Absolute().Top(-6).Right(-6).Size(18, 18).Radius(9).Center().Background(ui.RGBA(0, 0, 0, 0.7)).TextColor(p.White).
+							Label(L("Remove")).Tooltip(L("Remove"))
+						remove.Children(func() { symbol(c, "xmark", 9, 3.2) })
+						if remove.Clicked() {
+							removed = i
+						}
+					})
+				}
+			})
+			if removed >= 0 {
+				t.images = slices.Delete(slices.Clone(t.images), removed, removed+1)
+			}
+		}
 		ui.Row(c).FillWidth().Gap(8).AlignItems(ui.End).Children(func() {
+			if images {
+				attach := ui.ButtonBase(c.Key("agent-attach")).Size(controlRegular, controlRegular).Radius(radiusMD).Center().Background(p.ButtonBG).TextColor(p.Label2).
+					Label(L("Attach images")).Tooltip(L("Attach images")).Disabled(!open || t.sending)
+				if attach.Hovered() {
+					attach.TextColor(p.Label)
+				}
+				attach.Children(func() { symbol(c, "photo", 14, 2) })
+				if attach.Clicked() && w != nil {
+					chooseFiles(w.win, "", L("Attach images to your message"), L("Attach"), true, true, add)
+				}
+			}
 			field := ui.TextAreaBase(c, &t.draft).Lines(1, 6).Grow(1).Shrink(1).MinWidth(0).Padding(7, 10).FontSize(13).LineHeight(1.4).
 				TextColor(p.Label).Placeholder(placeholder).Label(placeholder).Disabled(!open || t.sending)
 			fieldChrome(c, field, field.Focused() && open, false)
+			// A paste of a picture or of copied image files attaches them; text pastes as text.
+			field.OnPaste(paste)
+			if images && open {
+				if dropped := field.DroppedFiles(); dropped != nil {
+					var files []fileInfo
+					for _, path := range dropped {
+						files = append(files, inspect(path))
+					}
+					add(files)
+				}
+				if field.FileDragOver() {
+					field.Border(2, p.Accent)
+				}
+			}
 			// Return sends; Shift-Return is a new line, and Return that ends a composition (as a
 			// Chinese input method's) only ends it.
 			composing := field.Composing()
@@ -747,7 +865,7 @@ func (t *agentTranscript) composer(c *ui.Context, agent *model.AgentRun) {
 				}
 				return false
 			})
-			empty := strings.TrimSpace(t.draft) == ""
+			empty := strings.TrimSpace(t.draft) == "" && len(t.images) == 0
 			if pushButton(c.Key("agent-send"), L("Send"), pushOptions{Kind: buttonPrimary, Disabled: empty || !open || t.sending}).Clicked() {
 				send()
 			}

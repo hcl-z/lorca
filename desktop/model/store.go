@@ -1828,8 +1828,18 @@ func (s *Store) StopAgent(chatID, messageID string, done func(error)) {
 // SendToAgent gives a coding agent what the user wrote on its page, on its bot's Runner: it takes
 // it up once it is done with what it does now, or starts again on its session. The bot does not
 // see it, and the chat shows none of it.
-func (s *Store) SendToAgent(chatID, messageID, text string, done func(error)) {
-	s.simple(done, "coding.send", map[string]any{"chat_id": chatID, "message_id": messageID, "text": text})
+func (s *Store) SendToAgent(chatID, messageID, text string, attachments []OutgoingAttachment, done func(error)) {
+	files := make([]map[string]any, 0, len(attachments))
+	for _, outgoing := range attachments {
+		// Its bytes stay where the page can show the sent image from.
+		s.attachmentFiles[outgoing.Attachment.ID] = outgoing.Path
+		entry := map[string]any{"id": outgoing.Attachment.ID, "path": outgoing.Path, "name": outgoing.Attachment.Name, "mime": outgoing.Attachment.Mime}
+		if outgoing.Attachment.Width > 0 {
+			entry["width"], entry["height"] = outgoing.Attachment.Width, outgoing.Attachment.Height
+		}
+		files = append(files, entry)
+	}
+	s.simple(done, "coding.send", map[string]any{"chat_id": chatID, "message_id": messageID, "text": text, "attachments": files})
 }
 
 // SetAgentOption changes the model (`what` is "model") or how hard (`"effort"`) a running coding

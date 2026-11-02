@@ -993,7 +993,21 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
             let message = app.message(&chat_id, &message_id).ok_or("Unknown message")?;
             let Author::Bot { bot_id } = &message.author else { return Err("That row has no coding agent".into()) };
             let bot = app.bot(bot_id).ok_or("Unknown bot")?;
-            let body = json!({ "chat_id": chat_id, "message_id": message_id, "text": params["text"], "values": params["values"], "decline": params["decline"], "what": params["what"], "value": params["value"], "since": params["since"] });
+            // Images the user sends the agent from its page: kept here as a chat's files are, their
+            // bytes queued for the relay ahead of the request, so the Runner fetches them.
+            let mut attachments = Vec::new();
+            if method == "coding.send" {
+                let files: Vec<crate::files::OutgoingFile> = serde_json::from_value(params["attachments"].clone()).unwrap_or_default();
+                for file in &files {
+                    let attachment = crate::files::store(app, file).map_err(|e| e.to_string())?;
+                    if !attachment.is_image() {
+                        return Err(format!("{} is not an image; an agent takes images only.", attachment.name));
+                    }
+                    crate::files::push_blob(app, Some(&chat_id), &attachment).map_err(|e| e.to_string())?;
+                    attachments.push(attachment);
+                }
+            }
+            let body = json!({ "chat_id": chat_id, "message_id": message_id, "text": params["text"], "attachments": attachments, "values": params["values"], "decline": params["decline"], "what": params["what"], "value": params["value"], "since": params["since"] });
             requests::on_runner(app, &bot.runner_id, method, body, requests::REQUEST_TIMEOUT, async |body| {
                 #[cfg(feature = "runner")]
                 return crate::coding::serve(app, method, &body).await;

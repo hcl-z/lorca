@@ -3,6 +3,9 @@
 package l10n
 
 var zh = map[string]string{
+	"Attach images":                 "附加图片",
+	"Attach images to your message": "为消息附加图片",
+	"%@ is not an image.":           "%@ 不是图片。",
 	"%@ takes it up once it is done with what it does now.": "%@ 做完手上的事后会处理这条消息。",
 	"Sending starts %@ again on its session.":               "发送后 %@ 会在原会话上重新启动。",
 	"%@ cannot take a message.":                             "%@ 现在不能接收消息。",

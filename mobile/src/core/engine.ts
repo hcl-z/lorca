@@ -1149,8 +1149,9 @@ class Engine {
   /// Gives a coding agent what the user wrote on its page, on its bot's Runner: it takes it up once
   /// it is done with what it does now, or starts again on its session. The bot does not see it, and
   /// the chat shows none of it.
-  async sendToAgent(chatId: string, messageId: string, text: string) {
-    await core.request("coding.send", { chat_id: chatId, message_id: messageId, text });
+  async sendToAgent(chatId: string, messageId: string, text: string, files: PickedFile[] = []) {
+    const attachments = files.map((file) => ({ path: pathOf(file.uri), name: file.name, mime: file.mime, width: file.width, height: file.height }));
+    await core.request("coding.send", { chat_id: chatId, message_id: messageId, text, attachments });
   }
 
   /// Stops a coding agent on its bot's Runner; its card says so once the Runner has.

@@ -81,6 +81,7 @@ while True:
         capabilities = {"loadSession": True}
         if "claude-agent-acp" in " ".join(sys.argv[1:]):
             capabilities["sessionCapabilities"] = {"resume": {}, "close": {}}
+            capabilities["promptCapabilities"] = {"image": True}
         out({"jsonrpc": "2.0", "id": ident, "result": {"protocolVersion": 1, "agentCapabilities": capabilities, "authMethods": []}})
     elif method == "session/new":
         out({"jsonrpc": "2.0", "id": ident, "result": {"sessionId": "acp-1", "configOptions": settings()}})
@@ -102,7 +103,10 @@ while True:
         out({"jsonrpc": "2.0", "id": ident, "result": {"configOptions": settings()}})
     elif method == "session/prompt":
         sid, text = params["sessionId"], params["prompt"][0]["text"]
-        log("prompt " + text.splitlines()[0])
+        log("prompt " + (text.splitlines()[0] if text else ""))
+        for block in params["prompt"][1:]:
+            if block.get("type") == "image":
+                log("image %s %d" % (block["mimeType"], len(block["data"])))
         if "(empty)" in text:
             done(ident)
         elif "(refuse)" in text:
@@ -595,6 +599,7 @@ fn record(folder: PathBuf) -> Record {
         state: "working".into(),
         stalled: false,
         error: None,
+        images: false,
         outcome: None,
         pull_request: None,
         changes: None,
@@ -908,6 +913,52 @@ async fn the_user_writes_to_an_agent_on_its_page_and_neither_the_chat_nor_the_bo
 
     // A message needs words.
     assert!(serve(app, "coding.send", &json!({ "chat_id": "chat", "message_id": row, "text": "  " })).await.is_err());
+    app.coding_agents.stop_chat(app, "chat");
+}
+
+#[tokio::test]
+async fn an_image_from_the_page_reaches_an_agent_that_takes_images_and_no_other() {
+    let scratch = setup().await;
+    let app = &scratch.app;
+    let mut auto_review = app.auto_review();
+    auto_review.is_enabled = false;
+    app.set_auto_review(auto_review);
+    let tool = tool(&scratch);
+    // A 1×1 PNG, kept as the chat's files keep one.
+    const PNG: &[u8] = &[
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+        0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0xf8, 0xcf, 0xc0, 0xf0, 0x1f, 0x00, 0x05, 0x00, 0x01, 0xff, 0x89, 0x99, 0x3d, 0x1d, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
+        0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ];
+    let image = crate::files::keep(app, "att-shot", "shot.png", "image/png", PNG).unwrap();
+
+    // Claude Code's adapter says it takes images: the card says so, and the image goes as one.
+    let row = start_row(app, "call-1");
+    call(&tool, "call-1", json!({ "action": "start", "agent": "claude", "folder": "shop", "prompt": "Hello (follow-up)" })).await.unwrap();
+    let card = card_when(app, &row, |card| card.state == "idle").await;
+    assert!(card.images, "the card offers to attach an image");
+    let agent = app.coding_agents.find("chat", "b1", &card.id).unwrap();
+    serve(app, "coding.send", &json!({ "chat_id": "chat", "message_id": row, "text": "What is this? (follow-up)", "attachments": [image] })).await.unwrap();
+    card_when(app, &row, |card| card.state == "idle" && card.output.as_deref().is_some_and(|output| output.matches("Followed up.").count() >= 2)).await;
+    assert!(acp_log().contains("prompt What is this? (follow-up)") && acp_log().contains("image image/png"), "{}", acp_log());
+    let page = serve(app, "coding.transcript", &json!({ "chat_id": "chat", "message_id": row })).await.unwrap();
+    let sent = page["entries"].as_array().unwrap().iter().find(|entry| entry["text"] == "What is this? (follow-up)").cloned().unwrap();
+    assert_eq!(sent["attachments"][0]["id"], "att-shot");
+    // An image alone is a message too; a file that is not one is refused.
+    let mut text_file = image.clone();
+    text_file.mime = "text/plain".into();
+    let refused = serve(app, "coding.send", &json!({ "chat_id": "chat", "message_id": row, "attachments": [text_file] })).await.unwrap_err();
+    assert!(refused.contains("not an image"), "{refused}");
+    app.coding_agents.stop_chat(app, "chat");
+    drop(agent);
+
+    // Gemini's stand-in says nothing of images: an image is refused with why, and nothing is sent.
+    let row = start_row(app, "call-2");
+    call(&tool, "call-2", json!({ "action": "start", "agent": "gemini", "folder": "shop", "prompt": "Hello (follow-up)" })).await.unwrap();
+    let card = card_when(app, &row, |card| card.state == "idle").await;
+    assert!(!card.images);
+    let refused = serve(app, "coding.send", &json!({ "chat_id": "chat", "message_id": row, "text": "Look", "attachments": [image] })).await.unwrap_err();
+    assert!(refused.contains("does not take images"), "{refused}");
     app.coding_agents.stop_chat(app, "chat");
 }
 

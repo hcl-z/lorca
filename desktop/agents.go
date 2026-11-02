@@ -414,11 +414,12 @@ func (w *appWindow) presentAgentTranscript(chatID string, message *model.Message
 			// Return in the composer sends to the agent; it does not close the sheet.
 			ReturnInContent: true,
 			Header:          func() { t.header(c, w, t.agent(agent), st, run) },
-			Leading:         func() { agentFooter(c, t.agent(agent)) },
+			// The composer stays at the foot, outside the steps' scroll.
+			Footer:  func() { t.composer(c, w, t.agent(agent)) },
+			Leading: func() { agentFooter(c, t.agent(agent)) },
 		}
 		result := sheetFrame(c, options, func() {
 			t.view(c).Height(460)
-			t.composer(c, t.agent(agent))
 		})
 		if result.Confirmed || result.Cancelled {
 			s.dismiss()

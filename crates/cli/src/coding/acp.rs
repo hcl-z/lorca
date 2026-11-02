@@ -17,7 +17,7 @@ use agent_client_protocol::schema::v1::{
     CancelNotification, ClientCapabilities, ClientSessionCapabilities, CloseSessionRequest, CompactionCapabilities, ContentBlock, CreateElicitationRequest, CreateElicitationResponse, ElicitationAcceptAction, ElicitationAction, ElicitationCapabilities,
     ElicitationContentValue, ElicitationFormCapabilities, ElicitationMode, Implementation, InitializeRequest, NoticeCapabilities, PermissionOption, PermissionOptionId, PermissionOptionKind, PromptRequest, PromptResponse,
     RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigId, SessionId, SessionNotification, SetSessionConfigOptionRequest,
-    StopReason, TextContent,
+    ImageContent, StopReason, TextContent,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent as Peer, ByteStreams, Client, ConnectionTo, UntypedMessage};
@@ -28,7 +28,7 @@ use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-use super::driver::{Approval, Ask, Choice, Control, Driver, Ended, Event, Events, Field, FieldKind};
+use super::driver::{Approval, Ask, Choice, Control, Driver, Ended, Event, Events, Field, FieldKind, Image};
 use super::entries::{self, Entry, FileDiff, Step};
 use super::lines;
 use super::process::{self, Process};
@@ -196,7 +196,7 @@ struct Shared {
 }
 
 enum Command {
-    Send { text: String, interrupt: bool, from: String },
+    Send { text: String, images: Vec<Image>, interrupt: bool, from: String },
     /// Change its model or effort now; the answer says whether the session took it.
     Set { wants: Vec<(String, String)>, reply: oneshot::Sender<Result<(), String>> },
     /// It is being stopped: the session closes first when the agent can close one.
@@ -220,8 +220,8 @@ impl Drop for Acp {
 
 #[async_trait]
 impl Driver for Acp {
-    async fn send(&self, text: &str, interrupt: bool, from: &str) -> Result<(), String> {
-        self.commands.send(Command::Send { text: text.to_string(), interrupt, from: from.to_string() }).map_err(|_| "It is no longer running".to_string())
+    async fn send(&self, text: &str, images: Vec<Image>, interrupt: bool, from: &str) -> Result<(), String> {
+        self.commands.send(Command::Send { text: text.to_string(), images, interrupt, from: from.to_string() }).map_err(|_| "It is no longer running".to_string())
     }
 
     async fn commands(&self) -> Vec<(String, String)> {
@@ -268,8 +268,8 @@ impl Driver for Acp {
 struct Setup {
     spec: &'static Spec,
     folder: PathBuf,
-    /// The first prompt.
-    first: String,
+    /// The first prompt, its images, and who wrote it (`user`, or empty for the bot).
+    first: (String, Vec<Image>, String),
     /// The session of an earlier run, to resume.
     resume: Option<String>,
     /// The settings of the earlier run, to set again.
@@ -285,6 +285,8 @@ pub(crate) async fn start(
     program: &Path,
     folder: &Path,
     prompt: &str,
+    images: Vec<Image>,
+    from: &str,
     session: Option<&str>,
     config: &[(String, String)],
     wants: &[(String, String)],
@@ -308,7 +310,7 @@ pub(crate) async fn start(
     let (ready, mut waiting) = oneshot::channel();
     let ready: Ready = Arc::new(Mutex::new(Some(ready)));
     let shared = Arc::new(Shared::default());
-    let setup = Setup { spec, folder: folder.to_path_buf(), first: prompt.to_string(), resume: session.map(str::to_string), config: config.to_vec(), wants: wants.to_vec() };
+    let setup = Setup { spec, folder: folder.to_path_buf(), first: (prompt.to_string(), images, from.to_string()), resume: session.map(str::to_string), config: config.to_vec(), wants: wants.to_vec() };
     tokio::spawn(run(setup, transport, events, receiver, shared.clone(), ready, exit));
     let limit = if spec.adapter.is_some() { ADAPTER_SETUP_TIMEOUT } else { SETUP_TIMEOUT };
     let opened = match tokio::time::timeout(limit, &mut waiting).await {
@@ -409,6 +411,8 @@ async fn drive(setup: Setup, transport: Transport, events: Events, mut commands:
                 .meta(serde_json::Map::from_iter([("terminal_output_delta".to_string(), Value::Bool(true))]));
             let lorca = Implementation::new("lorca", env!("CARGO_PKG_VERSION")).title("Lorca");
             let initialized = connection.send_request(InitializeRequest::new(ProtocolVersion::V1).client_capabilities(capabilities).client_info(lorca)).block_task().await?;
+            // Whether it takes images, which the apps' composers ask before they offer to attach one.
+            let _ = events.send(Event::Images(initialized.agent_capabilities.prompt_capabilities.image));
             let sessions = &initialized.agent_capabilities.session_capabilities;
             let (can_resume, can_close) = (sessions.resume.is_some(), sessions.close.is_some());
             *shared.stage.lock().unwrap() = "session";
@@ -467,13 +471,13 @@ async fn drive(setup: Setup, transport: Transport, events: Events, mut commands:
                 let _ = waiting.send(Ok(()));
             }
 
-            let mut queue: VecDeque<(String, String)> = VecDeque::from([(first, String::new())]);
+            let mut queue: VecDeque<(String, Vec<Image>, String)> = VecDeque::from([first]);
             let mut running: Option<BoxFuture<'static, Result<PromptResponse, agent_client_protocol::Error>>> = None;
             let mut interrupting = false;
             let mut closed = false;
             loop {
                 if running.is_none() {
-                    if let Some((text, from)) = queue.pop_front() {
+                    if let Some((text, images, from)) = queue.pop_front() {
                         shared.said.lock().unwrap().message.clear();
                         shared.produced.store(false, Ordering::SeqCst);
                         // What the user writes on the agent's page is theirs: the bot's transcript
@@ -483,9 +487,14 @@ async fn drive(setup: Setup, transport: Transport, events: Events, mut commands:
                         }
                         end_segment(&shared);
                         shared.turn.fetch_add(1, Ordering::SeqCst);
-                        put(&events, &shared, None, Entry::sent(text.trim(), &from));
+                        let mut sent = Entry::sent(text.trim(), &from);
+                        sent.attachments = images.iter().map(|image| image.attachment.clone()).collect();
+                        put(&events, &shared, None, sent);
                         let _ = events.send(Event::Working);
-                        let prompt = PromptRequest::new(session.clone(), vec![ContentBlock::Text(TextContent::new(text))]);
+                        // The words, then each image as ACP carries one.
+                        let mut content = vec![ContentBlock::Text(TextContent::new(text))];
+                        content.extend(images.into_iter().map(|image| ContentBlock::Image(ImageContent::new(image.data, image.mime_type))));
+                        let prompt = PromptRequest::new(session.clone(), content);
                         running = Some(connection.send_request(prompt).block_task().boxed());
                     }
                 }
@@ -501,12 +510,12 @@ async fn drive(setup: Setup, transport: Transport, events: Events, mut commands:
                         }
                     }
                     command = commands.recv() => match command {
-                        Some(Command::Send { text, interrupt, from }) if interrupt && running.is_some() => {
-                            queue.push_front((text, from));
+                        Some(Command::Send { text, images, interrupt, from }) if interrupt && running.is_some() => {
+                            queue.push_front((text, images, from));
                             interrupting = true;
                             connection.send_notification(CancelNotification::new(session.clone()))?;
                         }
-                        Some(Command::Send { text, from, .. }) => queue.push_back((text, from)),
+                        Some(Command::Send { text, images, from, .. }) => queue.push_back((text, images, from)),
                         Some(Command::Set { wants, reply }) => {
                             let _ = reply.send(set_options(spec, &connection, &session, &shared, &events, &wants).await);
                         }
@@ -1785,7 +1794,7 @@ mod tests {
                 continue;
             };
             let (tx, mut rx) = mpsc::unbounded_channel();
-            let driver = match start(spec, &program, &folder, "Reply with exactly: ok", None, &[], &[], &[], tx).await {
+            let driver = match start(spec, &program, &folder, "Reply with exactly: ok", Vec::new(), "", None, &[], &[], &[], tx).await {
                 Ok(driver) => driver,
                 Err(error) => {
                     println!("{}: could not start: {error}", spec.kind);
@@ -1838,7 +1847,7 @@ mod tests {
             std::fs::create_dir_all(&folder).unwrap();
             let (tx, mut rx) = mpsc::unbounded_channel();
             let prompt = "Create a file named ok.txt in the current folder whose content is exactly: ok";
-            let driver = match start(spec, &program, &folder, prompt, None, &[], &[], &[], tx).await {
+            let driver = match start(spec, &program, &folder, prompt, Vec::new(), "", None, &[], &[], &[], tx).await {
                 Ok(driver) => driver,
                 Err(error) => {
                     println!("{}: could not start: {error}", spec.kind);

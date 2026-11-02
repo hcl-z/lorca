@@ -174,6 +174,9 @@ pub(crate) struct Record {
     /// Why its last turn failed, while it waits `idle` after it; the next turn clears it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// It takes images in a prompt, as its last handshake said (`promptCapabilities.image`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub images: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -498,6 +501,7 @@ impl Agents {
             state: if (question.is_some() || asking.is_some()) && open { "asking".into() } else { record.state },
             stalled: record.stalled,
             error,
+            images: record.images,
             // A held start never makes an agent.
             held: false,
             question: question.filter(|_| open),
@@ -756,6 +760,7 @@ pub(crate) async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Agent>, St
         state: "starting".into(),
         stalled: false,
         error: None,
+        images: false,
         outcome: None,
         pull_request: None,
         changes: None,
@@ -773,7 +778,7 @@ pub(crate) async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Agent>, St
     app.coding_agents.agents.lock().unwrap().push(agent.clone());
     save(app);
     app.coding_agents.sync(app, &agent);
-    let launched = launch(app, &agent, &start.program, &start.prompt, None, &start.wants).await;
+    let launched = launch(app, &agent, &start.program, &start.prompt, Vec::new(), "", None, &start.wants).await;
     if let Err(error) = &launched {
         let mut record = agent.record.lock().unwrap();
         record.state = "failed".into();
@@ -787,7 +792,8 @@ pub(crate) async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Agent>, St
 
 /// Starts the agent's process, on `prompt` (resuming `session`), with a supervisor that follows
 /// it. An agent given secrets has them in its environment.
-async fn launch(app: &Arc<App>, agent: &Arc<Agent>, program: &Path, prompt: &str, session: Option<&str>, wants: &[(String, String)]) -> Result<(), String> {
+#[allow(clippy::too_many_arguments)]
+async fn launch(app: &Arc<App>, agent: &Arc<Agent>, program: &Path, prompt: &str, images: Vec<driver::Image>, from: &str, session: Option<&str>, wants: &[(String, String)]) -> Result<(), String> {
     use lorca_agent::tools::SecretVariables;
     let record = agent.record();
     // Looked up as it starts, so one the user deleted meanwhile is not given.
@@ -802,16 +808,17 @@ async fn launch(app: &Arc<App>, agent: &Arc<Agent>, program: &Path, prompt: &str
     agent.stopping.store(false, Ordering::SeqCst);
     agent.entries.lock().unwrap().new_run();
     tokio::spawn(supervise(app.clone(), agent.clone(), rx, generation));
-    let driver = acp::start(spec, program, &record.folder, &prompt, session, &record.config, wants, &variables, tx).await?;
+    let driver = acp::start(spec, program, &record.folder, &prompt, images, from, session, &record.config, wants, &variables, tx).await?;
     *agent.driver.lock().unwrap() = Some(driver);
     // The card learns what can be changed now that the process is there to ask.
     app.coding_agents.sync(app, agent);
     Ok(())
 }
 
-/// Gives the agent a message from the bot: to its running process, or to a new process on its
-/// session when its process is gone (it was done and stopped, or Lorca restarted).
-pub(crate) async fn send(app: &Arc<App>, agent: &Arc<Agent>, text: &str, interrupt: bool, from: &str) -> Result<String, String> {
+/// Gives the agent a message, the bot's or the user's (`from`), with its images: to its running
+/// process, or to a new process on its session when its process is gone (it was done and stopped,
+/// or Lorca restarted).
+pub(crate) async fn send(app: &Arc<App>, agent: &Arc<Agent>, text: &str, images: Vec<driver::Image>, interrupt: bool, from: &str) -> Result<String, String> {
     let text = &without_secrets(app, text.to_string());
     let record = agent.record();
     {
@@ -824,7 +831,7 @@ pub(crate) async fn send(app: &Arc<App>, agent: &Arc<Agent>, text: &str, interru
         *agent.budget.lock().unwrap() = Some(budget);
     }
     if let Some(driver) = agent.driver() {
-        driver.send(text, interrupt, from).await?;
+        driver.send(text, images, interrupt, from).await?;
         *agent.active_at.lock().unwrap() = Instant::now();
         let busy = matches!(record.state.as_str(), "working" | "starting");
         return Ok(match (busy, interrupt) {
@@ -844,7 +851,7 @@ pub(crate) async fn send(app: &Arc<App>, agent: &Arc<Agent>, text: &str, interru
         kept.ended_at = None;
     }
     app.coding_agents.sync(app, agent);
-    match launch(app, agent, &program, text, record.session.as_deref(), &[]).await {
+    match launch(app, agent, &program, text, images, from, record.session.as_deref(), &[]).await {
         Ok(()) => {
             save(app);
             Ok(format!("{} started again on its session and is working on it.", name(&record.kind)))
@@ -1046,6 +1053,13 @@ async fn handle(app: &Arc<App>, agent: &Arc<Agent>, event: Event, generation: u6
                 let _ = reply.send(answers);
             });
             false
+        }
+        Event::Images(takes) => {
+            let changed = std::mem::replace(&mut agent.record.lock().unwrap().images, takes) != takes;
+            if changed {
+                save(app);
+            }
+            changed
         }
         Event::Title(title) => {
             let title = Some(title).filter(|title| !title.is_empty());
@@ -1743,6 +1757,37 @@ pub(crate) async fn set_options(app: &Arc<App>, agent: &Arc<Agent>, wants: &[(St
     Ok(format!("Set. {} ({}) now has {now}.", name(&record.kind), record.id))
 }
 
+/// The most images one message from the agent's page carries.
+const MAX_PAGE_IMAGES: usize = 10;
+
+/// The images the user sent from the agent's page, as ACP carries them: each attachment fetched to
+/// this Runner when another Device sent it, and made into one a model takes (`files::inline_image`:
+/// turned upright, scaled down, converted). Only an agent whose handshake said it takes images
+/// gets any; anything but an image, or one that cannot be made, is refused with why.
+async fn page_images(app: &Arc<App>, record: &Record, attachments: &[crate::model::Attachment]) -> Result<Vec<driver::Image>, String> {
+    if attachments.is_empty() {
+        return Ok(Vec::new());
+    }
+    if !record.images {
+        return Err(format!("{} does not take images.", name(&record.kind)));
+    }
+    if attachments.len() > MAX_PAGE_IMAGES {
+        return Err(format!("At most {MAX_PAGE_IMAGES} images per message."));
+    }
+    let mut images = Vec::new();
+    for attachment in attachments {
+        if !attachment.is_image() {
+            return Err(format!("{} is not an image; the agent takes images only.", attachment.name));
+        }
+        crate::files::ensure_local(app, attachment).await.map_err(|error| format!("{} could not be fetched: {error}", attachment.name))?;
+        let (app, kept) = (app.clone(), attachment.clone());
+        let made = tokio::task::spawn_blocking(move || crate::files::inline_image(&app, &kept)).await.map_err(|error| error.to_string())?;
+        let made = made.map_err(|why| format!("{} cannot go: {why}", attachment.name))?;
+        images.push(driver::Image { data: made.data, mime_type: made.mime_type, attachment: attachment.clone() });
+    }
+    Ok(images)
+}
+
 /// How long `coding.send` waits for its message to reach the agent before it answers, inside a
 /// sealed request's time; an agent that takes longer to start again goes on.
 const SEND_WAIT: Duration = Duration::from_secs(12);
@@ -1778,7 +1823,11 @@ pub async fn serve(app: &Arc<App>, verb: &str, body: &Value) -> Result<Value, St
         // The user writes to the agent on its page: taken up when it is done with what it does
         // now, or starting it again on its session. The bot does not see it.
         "coding.send" => {
-            let text = body["text"].as_str().map(str::trim).filter(|text| !text.is_empty()).ok_or("Write a message first")?.to_string();
+            let text = body["text"].as_str().map(str::trim).unwrap_or("").to_string();
+            let attachments: Vec<crate::model::Attachment> = serde_json::from_value(body["attachments"].clone()).unwrap_or_default();
+            if text.is_empty() && attachments.is_empty() {
+                return Err("Write a message first".into());
+            }
             let record = agent.record();
             if matches!(record.state.as_str(), "checking" | "denied" | "expired" | "dismissed") {
                 return Err(format!("{} never started, so there is nothing to write to.", name(&record.kind)));
@@ -1790,12 +1839,13 @@ pub async fn serve(app: &Arc<App>, verb: &str, body: &Value) -> Result<Value, St
             if !agent.is_running() && record.session.is_none() {
                 return Err(format!("{} ended before its session began. Start a new agent for the job.", name(&record.kind)));
             }
+            let images = page_images(app, &record, &attachments).await?;
             // The user drives this turn: its being done is theirs to see, not the bot's to report.
             agent.record.lock().unwrap().direct = true;
             let sending = {
                 let (app, agent) = (app.clone(), agent.clone());
                 tokio::spawn(async move {
-                    let sent = send(&app, &agent, &text, false, "user").await;
+                    let sent = send(&app, &agent, &text, images, false, "user").await;
                     if let Err(error) = &sent {
                         agent.note(&app, &format!("⎿ {error}"));
                     }

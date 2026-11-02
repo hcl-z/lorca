@@ -46,6 +46,10 @@ pub(crate) struct Entry {
     pub tool: Option<Tool>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub steps: Vec<Step>,
+    /// The images the user sent with a `sent` entry, as the apps show them: the attachments the
+    /// chat's files keep, by id.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<crate::model::Attachment>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]

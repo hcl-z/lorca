@@ -1808,6 +1808,8 @@ type AgentRun struct {
 	Outcome string
 	// Error is why its last turn failed, while it waits idle after it and takes a follow-up.
 	Error string
+	// Images is whether it takes images with a message: the composer on its page offers to attach one.
+	Images bool
 	// PullRequest is the pull request it opened, when its transcript names one.
 	PullRequest string
 	// Changes is what its work changed against the commit it started from.
