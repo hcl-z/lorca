@@ -8,6 +8,15 @@ phone app's.
 
 ## [Unreleased]
 
+## [1.0.36]
+
+- You talk to a coding agent on its own page, on the desktop and the phone: a composer at the foot of the page takes text and images (pasted, picked, dropped, or from the camera), queues behind what the agent does now, and starts a stopped agent again on its session. The bot does not see these messages.
+- The chat no longer carries a coding agent's words: no `@agent`, no agent avatars in the conversation, and the agents in the chat header stay. Older messages that came from an agent read as plain messages.
+- An agent that takes images gets them as images; one whose handshake said no is not offered the photo button.
+- A turn that fails is its own state: the agent stays alive for a follow-up, its card shows Failed with why, and the bot hears each state (done, failed, asking, ended) with its reason and decides what to do. A question still does not wake the bot, and a failure on a turn you drove does.
+- The agent sheet on the desktop scrolls once, keeps its composer at its foot and its close button at its top, names the folder the agent runs in, and shows the same status as the card in the chat. On both apps what you wrote is your bubble on the right.
+- A model name with spaces and slashes keeps its whole name instead of a fragment like "$1.2)".
+
 ## [1.0.35]
 
 - The desktop conversation is drawn by MyGo's markdown view: a reply comes in a word at a time as it streams, code blocks are highlighted, tables keep their columns, and Copy takes Markdown. A web link keeps its source chip and an `@name` its bot's color, while every other paragraph stays with MyGo's cache.
