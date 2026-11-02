@@ -1,0 +1,76 @@
+mobile/src/core/engine.ts
+  s_49bd479ba04779::t_d94a3f14a695f9 1152-1154
+mobile/src/i18n/zh.ts
+  s_49bd479ba04779::t_81503973247111 489-491
+docs/architecture/agent-cards.md
+  s_49bd479ba04779::t_7146bee7968315 13
+desktop/model/store.go
+  s_49bd479ba04779::t_7076a76c76e020 1831-1842
+docs/architecture/local-ws.md
+  s_49bd479ba04779::t_7146bee7968315 9
+crates/cli/src/coding/driver.rs
+  s_49bd479ba04779::t_a09c4d4074e98e 40-41,46-54,118
+desktop/agentpip.go
+  s_49bd479ba04779::t_2cadc1bbe79953 300
+  s_49bd479ba04779::t_8f999c2ff93ae1 297-299
+crates/cli/src/coding/acp.rs
+  s_49bd479ba04779::t_d3de4e64a9a47a 271-272,288-289,313,474
+  s_49bd479ba04779::t_2a082847f64972 20,31,199,223-224,414-415,480,490-492,494-497,513-514,518
+  s_49bd479ba04779::t_db4a627ed863f8 1797,1850
+desktop/l10n/zh.go
+  s_49bd479ba04779::t_b303578fd261b0 6-8
+crates/cli/src/api.rs
+  s_49bd479ba04779::t_7b473dc9ce6df0 996-1010
+desktop/agents.go
+  s_49bd479ba04779::t_8f999c2ff93ae1 417-419
+docs/architecture/coding-agents.md
+  s_49bd479ba04779::t_7146bee7968315 55
+mobile/src/core/agentEntries.ts
+  s_49bd479ba04779::t_46a5f9d097c219 6-7,20-23
+desktop/model/agententries.go
+  s_49bd479ba04779::t_7076a76c76e020 24-35
+crates/cli/src/coding/entries.rs
+  s_49bd479ba04779::t_a09c4d4074e98e 49-52
+crates/cli/src/coding/mod.rs
+  s_49bd479ba04779::t_5c22955925fe6a 177-179,504,763,1057-1062
+  s_49bd479ba04779::t_db4a627ed863f8 781,795-796,811,818-821,834,854
+  s_49bd479ba04779::t_097a7740187523 1760-1790,1826-1830,1842,1848
+mobile/src/core/model.ts
+  s_49bd479ba04779::t_d94a3f14a695f9 440-441
+crates/cli/src/model.rs
+  s_49bd479ba04779::t_5c22955925fe6a 738-741
+desktop/model/models.go
+  s_49bd479ba04779::t_7076a76c76e020 1811-1812
+desktop/agenttranscript.go
+  s_49bd479ba04779::t_5910507b9b3125 519,657,692-711
+  s_49bd479ba04779::t_44424a2bf3a974 6,70-71,728-731,734,737-738,742,749,753-755,761-803,806-828,830-840,844-857,868
+crates/cli/src/coding/tool.rs
+  s_49bd479ba04779::t_5c22955925fe6a 114
+mobile/app/agent/[id].tsx
+  s_49bd479ba04779::t_46a5f9d097c219 24-25,36-40,214-215,557,566,569-574
+  s_49bd479ba04779::t_81503973247111 282-284,288-289,293,295-332,335-336,340,342,344,359,362-379,381-404,416,421-430,866-868
+desktop/model/wire.go
+  s_49bd479ba04779::t_7076a76c76e020 159,1017
+crates/cli/src/coding/tests.rs
+  s_49bd479ba04779::t_763d4fffef6b68 84,106-109
+  s_49bd479ba04779::t_5c22955925fe6a 602
+  s_49bd479ba04779::t_7d1f0df9b7a109 920-964
+mobile/src/ui/AttachSheet.tsx
+  s_49bd479ba04779::t_b4da3cae04e6ca 10-11,16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "8743c8b5b80a0b5344ccd3b445a9de7f67f7c2a3",
+  "prompts": {},
+  "sessions": {
+    "s_49bd479ba04779": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "78524d38-ea2d-40ab-908f-a24c2e78fe38",
+        "model": "claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
