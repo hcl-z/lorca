@@ -1,0 +1,88 @@
+desktop/agents.go
+  s_f086d834133401::t_2d8562a1ec57ce 38,93
+crates/cli/src/coding/tests.rs
+  s_f086d834133401::t_6519b06543aa2e 255-266,356-357,360-362,376,380,389,404,450,500,530,569,593,666,721,728,774,826,892,946,966,992,1017,1071,1097,1107,1247,1256,1259,1272,1335
+  s_f086d834133401::t_3b596c6b24e42c 553
+  s_f086d834133401::t_988a52028f600a 216
+  s_f086d834133401::t_f19f1d9c92e805 543-552,554-562,742-743,747
+docs/architecture/coding-agents.md
+  s_f086d834133401::t_f82ded2cec2758 3,7,9,11,15,29,61,71
+docs/architecture/tools.md
+  s_f086d834133401::t_3d2d5a23f67eeb 27
+crates/cli/src/turns/tools.rs
+  s_f086d834133401::t_28b95fd7b9d9a9 133,171
+crates/cli/src/coding/tool.rs
+  s_f086d834133401::t_8b2b7e74131de5 11,33-35,39-42,44-45,71,134,210,244-245,262,264,272,305-309,357,378,380,386-388
+  s_f086d834133401::t_631f15a6832698 232-235
+crates/cli/src/coding/proof.rs
+  s_f086d834133401::t_ff3001a156ceef 2-3,15,39
+desktop/agents_test.go
+  s_f086d834133401::t_2d8562a1ec57ce 54-55
+docs/architecture/agent-cards.md
+  s_f086d834133401::t_e3d6069ab52432 7,9,13
+docs/architecture/auto-review.md
+  s_f086d834133401::t_3d2d5a23f67eeb 19,30
+docs/architecture/outputs.md
+  s_f086d834133401::t_3d2d5a23f67eeb 42
+crates/cli/src/turns.rs
+  s_f086d834133401::t_28b95fd7b9d9a9 2892-2894,2902,2925-2926
+  s_f086d834133401::t_33377fad05327b 2400,2901,2903-2905,2910-2913
+  s_f086d834133401::t_631f15a6832698 984
+  s_f086d834133401::t_988a52028f600a 6588
+desktop/agenttranscript.go
+  s_f086d834133401::t_2d8562a1ec57ce 995
+mobile/src/core/core.test.ts
+  s_f086d834133401::t_adb13165de9e08 121,124
+desktop/model/mock.go
+  s_f086d834133401::t_2d8562a1ec57ce 482
+desktop/model/models.go
+  s_f086d834133401::t_2d8562a1ec57ce 1934
+crates/cli/src/handoffs_tests.rs
+  s_f086d834133401::t_0ea9ffbd05c56b 1026,1029
+  s_f086d834133401::t_80287b27159ff2 33-34,986-989,1010-1011,1019-1025,1027-1028,1030-1036,1158-1159
+  s_f086d834133401::t_cf4a4a41110a47 123,811,825,1046,1125
+ARCHITECTURE.md
+  s_f086d834133401::t_06b30fd29bfbb5 92
+docs/architecture/runtime.md
+  s_f086d834133401::t_e0d2e53e4c3abe 3
+crates/cli/src/coding/mod.rs
+  s_f086d834133401::t_631f15a6832698 2-3,32,164,720-721,749,1180
+desktop/model/wire.go
+  s_f086d834133401::t_2d8562a1ec57ce 1015
+crates/cli/src/plugins/review.rs
+  s_f086d834133401::t_988a52028f600a 1185,1195
+  s_f086d834133401::t_3aabb9ecbeb797 788
+mobile/src/core/model.ts
+  s_f086d834133401::t_adb13165de9e08 423,523,525
+mobile/src/ui/agentKit.tsx
+  s_f086d834133401::t_adb13165de9e08 163
+docs/architecture/secrets.md
+  s_f086d834133401::t_db89dc0cd1b871 38
+mobile/app/agent/[id].tsx
+  s_f086d834133401::t_adb13165de9e08 4
+crates/cli/src/handoffs.rs
+  s_f086d834133401::t_33377fad05327b 667
+  s_f086d834133401::t_542942da480101 424,438-443,445
+  s_f086d834133401::t_417e14906ae7cf 28-32,420-423,428-431,437,444,446-466,473,532,669-674
+  s_f086d834133401::t_b0227c8055c84b 425-427,432-436,1696,1702-1708
+crates/cli/src/model.rs
+  s_f086d834133401::t_706bcd79338431 711
+docs/architecture/handoffs.md
+  s_f086d834133401::t_2635c40ca274b6 3,7,9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "4487694cc32cd6edd0fe7dc477c5c8534c283965",
+  "prompts": {},
+  "sessions": {
+    "s_f086d834133401": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd18d7dd-8bda-4c6c-b7b0-3f16befb6acb",
+        "model": "kiro/claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
