@@ -158,6 +158,10 @@ type sheetOptions struct {
 	Footer func()
 	// ReturnInContent leaves Return to the content, as a multi-line editor's.
 	ReturnInContent bool
+	// Height makes the sheet this tall, at most the window, with the content filling what its
+	// title, header, footer, and buttons leave: content that scrolls itself, as a list does, so the
+	// sheet adds no scroll of its own around it.
+	Height float32
 }
 
 type sheetResult struct {
@@ -187,6 +191,9 @@ func sheetFrame(c *ui.Context, o sheetOptions, content func()) sheetResult {
 	p := colors(c)
 	var result sheetResult
 	panel := sheetPanel(c, o.Width)
+	if o.Height > 0 {
+		panel.Height(o.Height)
+	}
 	// The sheet takes the keyboard itself as it comes up, unless a field in it does, so Return
 	// confirms it rather than pressing the first button.
 	panel.Focusable().FocusRing(false).AutoFocus()
@@ -204,9 +211,13 @@ func sheetFrame(c *ui.Context, o sheetOptions, content func()) sheetResult {
 		}
 		if content != nil {
 			fieldSubmitted = false
-			sheetBody(c).Margin(13, -20, 0, -20).Children(func() {
-				ui.Column(c).Gap(12).Children(content)
-			})
+			if o.Height > 0 {
+				ui.Column(c).Grow(1).Basis(0).MinHeight(0).Margin(13, 0, 0, 0).Children(content)
+			} else {
+				sheetBody(c).Margin(13, -20, 0, -20).Children(func() {
+					ui.Column(c).Gap(12).Children(content)
+				})
+			}
 			if fieldSubmitted && o.Confirm != "" && !o.ConfirmDisabled && !o.ReturnInContent {
 				result.Confirmed = true
 			}

@@ -909,7 +909,10 @@ impl AgentRun {
 
 /// A model's name without the provider a gateway puts before it and the context hints after it.
 fn model_short_name(name: &str) -> &str {
-    let mut short = &name[name.rfind('/').map_or(0, |at| at + 1)..];
+    // A gateway's prefix is a path with no spaces ("openrouter/claude-sonnet"); a name that says
+    // more ("Default (Opus · $15/$75)") keeps its slashes.
+    let prefix = if name.contains(char::is_whitespace) { 0 } else { name.rfind('/').map_or(0, |at| at + 1) };
+    let mut short = &name[prefix..];
     while short.ends_with(']') {
         match short.rfind('[') {
             Some(at) if at > 0 => short = &short[..at],

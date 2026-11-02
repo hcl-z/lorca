@@ -651,65 +651,82 @@ func (t *agentTranscript) toolBody(c *ui.Context, p *palette, e *model.AgentEntr
 	})
 }
 
-// promptCard is what the agent was sent, under who wrote it: "You" in the accent's tint for what
-// the user wrote, else the bot that passed it on. A long one, as the first brief is, folds past
-// two lines, with a chevron on its author line to open or close it.
+// promptCard is what the agent was sent. What the user wrote on its page is a bubble at the right,
+// as their messages are in the chat, its images above its words; what the bot sent is a card the
+// width of the steps, under the bot's name. A long one folds past two lines, with Show more.
 func (t *agentTranscript) promptCard(c *ui.Context, author, text string, images []model.AgentAttachment, mine, open bool, toggle func()) {
 	p := colors(c)
 	long := strings.Count(text, "\n") >= 2 || len([]rune(text)) > 200
-	card := ui.Column(c).Gap(4).Padding(9, 12, 10, 12).Radius(radiusMD).Background(p.BotBubble).Border(1, p.BotBubbleBorder)
-	if mine {
-		card.Background(p.Accent.Alpha(0.09)).Border(1, p.Accent.Alpha(0.22))
-	}
-	card.Children(func() {
-		var head ui.Element
-		if long {
-			label := L("Show more")
-			if open {
-				label = L("Show less")
-			}
-			head = ui.ButtonBase(c.Key("head")).FillWidth().Gap(6).AlignItems(ui.Center).Cursor(ui.CursorPointer).FocusRing(false).Label(label)
-			if head.Hovered() {
-				head.TextColor(p.Label)
-			}
-			if head.Clicked() {
-				toggle()
-			}
-		} else {
-			head = ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center)
+	thumbs := func() {
+		if len(images) == 0 {
+			return
 		}
-		head.Children(func() {
-			ui.Text(c, author).Shrink(0).FontSize(textCaption).FontWeight(600).TextColor(p.Label3)
-			ui.Box(c).Grow(1)
-			if long {
-				name := "chevron.down"
-				if open {
-					name = "chevron.up"
-				}
-				symbol(c, name, 10, 2).TextColor(p.Label3)
+		row := ui.Row(c.Key("sent-images")).Wrap().Gap(6)
+		if mine {
+			row.Justify(ui.End)
+		}
+		row.Children(func() {
+			for _, image := range images {
+				attachment := model.Attachment{ID: image.ID, Name: image.Name, Mime: image.Mime, Size: image.Size, Width: image.Width, Height: image.Height}
+				ui.Box(c.Key(image.ID)).Size(96, 96).Radius(12).Clip().Background(p.ComposerControl).Border(0.5, p.CardBorder).Tooltip(image.Name).Children(func() {
+					if bitmap := loadBitmap(store.LocalFile(attachment, t.chatID, t.messageID)); bitmap != nil {
+						ui.Image(c, bitmap).Size(96, 96).Fit(ui.Cover)
+					} else {
+						ui.Row(c).Size(96, 96).Center().TextColor(p.Label3).Children(func() { symbol(c, "photo", 18, 2) })
+					}
+				})
 			}
 		})
+	}
+	more := func() {
+		if !long {
+			return
+		}
+		label := L("Show more")
+		if open {
+			label = L("Show less")
+		}
+		b := ui.ButtonBase(c.Key("more")).Gap(4).AlignItems(ui.Center).Cursor(ui.CursorPointer).FocusRing(false).Label(label).FontSize(11.5).TextColor(p.Label3)
+		if b.Hovered() {
+			b.TextColor(p.Label)
+		}
+		b.Children(func() {
+			ui.Text(c, label)
+			name := "chevron.down"
+			if open {
+				name = "chevron.up"
+			}
+			symbol(c, name, 9, 2)
+		})
+		if b.Clicked() {
+			toggle()
+		}
+	}
+	if mine {
+		ui.Column(c).FillWidth().AlignItems(ui.End).Gap(6).Children(func() {
+			thumbs()
+			if text != "" {
+				ui.Column(c).MaxWidthPercent(80).Gap(4).Padding(8, 13).Radius(radiusXL).Background(p.Blue).TextColor(p.AccentText).SelectionColor(p.AccentText.Alpha(0.28)).Children(func() {
+					body := ui.Text(c, text).FontSize(13).LineHeight(1.45).Selectable()
+					if long && !open {
+						body.MaxLines(3)
+					}
+				})
+			}
+			more()
+		})
+		return
+	}
+	ui.Column(c).FillWidth().Gap(5).Padding(9, 12, 10, 12).Radius(radiusMD).Background(p.BotBubble).Border(1, p.BotBubbleBorder).Children(func() {
+		ui.Text(c, author).FontSize(textCaption).FontWeight(600).TextColor(p.Label3)
 		if text != "" {
 			body := ui.Text(c, text).FontSize(12.5).LineHeight(1.4).Selectable()
 			if long && !open {
 				body.MaxLines(2)
 			}
 		}
-		// The images that went with it, small, as the composer showed them.
-		if len(images) > 0 {
-			ui.Row(c.Key("sent-images")).Wrap().Gap(6).Margin(2, 0, 0, 0).Children(func() {
-				for _, image := range images {
-					attachment := model.Attachment{ID: image.ID, Name: image.Name, Mime: image.Mime, Size: image.Size, Width: image.Width, Height: image.Height}
-					ui.Box(c.Key(image.ID)).Size(64, 64).Radius(8).Clip().Background(p.ComposerControl).Tooltip(image.Name).Children(func() {
-						if bitmap := loadBitmap(store.LocalFile(attachment, t.chatID, t.messageID)); bitmap != nil {
-							ui.Image(c, bitmap).Size(64, 64).Fit(ui.Cover)
-						} else {
-							ui.Row(c).Size(64, 64).Center().TextColor(p.Label3).Children(func() { symbol(c, "photo", 16, 2) })
-						}
-					})
-				}
-			})
-		}
+		thumbs()
+		more()
 	})
 }
 
@@ -827,35 +844,43 @@ func (t *agentTranscript) composer(c *ui.Context, w *appWindow, agent *model.Age
 				t.images = slices.Delete(slices.Clone(t.images), removed, removed+1)
 			}
 		}
-		ui.Row(c).FillWidth().Gap(8).AlignItems(ui.End).Children(func() {
-			if images {
-				attach := ui.ButtonBase(c.Key("agent-attach")).Size(controlRegular, controlRegular).Radius(radiusMD).Center().Background(p.ButtonBG).TextColor(p.Label2).
-					Label(L("Attach images")).Tooltip(L("Attach images")).Disabled(!open || t.sending)
-				if attach.Hovered() {
-					attach.TextColor(p.Label)
+		// One pill, as the chat's composer is: the photo button, the field, and a round Send.
+		pill := ui.Row(c.Key("agent-pill")).FillWidth().Gap(8).AlignItems(ui.End).Padding(6).MinHeight(composerControlSize + 12).
+			Radius(radiusXL + 6).Background(p.ComposerField).Border(1, p.ComposerBorder).Cursor(ui.CursorText)
+		if !c.Theme().Dark {
+			pill.Shadow(0, 2, 10, 0, ui.RGBA(0, 0, 0, 0.05))
+		}
+		if pill.FocusWithin() {
+			pill.BorderColor(p.Label3)
+		}
+		if images && open {
+			if dropped := pill.DroppedFiles(); dropped != nil {
+				var files []fileInfo
+				for _, path := range dropped {
+					files = append(files, inspect(path))
 				}
-				attach.Children(func() { symbol(c, "photo", 14, 2) })
+				add(files)
+			}
+			if pill.FileDragOver() {
+				pill.Border(2, p.Accent)
+			}
+		}
+		pill.Children(func() {
+			if images {
+				attach := ui.ButtonBase(c.Key("agent-attach")).Size(composerControlSize, composerControlSize).Radius(composerControlSize / 2).Center().
+					Background(p.ComposerControl).TextColor(p.Label2).Label(L("Attach images")).Tooltip(L("Attach images")).Disabled(!open || t.sending)
+				if attach.Hovered() {
+					attach.Background(p.ComposerControl.Mix(p.Label, 0.06)).TextColor(p.Label)
+				}
+				attach.Children(func() { symbol(c, "photo", 15, 2) })
 				if attach.Clicked() && w != nil {
 					chooseFiles(w.win, "", L("Attach images to your message"), L("Attach"), true, true, add)
 				}
 			}
-			field := ui.TextAreaBase(c, &t.draft).Lines(1, 6).Grow(1).Shrink(1).MinWidth(0).Padding(7, 10).FontSize(13).LineHeight(1.4).
-				TextColor(p.Label).Placeholder(placeholder).Label(placeholder).Disabled(!open || t.sending)
-			fieldChrome(c, field, field.Focused() && open, false)
+			field := ui.TextAreaBase(c, &t.draft).Lines(1, 6).Grow(1).Shrink(1).MinWidth(0).Padding(6, 4).FontSize(13.5).LineHeight(1.4).
+				TextColor(p.Label).Placeholder(placeholder).Label(placeholder).Disabled(!open || t.sending).FocusRing(false)
 			// A paste of a picture or of copied image files attaches them; text pastes as text.
 			field.OnPaste(paste)
-			if images && open {
-				if dropped := field.DroppedFiles(); dropped != nil {
-					var files []fileInfo
-					for _, path := range dropped {
-						files = append(files, inspect(path))
-					}
-					add(files)
-				}
-				if field.FileDragOver() {
-					field.Border(2, p.Accent)
-				}
-			}
 			// Return sends; Shift-Return is a new line, and Return that ends a composition (as a
 			// Chinese input method's) only ends it.
 			composing := field.Composing()
@@ -866,8 +891,22 @@ func (t *agentTranscript) composer(c *ui.Context, w *appWindow, agent *model.Age
 				}
 				return false
 			})
-			empty := strings.TrimSpace(t.draft) == "" && len(t.images) == 0
-			if pushButton(c.Key("agent-send"), L("Send"), pushOptions{Kind: buttonPrimary, Disabled: empty || !open || t.sending}).Clicked() {
+			ready := (strings.TrimSpace(t.draft) != "" || len(t.images) > 0) && open && !t.sending
+			button := ui.ButtonBase(c.Key("agent-send")).Size(composerControlSize, composerControlSize).Radius(composerControlSize / 2).Center().
+				Background(p.ComposerPrimary).TextColor(p.ComposerPrimaryContent).Label(L("Send")).Tooltip(L("Send (Return) · Shift-Return for a new line"))
+			if !ready {
+				button.Opacity(0.35)
+			} else if button.Hovered() {
+				button.Background(p.inkHover())
+			}
+			button.Children(func() {
+				if t.sending {
+					spinner(c, 14)
+				} else {
+					symbol(c, "arrow.up", 16, 2.6)
+				}
+			})
+			if button.Clicked() && ready {
 				send()
 			}
 		})
@@ -883,7 +922,7 @@ func (t *agentTranscript) composer(c *ui.Context, w *appWindow, agent *model.Age
 			hint = L("Sending starts %@ again on its session.", agent.Name())
 		}
 		if hint != "" {
-			text := ui.Text(c, hint).FontSize(11).LineHeight(1.35).TextColor(p.Label3)
+			text := ui.Text(c, hint).FontSize(11).LineHeight(1.35).TextColor(p.Label3).Padding(0, 10)
 			if t.sendErr != "" {
 				text.TextColor(p.Red)
 			}
