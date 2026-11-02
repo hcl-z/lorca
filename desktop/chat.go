@@ -156,7 +156,6 @@ func isImageOutput(message *model.Message) bool {
 func buildRows(chat *model.Chat, working []string, stoppedNotice string) []chatRow {
 	var rows []chatRow
 	var previousAuthor *model.Author
-	var previousAgent string
 	var previousDate time.Time
 	for _, message := range chat.Messages {
 		if message.Body.Kind == model.BodyTool && !message.Body.Tool.IsShown() {
@@ -165,22 +164,15 @@ func buildRows(chat *model.Chat, working []string, stoppedNotice string) []chatR
 		if previousDate.IsZero() || message.CreatedAt.Sub(previousDate) > separatorGap || !model.IsSameDay(previousDate, message.CreatedAt) {
 			rows = append(rows, chatRow{kind: rowDay, key: "day:" + message.ID, at: message.CreatedAt})
 			previousAuthor = nil
-			previousAgent = ""
-		}
-		agentID := ""
-		if message.Agent != nil {
-			agentID = message.Agent.ID
 		}
 		chrome := message.Body.Kind != model.BodyText
-		groupStart := chrome || previousAuthor == nil || !previousAuthor.Same(message.Author) || previousAgent != agentID
+		groupStart := chrome || previousAuthor == nil || !previousAuthor.Same(message.Author)
 		rows = append(rows, chatRow{kind: rowMessage, key: message.ID, message: message, groupStart: groupStart})
 		if chrome {
 			previousAuthor = nil
-			previousAgent = ""
 		} else {
 			author := message.Author
 			previousAuthor = &author
-			previousAgent = agentID
 		}
 		previousDate = message.CreatedAt
 	}
@@ -203,21 +195,6 @@ func buildRows(chat *model.Chat, working []string, stoppedNotice string) []chatR
 
 // MARK: - The view
 
-// chatHasAgents is whether a coding agent has spoken in the chat or has a card there. A DM with
-// one keeps its speakers and their avatars, so the bot's and the agent's bubbles stay aligned
-// after the agent ends.
-func chatHasAgents(chat *model.Chat) bool {
-	for _, message := range chat.Messages {
-		if message.Agent != nil {
-			return true
-		}
-		if message.Body.Kind == model.BodyTool && message.Body.Tool != nil && message.Body.Tool.Agent != nil {
-			return true
-		}
-	}
-	return false
-}
-
 func (m *mainWindow) chatView(c *ui.Context, chatID string) {
 	p := colors(c)
 	chat := store.Chat(chatID)
@@ -225,7 +202,7 @@ func (m *mainWindow) chatView(c *ui.Context, chatID string) {
 		return
 	}
 	s := m.chatStateFor(chatID)
-	s.speakers = chat.ShowsSpeakers() || chatHasAgents(chat)
+	s.speakers = chat.ShowsSpeakers()
 	s.rows = buildRows(chat, store.WorkingBots(chatID), s.stoppedNotice)
 	rows := s.rows
 	members := store.BotsIn(chat)
@@ -320,27 +297,18 @@ func (m *mainWindow) chatRowView(c *ui.Context, chat *model.Chat, row chatRow, s
 		workingCell(c, bots, workingActivity(row.botIDs, chat), chat.IsGroup())
 	case rowMessage:
 		message := row.message
-		isAgent := message.Agent != nil
-		isAgentCard := message.Body.Kind == model.BodyTool && message.Body.Tool != nil && message.Body.Tool.Agent != nil
-		showsAvatar := isAgent || isAgentCard || (s.speakers && (message.Author.Kind == model.AuthorBot || message.Author.Kind == model.AuthorContact))
+		showsAvatar := s.speakers && (message.Author.Kind == model.AuthorBot || message.Author.Kind == model.AuthorContact)
 		var cardAvatar *avatarContent
 		if showsAvatar {
-			switch {
-			case isAgent:
-				cardAvatar = &avatarContent{Kind: avatarAgent, AgentKind: message.Agent.Kind}
-			case isAgentCard:
-				cardAvatar = &avatarContent{Kind: avatarAgent, AgentKind: message.Body.Tool.Agent.Kind}
-			default:
-				content := authorAvatar(message.Author)
-				cardAvatar = &content
-			}
+			content := authorAvatar(message.Author)
+			cardAvatar = &content
 		}
 		switch body := message.Body; body.Kind {
 		case model.BodyText:
 			m.messageCell(c, chat, message, row.groupStart, row.stack, showsAvatar, s)
 		case model.BodyTool:
 			if body.Tool.Agent != nil {
-				m.agentCard(c, chat, message, nil, row.groupStart)
+				m.agentCard(c, chat, message, cardAvatar, row.groupStart)
 			} else if body.Tool.Run != nil {
 				m.commandCard(c, chat, message, cardAvatar, row.groupStart)
 			} else {
@@ -370,7 +338,7 @@ func (m *mainWindow) chatRowView(c *ui.Context, chat *model.Chat, row chatRow, s
 			} else if body.Request.IsAsk() {
 				m.askCard(c, chat, message, cardAvatar, row.groupStart)
 			} else if body.Request.IsAgentAsk() {
-				m.agentAskCard(c, chat, message, nil, row.groupStart)
+				m.agentAskCard(c, chat, message, cardAvatar, row.groupStart)
 			} else {
 				m.permissionCard(c, chat, message, cardAvatar, row.groupStart)
 			}
@@ -451,10 +419,6 @@ func (m *mainWindow) messageCell(c *ui.Context, chat *model.Chat, message *model
 				}
 				if message.Author.Kind == model.AuthorContact {
 					name = message.Author.Name
-				}
-				if message.Agent != nil {
-					// The agent's own words in the chat: its name in its color, not the bot's.
-					name, tint = message.Agent.Name, agentBrand(p, message.Agent.Kind)
 				}
 				ui.Text(c, name).Padding(5, 0, 0, 18).Margin(0, 0, 2, 0).FontSize(11).FontWeight(600).FixedLineHeight(16).TextColor(tint).SingleLine().
 					Key("name:" + message.ID).Transition(ui.ElementTransition{Animation: &speakerSpring, Enter: &ui.Motion{Collapse: true}, Exit: &ui.Motion{Collapse: true}})
@@ -602,7 +566,7 @@ func (m *mainWindow) messageCell(c *ui.Context, chat *model.Chat, message *model
 			ui.Box(c).Absolute().Left(horizontalInset).Top(top + speakerLine).Key("avatar:" + message.ID).
 				Transition(ui.ElementTransition{Animation: &speakerSpring, Enter: &ui.Motion{Scale: 0.6}, Exit: &ui.Motion{Scale: 0.6}}).
 				Children(func() {
-					avatar(c, messageAvatar(message), chatAvatarSize, false)
+					avatar(c, authorAvatar(message.Author), chatAvatarSize, false)
 				})
 		}
 		// The toolbar floats beside the bubble while the pointer is over its row or the toolbar,

@@ -16,11 +16,13 @@
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { type AgentEntry, type AgentTool, hasOlderEntries, mergeAgentEntries, toolFailed, toolRunning, type AgentTranscriptPage } from "../../src/core/agentEntries";
 import { agentBusy, agentSince, latestPlan, outputLines, spansForLines, type OutputSpan } from "../../src/core/agentKit";
-import { engine } from "../../src/core/engine";
-import { agentIsRunning, agentName, type AgentRun, type Message } from "../../src/core/model";
+import { engine, type PickedFile } from "../../src/core/engine";
+import { agentIsRunning, agentName, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, type AgentRun, type Message } from "../../src/core/model";
 import { useStore } from "../../src/core/store";
 import { t, useLanguage } from "../../src/i18n";
 import { AgentHeader, AgentTile, Callout, PullRequestButton, SpecStrip, StopButton, alpha, mono, useNow } from "../../src/ui/agentKit";
@@ -31,6 +33,11 @@ import { CloseToolbar } from "../../src/ui/navigation";
 import { Symbol } from "../../src/ui/Symbol";
 import { AgentAskRow, CardButton, DECISION_ICONS } from "../../src/ui/transcript";
 import { AgentActionsSheet } from "../../src/ui/AgentActionsSheet";
+import { AttachmentBlock } from "../../src/ui/attachments";
+import { AttachSheet, type AttachSource } from "../../src/ui/AttachSheet";
+import { ImagePasteView, type PastedImage } from "../../modules/lorca-core/ImagePasteView";
+import * as ImagePicker from "expo-image-picker";
+import { Image } from "expo-image";
 import { AgentAskSheet } from "../../src/ui/AgentAskSheet";
 import { accentColor, usePalette } from "../../src/ui/theme";
 
@@ -49,6 +56,7 @@ export default function AgentScreen() {
   const { id, chat: chatId } = useLocalSearchParams<{ id: string; chat: string }>();
   const router = useRouter();
   const p = usePalette();
+  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const message = useStore((s) => s.chats.find((chat) => chat.id === chatId)?.messages.find((each) => each.id === id));
   const agent = message?.body.kind === "tool" ? message.body.agent : undefined;
@@ -161,7 +169,7 @@ export default function AgentScreen() {
   };
 
   return (
-    <View style={styles.screen}>
+    <KeyboardAvoidingView behavior="padding" style={[styles.screen, { paddingBottom: insets.bottom }]}>
       <Stack.Screen options={{ title: agent ? agentName(agent) : t("Transcript") }} />
       <CloseToolbar label={Platform.OS === "android" ? t("Close") : t("Done")} onClose={() => router.dismiss()} />
       {/* A long run's transcript holds hundreds of entries: the list draws those near the screen,
@@ -203,6 +211,8 @@ export default function AgentScreen() {
             rail={at + 1 < entries.length && entries[at + 1].kind !== "sent" && entries[at + 1].kind !== "log"}
             open={isOpen(entry, at)}
             width={column - NODE - 12}
+            chatId={chatId}
+            messageId={id}
             onToggle={toggle}
           />
         )}
@@ -244,9 +254,181 @@ export default function AgentScreen() {
         }
         onStop={stop}
       />
+      {agent && message ? (
+        <AgentComposer
+          agent={agent}
+          chatId={chatId}
+          messageId={message.id}
+          onSent={() => {
+            // What was sent shows at the end of the transcript once the agent takes it up.
+            atEnd.current = true;
+            scroll.current?.scrollToEnd({ animated: true });
+          }}
+        />
+      ) : null}
       <AgentAskSheet visible={askOpen && !!askRow} row={askRow} ask={askRow?.body.agent_ask} onClose={() => setAskOpen(false)} />
+    </KeyboardAvoidingView>
+  );
+}
+
+/// Whether a message can reach the agent: it is open and past its start, or it ended with a
+/// session to start again on. One Auto-review held, or nobody answered, never ran.
+function writable(agent: AgentRun): boolean {
+  return agent.state === "asking" || agent.state === "working" || agent.state === "idle" || agent.state === "exited" || agent.state === "failed" || agent.state === "stopped";
+}
+
+/// The foot of the page: the user writes the agent there, and only there. It takes the message
+/// up once it is done with what it does now, or starts again on its session; neither the chat nor
+/// the bot sees it. An agent that takes images (`images`) takes them too: from the photo library,
+/// the camera, or a paste, shown above the field until they go. A message that did not go stays in
+/// the field, with why.
+function AgentComposer({ agent, chatId, messageId, onSent }: { agent: AgentRun; chatId: string; messageId: string; onSent: () => void }) {
+  const p = usePalette();
+  const [draft, setDraft] = useState("");
+  const [images, setImages] = useState<PickedFile[]>([]);
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const open = writable(agent);
+  // Any agent but one whose handshake said no: one not asked yet is asked as the message goes.
+  const takesImages = agent.images !== false;
+  const name = agentName(agent);
+  const add = (files: PickedFile[]) => {
+    const refused: string[] = [];
+    setImages((current) => {
+      const next = [...current];
+      for (const file of files) {
+        if (!file.mime.startsWith("image/")) refused.push(t("{name} is not an image.", { name: file.name }));
+        else if (file.size !== undefined && file.size > MAX_ATTACHMENT_BYTES) refused.push(t("{name} is larger than {size} MB.", { name: file.name, size: MAX_ATTACHMENT_BYTES / 1024 / 1024 }));
+        else if (next.length >= MAX_ATTACHMENTS) refused.push(t("At most {count} files per message.", { count: MAX_ATTACHMENTS }));
+        else next.push(file);
+      }
+      return next;
+    });
+    setProblem(refused.length ? [...new Set(refused)].join(" ") : null);
+  };
+  const pick = async (source: AttachSource) => {
+    if (source === "camera") {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        setProblem(t("Allow the camera for Lorca in Settings to take a photo."));
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.85 });
+      if (!result.canceled) add(result.assets.map(imageAsset));
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsMultipleSelection: true, selectionLimit: Math.max(1, MAX_ATTACHMENTS - images.length), quality: 0.85 });
+    if (!result.canceled) add(result.assets.map(imageAsset));
+  };
+  const paste = (pasted: PastedImage[]) => {
+    if (!takesImages || !open) return;
+    const stamp = new Date().toISOString().slice(0, 19).replace("T", " ").replace(/:/g, ".");
+    add(
+      pasted.map((image, index) => {
+        const extension = image.mime === "image/jpeg" ? "jpg" : image.mime.slice("image/".length).split("+")[0] || "png";
+        return { ...image, name: `Pasted Image ${stamp}${pasted.length > 1 ? ` ${index + 1}` : ""}.${extension}` };
+      }),
+    );
+  };
+  const send = () => {
+    const text = draft.trim();
+    const attached = images;
+    if ((!text && attached.length === 0) || sending || !open) return;
+    setSending(true);
+    setProblem(null);
+    engine
+      .sendToAgent(chatId, messageId, text, attached)
+      .then(() => {
+        // What went leaves the field; what was typed or added meanwhile stays.
+        setDraft((current) => (current.trim() === text ? "" : current));
+        setImages((current) => current.filter((file) => !attached.includes(file)));
+        onSent();
+      })
+      .catch((e) => setProblem(e instanceof Error ? e.message : String(e)))
+      .finally(() => setSending(false));
+  };
+  const hint = problem
+    ? problem
+    : !open
+      ? t("{agent} cannot take a message.", { agent: name })
+      : agent.state === "working" || agent.state === "asking"
+        ? t("{agent} takes it up once it is done with what it does now.", { agent: name })
+        : agent.state === "exited" || agent.state === "failed" || agent.state === "stopped"
+          ? t("Sending starts {agent} again on its session.", { agent: name })
+          : null;
+  const canSend = open && !sending && (draft.trim().length > 0 || images.length > 0);
+  return (
+    <View style={[styles.composer, { borderTopColor: p.separator, backgroundColor: p.background }]}>
+      {images.length > 0 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.composerImages}>
+          {images.map((file, index) => (
+            <View key={`${file.uri}-${index}`}>
+              <Image source={{ uri: file.uri }} style={[styles.composerThumb, { backgroundColor: p.fill }]} contentFit="cover" />
+              <Pressable
+                onPress={() => setImages((current) => current.filter((_, at) => at !== index))}
+                hitSlop={12}
+                style={styles.composerRemove}
+                accessibilityRole="button"
+                accessibilityLabel={t("Remove {name}", { name: file.name })}
+              >
+                <Symbol name="xmark" size={9} color="#FFFFFF" weight="bold" />
+              </Pressable>
+            </View>
+          ))}
+        </ScrollView>
+      ) : null}
+      <View style={[styles.composerPill, { backgroundColor: p.fill, borderColor: p.separator }]}>
+        {takesImages ? (
+          <Pressable
+            onPress={() => setAttachOpen(true)}
+            disabled={!open || sending}
+            accessibilityRole="button"
+            accessibilityLabel={t("Attach images")}
+            style={({ pressed }) => [styles.composerSend, { opacity: !open || sending ? 0.4 : pressed ? 0.6 : 1 }]}
+          >
+            <Symbol name="photo" size={18} color={p.secondaryLabel} />
+          </Pressable>
+        ) : null}
+        <ImagePasteView onPasteImages={({ nativeEvent }) => paste(nativeEvent.files)} style={{ flex: 1 }}>
+          <TextInput
+            value={draft}
+            onChangeText={setDraft}
+            editable={open && !sending}
+            placeholder={t("Message {name}", { name })}
+            placeholderTextColor={p.tertiaryLabel}
+            multiline
+            keyboardAppearance={p.dark ? "dark" : "light"}
+            style={[styles.composerField, { color: p.label }]}
+            accessibilityLabel={t("Message {name}", { name })}
+          />
+        </ImagePasteView>
+        <Pressable
+          onPress={send}
+          disabled={!canSend}
+          accessibilityRole="button"
+          accessibilityLabel={t("Send")}
+          style={({ pressed }) => [styles.composerSend, { backgroundColor: canSend ? p.ink : p.fill, opacity: pressed ? 0.7 : 1 }]}
+        >
+          {sending ? <ActivityIndicator size="small" color={p.inkText} /> : <Symbol name="arrow.up" size={16} color={canSend ? p.inkText : p.tertiaryLabel} weight="bold" />}
+        </Pressable>
+      </View>
+      {hint ? <Text style={[styles.composerHint, { color: problem ? p.red : p.tertiaryLabel }]}>{hint}</Text> : null}
+      <AttachSheet visible={attachOpen} imagesOnly onClose={() => setAttachOpen(false)} onPick={(source) => void pick(source)} />
     </View>
   );
+}
+
+function imageAsset(asset: ImagePicker.ImagePickerAsset): PickedFile {
+  const name = asset.fileName ?? `Photo ${new Date().toISOString().slice(0, 19).replace("T", " ").replace(/:/g, ".")}.jpg`;
+  return {
+    uri: asset.uri,
+    name,
+    mime: asset.mimeType ?? (name.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg"),
+    size: asset.fileSize ?? undefined,
+    width: asset.width,
+    height: asset.height,
+  };
 }
 
 /// The top of the sheet: the agent's header with Stop, then what it works on, where, its session,
@@ -271,7 +453,6 @@ function Overview({ agent, message, entries, stopping, onStop, onActions }: { ag
         agent={agent}
         tile={40}
         size={18}
-        sub={agent.title || agent.task}
         trailing={
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
             {agentIsRunning(agent) ? <StopButton busy={stopping} onPress={onStop} size={34} /> : null}
@@ -288,12 +469,10 @@ function Overview({ agent, message, entries, stopping, onStop, onActions }: { ag
           </Text>
         </Section>
       ) : null}
-      {agent.branch || agent.folder || agent.device || since ? (
+      {agent.folder || since ? (
         <Section title={t("Workspace")}>
           <View style={[styles.facts, { backgroundColor: p.code }]}>
-            {agent.branch ? fact("arrow.triangle.branch", agent.branch, true) : null}
             {agent.folder ? fact("folder", agent.folder, true) : null}
-            {agent.device ? fact("desktopcomputer", agent.device) : null}
             {since ? fact("clock", t("Started {time} ago", { time: since })) : null}
           </View>
         </Section>
@@ -373,9 +552,24 @@ function hasBody(tool: AgentTool): boolean {
 /// One entry of the transcript: on the rail beside its node, or, for what was sent, a turn's start.
 /// Drawn again only when its entry, its place, or whether it is open changes: the sheet refreshes
 /// every few seconds, and most refreshes change one entry or none.
-const EntryRow = memo(function EntryRow({ entry, kind, who, rail, open, width, onToggle }: { entry: AgentEntry; kind: string; who: string; rail: boolean; open: boolean; width: number; onToggle: (entry: AgentEntry, open: boolean) => void }) {
+const EntryRow = memo(function EntryRow({ entry, kind, who, rail, open, width, chatId, messageId, onToggle }: { entry: AgentEntry; kind: string; who: string; rail: boolean; open: boolean; width: number; chatId: string; messageId: string; onToggle: (entry: AgentEntry, open: boolean) => void }) {
   const p = usePalette();
   const blue = accentColor("blue", p.dark);
+  if (entry.kind === "sent" && entry.from === "user") {
+    // What the user wrote on this page: their bubble on the right, as in a chat.
+    return (
+      <View style={styles.mine}>
+        <View style={[styles.mineBubble, { backgroundColor: p.userBubble, maxWidth: width * 0.8 }]}>
+          {entry.attachments?.length ? <AttachmentBlock attachments={entry.attachments} onUserBubble maxWidth={width * 0.8 - 24} chatId={chatId} messageId={messageId} /> : null}
+          {entry.text ? (
+            <Text selectable style={{ color: p.userBubbleText, fontSize: 15, lineHeight: 21 }}>
+              {entry.text}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+    );
+  }
   if (entry.kind === "sent") {
     return (
       <View style={[styles.sent, { backgroundColor: alpha(blue, 0.07), borderColor: alpha(blue, 0.2) }]}>
@@ -385,9 +579,12 @@ const EntryRow = memo(function EntryRow({ entry, kind, who, rail, open, width, o
             {t("{who} asked", { who })}
           </Text>
         </View>
-        <Text selectable style={{ color: p.label, fontSize: 15, lineHeight: 21 }}>
-          {entry.text}
-        </Text>
+        {entry.text ? (
+          <Text selectable style={{ color: p.label, fontSize: 15, lineHeight: 21 }}>
+            {entry.text}
+          </Text>
+        ) : null}
+        {entry.attachments?.length ? <AttachmentBlock attachments={entry.attachments} onUserBubble={false} maxWidth={width} chatId={chatId} messageId={messageId} /> : null}
       </View>
     );
   }
@@ -675,6 +872,14 @@ function OutputView({ output }: { output: string }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
+  composer: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8, gap: 5, borderTopWidth: StyleSheet.hairlineWidth },
+  composerPill: { flexDirection: "row", alignItems: "flex-end", gap: 2, borderRadius: 21, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 4, paddingVertical: 3 },
+  composerField: { flex: 1, minHeight: 36, maxHeight: 140, paddingHorizontal: 8, paddingTop: 8, paddingBottom: 8, fontSize: 16 },
+  composerSend: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", marginBottom: 2 },
+  composerImages: { gap: 12, paddingTop: 6, paddingBottom: 2, paddingHorizontal: 4 },
+  composerThumb: { width: 56, height: 56, borderRadius: 10 },
+  composerRemove: { position: "absolute", top: -5, right: -5, width: 18, height: 18, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.7)" },
+  composerHint: { fontSize: 12, lineHeight: 16, paddingHorizontal: 6 },
   content: { padding: 16, paddingBottom: 48, gap: 0 },
   sectionTitle: { fontSize: 12.5, fontWeight: "600" },
   facts: { borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, gap: 8 },
@@ -687,6 +892,8 @@ const styles = StyleSheet.create({
   output: { maxHeight: 300 },
   mono: { fontFamily: mono, fontSize: 12, lineHeight: 17 },
   diffLine: { paddingHorizontal: 12 },
+  mine: { alignItems: "flex-end", marginTop: 6, marginBottom: 18 },
+  mineBubble: { borderRadius: 18, paddingVertical: 9, paddingHorizontal: 13, gap: 8 },
   sent: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingTop: 10, paddingBottom: 12, paddingHorizontal: 13, gap: 6, marginTop: 6, marginBottom: 18 },
   entry: { flexDirection: "row", gap: 12 },
   gutter: { width: NODE, alignItems: "center" },

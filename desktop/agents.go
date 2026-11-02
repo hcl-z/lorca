@@ -115,7 +115,7 @@ func (m *mainWindow) agentCard(c *ui.Context, chat *model.Chat, message *model.M
 	holder := ui.Box(c.Key("agent:" + message.ID))
 	st, run := m.agentAsker(holder, agent)
 	holder.Children(func() {
-		cardFrameAgent(c, groupStart, agentSpokenText(agent, name), func() {
+		cardFrame(c, cardAvatar, groupStart, agentSpokenText(agent, name), func() {
 			ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Children(func() {
 				agentHeader(c, p, agent, 30, 13.5, func() {
 					if agent.IsRunning() {
@@ -405,19 +405,36 @@ func (w *appWindow) presentAgentTranscript(chatID string, message *model.Message
 			}
 		})
 	}
+	closed := false
 	w.present(func(c *ui.Context, s *sheet) {
 		t.fill = colors(c).Sheet
 		options := sheetOptions{
-			Width:    680,
-			Confirm:  L("Done"),
+			Width: 680,
+			// The steps scroll in a list of their own, the one scroll of the sheet.
+			Height:   760,
 			NoCancel: true,
-			Header:   func() { t.header(c, w, t.agent(agent), st, run) },
-			Leading:  func() { agentFooter(c, t.agent(agent)) },
+			// Return in the composer sends to the agent; it does not close the sheet.
+			ReturnInContent: true,
+			// Its header, with a close button at its end, and what its work changed and its branch.
+			Header: func() {
+				ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Start).Children(func() {
+					ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Children(func() { t.header(c, w, t.agent(agent), st, run) })
+					if hoverButton(c, hoverButtonOptions{Symbol: "xmark", Size: 13, Tooltip: L("Close")}).Clicked() {
+						closed = true
+					}
+				})
+				// What its work changed; its branch is in the subtitle already.
+				if changes := t.agent(agent).Changes; changes != nil && changes.Files > 0 {
+					ui.Row(c).FillWidth().Margin(8, 0, 0, 0).Children(func() { agentFooter(c, &model.AgentRun{Changes: changes}) })
+				}
+			},
+			// The composer stays at the foot, outside the steps' scroll.
+			Footer: func() { t.composer(c, w, t.agent(agent)) },
 		}
 		result := sheetFrame(c, options, func() {
-			t.view(c).Height(460)
+			t.view(c).Grow(1).Basis(0).MinHeight(0)
 		})
-		if result.Confirmed || result.Cancelled {
+		if result.Confirmed || result.Cancelled || closed {
 			s.dismiss()
 		}
 	}, t.close)

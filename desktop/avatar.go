@@ -74,15 +74,6 @@ func authorAvatar(author model.Author) avatarContent {
 	return avatarContent{Kind: avatarSystem}
 }
 
-// messageAvatar is who wrote a message: the coding agent's own mark when one did, else its
-// bot's avatar.
-func messageAvatar(message *model.Message) avatarContent {
-	if message.Agent != nil {
-		return avatarContent{Kind: avatarAgent, AgentKind: message.Agent.Kind}
-	}
-	return authorAvatar(message.Author)
-}
-
 // presencePlace is where the working dot sits: over the bottom-right edge of a circle `size` across,
 // or the top-right one when a service's mark holds the bottom.
 func presencePlace(size float32, top bool) (dot, x, y float32) {

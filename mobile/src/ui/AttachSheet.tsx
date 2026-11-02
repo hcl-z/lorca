@@ -7,12 +7,13 @@ import { SHEET_PRESETS } from "./sheetPresets";
 
 export type AttachSource = "photos" | "camera" | "file";
 
-export function AttachSheet({ visible, onClose, onPick }: { visible: boolean; onClose: () => void; onPick: (source: AttachSource) => void }) {
+/// `imagesOnly` leaves out Choose File, for a coding agent that takes images and nothing else.
+export function AttachSheet({ visible, onClose, onPick, imagesOnly = false }: { visible: boolean; onClose: () => void; onPick: (source: AttachSource) => void; imagesOnly?: boolean }) {
   useLanguage();
   const actions: SheetAction[] = [
     { label: t("Photo Library"), icon: "photo.on.rectangle", onPress: () => onPick("photos") },
     { label: t("Take Photo"), icon: "camera", onPress: () => onPick("camera") },
-    { label: t("Choose File"), icon: "folder", onPress: () => onPick("file") },
+    ...(imagesOnly ? [] : [{ label: t("Choose File"), icon: "folder", onPress: () => onPick("file") }]),
   ];
   return <ActionSheet visible={visible} title={t("Attach")} actions={actions} onClose={onClose} snapPoints={SHEET_PRESETS.attach} />;
 }

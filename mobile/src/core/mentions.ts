@@ -32,24 +32,18 @@ export function insertMention(text: string, trigger: MentionTrigger, target: { n
 }
 
 export interface MentionPick {
-  kind: "bot" | "agent";
   id: string;
   name: string;
 }
 
-/// The picks still addressed by `text`, split into bot ids and agent ids. A pick whose `@Name`
-/// the user deleted or edited away is dropped; ids are kept once.
-export function pickMentions(text: string, picks: MentionPick[]): { mentions: string[]; agents: string[] } {
+/// The bots still addressed by `text`, by id: a pick whose `@Name` the user deleted or edited away
+/// is dropped; ids are kept once.
+export function pickMentions(text: string, picks: MentionPick[]): string[] {
   const lower = text.toLocaleLowerCase();
   const mentions: string[] = [];
-  const agents: string[] = [];
-  const seen = { bot: new Set<string>(), agent: new Set<string>() };
   for (const pick of picks) {
-    if (!lower.includes(`@${pick.name.toLocaleLowerCase()}`)) continue;
-    const ids = pick.kind === "bot" ? mentions : agents;
-    if (seen[pick.kind].has(pick.id)) continue;
-    seen[pick.kind].add(pick.id);
-    ids.push(pick.id);
+    if (!lower.includes(`@${pick.name.toLocaleLowerCase()}`) || mentions.includes(pick.id)) continue;
+    mentions.push(pick.id);
   }
-  return { mentions, agents };
+  return mentions;
 }

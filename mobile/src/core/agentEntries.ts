@@ -3,6 +3,8 @@
 /// and Lorca's notes. `seq` is an entry's place, kept when it changes; `rev` the change it was last
 /// part of, so an app asks only for what changed since the latest it has.
 
+import type { Attachment } from "./model";
+
 export interface AgentEntry {
   seq: number;
   rev: number;
@@ -15,6 +17,10 @@ export interface AgentEntry {
   status?: string;
   tool?: AgentTool;
   steps?: { text: string; done: boolean }[];
+  /** Who sent a `sent` entry: `user` for what the user wrote on the agent's page, none for the bot. */
+  from?: string;
+  /** The images the user sent with a `sent` entry, by the chat's file ids. */
+  attachments?: Attachment[];
 }
 
 export interface AgentTool {

@@ -1,13 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  agentAskCard,
-  chatAgents,
-  chatHasAgents,
-  mentionTargets,
-  participantNames,
-  showsSpeakersIn,
-  speakerKey,
-} from "./participants";
+import { agentAskCard, chatAgents, mentionTargets, participantNames, speakerKey } from "./participants";
 import { agentKindName, type AgentRun, type Bot, type Chat, type Message } from "./model";
 
 const bot = (id: string, name: string): Bot =>
@@ -25,14 +17,13 @@ const tool = (id: string, botId: string, run: AgentRun): Message => ({
   created_at: 1,
 });
 
-const said = (id: string, run?: AgentRun): Message => ({
+const said = (id: string): Message => ({
   id,
   chat_id: "chat",
-  author: run ? { kind: "bot", bot_id: "b1" } : { kind: "you" },
+  author: { kind: "you" },
   body: { kind: "text", text: "hi" },
   state: { kind: "complete" },
   created_at: 1,
-  agent: run ? { id: run.id, name: run.name ?? "Claude Code", kind: run.kind } : undefined,
 });
 
 const chat = (messages: Message[], botIds = ["b1"], kind = "dm"): Chat =>
@@ -57,42 +48,26 @@ describe("chat agents", () => {
     const ended = agent("a1", "stopped", 1);
     expect(chatAgents(chat([tool("m1", "b1", ended)]))).toEqual([]);
   });
-
-  test("an agent's messages keep the chat a speaker layout", () => {
-    expect(chatHasAgents(chat([said("m1", agent("a1", "stopped"))]))).toBe(true);
-    expect(showsSpeakersIn(chat([said("m1")]))).toBe(false);
-    expect(showsSpeakersIn(chat([said("m1")], ["b1"], "group"))).toBe(true);
-  });
 });
 
 describe("mention targets", () => {
   const bots = new Map([["b1", bot("b1", "Chef")], ["b2", bot("b2", "Scout")]]);
 
-  test("a one-bot chat offers only its agents", () => {
+  test("a one-bot chat offers no one, its agents included: they are written to on their page", () => {
     const c = chat([tool("m1", "b1", agent("a1", "idle"))], ["b1"]);
-    expect(mentionTargets(c, bots, true).map((target) => `${target.kind}:${target.name}`)).toEqual(["agent:Claude Code"]);
+    expect(mentionTargets(c, bots)).toEqual([]);
   });
 
-  test("a multi-bot group offers its bots and agents", () => {
+  test("a multi-bot group offers its bots only", () => {
     const c = chat([tool("m1", "b1", agent("a1", "idle"))], ["b1", "b2"], "group");
-    expect(mentionTargets(c, bots, true).map((target) => `${target.kind}:${target.name}`)).toEqual([
-      "bot:Chef",
-      "bot:Scout",
-      "agent:Claude Code",
-    ]);
-  });
-
-  test("an agent is hidden when its runner cannot take agent messages", () => {
-    const c = chat([tool("m1", "b1", agent("a1", "idle"))], ["b1", "b2"], "group");
-    expect(mentionTargets(c, bots, false).map((target) => target.kind)).toEqual(["bot", "bot"]);
+    expect(mentionTargets(c, bots).map((target) => `${target.kind}:${target.name}`)).toEqual(["bot:Chef", "bot:Scout"]);
   });
 });
 
 describe("speakers and names", () => {
-  test("speaker keys separate a bot from its agents", () => {
+  test("speaker keys follow who wrote the message", () => {
     expect(speakerKey(said("m1"))).toBe("you");
     expect(speakerKey(tool("m2", "b1", agent("a1", "idle")))).toBe("bot:b1");
-    expect(speakerKey(said("m3", agent("a1", "idle")))).toBe("agent:a1");
   });
 
   test("participantNames stacks the bot then its active agents", () => {

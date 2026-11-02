@@ -37,8 +37,19 @@ pub(crate) enum Event {
     Ask(Ask, oneshot::Sender<Result<Option<serde_json::Map<String, Value>>, String>>),
     /// The title it gave its session.
     Title(String),
+    /// Whether it takes images in a prompt (`promptCapabilities.image`), as its handshake said.
+    Images(bool),
     /// It is gone.
     Ended(Ended),
+}
+
+/// An image sent with a message, as ACP carries it: its bytes in base64 and its type. `attachment`
+/// is the file it was made from, which the apps show beside the message.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Image {
+    pub data: String,
+    pub mime_type: String,
+    pub attachment: crate::model::Attachment,
 }
 
 /// A question an agent puts to the user: what it says, and the fields it wants filled.
@@ -103,8 +114,8 @@ pub(crate) type Events = mpsc::UnboundedSender<Event>;
 #[async_trait]
 pub(crate) trait Driver: Send + Sync {
     /// Gives it a message: taken up when it is done with what it does now, or at once with
-    /// `interrupt`, which stops that first. `from` is `user` for what the user wrote in the chat.
-    async fn send(&self, text: &str, interrupt: bool, from: &str) -> Result<(), String>;
+    /// `interrupt`, which stops that first. `from` is `user` for what the user wrote on its page.
+    async fn send(&self, text: &str, images: Vec<Image>, interrupt: bool, from: &str) -> Result<(), String>;
     /// The commands it offers (`/name`, `$name`, its skills among them) with what each does.
     async fn commands(&self) -> Vec<(String, String)> {
         Vec::new()

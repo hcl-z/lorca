@@ -60,8 +60,6 @@ pub const STALL_AFTER: Duration = Duration::from_secs(10 * 60);
 pub const IDLE_LIMIT: Duration = Duration::from_secs(60 * 60);
 /// The card catches up with the transcript once it pauses this long, and at least this often.
 const ROW_SETTLE: Duration = Duration::from_millis(500);
-/// How often what the agent is saying is written to the chat while it says it.
-const CHAT_FLUSH: Duration = Duration::from_millis(800);
 const ROW_EVERY: Duration = Duration::from_secs(2);
 /// The lines the card carries.
 const ROW_LINES: usize = 20;
@@ -73,8 +71,6 @@ const APP_LINES: usize = 2000;
 const MAX_APP_ENTRIES: u64 = 200;
 /// What the bot reads at once, at most.
 const READ_LINES: usize = 200;
-/// How much of what an agent said its message in the chat carries; the transcript keeps it all.
-const MESSAGE_CHARS: usize = 4000;
 /// Ended agents are forgotten this long after they ended.
 const FORGET_AFTER: f64 = 30.0 * 24.0 * 3600.0;
 
@@ -142,8 +138,8 @@ pub(crate) struct Record {
     pub message_id: String,
     /// The message behind the turn that started it: what Auto-review weighs its commands against.
     pub trigger_message_id: String,
-    /// The user is talking to it in the chat: its turns are theirs, so its being done is not
-    /// news for the bot to report.
+    /// The user is talking to it on its page (`coding.send`): its turns are theirs, so its being
+    /// done is not news for the bot to report. The bot's `send` clears it.
     #[serde(default)]
     pub direct: bool,
     /// The user made the bot their proxy in this agent's conversation: its questions wake the
@@ -178,6 +174,10 @@ pub(crate) struct Record {
     /// Why its last turn failed, while it waits `idle` after it; the next turn clears it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// Whether it takes images in a prompt, as its last handshake said (`promptCapabilities.image`);
+    /// none before a handshake under a Lorca that asks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub images: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -259,35 +259,6 @@ pub struct Agent {
     stopping: AtomicBool,
     /// Which run of its process the supervisor follows: a resumed agent is a new one.
     generation: AtomicU64,
-    /// The chat messages its words become, one per `said` segment, the one it is saying open.
-    said: Mutex<SaidChat>,
-}
-
-/// The conversation as the chat shows it: the agent's words projected into messages of its own,
-/// while its card keeps the tool calls, thoughts, and plan.
-#[derive(Default)]
-struct SaidChat {
-    /// The entry key of the segment being said, and its message.
-    current: Option<(String, Message)>,
-    /// What the message held before the segment being said.
-    prefix: String,
-    /// What separates the segment being said from the prefix: a space inside one message, a
-    /// paragraph after a tool call, plan, or note.
-    separator: String,
-    /// A tool call, plan, or note came since the last words: the next ones start a paragraph.
-    paragraph: bool,
-    /// When the open message was last written to the chat.
-    flushed: Option<Instant>,
-}
-
-/// What a `said` message in the chat carries of `text`: its first `MESSAGE_CHARS`, with an
-/// ellipsis. The transcript keeps the whole answer.
-fn chat_text(text: &str) -> String {
-    if text.chars().count() > MESSAGE_CHARS {
-        format!("{}…", text.chars().take(MESSAGE_CHARS).collect::<String>())
-    } else {
-        text.to_string()
-    }
 }
 
 impl Agent {
@@ -305,7 +276,6 @@ impl Agent {
             hold: Mutex::new(None),
             stopping: AtomicBool::new(false),
             generation: AtomicU64::new(0),
-            said: Mutex::new(SaidChat::default()),
         })
     }
 
@@ -359,113 +329,13 @@ impl Agent {
             return;
         }
         let redactions = crate::secrets::Redactions::load(app);
-        let mut project: Vec<(String, String, bool)> = Vec::new();
-        let mut paragraph = self.said.lock().unwrap().paragraph;
         {
             let mut entries = self.entries.lock().unwrap();
             for (key, entry) in new {
-                let entry = entry.cleaned(|text| redactions.text(&text).unwrap_or(text));
-                // What it says is a message of its own in the chat. A tool, a plan, or a note
-                // separates the next words with a paragraph, but does not end the message: one
-                // turn is one message. A new prompt ends it, and the next turn starts another.
-                if entry.kind == "said" {
-                    project.push((key.clone(), entry.text.clone(), paragraph));
-                    paragraph = false;
-                } else if entry.kind == "sent" {
-                    project.push((String::new(), String::new(), true));
-                    paragraph = false;
-                } else if matches!(entry.kind.as_str(), "tool" | "plan" | "note") {
-                    paragraph = true;
-                }
-                entries.put(key, entry);
-            }
-        }
-        self.said.lock().unwrap().paragraph = paragraph;
-        for (key, text, paragraph) in project {
-            if key.is_empty() {
-                self.end_said(app);
-            } else {
-                self.say_in_chat(app, &key, &text, paragraph);
+                entries.put(key, entry.cleaned(|text| redactions.text(&text).unwrap_or(text)));
             }
         }
         *self.active_at.lock().unwrap() = Instant::now();
-    }
-
-    /// Its words in the chat: one message for the turn, growing as it streams and complete when
-    /// the turn is. A new `said` segment continues the same message; a tool call, plan, or note
-    /// only makes the next segment start a paragraph, and a new user message ends it. `@Name` in
-    /// the chat sends it here (`from_user`).
-    fn say_in_chat(&self, app: &App, key: &str, text: &str, paragraph: bool) {
-        let text = text.trim();
-        if text.is_empty() {
-            return;
-        }
-        let record = self.record();
-        let author = crate::model::AgentAuthor { id: record.id, name: name(&record.kind).to_string(), kind: record.kind };
-        let mut said = self.said.lock().unwrap();
-        let same = matches!(&said.current, Some((open, _)) if open == key);
-        if !same {
-            // Keep the turn's one message, with its id and when it started: a new segment only
-            // grows its text. A tool call, plan, or note makes the next segment a paragraph.
-            let (mut message, prefix, separator) = match said.current.take() {
-                Some((_, message)) => {
-                    let Body::Text { text: body, .. } = &message.body else {
-                        return;
-                    };
-                    let prefix = body.clone();
-                    let separator = if paragraph { "\n\n".to_string() } else { " ".to_string() };
-                    (message, prefix, separator)
-                }
-                None => (
-                    Message::new(&record.chat_id, Author::Bot { bot_id: record.bot_id }, Body::text(text)),
-                    String::new(),
-                    String::new(),
-                ),
-            };
-            // The chat keeps the beginning of a long answer; the transcript keeps all of it.
-            let body = chat_text(&format!("{prefix}{separator}{text}"));
-            message.body = Body::text(body);
-            message.agent = Some(author);
-            message.state = crate::model::MessageState::Streaming;
-            app.upsert_message(message.clone(), true);
-            said.prefix = prefix;
-            said.separator = separator;
-            said.current = Some((key.to_string(), message));
-            said.flushed = Some(Instant::now());
-            return;
-        }
-        let due = said.flushed.is_none_or(|flushed| flushed.elapsed() >= CHAT_FLUSH);
-        let body = format!("{}{}{}", said.prefix, said.separator, text);
-        let (_, message) = said.current.as_mut().expect("a said message");
-        let changed = match &mut message.body {
-            Body::Text { text: current, .. } => {
-                if current.as_str() == body.as_str() {
-                    false
-                } else {
-                    *current = body;
-                    true
-                }
-            }
-            _ => false,
-        };
-        if changed && due {
-            message.state = crate::model::MessageState::Streaming;
-            app.upsert_message(message.clone(), true);
-            said.flushed = Some(Instant::now());
-        }
-    }
-
-    /// The turn it was saying is over: its message in the chat is complete.
-    fn end_said(&self, app: &App) {
-        let mut said = self.said.lock().unwrap();
-        if let Some((_, mut message)) = said.current.take() {
-            message.state = crate::model::MessageState::Complete;
-            app.upsert_message(message, true);
-        }
-        said.prefix.clear();
-        said.separator.clear();
-        said.paragraph = false;
-        said.flushed = None;
     }
 
     /// A line of Lorca's own: in the bot's transcript, and a note in the apps'.
@@ -632,6 +502,7 @@ impl Agents {
             state: if (question.is_some() || asking.is_some()) && open { "asking".into() } else { record.state },
             stalled: record.stalled,
             error,
+            images: record.images,
             // A held start never makes an agent.
             held: false,
             question: question.filter(|_| open),
@@ -890,6 +761,7 @@ pub(crate) async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Agent>, St
         state: "starting".into(),
         stalled: false,
         error: None,
+        images: None,
         outcome: None,
         pull_request: None,
         changes: None,
@@ -907,7 +779,7 @@ pub(crate) async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Agent>, St
     app.coding_agents.agents.lock().unwrap().push(agent.clone());
     save(app);
     app.coding_agents.sync(app, &agent);
-    let launched = launch(app, &agent, &start.program, &start.prompt, None, &start.wants).await;
+    let launched = launch(app, &agent, &start.program, &start.prompt, Vec::new(), "", None, &start.wants).await;
     if let Err(error) = &launched {
         let mut record = agent.record.lock().unwrap();
         record.state = "failed".into();
@@ -921,7 +793,8 @@ pub(crate) async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Agent>, St
 
 /// Starts the agent's process, on `prompt` (resuming `session`), with a supervisor that follows
 /// it. An agent given secrets has them in its environment.
-async fn launch(app: &Arc<App>, agent: &Arc<Agent>, program: &Path, prompt: &str, session: Option<&str>, wants: &[(String, String)]) -> Result<(), String> {
+#[allow(clippy::too_many_arguments)]
+async fn launch(app: &Arc<App>, agent: &Arc<Agent>, program: &Path, prompt: &str, images: Vec<driver::Image>, from: &str, session: Option<&str>, wants: &[(String, String)]) -> Result<(), String> {
     use lorca_agent::tools::SecretVariables;
     let record = agent.record();
     // Looked up as it starts, so one the user deleted meanwhile is not given.
@@ -936,101 +809,17 @@ async fn launch(app: &Arc<App>, agent: &Arc<Agent>, program: &Path, prompt: &str
     agent.stopping.store(false, Ordering::SeqCst);
     agent.entries.lock().unwrap().new_run();
     tokio::spawn(supervise(app.clone(), agent.clone(), rx, generation));
-    let driver = acp::start(spec, program, &record.folder, &prompt, session, &record.config, wants, &variables, tx).await?;
+    let driver = acp::start(spec, program, &record.folder, &prompt, images, from, session, &record.config, wants, &variables, tx).await?;
     *agent.driver.lock().unwrap() = Some(driver);
     // The card learns what can be changed now that the process is there to ask.
     app.coding_agents.sync(app, agent);
     Ok(())
 }
 
-/// The agent a chat message addresses with `@Name`, and its words without the mention. The most
-/// recently started of two agents with one name wins.
-pub(crate) fn mentioned(app: &App, chat_id: &str, bot_id: &str, text: &str) -> Option<(Arc<Agent>, String)> {
-    let mut found: Option<(Arc<Agent>, String)> = None;
-    for agent in app.coding_agents.of(chat_id, bot_id) {
-        let record = agent.record();
-        // An agent Auto-review is still deciding on has no session to take a message yet.
-        if !matches!(record.state.as_str(), "starting" | "working" | "idle" | "asking") {
-            continue;
-        }
-        let agent_name = name(&record.kind);
-        let Some(words) = without_mention(agent_name, text) else {
-            continue;
-        };
-        if found.as_ref().is_none_or(|(other, _)| record.started_at > other.record().started_at) {
-            found = Some((agent, words));
-        }
-    }
-    found
-}
-
-/// `text` without the first `@name`, when it addresses that agent.
-fn without_mention(name: &str, text: &str) -> Option<String> {
-    let (at, _) = text.match_indices('@').find(|(at, _)| crate::runtime::mention_at(text, *at, name))?;
-    let end = at + 1 + name.len();
-    Some(format!("{}{}", &text[..at], &text[end..]).trim().to_string())
-}
-
-/// The user's message in the chat goes to the agent as it was written, the `@Name` taken out,
-/// cutting short what it does now so it reads at once. Its commands are weighed against this
-/// message from here on.
-pub(crate) fn from_user(app: &Arc<App>, agent: &Arc<Agent>, text: &str, message_id: &str) {
-    let text = text.trim().to_string();
-    if text.is_empty() {
-        return;
-    }
-    {
-        let mut record = agent.record.lock().unwrap();
-        record.trigger_message_id = message_id.to_string();
-        record.direct = true;
-    }
-    let (app, agent) = (app.clone(), agent.clone());
-    tokio::spawn(async move {
-        match send(&app, &agent, &text, true, "user").await {
-            Ok(_) => save(&app),
-            Err(error) => {
-                agent.note(&app, &format!("⎿ {error}"));
-                save(&app);
-            }
-        }
-    });
-}
-
-/// Delivers an `agent_message` job on this Runner: the user's message goes to the agent it
-/// addresses, with the `@Name` taken out, before any turn job or chat lock. A job for the same
-/// user message the agent is already answering is skipped, so a redelivery is harmless.
-#[cfg(feature = "runner")]
-pub(crate) fn from_job(app: &Arc<App>, job: &crate::model::Job) {
-    let Some(target) = &job.agent_message else { return };
-    let agent = app.coding_agents.find(&job.chat_id, &job.bot_id, &target.id);
-    let (agent, words) = match agent {
-        Some(agent) => {
-            let record = agent.record();
-            if !matches!(record.state.as_str(), "starting" | "working" | "idle" | "asking") {
-                return;
-            }
-            if record.direct && record.trigger_message_id == job.trigger_message_id {
-                return;
-            }
-            // A picked agent may be addressed by the id alone, without its `@Name` in the
-            // text; then the whole text is the message. A typed `@Name` is stripped as usual.
-            let words = without_mention(name(&record.kind), &target.text).unwrap_or_else(|| target.text.trim().to_string());
-            (agent, words)
-        }
-        None => {
-            let Some((agent, words)) = mentioned(app, &job.chat_id, &job.bot_id, &target.text) else { return };
-            (agent, words)
-        }
-    };
-    if words.is_empty() {
-        return;
-    }
-    from_user(app, &agent, &words, &job.trigger_message_id);
-}
-
-/// Gives the agent a message from the bot: to its running process, or to a new process on its
-/// session when its process is gone (it was done and stopped, or Lorca restarted).
-pub(crate) async fn send(app: &Arc<App>, agent: &Arc<Agent>, text: &str, interrupt: bool, from: &str) -> Result<String, String> {
+/// Gives the agent a message, the bot's or the user's (`from`), with its images: to its running
+/// process, or to a new process on its session when its process is gone (it was done and stopped,
+/// or Lorca restarted).
+pub(crate) async fn send(app: &Arc<App>, agent: &Arc<Agent>, text: &str, images: Vec<driver::Image>, interrupt: bool, from: &str) -> Result<String, String> {
     let text = &without_secrets(app, text.to_string());
     let record = agent.record();
     {
@@ -1043,7 +832,7 @@ pub(crate) async fn send(app: &Arc<App>, agent: &Arc<Agent>, text: &str, interru
         *agent.budget.lock().unwrap() = Some(budget);
     }
     if let Some(driver) = agent.driver() {
-        driver.send(text, interrupt, from).await?;
+        driver.send(text, images, interrupt, from).await?;
         *agent.active_at.lock().unwrap() = Instant::now();
         let busy = matches!(record.state.as_str(), "working" | "starting");
         return Ok(match (busy, interrupt) {
@@ -1063,7 +852,7 @@ pub(crate) async fn send(app: &Arc<App>, agent: &Arc<Agent>, text: &str, interru
         kept.ended_at = None;
     }
     app.coding_agents.sync(app, agent);
-    match launch(app, agent, &program, text, record.session.as_deref(), &[]).await {
+    match launch(app, agent, &program, text, images, from, record.session.as_deref(), &[]).await {
         Ok(()) => {
             save(app);
             Ok(format!("{} started again on its session and is working on it.", name(&record.kind)))
@@ -1084,7 +873,6 @@ pub(crate) async fn send(app: &Arc<App>, agent: &Arc<Agent>, text: &str, interru
 
 /// Stops the agent; its card says `reason`.
 pub(crate) fn stop(app: &Arc<App>, agent: &Arc<Agent>, reason: &str) {
-    agent.end_said(app);
     agent.stopping.store(true, Ordering::SeqCst);
     *agent.question.lock().unwrap() = None;
     agent.pending.lock().unwrap().take();
@@ -1128,7 +916,6 @@ async fn supervise(app: Arc<App>, agent: Arc<Agent>, mut events: mpsc::Unbounded
                 record.stalled = true;
                 record.news = Some(News::Stalled);
             }
-            agent.end_said(&app);
             agents.sync(&app, &agent);
             save(&app);
             wake(&app, &agent);
@@ -1268,6 +1055,13 @@ async fn handle(app: &Arc<App>, agent: &Arc<Agent>, event: Event, generation: u6
             });
             false
         }
+        Event::Images(takes) => {
+            let changed = std::mem::replace(&mut agent.record.lock().unwrap().images, Some(takes)) != Some(takes);
+            if changed {
+                save(app);
+            }
+            changed
+        }
         Event::Title(title) => {
             let title = Some(title).filter(|title| !title.is_empty());
             let changed = std::mem::replace(&mut agent.record.lock().unwrap().title, title.clone()) != title;
@@ -1282,11 +1076,10 @@ async fn handle(app: &Arc<App>, agent: &Arc<Agent>, event: Event, generation: u6
 
 /// Its turn is over: done with its last message, or failed with why. Either way it waits idle for
 /// a follow-up, and what it changed is published as outputs. The bot hears a finished turn
-/// unless the user drove it from the chat, where its words are already showing; it hears a
-/// failed one even then.
+/// unless the user drove it from the agent's page, where they watch it; it hears a failed one
+/// even then.
 async fn turn_over(app: &Arc<App>, agent: &Arc<Agent>, ended: Result<Option<String>, String>) {
     let agents = &app.coding_agents;
-    agent.end_said(app);
     {
         let mut record = agent.record.lock().unwrap();
         if !matches!(record.state.as_str(), "working" | "starting") {
@@ -1340,7 +1133,6 @@ fn ended(app: &Arc<App>, agent: &Arc<Agent>, end: driver::Ended, generation: u64
     agent.hold.lock().unwrap().take();
     *agent.question.lock().unwrap() = None;
     agent.pending.lock().unwrap().take();
-    agent.end_said(app);
     let stopping = agent.stopping.load(Ordering::SeqCst);
     let tell = {
         let mut record = agent.record.lock().unwrap();
@@ -1604,7 +1396,6 @@ fn bot_answers_questions(record: &Record) -> bool {
 /// stopping, is an `Err`, and the card says which.
 async fn converse(app: &Arc<App>, agent: &Arc<Agent>, ask: Ask) -> Result<Option<serde_json::Map<String, Value>>, String> {
     // One question at a time, as a permission is asked.
-    agent.end_said(app);
     let _one = agent.asking.lock().await;
     if !agent.is_running() {
         return Err("Stopped".into());
@@ -1967,8 +1758,44 @@ pub(crate) async fn set_options(app: &Arc<App>, agent: &Arc<Agent>, wants: &[(St
     Ok(format!("Set. {} ({}) now has {now}.", name(&record.kind), record.id))
 }
 
-/// `coding.transcript`, `coding.stop`, `coding.set`, and `coding.answer` for a card on this Runner, from the
-/// local app or a sealed request: `{ chat_id, message_id, since?, before?, limit?, choice?, text?, what?, value? }`.
+/// The most images one message from the agent's page carries.
+const MAX_PAGE_IMAGES: usize = 10;
+
+/// The images the user sent from the agent's page, as ACP carries them: each attachment fetched to
+/// this Runner when another Device sent it, and made into one a model takes (`files::inline_image`:
+/// turned upright, scaled down, converted). Only an agent whose handshake said it takes images
+/// gets any; anything but an image, or one that cannot be made, is refused with why.
+async fn page_images(app: &Arc<App>, record: &Record, attachments: &[crate::model::Attachment]) -> Result<Vec<driver::Image>, String> {
+    if attachments.is_empty() {
+        return Ok(Vec::new());
+    }
+    // Not known before its first handshake here: the driver drops them, with a note, if it says no.
+    if record.images == Some(false) {
+        return Err(format!("{} does not take images.", name(&record.kind)));
+    }
+    if attachments.len() > MAX_PAGE_IMAGES {
+        return Err(format!("At most {MAX_PAGE_IMAGES} images per message."));
+    }
+    let mut images = Vec::new();
+    for attachment in attachments {
+        if !attachment.is_image() {
+            return Err(format!("{} is not an image; the agent takes images only.", attachment.name));
+        }
+        crate::files::ensure_local(app, attachment).await.map_err(|error| format!("{} could not be fetched: {error}", attachment.name))?;
+        let (app, kept) = (app.clone(), attachment.clone());
+        let made = tokio::task::spawn_blocking(move || crate::files::inline_image(&app, &kept)).await.map_err(|error| error.to_string())?;
+        let made = made.map_err(|why| format!("{} cannot go: {why}", attachment.name))?;
+        images.push(driver::Image { data: made.data, mime_type: made.mime_type, attachment: attachment.clone() });
+    }
+    Ok(images)
+}
+
+/// How long `coding.send` waits for its message to reach the agent before it answers, inside a
+/// sealed request's time; an agent that takes longer to start again goes on.
+const SEND_WAIT: Duration = Duration::from_secs(12);
+
+/// `coding.transcript`, `coding.send`, `coding.stop`, `coding.set`, and `coding.answer` for a card on this Runner, from the
+/// local app or a sealed request: `{ chat_id, message_id, since?, before?, limit?, text?, values?, decline?, what?, value? }`.
 pub async fn serve(app: &Arc<App>, verb: &str, body: &Value) -> Result<Value, String> {
     let chat_id = body["chat_id"].as_str().ok_or("missing chat_id")?;
     let message_id = body["message_id"].as_str().ok_or("missing message_id")?;
@@ -1994,6 +1821,47 @@ pub async fn serve(app: &Arc<App>, verb: &str, body: &Value) -> Result<Value, St
             // An agent that keeps no entries answers the bot's text transcript instead.
             let text = if kept_no_entries { agent.transcript.lock().unwrap().tail(APP_LINES).join("\n") } else { String::new() };
             Ok(json!({ "text": text, "card": app.coding_agents.card(app, &agent), "entries": changed, "rev": rev, "first": first }))
+        }
+        // The user writes to the agent on its page: taken up when it is done with what it does
+        // now, or starting it again on its session. The bot does not see it.
+        "coding.send" => {
+            let text = body["text"].as_str().map(str::trim).unwrap_or("").to_string();
+            let attachments: Vec<crate::model::Attachment> = serde_json::from_value(body["attachments"].clone()).unwrap_or_default();
+            if text.is_empty() && attachments.is_empty() {
+                return Err("Write a message first".into());
+            }
+            let record = agent.record();
+            if matches!(record.state.as_str(), "checking" | "denied" | "expired" | "dismissed") {
+                return Err(format!("{} never started, so there is nothing to write to.", name(&record.kind)));
+            }
+            // Its first process is on its way: a second one would race it on the same session.
+            if !agent.is_running() && record.state == "starting" {
+                return Err(format!("{} is still starting. Send it again in a moment.", name(&record.kind)));
+            }
+            if !agent.is_running() && record.session.is_none() {
+                return Err(format!("{} ended before its session began. Start a new agent for the job.", name(&record.kind)));
+            }
+            let images = page_images(app, &record, &attachments).await?;
+            // The user drives this turn: its being done is theirs to see, not the bot's to report.
+            agent.record.lock().unwrap().direct = true;
+            let sending = {
+                let (app, agent) = (app.clone(), agent.clone());
+                tokio::spawn(async move {
+                    let sent = send(&app, &agent, &text, images, false, "user").await;
+                    if let Err(error) = &sent {
+                        agent.note(&app, &format!("⎿ {error}"));
+                    }
+                    save(&app);
+                    sent
+                })
+            };
+            // Starting it again can outlast a sealed request; it goes on, and its card says how.
+            match tokio::time::timeout(SEND_WAIT, sending).await {
+                Ok(Ok(Err(error))) => return Err(error),
+                Ok(Err(error)) => return Err(error.to_string()),
+                Ok(Ok(Ok(_))) | Err(_) => {}
+            }
+            Ok(json!({ "sent": true, "card": app.coding_agents.card(app, &agent) }))
         }
         "coding.stop" => {
             if !agent.is_open() {

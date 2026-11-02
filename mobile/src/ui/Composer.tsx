@@ -22,7 +22,6 @@ import { ImagePasteView, type PastedImage } from "../../modules/lorca-core/Image
 import type { PickedFile } from "../core/engine";
 import { fileSize, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "../core/model";
 import { BotAvatar } from "./Avatar";
-import { AgentTile } from "./agentKit";
 import { AttachSheet, type AttachSource } from "./AttachSheet";
 import { insertMention as insertMentionText, mentionTrigger, pickMentions, type MentionPick } from "../core/mentions";
 import type { MentionTarget } from "../core/participants";
@@ -64,8 +63,8 @@ export const Composer = memo(function Composer({
   /** A turn is in flight in the chat: the disc offers Stop. */
   responding?: boolean;
   onStop?: () => Promise<void>;
-  /** The text, its files, the bots its `@Name`s picked, and the coding agents it addresses. */
-  onSend: (text: string, attachments: PickedFile[], mentions: string[], agents: string[]) => void;
+  /** The text, its files, and the bots its `@Name`s picked. */
+  onSend: (text: string, attachments: PickedFile[], mentions: string[]) => void;
 }) {
   const { language: appLanguage } = useLanguage();
   const p = usePalette();
@@ -79,8 +78,7 @@ export const Composer = memo(function Composer({
   const transcript = useRef("");
   const pendingSend = useRef(false);
   const inputRef = useRef<TextInput>(null);
-  /// The bots and agents picked from the `@` chips since the last send, in order. Two can share
-  /// a name; the pick says which one the user meant.
+  /// The bots picked from the `@` chips since the last send, in order.
   const pickedMentions = useRef<MentionTarget[]>([]);
   const [attachOpen, setAttachOpen] = useState(false);
   const dictationMenuRef = useRef<MenuComponentRef>(null);
@@ -135,7 +133,7 @@ export const Composer = memo(function Composer({
 
   function pickMention(target: MentionTarget) {
     // A same-name target replaces the pick; the id in the mention still says which one it was.
-    pickedMentions.current = [...pickedMentions.current.filter((picked) => !(picked.kind === target.kind && picked.name === target.name)), target];
+    pickedMentions.current = [...pickedMentions.current.filter((picked) => picked.name !== target.name), target];
     const at = mentionTrigger(text);
     if (!at) return;
     const next = insertMentionText(text, at, target);
@@ -144,8 +142,8 @@ export const Composer = memo(function Composer({
   }
 
   /// The picks whose `@Name` is still in the text, and a clean slate for the next message.
-  function takeMentions(value: string): { mentions: string[]; agents: string[] } {
-    const picks: MentionPick[] = pickedMentions.current.map((target) => ({ kind: target.kind, id: target.id, name: target.name }));
+  function takeMentions(value: string): string[] {
+    const picks: MentionPick[] = pickedMentions.current.map((target) => ({ id: target.id, name: target.name }));
     const picked = pickMentions(value, picks);
     pickedMentions.current = [];
     return picked;
@@ -160,8 +158,7 @@ export const Composer = memo(function Composer({
     }
     if (!canSend) return;
     haptic.send();
-    const picked = takeMentions(text);
-    onSend(text, attachments, picked.mentions, picked.agents);
+    onSend(text, attachments, takeMentions(text));
     setText("");
     setAttachments([]);
   }
@@ -277,8 +274,7 @@ export const Composer = memo(function Composer({
       pendingSend.current = false;
       if (next.trim() || attachments.length) {
         haptic.send();
-        const picked = takeMentions(next);
-        onSend(next, attachments, picked.mentions, picked.agents);
+        onSend(next, attachments, takeMentions(next));
         setText("");
         setAttachments([]);
           }
@@ -453,7 +449,7 @@ export const Composer = memo(function Composer({
               onPress={() => pickMention(target)}
               style={({ pressed }) => [styles.chip, { backgroundColor: pressed ? p.secondaryFill : p.cell, opacity: pressed ? 0.8 : 1 }]}
             >
-              {target.kind === "bot" ? <BotAvatar bot={target.bot} size={20} /> : <AgentTile kind={target.agent.kind} size={20} round />}
+              <BotAvatar bot={target.bot} size={20} />
               <Text style={[styles.chipText, { color: p.label }]}>{target.name}</Text>
             </Pressable>
           ))}

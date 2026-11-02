@@ -21,6 +21,18 @@ type AgentEntry struct {
 	From  string      `json:"from"`
 	Tool  *AgentTool  `json:"tool"`
 	Steps []AgentStep `json:"steps"`
+	// Attachments are the images the user sent with a `sent` entry, by the chat's file ids.
+	Attachments []AgentAttachment `json:"attachments"`
+}
+
+// AgentAttachment is an image sent to an agent, as the Runner's entry names it.
+type AgentAttachment struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Mime   string `json:"mime"`
+	Size   int64  `json:"size"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
 }
 
 // AgentTool is a tool call: Output is what its command's terminal wrote, with only its colors.

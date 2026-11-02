@@ -174,11 +174,11 @@ func TestRenderAgentCard(t *testing.T) {
 	settle(tt)
 	renderBoth(t, tt, "agent-transcript")
 	// What it was sent and said is text, its reads and searches fold into one line, each tool is
-	// a line in the past or present tense, and the plan a checklist. The transcript opens on its
-	// newest page, and this one's nine entries fit in it.
-	for _, want := range []string{"Fix the broken docs link on the download page, with a test.", "I'll find the link first.", "Explored 1 search", "Edited src/pages/download.astro", "Failed: bun test links", "Run the link test"} {
+	// a line in the past or present tense, and the plan a checklist. The transcript opens at its
+	// end, in the one scroll the sheet has.
+	for _, want := range []string{"Run the link test", "Fixed the link to /docs/install, and the link test passes."} {
 		if !tt.HasText(want) {
-			t.Errorf("the transcript has no %q: %q", want, tt.Texts())
+			t.Errorf("the transcript's end has no %q: %q", want, tt.Texts())
 		}
 	}
 	// The last command's output is on a terminal, whose cells are not text elements; where the

@@ -1,5 +1,5 @@
 // The request body for a sent message, kept pure so the phone's send path is plain to pin:
-// files as attachments, the picked bots and coding agents, and the quoted message.
+// files as attachments, the picked bots, and the quoted message.
 
 export interface SendAttachment {
   path: string;
@@ -14,7 +14,6 @@ export function chatsSendParams(
   text: string,
   attachments: SendAttachment[] = [],
   mentions: string[] = [],
-  agents: string[] = [],
   replyTo?: string,
 ) {
   return {
@@ -22,7 +21,6 @@ export function chatsSendParams(
     text,
     attachments,
     mentions,
-    ...(agents.length ? { agents } : {}),
     ...(replyTo ? { reply_to: replyTo } : {}),
   };
 }

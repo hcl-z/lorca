@@ -1808,6 +1808,9 @@ type AgentRun struct {
 	Outcome string
 	// Error is why its last turn failed, while it waits idle after it and takes a follow-up.
 	Error string
+	// NoImages is an agent whose handshake said it takes no images: the composer on its page offers
+	// to attach them to any other, one not asked yet included.
+	NoImages bool
 	// PullRequest is the pull request it opened, when its transcript names one.
 	PullRequest string
 	// Changes is what its work changed against the commit it started from.
@@ -2200,16 +2203,6 @@ type Message struct {
 	Notification NotificationTag
 	// EditedAt is when the user edited this message of theirs and sent it again; zero if never.
 	EditedAt time.Time
-	// Agent is the coding agent that wrote this message for its bot, when one did.
-	Agent *AgentAuthor
-}
-
-// AgentAuthor is the coding agent that wrote a message on its bot's behalf: its id, what it is
-// called, and its kind, for the mark and color.
-type AgentAuthor struct {
-	ID   string
-	Name string
-	Kind string
 }
 
 // ReplyQuote is a message quoted by the user's reply: who wrote it and how it opens, as the CLI

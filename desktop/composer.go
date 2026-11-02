@@ -170,19 +170,15 @@ func (m *mainWindow) composerView(c *ui.Context, chat *model.Chat, members []*mo
 	hasContent := strings.TrimSpace(s.draft) != "" || len(s.attachments) > 0
 	sendOnReturn := prefs.get().SendOnReturn
 
-	// Who `@` can address: a group's members, then this chat's coding agents. A chat with one
-	// bot needs no mention for it: a message that names no one is its.
+	// Who `@` can address: a group's members. A chat with one bot needs no mention for it: a
+	// message that names no one is its.
 	var mentionable []*model.Bot
 	if len(members) > 1 {
 		mentionable = slices.Clone(members)
 	}
-	agents := agentsHere(chat)
-	choices := make([]mentionChoice, 0, len(mentionable)+len(agents))
+	choices := make([]mentionChoice, 0, len(mentionable))
 	for _, bot := range mentionable {
 		choices = append(choices, mentionChoice{Name: bot.Name, Bot: bot})
-	}
-	for _, agent := range agents {
-		choices = append(choices, mentionChoice{Name: agent.Name(), Agent: agent})
 	}
 	runes := []rune(s.draft)
 	var mentions []mentionChoice
@@ -426,9 +422,6 @@ func (m *mainWindow) composerView(c *ui.Context, chat *model.Chat, members []*mo
 				for _, mention := range mentionRuns(runes, mentionable) {
 					input.TextRanges(ui.TextRange{Start: mention.start, End: mention.end, Color: p.accentColor(mention.bot.Accent), Weight: 600})
 				}
-				for _, mention := range agentMentionRuns(runes, agents) {
-					input.TextRanges(ui.TextRange{Start: mention.start, End: mention.end, Color: agentBrand(p, mention.agent.Kind), Weight: 600})
-				}
 				// A paste by key, the Edit menu or the context menu all come here.
 				input.OnPaste(func(text string) bool { return m.pasteAttachments(s, text) })
 				composing := input.Composing()
@@ -517,7 +510,7 @@ func (m *mainWindow) composerView(c *ui.Context, chat *model.Chat, members []*mo
 							tooltip = L("Send (Return) · Shift-Return for a new line")
 						}
 					}
-					if len(mentionable) > 0 || len(agents) > 0 {
+					if len(mentionable) > 0 {
 						tooltip += L(" · @ to mention")
 					}
 					// A solid ink disc whether or not there is anything to send, as the reference keeps it;
@@ -564,18 +557,6 @@ func (m *mainWindow) mentionPanel(c *ui.Context, field ui.Element, choices []men
 					row.ScrollIntoView()
 				}
 				row.Children(func() {
-					if agent := choice.Agent; agent != nil {
-						agentTile(c, p, agent.Kind, 22)
-						ui.Column(c).MinWidth(0).Shrink(1).Children(func() {
-							ui.Text(c, choice.Name).FontSize(13).FontWeight(500).SingleLine()
-							detail := L("Coding agent")
-							if agent.Task != "" {
-								detail = agent.Task
-							}
-							ui.Text(c, detail).FontSize(11).TextColor(p.Label2).SingleLine()
-						})
-						return
-					}
 					bot := choice.Bot
 					detail := model.ProviderName(bot.Provider, store.Providers)
 					if device := store.Device(bot.RunnerID); device != nil {
@@ -595,21 +576,18 @@ func (m *mainWindow) mentionPanel(c *ui.Context, field ui.Element, choices []men
 	})
 }
 
-// mentionChoice is who an `@` can address: a bot, or one of the chat's coding agents.
+// mentionChoice is who an `@` can address: one of a group's bots.
 type mentionChoice struct {
-	Name  string
-	Bot   *model.Bot
-	Agent *model.AgentRun
+	Name string
+	Bot  *model.Bot
 }
 
 func (c mentionChoice) key() string {
-	if c.Agent != nil {
-		return "agent-" + c.Agent.ID
-	}
 	return "bot-" + c.Bot.ID
 }
 
-// chatAgents are the coding agents in a chat the user can talk to: its open cards, newest first.
+// chatAgents are the coding agents at work in a chat, which its header shows beside its bots: its
+// open cards, newest first.
 func chatAgents(chat *model.Chat) []*model.AgentRun {
 	var agents []*model.AgentRun
 	seen := map[string]bool{}
@@ -627,61 +605,6 @@ func chatAgents(chat *model.Chat) []*model.AgentRun {
 		agents = append(agents, agent)
 	}
 	return agents
-}
-
-// agentsHere are the chat's agents this Device can hand a message to: an agent runs on its bot's
-// Runner, and only the desktop there reaches it.
-func agentsHere(chat *model.Chat) []*model.AgentRun {
-	here := store.ThisDevice()
-	if here == nil || len(chat.BotIDs) == 0 {
-		return nil
-	}
-	bot := store.Bot(chat.BotIDs[0])
-	if bot == nil || bot.RunnerID != here.ID {
-		return nil
-	}
-	return chatAgents(chat)
-}
-
-type agentMentionRun struct {
-	start, end int
-	agent      *model.AgentRun
-}
-
-// agentMentionRuns are the `@Name` runs of a draft for the chat's coding agents, in runes,
-// whatever their case.
-func agentMentionRuns(runes []rune, agents []*model.AgentRun) []agentMentionRun {
-	lower := func(rs []rune) []rune {
-		out := make([]rune, len(rs))
-		for i, r := range rs {
-			out[i] = unicode.ToLower(r)
-		}
-		return out
-	}
-	text := lower(runes)
-	names := make([][]rune, len(agents))
-	for i, agent := range agents {
-		names[i] = lower([]rune(agent.Name()))
-	}
-	var runs []agentMentionRun
-	for i := 0; i < len(text); i++ {
-		if text[i] != '@' {
-			continue
-		}
-		best := -1
-		for j, name := range names {
-			n := len(name)
-			if n > 0 && i+1+n <= len(text) && slices.Equal(text[i+1:i+1+n], name) && (best < 0 || n > len(names[best])) {
-				best = j
-			}
-		}
-		if best >= 0 {
-			end := i + 1 + len(names[best])
-			runs = append(runs, agentMentionRun{start: i, end: end, agent: agents[best]})
-			i = end - 1
-		}
-	}
-	return runs
 }
 
 type mentionRun struct {

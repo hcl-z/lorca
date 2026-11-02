@@ -150,24 +150,12 @@ function authorName(author: ReplyTo["author"], bots: Map<string, Bot>): string {
 
 /// Who wrote a quoted message: the coding agent that wrote it, else its author's name.
 export function quoteAuthorName(quote: ReplyTo, bots: Map<string, Bot>): string {
-  if (quote.agent) return quote.agent.name || agentKindName(quote.agent.kind);
   return authorName(quote.author, bots);
 }
 
 /// Who wrote a message: an agent's own name when one wrote it, else its author's.
 export function messageAuthorName(message: Message, bots: Map<string, Bot>): string {
-  if (message.agent) return message.agent.name || agentKindName(message.agent.kind);
   return authorName(message.author, bots);
-}
-
-/// The agent behind the latest previewable message, when one spoke last: the chat list shows its
-/// mark beside the preview and its name inside it.
-export function previewAgent(chat: Chat): Message["agent"] | undefined {
-  for (let i = chat.messages.length - 1; i >= 0; i--) {
-    const message = chat.messages[i];
-    if (message.body.kind !== "tool" || isSentMessage(message.body)) return message.agent ?? undefined;
-  }
-  return undefined;
 }
 
 /// The last thing worth previewing: tool calls never are, except a sent message.
@@ -213,7 +201,6 @@ export function preview(chat: Chat, bots: Map<string, Bot>): string {
       break;
   }
   const flattened = body.replace(/\n/g, " ").replace(/\*\*/g, "").replace(/`/g, "").trim();
-  if (shown.agent) return `${shown.agent.name || agentKindName(shown.agent.kind)}: ${flattened}`;
   if (chat.kind === "group" && shown.author.kind === "bot" && shown.body.kind === "text") {
     return `${bots.get(shown.author.bot_id)?.name ?? t("Bot")}: ${flattened}`;
   }

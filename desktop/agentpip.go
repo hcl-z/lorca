@@ -295,6 +295,10 @@ func (m *mainWindow) agentFull(c *ui.Context, r model.RunningAgent, st *pipState
 						}
 						m.agentAsk(c, p, agent, r.Chat.ID, id, botName(r.Message), asking, run)
 					})
+					// The composer at the foot of the column, under the steps and what it asks.
+					ui.Column(c).FillWidth().MaxWidth(view.maxWidth).AlignSelf(ui.Center).Shrink(0).Children(func() {
+						view.composer(c, &m.appWindow, view.agent(agent))
+					})
 				})
 				m.agentSidebar(c, p, r, view, asking, run)
 			})
