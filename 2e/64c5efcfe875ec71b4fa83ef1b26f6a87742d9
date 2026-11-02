@@ -1,0 +1,93 @@
+crates/cli/src/shell.rs
+  s_70b20ab7829e8f::t_f3144a27eec564 189-190,196-202,204-208
+  s_70b20ab7829e8f::t_67bb299263dc27 87-88
+  s_70b20ab7829e8f::t_91de13ae2e24dd 110
+  s_70b20ab7829e8f::t_98637c24030f8e 562-563,567
+  s_70b20ab7829e8f::t_40e363929845a9 183-188,191-195,203
+  s_70b20ab7829e8f::t_62d0fde275d06d 128
+docs/architecture/bots.md
+  s_70b20ab7829e8f::t_bafcbe4eacd41b 33
+docs/architecture/traces.md
+  s_70b20ab7829e8f::t_a8177f3cadfe27 29
+crates/cli/src/traces.rs
+  s_70b20ab7829e8f::t_0cfd3ca8dc01f5 148
+  s_70b20ab7829e8f::t_f2ac74c75ee0ad 625
+  s_70b20ab7829e8f::t_81d27877d7db7a 618
+  s_70b20ab7829e8f::t_9b7ec4cef21b19 126-127
+  s_70b20ab7829e8f::t_8426234f1d6d80 331
+  s_70b20ab7829e8f::t_774b25fb5a289b 174-175
+  s_70b20ab7829e8f::t_2b5ee5f7ee9a63 314
+  s_70b20ab7829e8f::t_c2a87867354d8e 401
+  s_70b20ab7829e8f::t_5fc64d1101d882 141
+  s_70b20ab7829e8f::t_3f7f89dc0e3997 642-643
+  s_70b20ab7829e8f::t_14e2c3ae2ab115 220
+crates/cli/src/turns.rs
+  s_70b20ab7829e8f::t_569a98120f33d1 1972,1989,1992,1994
+  s_70b20ab7829e8f::t_bd0a3587eaf47d 2226-2229
+  s_70b20ab7829e8f::t_9abfe01c3663fd 44,46
+  s_70b20ab7829e8f::t_2ec8a9b07968e0 1938
+  s_70b20ab7829e8f::t_8498d3b871f8e7 1973-1975,1977-1988,2000-2024
+  s_70b20ab7829e8f::t_6fb7aea7f2caf5 4762
+  s_70b20ab7829e8f::t_ea9f04b78ccd8d 4799-4803
+  s_70b20ab7829e8f::t_5a7b2122fe6db3 5970
+  s_70b20ab7829e8f::t_3222607f0363f9 368
+  s_70b20ab7829e8f::t_0321bf6d29c362 1883-1888,1893,1896-1897,1903-1908,1911-1915,1918
+  s_70b20ab7829e8f::t_189f2988205f5e 1622-1623
+  s_70b20ab7829e8f::t_a771e62b141aca 5931-5932
+  s_70b20ab7829e8f::t_732e6fe25c3a36 7129,7135-7142,7144-7150,7153-7191,7193
+  s_70b20ab7829e8f::t_fedbf468336fde 198-201
+  s_70b20ab7829e8f::t_80d30f302a0cff 1681-1685,1689-1691
+  s_70b20ab7829e8f::t_9599c5500ff93f 7192
+  s_70b20ab7829e8f::t_890109b40ec6b6 1505-1509,1511-1525
+  s_70b20ab7829e8f::t_b96f89154c4ebe 5967
+  s_70b20ab7829e8f::t_aabb546085112c 1560-1563
+  s_70b20ab7829e8f::t_7767f426140470 343
+  s_70b20ab7829e8f::t_d0d09f336f7054 5933-5941
+  s_70b20ab7829e8f::t_fc2bf3db005c7a 5505
+  s_70b20ab7829e8f::t_dbb09273fdbcc8 7151-7152
+  s_70b20ab7829e8f::t_9de8fbb545d5b1 5961-5963
+  s_70b20ab7829e8f::t_2f791196bcb54c 7143
+  s_70b20ab7829e8f::t_414e2d504f207e 5953-5960,5964-5966,5968-5969,5971-5981
+  s_70b20ab7829e8f::t_8fe1f6643dd7c0 1993,1995-1996
+docs/architecture/runtime.md
+  s_70b20ab7829e8f::t_37e93227ef3392 61-65
+  s_70b20ab7829e8f::t_2803cafd514bed 71
+docs/architecture/attention.md
+  s_70b20ab7829e8f::t_fbbdf7972a1fb7 9
+crates/cli/marketplace/index.json
+  s_70b20ab7829e8f::t_254c9436c7c108 3
+  s_70b20ab7829e8f::t_c0b700df8d7c07 3154,3351
+docs/architecture/routines.md
+  s_70b20ab7829e8f::t_5cf0b63e4739a6 9
+docs/architecture/phone-ui.md
+  s_70b20ab7829e8f::t_c798c3f93194fb 7
+crates/cli/src/attention.rs
+  s_70b20ab7829e8f::t_6f5689d47a083b 969
+docs/architecture/turn-context.md
+  s_70b20ab7829e8f::t_4e625c2ffda71c 13
+  s_70b20ab7829e8f::t_f149637303a08d 3
+  s_70b20ab7829e8f::t_ae90377a1f772e 25-30,33
+crates/cli/src/turns/tools.rs
+  s_70b20ab7829e8f::t_68f68eb41105b5 189-191
+crates/cli/src/turns/follow_up.rs
+  s_70b20ab7829e8f::t_242f3ce0da628b 8-10
+  s_70b20ab7829e8f::t_e9111179143f81 60
+docs/architecture/terminal-sessions.md
+  s_70b20ab7829e8f::t_d3e180086222c5 32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "2e64c5efcfe875ec71b4fa83ef1b26f6a87742d9",
+  "prompts": {},
+  "sessions": {
+    "s_70b20ab7829e8f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4a3b7803-2273-467f-a3a1-938fee1c612d",
+        "model": "claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
