@@ -1,0 +1,41 @@
+crates/cli/src/coding/tests.rs
+  s_49bd479ba04779::t_d408cceb6420ad 939,959
+  s_49bd479ba04779::t_7b6ad5915df80d 962-970
+  s_49bd479ba04779::t_12846a323d1f26 602
+mobile/app/agent/[id].tsx
+  s_49bd479ba04779::t_8a4569103b5d93 293-294
+mobile/src/core/model.ts
+  s_49bd479ba04779::t_8a4569103b5d93 440-442
+docs/architecture/agent-cards.md
+  s_49bd479ba04779::t_86e0687d8f2331 13
+docs/architecture/coding-agents.md
+  s_49bd479ba04779::t_86e0687d8f2331 55
+crates/cli/src/model.rs
+  s_49bd479ba04779::t_12846a323d1f26 738-741
+crates/cli/src/coding/mod.rs
+  s_49bd479ba04779::t_12846a323d1f26 177-180,764,1059,1772-1773
+crates/cli/src/coding/acp.rs
+  s_49bd479ba04779::t_12846a323d1f26 415-416,481-486
+desktop/agenttranscript.go
+  s_49bd479ba04779::t_8a4569103b5d93 728-729,735
+desktop/model/models.go
+  s_49bd479ba04779::t_8a4569103b5d93 1811-1813
+desktop/model/wire.go
+  s_49bd479ba04779::t_8a4569103b5d93 1017
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "81b08e57444074d695bfa78f56c411147692aeea",
+  "prompts": {},
+  "sessions": {
+    "s_49bd479ba04779": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "78524d38-ea2d-40ab-908f-a24c2e78fe38",
+        "model": "claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
