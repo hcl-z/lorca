@@ -272,9 +272,13 @@ func agentEnding(c *ui.Context, p *palette, agent *model.AgentRun, chatID string
 				ui.Text(c, model.FirstLine(card.Body.Request.AgentAsk.Message)).FontSize(12).LineHeight(1.4).TextColor(p.Label2).MaxLines(2).Margin(0, 0, 0, 21)
 			}
 		})
-	case agent.State == model.AgentFailed && agent.Outcome != "":
+	case agent.State == model.AgentFailed && agent.Outcome != "", agent.State == model.AgentIdle && agent.Error != "":
+		why := agent.Outcome
+		if agent.State == model.AgentIdle {
+			why = agent.Error
+		}
 		agentCallout(c, p, p.Red, "xmark.circle.fill", L("Failed"), func() {
-			ui.Text(c, agent.Outcome).FontSize(12).LineHeight(1.4).TextColor(p.Label2).MaxLines(4).Selectable().Margin(0, 0, 0, 21)
+			ui.Text(c, why).FontSize(12).LineHeight(1.4).TextColor(p.Label2).MaxLines(4).Selectable().Margin(0, 0, 0, 21)
 		})
 	}
 	if agent.PullRequest != "" {

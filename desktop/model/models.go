@@ -1806,6 +1806,8 @@ type AgentRun struct {
 	Title   string
 	Output  string
 	Outcome string
+	// Error is why its last turn failed, while it waits idle after it and takes a follow-up.
+	Error string
 	// PullRequest is the pull request it opened, when its transcript names one.
 	PullRequest string
 	// Changes is what its work changed against the commit it started from.

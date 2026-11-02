@@ -749,6 +749,10 @@ pub struct AgentRun {
     /// It is working, and has shown nothing new for a while.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub stalled: bool,
+    /// Why its last turn failed, while it waits `idle` after it: it still runs and takes a
+    /// follow-up, and its pill says it failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
     /// Auto-review held its start and told the bot why, without asking the user: the card is
     /// `denied`, and the apps read it as "Held by Auto-review".
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -869,6 +873,7 @@ impl AgentRun {
         self.tone = match state {
             _ if asks || (self.stalled && state == "working") => "ask",
             "starting" | "checking" | "working" => "busy",
+            "idle" if self.error.is_some() => "fail",
             "idle" => "done",
             "failed" => "fail",
             _ => "quiet",
@@ -887,6 +892,7 @@ impl AgentRun {
             "asking" => "needs_you",
             "working" if self.stalled => "quiet",
             "working" => "working",
+            "idle" if self.error.is_some() => "failed",
             "idle" => "done",
             "exited" => "ended",
             "failed" => "failed",
@@ -2010,6 +2016,7 @@ mod app_view_tests {
         assert_eq!(tone(AgentRun { state: "checking".into(), ..Default::default() }), "busy");
         assert!(!summarized(AgentRun { state: "checking".into(), ..Default::default() }).busy);
         assert_eq!(tone(AgentRun { state: "idle".into(), ..Default::default() }), "done");
+        assert_eq!(tone(AgentRun { state: "idle".into(), error: Some("refused".into()), ..Default::default() }), "fail");
         assert_eq!(tone(AgentRun { state: "failed".into(), ..Default::default() }), "fail");
         assert_eq!(tone(AgentRun { state: "stopped".into(), ..Default::default() }), "quiet");
 
@@ -2041,6 +2048,10 @@ mod app_view_tests {
         assert_eq!(status(AgentRun { state: "denied".into(), held: true, ..Default::default() }), "held");
         assert_eq!(status(AgentRun { state: "denied".into(), ..Default::default() }), "not_allowed");
         assert_eq!(status(AgentRun { state: "exited".into(), ..Default::default() }), "ended");
+        // A failed turn leaves it open, taking a follow-up, while its pill says it failed.
+        let failed_turn = AgentRun { state: "idle".into(), error: Some("refused".into()), ..Default::default() };
+        assert_eq!(status(failed_turn.clone()), "failed");
+        assert!(failed_turn.is_open());
         assert_eq!(status(AgentRun { state: "something new".into(), ..Default::default() }), "stopped");
 
         let model = AgentSetting { name: "Model".into(), value: "openrouter/anthropic/claude-sonnet[1M]".into() };

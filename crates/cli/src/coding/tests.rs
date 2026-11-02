@@ -23,7 +23,8 @@ fn a_long_answer_in_the_chat_is_cut_at_the_message_limit() {
 /// An agent that speaks ACP, scripted, installed as `gemini` and as `npx`, which starts the
 /// adapters of Claude Code and Codex. A job asks to run `git push` (the answer decides how the
 /// tool call ends), opens a pull request, and is done; "(follow-up)" is answered at once,
-/// "(slow)" works until it is cancelled, "(empty)" ends its turn with nothing, "(status)" asks to
+/// "(slow)" works until it is cancelled, "(empty)" ends its turn with nothing, "(refuse)" and
+/// "(tokens)" end it refused and out of tokens, "(status)" asks to
 /// run `git status`, "(ask)" asks which database to use with a form, "(term)" runs a command whose output comes as its terminal writes it, and "(secret)" keeps what it was sent and writes out, runs, and says
 /// `$NPM_TOKEN`. It offers a `review` command and a `model` setting that a loaded session loses.
 /// As Claude Code's adapter it resumes and closes sessions; as the others it only loads them.
@@ -113,6 +114,11 @@ while True:
         log("prompt " + text.splitlines()[0])
         if "(empty)" in text:
             done(ident)
+        elif "(refuse)" in text:
+            done(ident, "refusal")
+        elif "(tokens)" in text:
+            say(sid, "Starting on it…\n")
+            done(ident, "max_tokens")
         elif "(slow)" in text:
             say(sid, "Working…\n")
             wait(lambda m: m.get("method") == "session/cancel")
@@ -312,6 +318,21 @@ async fn card_when(app: &App, message_id: &str, done: impl Fn(&AgentRun) -> bool
     .unwrap_or_else(|_| panic!("the card never got there: {:?}", card(app, message_id)))
 }
 
+/// The bot's cue for `job`, once there is news that `wanted` says it is: the news follows the
+/// card by a moment, and reading it hears it.
+async fn cue_when(app: &App, job: &crate::model::Job, wanted: impl Fn(&str) -> bool) -> String {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            if let Some(cue) = wake_cue(app, job).filter(|cue| wanted(cue)) {
+                return cue;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the bot never heard it")
+}
+
 async fn call(tool: &CodingAgentTool, call_id: &str, args: Value) -> Result<String, String> {
     tool.execute(call_id, args, CancellationToken::new(), Arc::new(|_| {})).await.map(|result| result.text_content()).map_err(|error| error.0)
 }
@@ -377,7 +398,8 @@ async fn claude_code_works_in_a_worktree_asks_on_its_card_and_its_bot_hears_how_
     })
     .await
     .expect("the bot hears it");
-    assert!(cue.contains("is done") && cue.contains("Fixed it and opened") && cue.contains("fix-login.diff (message msg-"), "{cue}");
+    assert!(cue.contains(": done\nIt said:") && cue.contains("Fixed it and opened") && cue.contains("fix-login.diff (message msg-"), "{cue}");
+    assert!(!cue.contains("Check its work"), "the cue says what happened, not what to do: {cue}");
     assert!(wake_cue(app, &job).is_none(), "heard once");
     drop(held);
 
@@ -459,7 +481,7 @@ async fn a_restart_keeps_the_handle_and_a_follow_up_resumes_the_session() {
     assert_eq!(cut_off.record().news, Some(News::Interrupted));
     let job = crate::runtime::agent_job(app, "chat", "b1", &cut_off.record().message_id);
     let cue = wake_cue(app, &job).expect("the bot has news");
-    assert!(cue.contains("was cut off when Lorca quit") && cue.contains("coding_agent send"), "{cue}");
+    assert!(cue.contains(": interrupted: Lorca quit while it worked"), "{cue}");
     assert!(wake_cue(app, &job).is_none(), "heard once");
 }
 
@@ -490,7 +512,7 @@ async fn an_agent_asking_when_lorca_quits_is_cut_off_and_the_bot_hears_it() {
     let cut_off = app.coding_agents.find("chat", "b1", &id).unwrap();
     let job = crate::runtime::agent_job(app, "chat", "b1", &cut_off.record().message_id);
     let cue = wake_cue(app, &job).expect("the bot has news");
-    assert!(cue.contains("was cut off when Lorca quit"), "{cue}");
+    assert!(cue.contains(": interrupted: Lorca quit while it worked"), "{cue}");
 }
 
 #[tokio::test]
@@ -581,6 +603,7 @@ fn record(folder: PathBuf) -> Record {
         task: "x".into(),
         state: "working".into(),
         stalled: false,
+        error: None,
         outcome: None,
         pull_request: None,
         changes: None,
@@ -921,24 +944,68 @@ async fn an_acp_agent_refused_a_command_goes_on_and_one_that_says_nothing_is_not
     assert!(std::fs::read_to_string(programs().join("acp.log")).unwrap().contains("picked no"));
 
     let id = app.coding_agents.of("chat", "b1")[0].id();
-    call(&tool, "call-2", json!({ "action": "send", "id": id, "message": "Say nothing (empty)" })).await.unwrap();
-    card_when(app, &row, |card| card.output.as_deref().is_some_and(|output| output.contains("Error: Gemini CLI ended its turn without answering"))).await;
     let job = crate::runtime::agent_job(app, "chat", "b1", &row);
-    let cue = tokio::time::timeout(Duration::from_secs(10), async {
-        loop {
-            if let Some(cue) = wake_cue(app, &job) {
-                if cue.contains("without answering") {
-                    return cue;
-                }
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .expect("the bot hears that it said nothing");
-    assert!(cue.contains("is done"), "{cue}");
+    // A refused command is part of a turn that still finishes: done, not failed.
+    cue_when(app, &job, |cue| cue.contains(": done")).await;
+
+    // A turn that ends with nothing said is a failed turn, with why; the agent still runs.
+    call(&tool, "call-2", json!({ "action": "send", "id": id, "message": "Say nothing (empty)" })).await.unwrap();
+    let failed = card_when(app, &row, |card| card.error.is_some()).await;
+    assert_eq!((failed.state.as_str(), failed.status.as_str(), failed.tone.as_str()), ("idle", "failed", "fail"));
+    assert_eq!(failed.error.as_deref(), Some("Gemini CLI ended its turn without answering"));
+    let agent = app.coding_agents.find("chat", "b1", &id).unwrap();
+    assert!(agent.is_running(), "a failed turn leaves the agent running");
+    cue_when(app, &job, |cue| cue.contains(": failed: Gemini CLI ended its turn without answering. It still runs.")).await;
+    let read = call(&tool, "call-3", json!({ "action": "read", "id": id })).await.unwrap();
+    assert!(read.contains("failed (Gemini CLI ended its turn without answering), waiting for a follow-up"), "{read}");
+
+    // It refuses, or runs out of tokens: each says so.
+    for (call_id, prompt, why) in [("call-4", "No (refuse)", "Gemini CLI refused the request"), ("call-5", "Long (tokens)", "Gemini CLI ran out of tokens")] {
+        call(&tool, call_id, json!({ "action": "send", "id": id, "message": prompt })).await.unwrap();
+        let failed = card_when(app, &row, |card| card.error.as_deref() == Some(why)).await;
+        assert_eq!(failed.state, "idle");
+        cue_when(app, &job, |cue| cue.contains(&format!(": failed: {why}."))).await;
+    }
+
+    // The next turn that does its work clears it.
+    call(&tool, "call-6", json!({ "action": "send", "id": id, "message": "Again (follow-up)" })).await.unwrap();
+    let done = card_when(app, &row, |card| card.state == "idle" && card.error.is_none() && card.output.as_deref().is_some_and(|output| output.contains("> Again (follow-up)"))).await;
+    assert_eq!(done.status, "done");
+    assert!(agent.record().error.is_none());
     drop(held);
     app.coding_agents.stop_chat(app, "chat");
+}
+
+#[tokio::test]
+async fn a_turn_the_user_drove_that_fails_still_tells_the_bot() {
+    let scratch = setup().await;
+    let app = &scratch.app;
+    let mut auto_review = app.auto_review();
+    auto_review.is_enabled = false;
+    app.set_auto_review(auto_review);
+    let tool = tool(&scratch);
+    let row = start_row(app, "call-1");
+    // Held, so the turn that tells the bot waits, and the test reads what it would.
+    let chat_lock = app.chat_lock("chat");
+    let held = chat_lock.lock().await;
+
+    call(&tool, "call-1", json!({ "action": "start", "agent": "gemini", "folder": "shop", "prompt": "Work on it (slow)" })).await.unwrap();
+    card_when(app, &row, |card| card.state == "working").await;
+    let agent = app.coding_agents.of("chat", "b1").pop().unwrap();
+    let agent_name = name(&agent.record().kind);
+    crate::runtime::send_user_message(app.clone(), "chat", &format!("@{agent_name} Say nothing (empty)"), None, Vec::new(), Vec::new(), None).unwrap();
+    card_when(app, &row, |card| card.error.is_some()).await;
+    assert!(agent.record().direct);
+    let job = crate::runtime::agent_job(app, "chat", "b1", &row);
+    cue_when(app, &job, |cue| cue.contains(": failed: Gemini CLI ended its turn without answering")).await;
+    drop(held);
+    app.coding_agents.stop_chat(app, "chat");
+}
+
+#[test]
+fn news_from_before_an_ended_agent_says_whether_it_failed_still_reads() {
+    let old: News = serde_json::from_value(json!({ "kind": "ended", "outcome": "Codex exited" })).unwrap();
+    assert_eq!(old, News::Ended { outcome: "Codex exited".into(), failed: false });
 }
 
 #[tokio::test]
@@ -1030,7 +1097,7 @@ async fn the_bot_hears_a_question_and_may_answer_it() {
     let id = agent.id();
     let job = crate::runtime::agent_job(app, "chat", "b1", &row);
     let cue = wake_cue(app, &job).expect("the bot hears the question");
-    assert!(cue.contains("Which database?") && cue.contains("“Database”") && cue.contains("1. Postgres: Real server") && cue.contains("coding_agent answer"), "{cue}");
+    assert!(cue.contains(": asking (nobody is watching), cancelled if nobody answers in 10 minutes\nWhich database?") && cue.contains("“Database”") && cue.contains("1. Postgres: Real server"), "{cue}");
     let tool = tool(&scratch);
     let listed = call(&tool, "call-2", json!({ "action": "list" })).await.unwrap();
     assert!(listed.contains("waiting for an answer to its question"), "{listed}");

@@ -3,7 +3,7 @@
 //! and a prompt. The agent is a process of its own that outlives the turn
 //! that started it. The bot keeps its id across turns, reads its transcript, sends it follow-ups
 //! (queued, or cutting in), and stops it; it gets a turn of its own when the agent is done,
-//! stalls, or exits, with the outputs Lorca published from its work. Every command the agent
+//! fails a turn, stalls, or exits, with the outputs Lorca published from its work. Every command the agent
 //! runs goes through the bot's Access and Auto-review, as the bot's own commands do, and its card
 //! in the chat shows the user how it stands and what it asks.
 //!
@@ -115,10 +115,17 @@ struct Pending {
 pub(crate) enum News {
     /// It is done with what it was asked, and Lorca published these outputs from its work.
     Finished { said: Option<String>, outputs: Vec<proof::Reference> },
+    /// Its turn failed, for `reason`; it still runs and takes a follow-up. Lorca published these
+    /// outputs from what it changed before.
+    Failed { reason: String, outputs: Vec<proof::Reference> },
     /// It has shown nothing new for a while.
     Stalled,
-    /// It exited on its own.
-    Ended { outcome: String },
+    /// It exited on its own: `failed` when its process ended in an error.
+    Ended {
+        outcome: String,
+        #[serde(default)]
+        failed: bool,
+    },
     /// Lorca quit while it was at work, so its process went with it.
     Interrupted,
     /// It asks a question, which a card in the chat shows and the bot may answer.
@@ -168,6 +175,9 @@ pub(crate) struct Record {
     pub state: String,
     #[serde(default)]
     pub stalled: bool,
+    /// Why its last turn failed, while it waits `idle` after it; the next turn clears it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -597,6 +607,7 @@ impl Agents {
             ..question
         });
         let asking = record.ask_card.clone().filter(|_| open);
+        let error = record.error.clone().filter(|_| record.state == "idle").map(clean);
         let mut run = AgentRun {
             id: record.id,
             name: name(&record.kind).to_string(),
@@ -620,6 +631,7 @@ impl Agents {
             branch: record.branch,
             state: if (question.is_some() || asking.is_some()) && open { "asking".into() } else { record.state },
             stalled: record.stalled,
+            error,
             // A held start never makes an agent.
             held: false,
             question: question.filter(|_| open),
@@ -877,6 +889,7 @@ pub(crate) async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Agent>, St
         task: without_secrets(app, start.task.clone()),
         state: "starting".into(),
         stalled: false,
+        error: None,
         outcome: None,
         pull_request: None,
         changes: None,
@@ -1198,6 +1211,7 @@ async fn handle(app: &Arc<App>, agent: &Arc<Agent>, event: Event, generation: u6
                 let was = record.state.clone();
                 record.state = "working".into();
                 record.stalled = false;
+                record.error = None;
                 was
             };
             *agent.active_at.lock().unwrap() = Instant::now();
@@ -1231,40 +1245,11 @@ async fn handle(app: &Arc<App>, agent: &Arc<Agent>, event: Event, generation: u6
             false
         }
         Event::Idle(said) => {
-            agent.end_said(app);
-            {
-                let mut record = agent.record.lock().unwrap();
-                if !matches!(record.state.as_str(), "working" | "starting") {
-                    return false;
-                }
-                record.state = "idle".into();
-                record.stalled = false;
-            }
-            agent.hold.lock().unwrap().take();
-            let (folder, base) = {
-                let record = agent.record.lock().unwrap();
-                (record.folder.clone(), record.base.clone())
-            };
-            if let Some(base) = base {
-                let changes = workspace::changes(&folder, &base).await;
-                agent.record.lock().unwrap().changes = changes;
-            }
-            agents.sync(app, agent);
-            // What it made is published as outputs; the bot hears it unless the user drove this
-            // turn from the chat, where its words are already showing.
-            let outputs = proof::publish(app, agent).await;
-            if agent.record.lock().unwrap().direct {
-                agent.record.lock().unwrap().news = None;
-                agents.sync(app, agent);
-                save(app);
-                save_entries(app, agent);
-                return false;
-            }
-            agent.record.lock().unwrap().news = Some(News::Finished { said, outputs });
-            agents.sync(app, agent);
-            save(app);
-            save_entries(app, agent);
-            wake(app, agent);
+            turn_over(app, agent, Ok(said)).await;
+            false
+        }
+        Event::Failed(reason) => {
+            turn_over(app, agent, Err(reason)).await;
             false
         }
         Event::Approve(approval, reply) => {
@@ -1292,6 +1277,48 @@ async fn handle(app: &Arc<App>, agent: &Arc<Agent>, event: Event, generation: u6
             ended(app, agent, end, generation);
             false
         }
+    }
+}
+
+/// Its turn is over: done with its last message, or failed with why. Either way it waits idle for
+/// a follow-up, and what it changed is published as outputs. The bot hears a finished turn
+/// unless the user drove it from the chat, where its words are already showing; it hears a
+/// failed one even then.
+async fn turn_over(app: &Arc<App>, agent: &Arc<Agent>, ended: Result<Option<String>, String>) {
+    let agents = &app.coding_agents;
+    agent.end_said(app);
+    {
+        let mut record = agent.record.lock().unwrap();
+        if !matches!(record.state.as_str(), "working" | "starting") {
+            return;
+        }
+        record.state = "idle".into();
+        record.stalled = false;
+        record.error = ended.as_ref().err().cloned();
+    }
+    agent.hold.lock().unwrap().take();
+    let (folder, base) = {
+        let record = agent.record.lock().unwrap();
+        (record.folder.clone(), record.base.clone())
+    };
+    if let Some(base) = base {
+        let changes = workspace::changes(&folder, &base).await;
+        agent.record.lock().unwrap().changes = changes;
+    }
+    agents.sync(app, agent);
+    let outputs = proof::publish(app, agent).await;
+    let news = match ended {
+        Ok(_) if agent.record.lock().unwrap().direct => None,
+        Ok(said) => Some(News::Finished { said, outputs }),
+        Err(reason) => Some(News::Failed { reason, outputs }),
+    };
+    let tell = news.is_some();
+    agent.record.lock().unwrap().news = news;
+    agents.sync(app, agent);
+    save(app);
+    save_entries(app, agent);
+    if tell {
+        wake(app, agent);
     }
 }
 
@@ -1332,7 +1359,7 @@ fn ended(app: &Arc<App>, agent: &Arc<Agent>, end: driver::Ended, generation: u64
                 record.state = if end.failed { "failed" } else { "exited" }.into();
                 record.outcome = Some(end.outcome.clone());
                 record.ended_at = Some(crate::config::now_secs());
-                record.news = Some(News::Ended { outcome: end.outcome.clone() });
+                record.news = Some(News::Ended { outcome: end.outcome.clone(), failed: end.failed });
                 true
             }
         }
@@ -1385,52 +1412,30 @@ pub fn wake_cue(app: &App, job: &crate::model::Job) -> Option<String> {
         let lines = agent.transcript.lock().unwrap().tail(12).join("\n");
         if lines.trim().is_empty() { String::new() } else { format!(" Its last lines:\n{lines}\n") }
     };
-    let cue = match news {
+    let published = |outputs: &[proof::Reference]| {
+        if outputs.is_empty() {
+            return String::new();
+        }
+        let list = outputs.iter().map(|output| format!("{} (message {}, output {}, version {})", output.name, output.message_id, output.output_id, output.version)).collect::<Vec<_>>().join("; ");
+        format!("\nPublished from its work: {list}.")
+    };
+    // What happened, why, and what came of it; what to do about it is the bot's to decide.
+    let (state, detail) = match news {
         News::Asked => {
             let ask = agent.pending.lock().unwrap().as_ref().map(|pending| pending.ask.clone())?;
-            let guidance = if record.proxy {
-                "The user made you their proxy in this conversation: answer it with coding_agent answer, in their interest, or decline it (decline: true) if that is what they would want."
-            } else if record.unattended {
-                "Nobody is watching this conversation: answer it with coding_agent answer, in the user's interest, or decline it (decline: true) if that is what they would want."
-            } else {
-                "Answer it with coding_agent answer only when what the user told you settles it, or decline it (decline: true); otherwise leave it, and the user answers on its card in the chat."
-            };
-            format!(
-                "[{who}, working {place} on “{}”, asks:\n{}\n{} {guidance} Nobody answering in {} minutes cancels it.]",
-                record.task,
-                ask.message.trim(),
-                ask_fields(&ask),
-                ASK_TIMEOUT.as_secs() / 60
-            )
+            let whose = if record.proxy { " (you are the user's proxy)" } else if record.unattended { " (nobody is watching)" } else { "" };
+            ("asking", format!("{whose}, cancelled if nobody answers in {} minutes\n{}\n{}", ASK_TIMEOUT.as_secs() / 60, ask.message.trim(), ask_fields(&ask)))
         }
         News::Finished { said, outputs } => {
-            let said = said.map(|said| format!(" It said:\n{}\n", said.chars().take(4000).collect::<String>())).unwrap_or_default();
-            let outputs = if outputs.is_empty() {
-                String::new()
-            } else {
-                let list = outputs.iter().map(|output| format!("{} (message {}, output {}, version {})", output.name, output.message_id, output.output_id, output.version)).collect::<Vec<_>>().join("; ");
-                format!(" Lorca published from its work: {list}. Cite them as task evidence by those references.")
-            };
-            format!(
-                "[{who}, which you started {place} on “{}”, is done.{said}{outputs} Check its work against what you asked, then send it a follow-up with coding_agent send, or tell the user how it went.]",
-                record.task
-            )
+            let said = said.map(|said| format!("\nIt said:\n{}", said.chars().take(4000).collect::<String>())).unwrap_or_default();
+            ("done", format!("{said}{}", published(&outputs)))
         }
-        News::Stalled => format!(
-            "[{who}, working {place}, has shown nothing new for {} minutes; it may be stuck.{} Read its transcript with coding_agent read, send it a message (interrupt: true cuts in), or stop it.]",
-            STALL_AFTER.as_secs() / 60,
-            tail()
-        ),
-        News::Ended { outcome } => format!(
-            "[{who}, which you started {place}, has ended: {outcome}.{} Tell the user, or send it a message to start it again on its session.]",
-            tail()
-        ),
-        News::Interrupted => format!(
-            "[{who}, which you started {place} on “{}”, was cut off when Lorca quit while it worked; what it had changed in its folder is kept.{} Tell the user it was interrupted and how far it got, and send it a message with coding_agent send to start it again on its session if the job is not done.]",
-            record.task,
-            tail()
-        ),
+        News::Failed { reason, outputs } => ("failed", format!(": {reason}. It still runs.{}{}", published(&outputs), tail())),
+        News::Stalled => ("stalled", format!(": nothing new for {} minutes.{}", STALL_AFTER.as_secs() / 60, tail())),
+        News::Ended { outcome, failed } => (if failed { "ended with an error" } else { "exited" }, format!(": {outcome}.{}", tail())),
+        News::Interrupted => ("interrupted", format!(": Lorca quit while it worked; its folder keeps what it changed.{}", tail())),
     };
+    let cue = format!("[{who}, {place} on “{}”: {state}{detail}]", record.task);
     Some(without_secrets(app, cue))
 }
 

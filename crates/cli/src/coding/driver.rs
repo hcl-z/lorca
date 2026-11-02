@@ -24,6 +24,10 @@ pub(crate) enum Event {
     Working,
     /// It is done with what it was asked, with its last message.
     Idle(Option<String>),
+    /// Its turn ended without doing what it was asked (it refused, ran out of tokens or steps,
+    /// cancelled the turn itself, said nothing, or the prompt failed), and nothing waits after
+    /// it. Why, in words. Its process and session go on, and a follow-up is taken as after `Idle`.
+    Failed(String),
     /// It wants to do something that needs a decision first; the answer goes back on the
     /// channel: `Ok` lets it, `Err` says why not.
     Approve(Approval, oneshot::Sender<Result<(), String>>),
