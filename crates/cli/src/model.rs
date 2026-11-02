@@ -683,15 +683,6 @@ impl ReplyTo {
     }
 }
 
-/// What a coding agent's work changed against the commit it started from: its files, and the
-/// lines added and removed.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct AgentChanges {
-    pub files: u32,
-    pub added: u32,
-    pub removed: u32,
-}
-
 /// The Job kind a Device from before the agent's page sent with a message the user addressed to
 /// a coding agent in the chat. A Runner drops it: the user writes to an agent on its page.
 pub const AGENT_MESSAGE_JOB: &str = "agent_message";
@@ -717,12 +708,9 @@ pub struct AgentRun {
     pub controls: Vec<AgentControl>,
     /// What it was asked: the prompt's first line.
     pub task: String,
-    /// Where it works, from the home folder: the worktree Lorca made for it, or a folder that
-    /// is not a repository.
+    /// Where it started, from the home folder: the bot's working directory.
     #[serde(default)]
     pub folder: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub branch: Option<String>,
     /// `checking` (Auto-review is judging the start), `asking` (a `question` waits for the
     /// user), `starting`, `working`, `idle` (done with what it was asked; it takes a follow-up).
     /// Once it ended: `exited`, `failed`, `stopped`, `denied` (not allowed to start), `expired`
@@ -761,9 +749,6 @@ pub struct AgentRun {
     /// The pull request it opened, when its transcript names one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pull_request: Option<String>,
-    /// What its work changed against the commit it started from.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub changes: Option<AgentChanges>,
     /// The Runner it runs on, by name: "Workbench".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device: Option<String>,

@@ -1,6 +1,6 @@
 //! Coding agents a bot runs on its Runner and supervises: Claude Code, Codex, or another agent
-//! that speaks the Agent Client Protocol, in a git worktree of a repository there, on a prompt and
-//! and a prompt. The agent is a process of its own that outlives the turn
+//! that speaks the Agent Client Protocol, started in the bot's working directory on the user's own
+//! words. Where it works from there is the agent's choice. The agent is a process of its own that outlives the turn
 //! that started it. The bot keeps its id across turns, reads its transcript, sends it follow-ups
 //! (queued, or cutting in), and stops it; it gets a turn of its own when the agent is done,
 //! fails a turn, stalls, or exits, with the outputs Lorca published from its work. Every command the agent
@@ -16,7 +16,6 @@ pub(crate) mod lines;
 pub(crate) mod process;
 pub(crate) mod proof;
 pub(crate) mod tool;
-pub(crate) mod workspace;
 
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
@@ -30,7 +29,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::time::Instant;
 
 use crate::app::App;
-use crate::model::{AgentAsk, AgentAskChoice, AgentAskField, AgentChanges, AgentQuestion, AgentRun, AgentSetting, Author, Body, Message};
+use crate::model::{AgentAsk, AgentAskChoice, AgentAskField, AgentQuestion, AgentRun, AgentSetting, Author, Body, Message};
 use driver::{Approval, Ask, Driver, Event, FieldKind};
 
 pub use tool::{review_start, CodingAgentTool};
@@ -162,11 +161,8 @@ pub(crate) struct Record {
     /// mode, its context in use.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub settings: Vec<(String, String)>,
+    /// The folder it started in, the bot's working directory.
     pub folder: PathBuf,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub branch: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base: Option<String>,
     pub task: String,
     pub state: String,
     #[serde(default)]
@@ -182,9 +178,6 @@ pub(crate) struct Record {
     pub outcome: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pull_request: Option<String>,
-    /// What its work changed against the commit it started from, once it is done.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub changes: Option<AgentChanges>,
     pub started_at: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended_at: Option<f64>,
@@ -498,7 +491,6 @@ impl Agents {
             kind: record.kind,
             task: record.task,
             folder: home_relative(&record.folder),
-            branch: record.branch,
             state: if (question.is_some() || asking.is_some()) && open { "asking".into() } else { record.state },
             stalled: record.stalled,
             error,
@@ -511,7 +503,6 @@ impl Agents {
             output: (!output.trim().is_empty()).then_some(output),
             outcome: record.outcome,
             pull_request: record.pull_request,
-            changes: record.changes,
             device,
             started_at: Some(record.started_at),
             ..AgentRun::default()
@@ -726,7 +717,8 @@ pub(crate) struct Start {
     pub trigger_message_id: String,
     pub kind: String,
     pub program: PathBuf,
-    pub place: workspace::Place,
+    /// Where it starts: the bot's working directory.
+    pub folder: PathBuf,
     pub task: String,
     pub prompt: String,
     /// The bot's command secrets to give it as environment variables, by name.
@@ -754,9 +746,7 @@ pub(crate) async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Agent>, St
         session: None,
         config: Vec::new(),
         settings: Vec::new(),
-        folder: start.place.folder.clone(),
-        branch: start.place.branch.clone(),
-        base: start.place.base.clone(),
+        folder: start.folder.clone(),
         task: without_secrets(app, start.task.clone()),
         state: "starting".into(),
         stalled: false,
@@ -764,7 +754,6 @@ pub(crate) async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Agent>, St
         images: None,
         outcome: None,
         pull_request: None,
-        changes: None,
         started_at: crate::config::now_secs(),
         ended_at: None,
         news: None,
@@ -1090,14 +1079,6 @@ async fn turn_over(app: &Arc<App>, agent: &Arc<Agent>, ended: Result<Option<Stri
         record.error = ended.as_ref().err().cloned();
     }
     agent.hold.lock().unwrap().take();
-    let (folder, base) = {
-        let record = agent.record.lock().unwrap();
-        (record.folder.clone(), record.base.clone())
-    };
-    if let Some(base) = base {
-        let changes = workspace::changes(&folder, &base).await;
-        agent.record.lock().unwrap().changes = changes;
-    }
     agents.sync(app, agent);
     let outputs = proof::publish(app, agent).await;
     let news = match ended {
@@ -1196,10 +1177,7 @@ pub fn wake_cue(app: &App, job: &crate::model::Job) -> Option<String> {
     };
     save(app);
     let who = format!("{} ({})", name(&record.kind), record.id);
-    let place = match &record.branch {
-        Some(branch) => format!("in {} on branch {branch}", home_relative(&record.folder)),
-        None => format!("in {}", home_relative(&record.folder)),
-    };
+    let place = format!("from {}", home_relative(&record.folder));
     let tail = || {
         let lines = agent.transcript.lock().unwrap().tail(12).join("\n");
         if lines.trim().is_empty() { String::new() } else { format!(" Its last lines:\n{lines}\n") }

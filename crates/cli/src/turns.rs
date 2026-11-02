@@ -981,7 +981,7 @@ impl TurnHooks {
                 }
             }
         }
-        if let Some(refused) = crate::coding::review_start(&self.app, &self.bot, &self.chat_id, &self.trigger, self.unattended, &ctx).await {
+        if let Some(refused) = crate::coding::review_start(&self.app, &self.bot, &self.prompt_inputs.job, &self.chat_id, &self.trigger, self.unattended, &ctx).await {
             return Some((Check::CodingReview, refused));
         }
         if let Some(refused) = crate::plugins::mcp::review_call(&self.app, &self.plugin_tools, &self.chat_id, &self.trigger, &self.bot, self.unattended, &ctx).await {
@@ -2397,8 +2397,7 @@ fn team_prompt(app: &App, bot: &Bot, chat: &Chat, unattended: bool) -> String {
         }
         prompt.push_str(
             "Route work before you start it. A part that falls in a teammate's job goes to them with message_bot, even when \
-             you could do it yourself; split a request that spans several jobs and hand each part to one teammate, with \
-             context, expected_output, and acceptance_criteria. Do the work yourself only when it is your own job, when no \
+             you could do it yourself; split a request that spans several jobs and hand each part to one teammate. Do the work yourself only when it is your own job, when no \
              teammate's job covers it, or when a line from what you already know answers it. Tell the user in one line who \
              took which part. Results report back here on their own and start your next turn: check them against what you \
              asked for, then answer the user. Work a teammate handed to you is yours; pass on only a part that is plainly \
@@ -2890,24 +2889,28 @@ struct MessageBot {
     task_id: Option<String>,
     /// `handoffs::origin_of` the turn.
     origin: String,
+    /// The turn's job, whose user's words (`handoffs::user_words`) go with each request, read
+    /// when it is made so they hold what the user sent meanwhile.
+    job: Job,
 }
 
 #[async_trait]
 impl Tool for MessageBot {
     fn name(&self) -> &str { "message_bot" }
     fn description(&self) -> &str {
-        "Hand work to a bot outside this chat. It lands in that bot's own chat with the user, and they do not see this \
-         conversation, so give them the context they need. Say what you need back in expected_output and acceptance_criteria. \
-         Their result, or why they could not finish, comes back to this chat on its own and starts your next turn. Returns \
-         the handoff's id and job_id, and whether their Runner has it yet."
+        "Hand work to a bot outside this chat. It lands in that bot's own chat with the user. Lorca attaches the user's \
+         own words behind this turn, when there are any, word for word, so do not restate them: write only what the recipient must do and what \
+         it cannot learn from those words. Add nothing the user did not ask for. When you are not sure what the user means, \
+         ask them before you hand it off. Their result, or why they could not finish, comes back to this chat on its own and \
+         starts your next turn. Returns the handoff's id and job_id, and whether their Runner has it yet."
     }
     fn parameters(&self) -> Value {
         json!({ "type": "object", "properties": {
             "bot_id": { "type": "string", "description": "The teammate's id from an @mention or list_teammates" },
-            "message": { "type": "string", "description": "What the recipient should do" },
-            "context": { "type": "string", "description": "Supplied facts; the recipient does not see this conversation" },
-            "expected_output": { "type": "string", "description": "The deliverable you need to continue" },
-            "acceptance_criteria": { "type": "array", "items": { "type": "string" }, "description": "Conditions for a satisfactory result" },
+            "message": { "type": "string", "description": "What the recipient should do, in one to three sentences, in the user's terms" },
+            "context": { "type": "string", "description": "Only facts the recipient needs that the user's words do not give, such as a path or an earlier decision. Leave it out when there are none" },
+            "expected_output": { "type": "string", "description": "Only when the user said what they want back" },
+            "acceptance_criteria": { "type": "array", "items": { "type": "string" }, "description": "Only conditions the user stated" },
             "task_id": { "type": "string", "description": "Existing canonical parent task id; defaults to this turn's task" }
         }, "required": ["bot_id", "message"], "additionalProperties": false })
     }
@@ -2919,7 +2922,8 @@ impl Tool for MessageBot {
         input.task_id = input.task_id.or_else(|| self.task_id.clone());
         let target = input.bot_id.clone();
         let message = input.message.clone();
-        let value = crate::handoffs::delegate(&self.app, &self.bot.id, &self.chat_id, self.hops, &self.origin, input).map_err(ToolError)?;
+        let words = crate::handoffs::user_words(&self.app, &self.job);
+        let value = crate::handoffs::delegate(&self.app, &self.bot.id, &self.chat_id, self.hops, &self.origin, &words, input).map_err(ToolError)?;
         let name = name_of(&self.app, &target);
         let result = json!({ "handoff_id": value["handoff_id"], "job_id": value["job_id"], "target_runner_id": value["target_runner_id"], "delivery": value["delivery"] });
         Ok(ToolResult::text(result.to_string())
@@ -6581,7 +6585,7 @@ mod tests {
         let error = edit.execute("call", json!({ "bot_id": "Chef", "description": "Cooks" }), CancellationToken::new(), no_updates.clone()).await.unwrap_err();
         assert_eq!(error.0, "No bot with id Chef. Bots: Chef (b1), Chef (b2)");
 
-        let message = MessageBot { app: app.clone(), chat_id: "chat".into(), bot: chef.clone(), hops: 0, task_id: None, origin: "job-1".into() };
+        let message = MessageBot { app: app.clone(), chat_id: "chat".into(), bot: chef.clone(), hops: 0, task_id: None, origin: "job-1".into(), job: room_job("chat", &chef.id) };
         let error = message.execute("call", json!({ "bot_id": "Chef", "message": "hi" }), CancellationToken::new(), no_updates).await.unwrap_err();
         assert_eq!(error.0, "No bot with id Chef. Bots: Chef (b1), Chef (b2)");
 

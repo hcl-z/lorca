@@ -137,7 +137,6 @@ type WireAgent struct {
 	Name     *string `json:"name"`
 	Task     *string `json:"task"`
 	Folder   *string `json:"folder"`
-	Branch   *string `json:"branch"`
 	State    string  `json:"state"`
 	Stalled  *bool   `json:"stalled"`
 	Held     *bool   `json:"held"`
@@ -1013,7 +1012,7 @@ func ToMessage(wire WireMessage) *Message {
 			}
 			card := &AgentRun{
 				ID: agent.ID, Kind: agent.Kind, ProductName: str(agent.Name), Task: str(agent.Task), Folder: str(agent.Folder),
-				Branch: str(agent.Branch), State: state, Stalled: flag(agent.Stalled), Held: flag(agent.Held), Output: str(agent.Output),
+				State: state, Stalled: flag(agent.Stalled), Held: flag(agent.Held), Output: str(agent.Output),
 				Outcome: str(agent.Outcome), Error: str(agent.Error), NoImages: agent.Images != nil && !*agent.Images, Device: str(agent.Device), Asking: str(agent.Asking), Title: str(agent.Title),
 				PullRequest: str(agent.PullRequest), Tone: AgentTone(str(agent.Tone)), Busy: flag(agent.Busy), Now: str(agent.Now),
 				StatusKey: str(agent.Status), Model: str(agent.Model), PullRequestName: str(agent.PullRequestName), Tail: agent.Tail,

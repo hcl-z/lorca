@@ -130,7 +130,7 @@ pub(super) fn turn_tools(
     let origin = crate::handoffs::origin_of(app, job);
     let team: Vec<Arc<dyn Tool>> = vec![
         Arc::new(ListTeammates { app: app.clone(), chat_id: chat_id.clone() }),
-        Arc::new(MessageBot { app: app.clone(), chat_id: chat_id.clone(), bot: bot.clone(), hops: job.hops, task_id: job.task_id.clone(), origin: origin.clone() }),
+        Arc::new(MessageBot { app: app.clone(), chat_id: chat_id.clone(), bot: bot.clone(), hops: job.hops, task_id: job.task_id.clone(), origin: origin.clone(), job: job.clone() }),
         Arc::new(Handoffs { app: app.clone(), bot_id: bot.id.clone(), request: crate::handoffs::bound_request(app, job), origin }),
         Arc::new(FinishSetup { app: app.clone(), bot: bot.clone() }),
         Arc::new(RecommendPlugins { app: app.clone(), chat_id: chat_id.clone(), bot: bot.clone() }),
@@ -168,6 +168,7 @@ pub(super) fn turn_tools(
             trigger_message_id: trigger.message_id.clone(),
             event: trigger.event.clone(),
             unattended: shape.unattended,
+            job: Some(job.clone()),
         }),
     ];
     let evidence_message = app.message(chat_id, &trigger.message_id);

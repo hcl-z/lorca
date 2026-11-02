@@ -35,8 +35,7 @@ func agentTitle(agent *model.AgentRun, botName string) string {
 	return agent.Name()
 }
 
-// agentPlace is where it works, as its header says it: its branch, else its folder's name, and
-// the Runner.
+// agentPlace is where it works, as its header says it: its folder's name, and the Runner.
 func agentPlace(agent *model.AgentRun) string {
 	parts := []string{}
 	if place := agent.Place(); place != "" {
@@ -91,11 +90,7 @@ func agentHeader(c *ui.Context, p *palette, agent *model.AgentRun, tile, nameSiz
 			ui.Text(c, agent.Name()).FontSize(nameSize).FontWeight(600).FixedLineHeight(nameSize + 5).SingleLine()
 			if place := agentPlace(agent); place != "" {
 				ui.Row(c).Gap(4).AlignItems(ui.Center).MinWidth(0).Children(func() {
-					icon := "folder"
-					if agent.Branch != "" {
-						icon = "arrow.triangle.branch"
-					}
-					symbol(c, icon, 10, 2).TextColor(p.Label3)
+					symbol(c, "folder", 10, 2).TextColor(p.Label3)
 					ui.Text(c, place).Shrink(1).MinWidth(0).FontSize(11).TextColor(p.Label3).SingleLine().Tooltip(agent.Folder)
 				})
 			}
@@ -423,10 +418,6 @@ func (w *appWindow) presentAgentTranscript(chatID string, message *model.Message
 						closed = true
 					}
 				})
-				// What its work changed; its branch is in the subtitle already.
-				if changes := t.agent(agent).Changes; changes != nil && changes.Files > 0 {
-					ui.Row(c).FillWidth().Margin(8, 0, 0, 0).Children(func() { agentFooter(c, &model.AgentRun{Changes: changes}) })
-				}
 			},
 			// The composer stays at the foot, outside the steps' scroll.
 			Footer: func() { t.composer(c, w, t.agent(agent)) },

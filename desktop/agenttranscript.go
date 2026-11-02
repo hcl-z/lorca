@@ -992,7 +992,7 @@ func (t *agentTranscript) header(c *ui.Context, w *appWindow, agent *model.Agent
 	})
 }
 
-// subtitle is "Claude Code · Working · fix-login", and the Runner's name when it is another Device.
+// subtitle is "Claude Code · Working · shop", and the Runner's name when it is another Device.
 func (t *agentTranscript) subtitle(agent *model.AgentRun) string {
 	parts := []string{agent.Name(), agent.Status()}
 	if place := agent.Place(); place != "" {
@@ -1002,28 +1002,6 @@ func (t *agentTranscript) subtitle(agent *model.AgentRun) string {
 		parts = append(parts, agent.Device)
 	}
 	return strings.Join(parts, " · ")
-}
-
-// agentFooter is what the agent's work changed, "+12 −3 in 4 files", and its branch.
-func agentFooter(c *ui.Context, agent *model.AgentRun) {
-	p := colors(c)
-	if changes := agent.Changes; changes != nil && changes.Files > 0 {
-		files := L("in %d files", changes.Files)
-		if changes.Files == 1 {
-			files = L("in 1 file")
-		}
-		ui.RichText(c,
-			ui.Span{Text: "+" + strconv.Itoa(changes.Added), Color: p.Green, Weight: 500},
-			ui.Span{Text: " −" + strconv.Itoa(changes.Removed), Color: p.Red, Weight: 500},
-			ui.Span{Text: " " + files, Color: p.Label2},
-		).FontSize(12).SingleLine().Shrink(0)
-	}
-	if agent.Branch != "" {
-		ui.Row(c).Gap(4).Shrink(1).MinWidth(0).TextColor(p.Label2).Tooltip(agent.Folder).Children(func() {
-			symbol(c, "arrow.triangle.branch", 12, 2)
-			ui.Text(c, agent.Branch).Font(monoFont).FontSize(11.5).SingleLine().Shrink(1).MinWidth(0)
-		})
-	}
 }
 
 // output draws a command's output on a terminal of its own, as tall as its lines up to

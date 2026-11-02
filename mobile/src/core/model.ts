@@ -420,9 +420,8 @@ export interface AgentRun {
   /** The settings that can be changed while it runs (`coding.set`), with what each offers. */
   controls?: AgentControl[];
   task: string;
-  /** Where it works, from the home folder. */
+  /** Where it started, from the home folder: the bot's working directory. */
   folder?: string;
-  branch?: string;
   state: "checking" | "asking" | "starting" | "working" | "idle" | "exited" | "failed" | "stopped" | "denied" | "expired" | "dismissed";
   /** Working, with nothing new for a while. */
   stalled?: boolean;
@@ -521,9 +520,9 @@ export function agentStarted(agent: AgentRun): boolean {
   return !["checking", "denied", "expired", "dismissed"].includes(agent.state) && agent.question?.kind !== "start";
 }
 
-/// Where it works, in a word: its branch, else its folder's name.
+/// Where it works, in a word: its folder's name.
 export function agentPlace(agent: AgentRun): string {
-  return agent.branch ?? (agent.folder ?? "").split("/").filter(Boolean).pop() ?? "";
+  return (agent.folder ?? "").split("/").filter(Boolean).pop() ?? "";
 }
 
 export function isLive(run: CommandRun): boolean {

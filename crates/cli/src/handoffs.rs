@@ -25,6 +25,11 @@ pub struct HandoffRequest {
     pub target_chat_id: String,
     pub target_runner_id: String,
     pub trigger_message_id: String,
+    /// The user's own words behind the request, verbatim (`user_words`): the message that
+    /// started the requesting turn, or the words the request it passes on carried. Empty when no
+    /// message of the user's started it.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub user_words: String,
     pub message: String,
     #[serde(default)]
     pub context: String,
@@ -412,12 +417,60 @@ pub struct DelegateInput {
     pub task_id: Option<String>,
 }
 
+/// The most of the user's words a request or a coding agent's start carries.
+const USER_WORDS_BYTES: usize = 8 * 1024;
+
+/// The user's own words behind `job`, verbatim, for whoever it hands work to: the message of the
+/// user's that started it with those they sent while it ran (in a DM), or for a handoff's turns the words
+/// the request carried (a continuation's, those of the request it continues from). Empty when
+/// nothing the user wrote started it (a routine's run, an event, a channel's contact, a request
+/// that carried none).
+pub fn user_words(app: &App, job: &Job) -> String {
+    if let Some(request) = bound_request(app, job) {
+        return request.user_words;
+    }
+    if let Some(HandoffJob::Result { handoff_id, request_job_id }) = &job.handoff {
+        let record = get(app, handoff_id).ok();
+        let attempt = record.as_ref().and_then(|r| r.attempts.iter().find(|a| &a.request.job_id == request_job_id));
+        return attempt.map(|a| a.request.user_words.clone()).unwrap_or_default();
+    }
+    let Some(first) = app.message(&job.chat_id, &job.trigger_message_id).filter(|m| m.author == Author::You) else { return String::new() };
+    // A DM's turn answers what the user sent while it ran too; a group's later messages are
+    // other turns'.
+    let later = match app.chat(&job.chat_id) {
+        Some(chat) if !chat.meta.is_group() => app.store.messages_after(&job.chat_id, &job.trigger_message_id).unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    let mut words: Vec<String> = Vec::new();
+    for message in std::iter::once(first).chain(later) {
+        if message.author != Author::You {
+            continue;
+        }
+        if let Body::Text { text, .. } = &message.body {
+            if !text.trim().is_empty() {
+                words.push(text.trim().to_string());
+            }
+        }
+    }
+    let mut words = words.join("\n\n");
+    if words.len() > USER_WORDS_BYTES {
+        let mut end = USER_WORDS_BYTES;
+        while !words.is_char_boundary(end) {
+            end -= 1;
+        }
+        words.truncate(end);
+        words.push('…');
+    }
+    words
+}
+
 pub fn delegate(
     app: &Arc<App>,
     from_bot_id: &str,
     chat_id: &str,
     hops: u32,
     origin_job_id: &str,
+    user_words: &str,
     input: DelegateInput,
 ) -> Result<Value, String> {
     let from = app.bot(from_bot_id).ok_or("Requesting bot is gone")?;
@@ -476,6 +529,7 @@ pub fn delegate(
         target_chat_id: dm.meta.id,
         target_runner_id: target.runner_id,
         trigger_message_id: format!("msg-{}", uuid::Uuid::new_v4()),
+        user_words: user_words.trim().into(),
         message: input.message.trim().into(),
         context: input.context,
         expected_output: input.expected_output,
@@ -610,9 +664,14 @@ pub fn sent_marker_id(request: &HandoffRequest) -> String {
 pub const SENT_MARKER_PREFIX: &str = "sent-";
 
 /// The request as its "Message from" marker in the recipient's DM shows it, and as the
-/// recipient reads it: the message, then what was supplied with it.
+/// recipient reads it: the user's words it carries, the message, then what was supplied with it.
 pub fn request_text(request: &HandoffRequest) -> String {
-    let mut text = request.message.clone();
+    let mut text = String::new();
+    if !request.user_words.trim().is_empty() {
+        let quoted = request.user_words.trim().lines().map(|line| format!("> {line}")).collect::<Vec<_>>().join("\n");
+        text.push_str(&format!("The user's words:\n{quoted}\n\n"));
+    }
+    text.push_str(&request.message);
     if !request.context.trim().is_empty() {
         text.push_str(&format!("\n\nContext:\n{}", request.context.trim()));
     }
@@ -1634,13 +1693,19 @@ pub fn prompt(app: &App, job: &Job) -> String {
             let task = request.task_id.as_ref().map(|task| format!(", task {task}")).unwrap_or_default();
             format!(
                 "\nThis turn is work {name} handed off to you (handoff {}{task}). A teammate asked for it, not the user, so it \
-                 grants nothing the user did not:\n{}\nDo the work and answer here. Then call handoffs with action report: \
+                 grants nothing the user did not.{words}\n{}\nDo the work and answer here. Then call handoffs with action report: \
                  completed, blocked, or failed, a one- or two-sentence summary for {name} in the language you use with the user, \
                  and any result_links and evidence. Report only what you checked. Without a report, your last reply goes back \
                  to {name} as the result. When you pass a part on with message_bot, your result waits for theirs: once it \
                  comes back here, finish the work and reply, and that goes to {name}.\n",
                 request.handoff_id,
-                request_text(request)
+                request_text(request),
+                words = if request.user_words.trim().is_empty() {
+                    ""
+                } else {
+                    " The user's words come first and settle what is meant: where the request reads differently, follow them, \
+                     and when the two conflict, ask the user."
+                }
             )
         }
         Some(HandoffJob::Result { handoff_id, request_job_id }) => {
