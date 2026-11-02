@@ -845,8 +845,8 @@ func (t *agentTranscript) composer(c *ui.Context, w *appWindow, agent *model.Age
 			}
 		}
 		// One pill, as the chat's composer is: the photo button, the field, and a round Send.
-		pill := ui.Row(c.Key("agent-pill")).FillWidth().Gap(8).AlignItems(ui.End).Padding(6).MinHeight(composerControlSize + 12).
-			Radius(radiusXL + 6).Background(p.ComposerField).Border(1, p.ComposerBorder).Cursor(ui.CursorText)
+		pill := ui.Row(c.Key("agent-pill")).FillWidth().Gap(8).AlignItems(ui.End).Padding(6).MinHeight(composerControlSize+12).
+			Radius(radiusXL+6).Background(p.ComposerField).Border(1, p.ComposerBorder).Cursor(ui.CursorText)
 		if !c.Theme().Dark {
 			pill.Shadow(0, 2, 10, 0, ui.RGBA(0, 0, 0, 0.05))
 		}
@@ -949,6 +949,13 @@ func (t *agentTranscript) header(c *ui.Context, w *appWindow, agent *model.Agent
 				title := firstNonEmpty(agent.Title, agent.Task)
 				ui.Text(c, title).FontSize(15).FontWeight(600).LineHeight(1.3).MaxLines(2).Tooltip(title)
 				ui.Text(c, t.subtitle(agent)).FontSize(12).TextColor(p.Label2).SingleLine()
+				// Where it runs: the folder (its worktree in a repository) on its Runner.
+				if agent.Folder != "" {
+					ui.Row(c).Gap(5).Margin(2, 0, 0, 0).AlignItems(ui.Center).MinWidth(0).TextColor(p.Label3).Tooltip(agent.Folder).Children(func() {
+						symbol(c, "folder", 11, 2)
+						ui.Text(c, agent.Folder).Font(monoFont).FontSize(11.5).SingleLine().Shrink(1).MinWidth(0).Selectable()
+					})
+				}
 			})
 			ui.Row(c).Gap(8).Shrink(0).Children(func() {
 				if agent.PullRequest != "" {
