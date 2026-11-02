@@ -378,16 +378,16 @@ function AgentComposer({ agent, chatId, messageId, onSent }: { agent: AgentRun; 
           ))}
         </ScrollView>
       ) : null}
-      <View style={styles.composerRow}>
+      <View style={[styles.composerPill, { backgroundColor: p.fill, borderColor: p.separator }]}>
         {takesImages ? (
           <Pressable
             onPress={() => setAttachOpen(true)}
             disabled={!open || sending}
             accessibilityRole="button"
             accessibilityLabel={t("Attach images")}
-            style={({ pressed }) => [styles.composerSend, { backgroundColor: p.fill, opacity: !open || sending ? 0.4 : pressed ? 0.7 : 1 }]}
+            style={({ pressed }) => [styles.composerSend, { opacity: !open || sending ? 0.4 : pressed ? 0.6 : 1 }]}
           >
-            <Symbol name="photo" size={16} color={p.label} />
+            <Symbol name="photo" size={18} color={p.secondaryLabel} />
           </Pressable>
         ) : null}
         <ImagePasteView onPasteImages={({ nativeEvent }) => paste(nativeEvent.files)} style={{ flex: 1 }}>
@@ -399,7 +399,7 @@ function AgentComposer({ agent, chatId, messageId, onSent }: { agent: AgentRun; 
             placeholderTextColor={p.tertiaryLabel}
             multiline
             keyboardAppearance={p.dark ? "dark" : "light"}
-            style={[styles.composerField, { color: p.label, backgroundColor: p.fill }]}
+            style={[styles.composerField, { color: p.label }]}
             accessibilityLabel={t("Message {name}", { name })}
           />
         </ImagePasteView>
@@ -453,7 +453,6 @@ function Overview({ agent, message, entries, stopping, onStop, onActions }: { ag
         agent={agent}
         tile={40}
         size={18}
-        sub={agent.title || agent.task}
         trailing={
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
             {agentIsRunning(agent) ? <StopButton busy={stopping} onPress={onStop} size={34} /> : null}
@@ -470,12 +469,10 @@ function Overview({ agent, message, entries, stopping, onStop, onActions }: { ag
           </Text>
         </Section>
       ) : null}
-      {agent.branch || agent.folder || agent.device || since ? (
+      {agent.folder || since ? (
         <Section title={t("Workspace")}>
           <View style={[styles.facts, { backgroundColor: p.code }]}>
-            {agent.branch ? fact("arrow.triangle.branch", agent.branch, true) : null}
             {agent.folder ? fact("folder", agent.folder, true) : null}
-            {agent.device ? fact("desktopcomputer", agent.device) : null}
             {since ? fact("clock", t("Started {time} ago", { time: since })) : null}
           </View>
         </Section>
@@ -558,13 +555,28 @@ function hasBody(tool: AgentTool): boolean {
 const EntryRow = memo(function EntryRow({ entry, kind, who, rail, open, width, chatId, messageId, onToggle }: { entry: AgentEntry; kind: string; who: string; rail: boolean; open: boolean; width: number; chatId: string; messageId: string; onToggle: (entry: AgentEntry, open: boolean) => void }) {
   const p = usePalette();
   const blue = accentColor("blue", p.dark);
+  if (entry.kind === "sent" && entry.from === "user") {
+    // What the user wrote on this page: their bubble on the right, as in a chat.
+    return (
+      <View style={styles.mine}>
+        <View style={[styles.mineBubble, { backgroundColor: p.userBubble, maxWidth: width * 0.8 }]}>
+          {entry.attachments?.length ? <AttachmentBlock attachments={entry.attachments} onUserBubble maxWidth={width * 0.8 - 24} chatId={chatId} messageId={messageId} /> : null}
+          {entry.text ? (
+            <Text selectable style={{ color: p.userBubbleText, fontSize: 15, lineHeight: 21 }}>
+              {entry.text}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+    );
+  }
   if (entry.kind === "sent") {
     return (
       <View style={[styles.sent, { backgroundColor: alpha(blue, 0.07), borderColor: alpha(blue, 0.2) }]}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
           <Symbol name="paperplane" size={12} color={blue} />
           <Text style={{ color: blue, fontSize: 12, fontWeight: "600" }} numberOfLines={1}>
-            {entry.from === "user" ? t("You asked") : t("{who} asked", { who })}
+            {t("{who} asked", { who })}
           </Text>
         </View>
         {entry.text ? (
@@ -861,8 +873,8 @@ function OutputView({ output }: { output: string }) {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   composer: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8, gap: 5, borderTopWidth: StyleSheet.hairlineWidth },
-  composerRow: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
-  composerField: { flex: 1, minHeight: 38, maxHeight: 140, borderRadius: 19, paddingHorizontal: 14, paddingTop: 9, paddingBottom: 9, fontSize: 16 },
+  composerPill: { flexDirection: "row", alignItems: "flex-end", gap: 2, borderRadius: 21, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 4, paddingVertical: 3 },
+  composerField: { flex: 1, minHeight: 36, maxHeight: 140, paddingHorizontal: 8, paddingTop: 8, paddingBottom: 8, fontSize: 16 },
   composerSend: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", marginBottom: 2 },
   composerImages: { gap: 12, paddingTop: 6, paddingBottom: 2, paddingHorizontal: 4 },
   composerThumb: { width: 56, height: 56, borderRadius: 10 },
@@ -880,6 +892,8 @@ const styles = StyleSheet.create({
   output: { maxHeight: 300 },
   mono: { fontFamily: mono, fontSize: 12, lineHeight: 17 },
   diffLine: { paddingHorizontal: 12 },
+  mine: { alignItems: "flex-end", marginTop: 6, marginBottom: 18 },
+  mineBubble: { borderRadius: 18, paddingVertical: 9, paddingHorizontal: 13, gap: 8 },
   sent: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingTop: 10, paddingBottom: 12, paddingHorizontal: 13, gap: 6, marginTop: 6, marginBottom: 18 },
   entry: { flexDirection: "row", gap: 12 },
   gutter: { width: NODE, alignItems: "center" },
