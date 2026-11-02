@@ -1,0 +1,19 @@
+crates/cli/src/turns.rs
+  s_70b20ab7829e8f::t_abbe5e93a0f546 450-451
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "362423fb97da1c2f261ae8cbab28257f37d9653d",
+  "prompts": {},
+  "sessions": {
+    "s_70b20ab7829e8f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4a3b7803-2273-467f-a3a1-938fee1c612d",
+        "model": "claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
