@@ -930,8 +930,16 @@ func (t *agentTranscript) composer(c *ui.Context, w *appWindow, agent *model.Age
 	})
 }
 
-// agent is the agent as the transcript last answered it, else the card the caller showed.
+// agent is the agent as its row in the chat has it, else as the transcript last answered it,
+// else the card the caller showed.
 func (t *agentTranscript) agent(fallback *model.AgentRun) *model.AgentRun {
+	// The row in the chat follows the Runner's events, so its card is the freshest: the same card
+	// the chat shows, never one the page took as it opened.
+	if chat := store.Chat(t.chatID); chat != nil {
+		if live := model.AgentOf(chat.Message(t.messageID)); live != nil {
+			return live
+		}
+	}
 	if t.card != nil {
 		return t.card
 	}
