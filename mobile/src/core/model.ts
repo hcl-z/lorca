@@ -437,8 +437,9 @@ export interface AgentRun {
   outcome?: string;
   /** Why its last turn failed, while it waits idle after it and takes a follow-up. */
   error?: string;
-  /** It takes images with a message: the composer on its page offers to attach one. */
-  images?: boolean;
+  /** Whether it takes images with a message, as its handshake said; absent before one. The
+   *  composer on its page offers to attach images unless it is `false`. */
+  images?: boolean | null;
   /** The pull request it opened, when its transcript names one. */
   pull_request?: string;
   device?: string;

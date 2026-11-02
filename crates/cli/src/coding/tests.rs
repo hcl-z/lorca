@@ -599,7 +599,7 @@ fn record(folder: PathBuf) -> Record {
         state: "working".into(),
         stalled: false,
         error: None,
-        images: false,
+        images: None,
         outcome: None,
         pull_request: None,
         changes: None,
@@ -936,7 +936,7 @@ async fn an_image_from_the_page_reaches_an_agent_that_takes_images_and_no_other(
     let row = start_row(app, "call-1");
     call(&tool, "call-1", json!({ "action": "start", "agent": "claude", "folder": "shop", "prompt": "Hello (follow-up)" })).await.unwrap();
     let card = card_when(app, &row, |card| card.state == "idle").await;
-    assert!(card.images, "the card offers to attach an image");
+    assert_eq!(card.images, Some(true), "the card offers to attach an image");
     let agent = app.coding_agents.find("chat", "b1", &card.id).unwrap();
     serve(app, "coding.send", &json!({ "chat_id": "chat", "message_id": row, "text": "What is this? (follow-up)", "attachments": [image] })).await.unwrap();
     card_when(app, &row, |card| card.state == "idle" && card.output.as_deref().is_some_and(|output| output.matches("Followed up.").count() >= 2)).await;
@@ -956,9 +956,18 @@ async fn an_image_from_the_page_reaches_an_agent_that_takes_images_and_no_other(
     let row = start_row(app, "call-2");
     call(&tool, "call-2", json!({ "action": "start", "agent": "gemini", "folder": "shop", "prompt": "Hello (follow-up)" })).await.unwrap();
     let card = card_when(app, &row, |card| card.state == "idle").await;
-    assert!(!card.images);
+    assert_eq!(card.images, Some(false), "it said no to images");
     let refused = serve(app, "coding.send", &json!({ "chat_id": "chat", "message_id": row, "text": "Look", "attachments": [image] })).await.unwrap_err();
     assert!(refused.contains("does not take images"), "{refused}");
+
+    // One not asked yet (a record from before Lorca asked) is offered images; started again on its
+    // session, its handshake says no, and the words go without them.
+    app.coding_agents.stop_chat(app, "chat");
+    card_when(app, &row, |card| card.state == "stopped").await;
+    let agent = app.coding_agents.find("chat", "b1", &card.id).unwrap();
+    agent.record.lock().unwrap().images = None;
+    serve(app, "coding.send", &json!({ "chat_id": "chat", "message_id": row, "text": "Look again (follow-up)", "attachments": [image] })).await.unwrap();
+    card_when(app, &row, |card| card.output.as_deref().is_some_and(|output| output.contains("does not take images, so the images were not sent"))).await;
     app.coding_agents.stop_chat(app, "chat");
 }
 

@@ -735,10 +735,10 @@ pub struct AgentRun {
     /// follow-up, and its pill says it failed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
-    /// It takes images with a message, as its last handshake said: the composer on its page
-    /// offers to attach one.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub images: bool,
+    /// Whether it takes images with a message, as its last handshake said; none before one. The
+    /// composer on its page offers to attach images unless it said no.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub images: Option<bool>,
     /// Auto-review held its start and told the bot why, without asking the user: the card is
     /// `denied`, and the apps read it as "Held by Auto-review".
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]

@@ -725,13 +725,14 @@ func writable(agent *model.AgentRun) bool {
 
 // composer is the foot of the agent's page: the user writes the agent there, and only there. It
 // takes the message up once it is done with what it does now, or starts again on its session;
-// neither the chat nor the bot sees it. An agent that takes images (`Images`) takes them too:
+// neither the chat nor the bot sees it. An agent that takes images takes them too (any but one that
+// said it takes none, `NoImages`):
 // pasted, dropped on the field, or chosen with the photo button, shown above the field until they
 // go. A message that did not go stays in the field, with why.
 func (t *agentTranscript) composer(c *ui.Context, w *appWindow, agent *model.AgentRun) {
 	p := colors(c)
 	open := writable(agent)
-	images := agent.Images
+	images := !agent.NoImages
 	send := func() {
 		text := strings.TrimSpace(t.draft)
 		attached := slices.Clone(t.images)

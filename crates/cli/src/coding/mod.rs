@@ -174,9 +174,10 @@ pub(crate) struct Record {
     /// Why its last turn failed, while it waits `idle` after it; the next turn clears it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
-    /// It takes images in a prompt, as its last handshake said (`promptCapabilities.image`).
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub images: bool,
+    /// Whether it takes images in a prompt, as its last handshake said (`promptCapabilities.image`);
+    /// none before a handshake under a Lorca that asks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub images: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -760,7 +761,7 @@ pub(crate) async fn start(app: &Arc<App>, start: Start) -> Result<Arc<Agent>, St
         state: "starting".into(),
         stalled: false,
         error: None,
-        images: false,
+        images: None,
         outcome: None,
         pull_request: None,
         changes: None,
@@ -1055,7 +1056,7 @@ async fn handle(app: &Arc<App>, agent: &Arc<Agent>, event: Event, generation: u6
             false
         }
         Event::Images(takes) => {
-            let changed = std::mem::replace(&mut agent.record.lock().unwrap().images, takes) != takes;
+            let changed = std::mem::replace(&mut agent.record.lock().unwrap().images, Some(takes)) != Some(takes);
             if changed {
                 save(app);
             }
@@ -1768,7 +1769,8 @@ async fn page_images(app: &Arc<App>, record: &Record, attachments: &[crate::mode
     if attachments.is_empty() {
         return Ok(Vec::new());
     }
-    if !record.images {
+    // Not known before its first handshake here: the driver drops them, with a note, if it says no.
+    if record.images == Some(false) {
         return Err(format!("{} does not take images.", name(&record.kind)));
     }
     if attachments.len() > MAX_PAGE_IMAGES {

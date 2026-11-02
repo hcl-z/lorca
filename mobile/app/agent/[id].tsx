@@ -290,7 +290,8 @@ function AgentComposer({ agent, chatId, messageId, onSent }: { agent: AgentRun; 
   const [sending, setSending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const open = writable(agent);
-  const takesImages = !!agent.images;
+  // Any agent but one whose handshake said no: one not asked yet is asked as the message goes.
+  const takesImages = agent.images !== false;
   const name = agentName(agent);
   const add = (files: PickedFile[]) => {
     const refused: string[] = [];

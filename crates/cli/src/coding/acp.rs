@@ -412,7 +412,8 @@ async fn drive(setup: Setup, transport: Transport, events: Events, mut commands:
             let lorca = Implementation::new("lorca", env!("CARGO_PKG_VERSION")).title("Lorca");
             let initialized = connection.send_request(InitializeRequest::new(ProtocolVersion::V1).client_capabilities(capabilities).client_info(lorca)).block_task().await?;
             // Whether it takes images, which the apps' composers ask before they offer to attach one.
-            let _ = events.send(Event::Images(initialized.agent_capabilities.prompt_capabilities.image));
+            let takes_images = initialized.agent_capabilities.prompt_capabilities.image;
+            let _ = events.send(Event::Images(takes_images));
             let sessions = &initialized.agent_capabilities.session_capabilities;
             let (can_resume, can_close) = (sessions.resume.is_some(), sessions.close.is_some());
             *shared.stage.lock().unwrap() = "session";
@@ -477,7 +478,12 @@ async fn drive(setup: Setup, transport: Transport, events: Events, mut commands:
             let mut closed = false;
             loop {
                 if running.is_none() {
-                    if let Some((text, images, from)) = queue.pop_front() {
+                    if let Some((text, mut images, from)) = queue.pop_front() {
+                        // Sent before its handshake said it takes none: the words go without them.
+                        if !takes_images && !images.is_empty() {
+                            images.clear();
+                            note(&events, &shared, format!("⎿ {} does not take images, so the images were not sent", spec.name));
+                        }
                         shared.said.lock().unwrap().message.clear();
                         shared.produced.store(false, Ordering::SeqCst);
                         // What the user writes on the agent's page is theirs: the bot's transcript
