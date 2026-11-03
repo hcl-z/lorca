@@ -609,39 +609,12 @@ func (m *mainWindow) inspectorMemory(c *ui.Context, bot *model.Bot) {
 				m.presentMemory(current, memory, func() { s.refreshMemory(botID) })
 			}
 		}
-		// What automatic capture learned over time, where it lives, and taking any batch back.
 		// What the housekeeping moved out of MEMORY.md, and putting it back.
 		if tidy := memory.Tidy; tidy != nil {
 			moved := append(slices.Clone(tidy.Archived), tidy.History...)
 			tip := L("Moved to memory/history.md and memory/archive.md, where recall still finds them.")
 			if _, result := actionRow(c, k, L("Tidied"), actionRowOptions{Value: tidy.Summary(), Tint: &p.Label2, Action: L("Undo…"), Tooltip: tip}); result.Action {
 				m.confirmUndoTidy(bot.ID, tidy.ID, moved)
-			}
-		}
-		captures := memory.Captures
-		if len(captures) == 0 && memory.Capture != nil {
-			captures = []model.CaptureRun{*memory.Capture}
-		}
-		if len(captures) > 0 {
-			actionRow(c, k, L("Automatic memory history"), actionRowOptions{Value: L("%d batches", len(captures)), Tint: &p.Label2})
-			for _, capture := range captures {
-				if len(capture.Facts) == 0 {
-					continue
-				}
-				facts := capture.FactLines()
-				label := time.Unix(capture.At, 0).Local().Format("Jan 2, 2006 · 15:04")
-				if capture.Undone {
-					actionRow(c, k, L("Capture batch"), actionRowOptions{Value: L("Undone · %@", label), Tint: &p.Label2})
-				} else if _, result := actionRow(c, k, L("Capture batch"), actionRowOptions{Value: label, Tint: &p.Label2, Action: L("Undo…"), Tooltip: strings.Join(facts, "\n")}); result.Action {
-					m.confirmUndoCapture(bot.ID, capture.ID, facts)
-				}
-				for _, fact := range capture.Facts {
-					target := L("Bot memory")
-					if fact.Target == "profile" {
-						target = L("Shared profile")
-					}
-					actionRow(c, k, target, actionRowOptions{Value: fact.Text, Tint: &p.Label2})
-				}
 			}
 		}
 		folder := L("%@ · on %@", memory.FilesSummary(), memory.Runner)
@@ -681,27 +654,6 @@ func (m *mainWindow) inspectorAboutYou(c *ui.Context, bot *model.Bot) {
 			botID, runnerID, runner := bot.ID, bot.RunnerID, memory.Runner
 			m.presentProfile(runnerID, runner, profile, func() { s.refreshMemory(botID) })
 		}
-	})
-}
-
-// confirmUndoCapture lists what a capture added and removes it on the user's word. Removed facts
-// are remembered as forgotten, so the bot does not learn them again on its own.
-func (m *mainWindow) confirmUndoCapture(botID, runID string, facts []string) {
-	m.showAlert(alertOptions{
-		Message:     L("Forget what the bot learned?"),
-		Informative: strings.Join(facts, "\n") + "\n\n" + L("These leave its memory, and it won't add them again unless you bring them up."),
-		Buttons:     []alertButton{{Title: L("Forget"), Destructive: true}, {Title: L("Cancel")}},
-	}, func(index int) {
-		if index != 0 {
-			return
-		}
-		store.UndoCapture(botID, runID, func(err error) {
-			if err != nil {
-				m.showAlert(alertOptions{Message: L("Couldn't forget the learned facts"), Informative: model.ErrorText(err)}, nil)
-				return
-			}
-			m.inspector.refreshMemory(botID)
-		})
 	})
 }
 
