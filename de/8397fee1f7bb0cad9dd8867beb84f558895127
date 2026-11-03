@@ -1,0 +1,19 @@
+desktop/l10n/zh.go
+  s_d508d79e959939::t_1e382bee267c70 1049-1060,1514-1522
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "de8397fee1f7bb0cad9dd8867beb84f558895127",
+  "prompts": {},
+  "sessions": {
+    "s_d508d79e959939": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b0fa1a9-5be0-4ff8-9edd-9dc8ea27680a",
+        "model": "kiro/claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
