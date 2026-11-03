@@ -7,7 +7,10 @@
 # the latest release, which stays the CLI's; publishing it makes it the update Android apps
 # install. Running on main keeps the Rust, Gradle, and Xcode caches where the next release reads
 # them. The iPhone build runs `bun run release-ios`, the Android one `bun run release-android`.
-# docs/releasing-mobile.md has the steps.
+# docs/releasing-mobile.md has the steps. "Android beta" builds the commit it runs on, any branch,
+# into a prerelease mobile-vX.Y.Z-beta.N with this run's number, signed like a release: a phone
+# installs it over that version by hand, and the app's update check, which reads only published
+# X.Y.Z releases, offers it to nobody.
 name: Release phone app
 
 on:
@@ -16,7 +19,7 @@ on:
       platforms:
         description: What to release
         type: choice
-        options: [iOS and Android, iOS, Android]
+        options: [iOS and Android, iOS, Android, Android beta]
         default: iOS and Android
 
 permissions:
@@ -37,6 +40,7 @@ jobs:
       tag: ${{ steps.app.outputs.tag }}
       ios: ${{ steps.app.outputs.ios }}
       android: ${{ steps.app.outputs.android }}
+      beta: ${{ steps.app.outputs.beta }}
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -50,10 +54,23 @@ jobs:
           tag=mobile-v$version
           ios=true
           android=true
+          beta=false
           case $PLATFORMS in
             iOS) android=false ;;
             Android) ios=false ;;
+            "Android beta") ios=false; beta=true; tag=$tag-beta.$GITHUB_RUN_NUMBER ;;
           esac
+          # A beta is a tag of its own, with no notes of the version's.
+          if [[ $beta == true ]]; then
+            {
+              echo "version=$version"
+              echo "tag=$tag"
+              echo "ios=false"
+              echo "android=true"
+              echo "beta=true"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           # A release takes the tag that exists, so the build has to come from its commit.
           if tagged=$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha 2>/dev/null) && [[ $tagged != "$GITHUB_SHA" ]]; then
             echo "::error::$tag already tags $tagged: run this on that commit, or bump version in mobile/app.config.ts"
@@ -76,6 +93,7 @@ jobs:
             echo "tag=$tag"
             echo "ios=$ios"
             echo "android=$android"
+            echo "beta=false"
           } >> "$GITHUB_OUTPUT"
 
   # The builds upload into one draft, which this job makes first; each would make its own.
@@ -92,7 +110,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.version.outputs.tag }}
           VERSION: ${{ needs.version.outputs.version }}
+          BETA: ${{ needs.version.outputs.beta }}
+          BRANCH: ${{ github.ref_name }}
         run: |
+          if [[ $BETA == true ]]; then
+            echo "A beta of $VERSION from $BRANCH ($GITHUB_SHA), for testing by hand. The app does not offer it as an update." > notes.md
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --prerelease --latest=false --target "$GITHUB_SHA" --title "Lorca for Android $VERSION beta ($BRANCH)" --notes-file notes.md
+            exit 0
+          fi
           if ! state=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq 'if .isDraft then "draft" else "published" end' 2>/dev/null); then
             state=none
           fi
@@ -244,4 +269,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.version.outputs.tag }}
-        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest=false
+          BETA: ${{ needs.version.outputs.beta }}
+        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest=false --prerelease="$BETA"

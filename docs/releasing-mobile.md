@@ -127,6 +127,14 @@ gh workflow run release-mobile.yml --repo hcl-z/lorca --ref main -f platforms=iO
 gh workflow run release-mobile.yml --repo hcl-z/lorca --ref main -f platforms=Android
 ```
 
+A beta of a branch, Android only, to install by hand before it merges:
+
+```sh
+gh workflow run release-mobile.yml --repo hcl-z/lorca --ref <branch> -f "platforms=Android beta"
+```
+
+It needs neither a version bump nor a changelog section: the prerelease `mobile-vX.Y.Z-beta.N` takes the version in `mobile/app.config.ts` and the run's number, and holds the APK signed with the release key, so it installs over that version and keeps the account. The app's update check reads only published `X.Y.Z` releases, so no phone is offered it, and the next release updates a phone that installed it.
+
 ## From a Mac
 
 `bun run release-ios` writes `dist/ios/lorca-<version>-ios.ipa`, and `bun run release-android`
