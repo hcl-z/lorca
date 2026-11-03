@@ -1,5 +1,5 @@
 // A bot's memory, pushed from Details: its MEMORY.md against the budget a turn loads, the topic
-// files beside it, capture history with per-batch Undo, the profile its Runner shares
+// files beside it, the housekeeping it can undo, the profile its Runner shares
 // with every bot there (About you), and the prompt its next turn sends. All of it lives on the
 // bot's Runner and comes through the core (`src/core/memory.ts`).
 
@@ -7,7 +7,7 @@ import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-rou
 import { useCallback, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import { fileSize } from "../../../src/core/model";
-import { botMemory, captureHistory, gauge, undoCapture, undoTidy, type BotMemory, type CaptureRun, type TidyRun } from "../../../src/core/memory";
+import { botMemory, gauge, undoTidy, type BotMemory, type TidyRun } from "../../../src/core/memory";
 import { useBotMap } from "../../../src/core/store";
 import { t, useLanguage } from "../../../src/i18n";
 import { alert } from "../../../src/ui/alert";
@@ -30,17 +30,13 @@ export default function BotMemoryScreen() {
   const p = usePalette();
   const bot = useBotMap().get(id);
   const [memory, setMemory] = useState<BotMemory>();
-  const [captures, setCaptures] = useState<CaptureRun[]>([]);
   const [error, setError] = useState<string>();
   const [undoing, setUndoing] = useState(false);
 
   const load = useCallback(() => {
     setError(undefined);
-    Promise.all([botMemory(id), captureHistory(id)])
-      .then(([overview, history]) => {
-        setMemory(overview);
-        setCaptures(history.runs);
-      })
+    botMemory(id)
+      .then(setMemory)
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, [id]);
   // Again on each return: the editors below write the files.
@@ -57,23 +53,6 @@ export default function BotMemoryScreen() {
         onPress: () => {
           setUndoing(true);
           undoTidy(id, run.id)
-            .then(load)
-            .catch((e) => alert(t("Couldn't undo it"), e instanceof Error ? e.message : String(e)))
-            .finally(() => setUndoing(false));
-        },
-      },
-    ]);
-  }
-
-  function undo(run: NonNullable<BotMemory["capture"]>) {
-    alert(t("Forget what {name} remembered?", { name }), run.facts.map((fact) => `• ${fact.text} · ${fact.target === "profile" ? t("Shared profile") : t("Bot memory")}`).join("\n"), [
-      { text: t("Cancel"), style: "cancel" },
-      {
-        text: t("Forget"),
-        style: "destructive",
-        onPress: () => {
-          setUndoing(true);
-          undoCapture(id, run.id)
             .then(load)
             .catch((e) => alert(t("Couldn't undo it"), e instanceof Error ? e.message : String(e)))
             .finally(() => setUndoing(false));
@@ -135,20 +114,6 @@ export default function BotMemoryScreen() {
               </Section>
             ) : null}
 
-            {captures.length || memory.captures?.length || memory.capture ? (
-              <Section title={t("Automatic memory history")}>
-                {(captures.length ? captures : memory.captures?.length ? memory.captures : memory.capture ? [memory.capture] : []).map((run) => (
-                  <View key={run.id} style={styles.captureRun}>
-                    <Text style={[styles.note, { color: p.secondaryLabel }]}>{stamp(new Date(run.at * 1000))}{run.undone ? ` · ${t("Undone")}` : ""}</Text>
-                    {run.facts.map((fact, at) => (
-                      <Row key={`${run.id}-${at}`} title={fact.text} detail={fact.target === "profile" ? t("Shared profile") : t("Bot memory")} titleLines={3} />
-                    ))}
-                    {!run.undone ? <Row title={t("Undo…")} destructive disabled={undoing} onPress={() => undo(run)} /> : null}
-                  </View>
-                ))}
-              </Section>
-            ) : null}
-
             <Section footer={t("What {runner} knows about you, shared by every bot on it.", { runner: memory.runner })}>
               <Row
                 title={t("About You")}
@@ -175,5 +140,4 @@ const styles = StyleSheet.create({
   content: { paddingBottom: 40 },
   center: { alignItems: "center", justifyContent: "center", gap: 12, padding: 24, paddingTop: 80 },
   note: { fontSize: Font.body, textAlign: "center" },
-  captureRun: { paddingBottom: 8 },
 });

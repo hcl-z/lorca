@@ -1309,10 +1309,6 @@ type BotMemory struct {
 	Logs      []string
 	// The account's profile of the user, which every bot on the Runner reads.
 	Profile Profile
-	// The newest capture run that was not undone, if there is one.
-	Capture *CaptureRun
-	// Every capture run, newest first, without source chats or quotes.
-	Captures []CaptureRun
 	// The newest housekeeping pass that moved lines out of MEMORY.md, while it is not undone.
 	Tidy *TidyRun
 	// What the bot's memory did lately, newest first.
@@ -1353,20 +1349,6 @@ type Profile struct {
 // Empty reports whether the user has written nothing about themselves yet.
 func (p Profile) Empty() bool { return p.Text == "" }
 
-// CaptureFact is a saved fact and the file that now holds it.
-type CaptureFact struct {
-	Text   string
-	Target string
-}
-
-// CaptureRun is one pass of automatic learning, without a source chat or quote.
-type CaptureRun struct {
-	ID     string
-	At     int64
-	Facts  []CaptureFact
-	Undone bool
-}
-
 // TidyRun is one housekeeping pass over MEMORY.md: the struck-through lines it moved to
 // memory/history.md, and the unused entries it moved to memory/archive.md.
 type TidyRun struct {
@@ -1402,18 +1384,6 @@ func CaptureFacts(lines []string) []string {
 			parts = parts[1:]
 		}
 		facts = append(facts, strings.Join(parts, " · "))
-	}
-	return facts
-}
-
-func (r CaptureRun) FactLines() []string {
-	facts := make([]string, 0, len(r.Facts))
-	for _, fact := range r.Facts {
-		target := L("Bot memory")
-		if fact.Target == "profile" {
-			target = L("Shared profile")
-		}
-		facts = append(facts, fact.Text+" · "+target)
 	}
 	return facts
 }
@@ -1774,13 +1744,6 @@ func (q *AgentQuestion) Decisions() []Answer {
 	return []Answer{{L("Allow once"), "allow"}, {L("Always allow"), "always"}, {L("Deny"), "deny"}}
 }
 
-// AgentChanges is what a coding agent's work changed against the commit it started from.
-type AgentChanges struct {
-	Files   int `json:"files"`
-	Added   int `json:"added"`
-	Removed int `json:"removed"`
-}
-
 // AgentRun is a coding agent a bot runs on its Runner, Claude Code, Codex, or another that speaks
 // ACP, as the card of the call that started it shows it: Auto-review's question before it starts,
 // what it works on and where, how it stands, its last lines, and what it asks.
@@ -1793,7 +1756,6 @@ type AgentRun struct {
 	ProductName string
 	Task        string
 	Folder      string
-	Branch      string
 	State       AgentState
 	Stalled     bool
 	// Held is set when Auto-review held its start and told the bot why, without asking: it is
@@ -1813,8 +1775,6 @@ type AgentRun struct {
 	NoImages bool
 	// PullRequest is the pull request it opened, when its transcript names one.
 	PullRequest string
-	// Changes is what its work changed against the commit it started from.
-	Changes *AgentChanges
 	// StartedAt is when it started; zero on a card that does not say.
 	StartedAt time.Time
 	Device    string
@@ -1941,11 +1901,8 @@ func (a *AgentRun) Started() bool {
 	return a.Question == nil || a.Question.Kind != "start"
 }
 
-// Place is where it works, in a word: its branch, else its folder's name.
+// Place is where it works, in a word: its folder's name.
 func (a *AgentRun) Place() string {
-	if a.Branch != "" {
-		return a.Branch
-	}
 	if i := strings.LastIndex(a.Folder, "/"); i >= 0 {
 		return a.Folder[i+1:]
 	}

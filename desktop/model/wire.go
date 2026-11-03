@@ -137,7 +137,6 @@ type WireAgent struct {
 	Name     *string `json:"name"`
 	Task     *string `json:"task"`
 	Folder   *string `json:"folder"`
-	Branch   *string `json:"branch"`
 	State    string  `json:"state"`
 	Stalled  *bool   `json:"stalled"`
 	Held     *bool   `json:"held"`
@@ -651,9 +650,6 @@ type WireBotMemory struct {
 	Logs   []string `json:"logs"`
 	// The account's profile of the user, on the same Runner.
 	Profile *WireProfile `json:"profile"`
-	// Capture history contains facts and targets only, never source chats or quotes.
-	Capture  *WireCaptureRun  `json:"capture"`
-	Captures []WireCaptureRun `json:"captures"`
 	// The newest housekeeping pass that moved lines and was not undone.
 	Tidy *struct {
 		ID       string   `json:"id"`
@@ -668,18 +664,6 @@ type WireBotMemory struct {
 		Text   string   `json:"text"`
 		Detail []string `json:"detail"`
 	} `json:"trace"`
-}
-
-type WireCaptureFact struct {
-	Text   string `json:"text"`
-	Target string `json:"target"`
-}
-
-type WireCaptureRun struct {
-	ID     string            `json:"id"`
-	At     int64             `json:"at"`
-	Facts  []WireCaptureFact `json:"facts"`
-	Undone bool              `json:"undone"`
 }
 
 // WirePrompt is `bots.prompt`: a bot's system prompt as named sections, with the notes a turn
@@ -1013,7 +997,7 @@ func ToMessage(wire WireMessage) *Message {
 			}
 			card := &AgentRun{
 				ID: agent.ID, Kind: agent.Kind, ProductName: str(agent.Name), Task: str(agent.Task), Folder: str(agent.Folder),
-				Branch: str(agent.Branch), State: state, Stalled: flag(agent.Stalled), Held: flag(agent.Held), Output: str(agent.Output),
+				State: state, Stalled: flag(agent.Stalled), Held: flag(agent.Held), Output: str(agent.Output),
 				Outcome: str(agent.Outcome), Error: str(agent.Error), NoImages: agent.Images != nil && !*agent.Images, Device: str(agent.Device), Asking: str(agent.Asking), Title: str(agent.Title),
 				PullRequest: str(agent.PullRequest), Tone: AgentTone(str(agent.Tone)), Busy: flag(agent.Busy), Now: str(agent.Now),
 				StatusKey: str(agent.Status), Model: str(agent.Model), PullRequestName: str(agent.PullRequestName), Tail: agent.Tail,
@@ -1426,15 +1410,6 @@ func ToBotMemory(wire WireBotMemory) BotMemory {
 	if profile := wire.Profile; profile != nil {
 		memory.Profile = profile.profile()
 	}
-	if capture := wire.Capture; capture != nil {
-		memory.Capture = &CaptureRun{ID: capture.ID, At: capture.At, Facts: captureFacts(capture.Facts), Undone: capture.Undone}
-	}
-	for _, capture := range wire.Captures {
-		memory.Captures = append(memory.Captures, CaptureRun{ID: capture.ID, At: capture.At, Facts: captureFacts(capture.Facts), Undone: capture.Undone})
-	}
-	if len(memory.Captures) == 0 && memory.Capture != nil {
-		memory.Captures = []CaptureRun{*memory.Capture}
-	}
 	if tidy := wire.Tidy; tidy != nil {
 		memory.Tidy = &TidyRun{ID: tidy.ID, At: tidy.At, History: tidy.History, Archived: tidy.Archived}
 	}
@@ -1442,14 +1417,6 @@ func ToBotMemory(wire WireBotMemory) BotMemory {
 		memory.Trace = append(memory.Trace, MemoryEvent{At: entry.At, Kind: MemoryEventKind(entry.Kind), Text: entry.Text, Detail: entry.Detail})
 	}
 	return memory
-}
-
-func captureFacts(facts []WireCaptureFact) []CaptureFact {
-	result := make([]CaptureFact, 0, len(facts))
-	for _, fact := range facts {
-		result = append(result, CaptureFact{Text: fact.Text, Target: fact.Target})
-	}
-	return result
 }
 
 func askQuestion(wire *WireAskQuestion) *AskQuestion {

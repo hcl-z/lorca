@@ -785,8 +785,7 @@ fn action_line(bot: &str, message: &Message) -> Option<String> {
             }
             (None, Some(agent)) => {
                 let who = if crate::coding::is_kind(&agent.kind) { crate::coding::name(&agent.kind) } else { "a coding agent" };
-                let branch = agent.branch.as_deref().map(|branch| format!(" on branch {branch}")).unwrap_or_default();
-                format!("{bot} started {who} in {}{branch}: {} → {}", agent.folder, one_line(&agent.task), state_word(&agent.state))
+                format!("{bot} started {who} in {}: {} → {}", agent.folder, one_line(&agent.task), state_word(&agent.state))
             }
             (None, None) => {
                 let ended = match (is_error, result.as_deref()) {
@@ -1183,7 +1182,7 @@ mod tests {
         say(6.0, devops_said(), Body::Tool {
             name: "coding_agent".into(), summary: "Claude Code".into(), detail: String::new(), is_running: false, call_id: String::new(),
             arguments: serde_json::Value::Null, result: None, is_error: false, description: None, target_bot_id: None, script_command: None, run: None,
-            agent: Some(AgentRun { kind: "claude".into(), task: "Fix the relay's memory leak".into(), folder: "~/.lorca/worktrees/relay-1a2b/fix-leak".into(), branch: Some("fix-leak".into()), state: "idle".into(), ..Default::default() }),
+            agent: Some(AgentRun { kind: "claude".into(), task: "Fix the relay's memory leak".into(), folder: "~/code/relay".into(), state: "idle".into(), ..Default::default() }),
         });
         say(5.5, devops_said(), Body::Tool {
             name: "github__create_issue".into(), summary: "create_issue · repo: relay".into(), detail: String::new(), is_running: false, call_id: String::new(),
@@ -1193,7 +1192,7 @@ mod tests {
         let steps = "DevOps ran: railway status → ok\nDevOps ran: git worktree add /tmp/relay-fix → failed\n\
                      DevOps ran: railway redeploy -s relay → user allowed; ok\nDevOps ran: railway down -s relay → user did not allow\n\
                      DevOps ran: railway volume delete pg → held by Auto-review\n\
-                     DevOps started Claude Code in ~/.lorca/worktrees/relay-1a2b/fix-leak on branch fix-leak: Fix the relay's memory leak → ok\n\
+                     DevOps started Claude Code in ~/code/relay: Fix the relay's memory leak → ok\n\
                      DevOps used github__create_issue: create_issue · repo: relay → held by Auto-review\n";
         let heard = request(&app, chat_id, &at(&handoff)).unwrap();
         assert_eq!(heard.text, format!("<transcript>\n[teammate] Chef to DevOps: You own Railway monitoring from now on.\n{steps}</transcript>\n\n"));

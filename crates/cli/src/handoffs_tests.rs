@@ -30,6 +30,8 @@ impl Drop for Fixture {
 const TASK: &str = "task-12345678-1234-1234-1234-123456789abc";
 /// The requesting turn's job.
 const ORIGIN: &str = "job-requesting-turn";
+/// What the user wrote that the requesting turn answers.
+const WORDS: &str = "看看解析器为什么读不了离线导出";
 
 fn fixture(remote: bool) -> Fixture {
     let homes: Vec<_> = (0..2)
@@ -118,6 +120,7 @@ fn delegate_work(f: &Fixture) -> HandoffRequest {
         &f.source_chat,
         0,
         ORIGIN,
+        WORDS,
         DelegateInput {
             bot_id: f.specialist.id.clone(),
             message: "Review the parser".into(),
@@ -805,6 +808,7 @@ async fn contracts_and_reports_enforce_participant_and_reference_rules() {
         &f.source_chat,
         MAX_BOT_HOPS,
         ORIGIN,
+        "",
         DelegateInput {
             bot_id: f.specialist.id.clone(),
             message: "again".into(),
@@ -818,6 +822,7 @@ async fn contracts_and_reports_enforce_participant_and_reference_rules() {
         &f.source_chat,
         0,
         ORIGIN,
+        "",
         DelegateInput {
             bot_id: f.chef.id.clone(),
             message: "self".into(),
@@ -978,6 +983,10 @@ async fn contracts_and_reports_reload_into_their_turns_prompts() {
     let request = delegate_work(&f);
     let job = request_job(&request);
     let prompt = prompt(&f.target, &job);
+    // The request leads, so the marker's first line is what was asked, and the user's words follow it, quoted.
+    assert!(request_text(&request).starts_with(&format!("Review the parser\n\nThe user's words:\n> {WORDS}\n\nContext:")), "{prompt}");
+    assert!(prompt.contains("follow them"), "{prompt}");
+    assert_eq!(user_words(&f.target, &job), WORDS);
     assert!(prompt.contains(&request.expected_output));
     assert!(prompt.contains("Include a failing input"));
     assert!(prompt.contains(request.task_id.as_deref().unwrap()));
@@ -998,10 +1007,30 @@ async fn contracts_and_reports_reload_into_their_turns_prompts() {
     )
     .unwrap();
     let continuation = super::prompt(&f.source, &result_job(&request));
+    // The requester's continuation hands on the same words it was asked with.
+    assert_eq!(user_words(&f.source, &result_job(&request)), WORDS);
     assert!(continuation.contains("\"blocked\""));
     assert!(continuation.contains("The export has no version field"));
     assert!(continuation.contains(&request.trigger_message_id));
     assert!(continuation.contains("An annotated report"));
+    settle(&f.source).await;
+}
+
+/// A turn the user started hands on what they wrote, those they sent while it ran too, and
+/// nothing a bot wrote; a turn nothing of theirs started hands on nothing.
+#[tokio::test]
+async fn the_users_words_are_what_they_wrote_in_the_turn() {
+    let f = fixture(true);
+    let mut job = requesting_turn(&f);
+    assert_eq!(user_words(&f.source, &job), "");
+    let first = Message::new(&f.source_chat, Author::You, Body::text("  修一下设置页的开关 "));
+    f.source.upsert_message(first.clone(), true);
+    said_by(&f.source, &f.chef, &f.source_chat, "On it.", now_secs() + 1.0);
+    let mut more = Message::new(&f.source_chat, Author::You, Body::text("只改桌面端"));
+    more.created_at = now_secs() + 2.0;
+    f.source.upsert_message(more, true);
+    job.trigger_message_id = first.id.clone();
+    assert_eq!(user_words(&f.source, &job), "修一下设置页的开关\n\n只改桌面端");
     settle(&f.source).await;
 }
 
@@ -1014,6 +1043,7 @@ async fn delegating_for_a_task_checks_it_and_records_the_report_on_it() {
         &f.source_chat,
         0,
         ORIGIN,
+        "",
         DelegateInput {
             bot_id: f.specialist.id.clone(),
             message: "Review".into(),
@@ -1092,6 +1122,7 @@ fn pass_on(f: &Fixture, request: &HandoffRequest, writer: &Bot) -> HandoffReques
         &request.target_chat_id,
         request.hops,
         &request.job_id,
+        &request.user_words,
         DelegateInput { bot_id: writer.id.clone(), message: "Draft the report".into(), ..Default::default() },
     )
     .unwrap();
@@ -1124,6 +1155,8 @@ async fn passed_on_work_reports_once_the_recipient_finishes_from_it() {
     stage_job(&f.target, &job).unwrap();
     assert!(begin_job(&f.target, &job).unwrap());
     let passed = pass_on(&f, &request, &writer);
+    // Passed on, the request carries the user's words, not the specialist's retelling of them.
+    assert_eq!(passed.user_words, WORDS);
     said_by(&f.target, &f.specialist, &request.target_chat_id, "Asked Writer for the draft.", now_secs() + 1.0);
     finish_job(&f.target, &job, TurnOutcome::Sent, false).unwrap();
 

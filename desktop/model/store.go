@@ -2252,21 +2252,7 @@ func (s *Store) BotMemory(id string, done func(BotMemory, error)) {
 	}
 	Async(s, func() (BotMemory, error) {
 		wire, err := call[WireBotMemory](s, "bots.memory", map[string]any{"bot_id": id})
-		memory := ToBotMemory(wire)
-		if err != nil || !memory.Here {
-			return memory, err
-		}
-		history, err := call[struct {
-			Runs []WireCaptureRun `json:"runs"`
-		}](s, "memory_capture.list", map[string]any{"bot_id": id})
-		if err != nil {
-			return memory, nil
-		}
-		memory.Captures = make([]CaptureRun, 0, len(history.Runs))
-		for _, run := range history.Runs {
-			memory.Captures = append(memory.Captures, CaptureRun{ID: run.ID, At: run.At, Facts: captureFacts(run.Facts), Undone: run.Undone})
-		}
-		return memory, nil
+		return ToBotMemory(wire), err
 	}, done)
 }
 
@@ -2330,20 +2316,6 @@ func (s *Store) UndoTidy(botID, runID string, done func(error)) {
 		_, err := call[struct {
 			Restored int `json:"restored"`
 		}](s, "memory_tidy.undo", map[string]any{"bot_id": botID, "run_id": runID})
-		return struct{}{}, err
-	}, func(_ struct{}, err error) { done(err) })
-}
-
-// UndoCapture removes the lines a capture run added, and marks the run undone.
-func (s *Store) UndoCapture(botID, runID string, done func(error)) {
-	if s.IsMock {
-		s.post(func() { done(nil) })
-		return
-	}
-	Async(s, func() (struct{}, error) {
-		_, err := call[struct {
-			Removed int `json:"removed"`
-		}](s, "memory_capture.undo", map[string]any{"bot_id": botID, "run_id": runID})
 		return struct{}{}, err
 	}, func(_ struct{}, err error) { done(err) })
 }

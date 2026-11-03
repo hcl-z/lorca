@@ -1,7 +1,7 @@
 // A coding agent, opened from its card or the bar over the composer, as a sheet: the phone's
 // version of the desktop's full view. At the top its tile, its name over its session's title, how it
 // stands, and Stop; then what the desktop's column beside the transcript holds: what it works on,
-// where (branch, folder, Runner, since when), its session as the card's strip of cells, its plan
+// where (folder, Runner, since when), its session as the card's strip of cells, its plan
 // with its steps done, and its pull request. Then its transcript as a timeline: each turn opens with
 // what the bot sent, and each entry sits on a rail beside a node of its own, the agent's tile for
 // what it said, a tool's state, a thought, the plan, a compaction, or a notice in its level's tint.

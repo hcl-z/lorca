@@ -1,6 +1,6 @@
 // A bot's memory, the account's profile, and the bot's prompt, from the bot's Runner. They live
 // there (`docs/architecture/memory.md`): `bots.memory`, `profile`, `bots.prompt`, and
-// `memory_capture.*` reach it as sealed requests through the core when it is another Device.
+// `memory_tidy.undo` reach it as sealed requests through the core when it is another Device.
 // A write carries the hash of the text it was opened at, and the Runner refuses it when the
 // file changed since; the screen then offers the file as it is now, or to write over it.
 
@@ -15,21 +15,6 @@ export interface MemoryFile {
   truncated: boolean;
   max_lines: number;
   max_bytes: number;
-}
-
-/// A saved fact and the file that holds it.
-export interface CaptureFact {
-  text: string;
-  target: "profile" | "memory";
-}
-
-/// One memory capture batch. The client never receives source chat identifiers or quotes.
-export interface CaptureRun {
-  id: string;
-  /// Unix seconds.
-  at: number;
-  facts: CaptureFact[];
-  undone: boolean;
 }
 
 /// The newest pass of the memory housekeeping that moved lines out of MEMORY.md, while it is not
@@ -52,8 +37,6 @@ export interface BotMemory {
   index: MemoryFile;
   topics: string[];
   profile: MemoryFile;
-  capture: CaptureRun | null;
-  captures?: CaptureRun[];
   tidy?: TidyRun | null;
 }
 
@@ -92,15 +75,6 @@ export function profile(runnerId: string): Promise<Profile> {
 
 export function writeProfile(runnerId: string, text: string, expectedHash: string | null): Promise<{ hash: string }> {
   return core.request("profile.write", { runner_id: runnerId, text, expected_hash: expectedHash });
-}
-
-/// Forgets what a capture run added.
-export function undoCapture(botId: string, runId: string): Promise<{ removed: number }> {
-  return core.request("memory_capture.undo", { bot_id: botId, run_id: runId });
-}
-
-export function captureHistory(botId: string): Promise<{ runs: CaptureRun[] }> {
-  return core.request("memory_capture.list", { bot_id: botId });
 }
 
 /// Puts back what a housekeeping pass moved out of MEMORY.md.

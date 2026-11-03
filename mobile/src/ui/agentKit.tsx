@@ -160,7 +160,7 @@ export function AgentHeader({ agent, tile = 32, size = 15, sub, trailing }: { ag
         </Text>
         {place ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-            {sub === undefined ? <Symbol name={agent.branch ? "arrow.triangle.branch" : "folder"} size={11} color={p.tertiaryLabel} /> : null}
+            {sub === undefined ? <Symbol name="folder" size={11} color={p.tertiaryLabel} /> : null}
             <Text style={{ color: p.tertiaryLabel, fontSize: 12, flexShrink: 1 }} numberOfLines={1}>
               {place}
             </Text>

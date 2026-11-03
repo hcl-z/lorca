@@ -51,8 +51,8 @@ func TestTheAgentCardDecodesFromTheCLI(t *testing.T) {
 func TestTheAgentCardSaysHowItStands(t *testing.T) {
 	demoWindow(t)
 	p := &lightPalette
-	agent := &model.AgentRun{Kind: "claude", Task: "Fix it", Branch: "fix-it", State: model.AgentWorking, Device: "Workbench", Tone: model.AgentToneBusy, Busy: true, StatusKey: "working"}
-	if got := agentPlace(agent); got != "fix-it · Workbench" {
+	agent := &model.AgentRun{Kind: "claude", Task: "Fix it", Folder: "~/code/shop", State: model.AgentWorking, Device: "Workbench", Tone: model.AgentToneBusy, Busy: true, StatusKey: "working"}
+	if got := agentPlace(agent); got != "shop · Workbench" {
 		t.Errorf("place %q", got)
 	}
 	if tint, words := agentLook(p, agent); tint != p.Accent || words != Lc("Working", "coding agent") || !agentBusy(agent) {
