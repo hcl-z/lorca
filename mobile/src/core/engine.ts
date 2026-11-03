@@ -256,6 +256,8 @@ class Engine {
         if (!event.hasIdentity) {
           resetStore();
           clearCachedSnapshot();
+          // Nothing left to stay connected to.
+          core.setKeepConnected(false);
         }
         else useStore.setState({ paired: true });
         break;
@@ -263,6 +265,7 @@ class Engine {
       case "pair.posted":
       case "pair.completed":
       case "account.key_changed":
+      case "notice":
         break;
     }
   }

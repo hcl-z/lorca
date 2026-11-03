@@ -6,13 +6,14 @@ import expo.modules.kotlin.modules.ModuleDefinition
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import uniffi.lorca_mobile.Core
-import uniffi.lorca_mobile.EventListener
 
 /// The Rust core behind the phone: started once with the app's folder and the phone's facts,
-/// then one request at a time and a stream of events.
+/// then one request at a time and a stream of events. The core belongs to the process
+/// (CoreHolder), which the background service shares.
 class LorcaCoreModule : Module() {
-  /// Written once by `start`, on the IO pool; read from the JS thread and the IO pool.
-  @Volatile private var core: Core? = null
+  private val forward: (String) -> Unit = { json -> sendEvent("event", mapOf("json" to json)) }
+
+  private val core: Core? get() = CoreHolder.core
 
   override fun definition() = ModuleDefinition {
     Name("LorcaCore")
@@ -21,20 +22,20 @@ class LorcaCoreModule : Module() {
 
     OnCreate {
       Updater.onStatus = { status -> sendEvent("update", status) }
+      CoreHolder.addListener(forward)
     }
 
-    // Off the JS thread, so the first frame does not wait for the account to load.
+    OnDestroy {
+      CoreHolder.removeListener(forward)
+    }
+
+    // Off the JS thread, so the first frame does not wait for the account to load. The service
+    // may have started the core already; this one is then the same.
     AsyncFunction("start").Coroutine { home: String, name: String, os: String, osVersion: String, model: String ->
       withContext(Dispatchers.IO) {
-        synchronized(this@LorcaCoreModule) {
-          if (core == null) {
-            core = Core.start(home, name, os, osVersion, model, object : EventListener {
-              override fun onEvent(json: String) {
-                sendEvent("event", mapOf("json" to json))
-              }
-            })
-          }
-        }
+        val started = CoreHolder.start(home, name, os, osVersion, model)
+        if (SyncService.running) started.setLocalNotices(true)
+        appContext.reactContext?.let { SyncService.start(it) }
       }
     }
 
@@ -57,6 +58,30 @@ class LorcaCoreModule : Module() {
       if (chatId != null && PushService.inFront) clearPosted(chatId)
     }
 
+    // Keep Connected: what it is set to and what lets it run, for Settings.
+    Function("backgroundStatus") {
+      val context = appContext.reactContext ?: return@Function null
+      mapOf(
+        "enabled" to SyncService.enabled(context),
+        "running" to SyncService.running,
+        "batteryExempt" to BackgroundAccess.batteryExempt(context),
+        "makerSettings" to BackgroundAccess.hasMakerSettings(),
+      )
+    }
+
+    Function("setKeepConnected") { on: Boolean ->
+      appContext.reactContext?.let { SyncService.setEnabled(it, on) }
+      if (!on) core?.setLocalNotices(false)
+    }
+
+    Function("requestBatteryExemption") {
+      appContext.reactContext?.let { BackgroundAccess.requestBatteryExemption(it) }
+    }
+
+    Function("openMakerSettings") {
+      appContext.reactContext?.let { BackgroundAccess.openMakerSettings(it) }
+    }
+
     // A release's APK: downloaded, checked, and handed to the package installer. Resolves once
     // the installer has it; how that ends arrives as "update" events.
     AsyncFunction("installUpdate").Coroutine { url: String, sha256: String, size: Double ->
@@ -75,6 +100,8 @@ class LorcaCoreModule : Module() {
       PushService.inFront = true
       PushService.openChat?.let { clearPosted(it) }
       appContext.currentActivity?.let { Updater.showConfirmation(it) }
+      // A service the system stopped comes back while the app is in front, which it requires.
+      appContext.reactContext?.let { SyncService.start(it) }
     }
 
     OnActivityEntersBackground {

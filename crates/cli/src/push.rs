@@ -98,13 +98,16 @@ pub fn permission(app: &Arc<App>, message: &Message) {
         crate::model::Body::Permission { tool, .. } => tool.as_str(),
         _ => "",
     };
-    // A question's summary is the question itself.
-    let text = match tool {
+    send(app, &chat, &bot, &question_text(tool, summary), Some(message.id.clone()));
+}
+
+/// What a notification says of a question: a question's summary is the question itself.
+fn question_text(tool: &str, summary: String) -> String {
+    match tool {
         "secret" => format!("Asks for {summary}"),
         "ask" | crate::model::ASK_TOOL => summary,
         _ => format!("Confirmation needed: {summary}"),
-    };
-    send(app, &chat, &bot, &text, Some(message.id.clone()));
+    }
 }
 
 /// A structured coordinator brief or urgent specialist escalation, each with its own
@@ -130,10 +133,7 @@ fn send_inner(app: &Arc<App>, chat: &Chat, bot: &Bot, text: &str, permission_id:
         return;
     }
     let (Some(dek), Some(url), Some(machine)) = (app.dek(), app.relay_url(), app.machine_file().and_then(|m| m.machine().ok())) else { return };
-    let subtitle = chat.meta.is_group().then(|| {
-        chat.meta.title.clone().filter(|t| !t.trim().is_empty()).unwrap_or_else(|| chat.meta.bot_ids.iter().map(|id| crate::runtime::name_of(app, id)).collect::<Vec<_>>().join(", "))
-    });
-    let mut notice = Notice { title: bot.name.clone(), subtitle, body: excerpt(text, BODY_CHARS), chat_id: chat.meta.id.clone() };
+    let mut notice = Notice { title: bot.name.clone(), subtitle: subtitle(app, chat), body: excerpt(text, BODY_CHARS), chat_id: chat.meta.id.clone() };
     let mut sealed = match seal(&dek, &notice) {
         Ok(sealed) => sealed,
         Err(error) => return tracing::warn!(%error, "sealing a push"),
@@ -198,6 +198,73 @@ fn send_inner(app: &Arc<App>, chat: &Chat, bot: &Bot, text: &str, permission_id:
     });
 }
 
+/// A group's title, or its bots' names; nothing for a direct chat.
+fn subtitle(app: &App, chat: &Chat) -> Option<String> {
+    chat.meta.is_group().then(|| {
+        chat.meta.title.clone().filter(|t| !t.trim().is_empty()).unwrap_or_else(|| chat.meta.bot_ids.iter().map(|id| crate::runtime::name_of(app, id)).collect::<Vec<_>>().join(", "))
+    })
+}
+
+/// How long a synced reply waits for its turn to end before this Device alerts anyway.
+const TURN_WAIT: Duration = Duration::from_secs(30 * 60);
+
+/// A phone whose background service keeps the sync socket open alerts by itself
+/// (`App::local_notices`): a message a sync lands that would have come as a Runner's push (a
+/// reply, a failure, a question) becomes a `notice` event, which the service posts. It waits out
+/// the same grace for read marks, and a reply waits for its turn to end, so a turn alerts once
+/// with its last words. A newer message in the chat takes the place of one still waiting.
+pub fn local(app: &Arc<App>, message: &Message) {
+    if !app.local_notices.load(std::sync::atomic::Ordering::Relaxed) || app.bulk_sync.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    let Author::Bot { bot_id } = &message.author else { return };
+    if message.notification.is_some_and(|kind| !crate::attention::allows(app, kind)) {
+        return;
+    }
+    let (Some(chat), Some(bot)) = (app.chat(&message.chat_id), app.bot(bot_id)) else { return };
+    let question = message.confirmation();
+    let text = match (&question, &message.body) {
+        (Some(summary), body) => {
+            let tool = match body {
+                crate::model::Body::Permission { tool, .. } => tool.as_str(),
+                _ => "",
+            };
+            question_text(tool, summary.clone())
+        }
+        (None, crate::model::Body::Text { text, .. }) => match &message.state {
+            crate::model::MessageState::Failed { error } => format!("Reply failed: {error}"),
+            _ => text.clone(),
+        },
+        (None, crate::model::Body::AgentMessage { text, .. }) => text.clone(),
+        _ => return,
+    };
+    let notice = Notice { title: bot.name.clone(), subtitle: subtitle(app, &chat), body: excerpt(&text, BODY_CHARS), chat_id: chat.meta.id.clone() };
+    let generation = {
+        let mut due = app.local_notice_due.lock().unwrap();
+        let generation = due.entry(notice.chat_id.clone()).or_default();
+        *generation += 1;
+        *generation
+    };
+    let permission_id = question.is_some().then(|| message.id.clone());
+    let message_id = message.id.clone();
+    let app = app.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(READ_GRACE).await;
+        // A question alerts while its turn waits for the answer; anything else waits for the turn.
+        if permission_id.is_none() {
+            let until = tokio::time::Instant::now() + TURN_WAIT;
+            while app.has_turn_in(&notice.chat_id) && tokio::time::Instant::now() < until {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        }
+        let latest = app.local_notice_due.lock().unwrap().get(&notice.chat_id) == Some(&generation);
+        if !latest || !app.local_notices.load(std::sync::atomic::Ordering::Relaxed) || !should_notify(&app, &notice.chat_id, permission_id.as_deref()) {
+            return;
+        }
+        app.emit(crate::events::Event::Notice { title: notice.title, subtitle: notice.subtitle, body: notice.body, chat_id: notice.chat_id, message_id });
+    });
+}
+
 /// A muted chat never alerts, and neither does one the user looks at here or on another
 /// computer that is online.
 fn should_notify(app: &App, chat_id: &str, permission_id: Option<&str>) -> bool {
@@ -256,6 +323,63 @@ mod tests {
         crate::attention::dispatch(&app, "attention.preferences", serde_json::json!({"summaries":false}), None).unwrap();
         assert!(tokio::time::timeout(READ_GRACE + Duration::from_millis(200), pushes.recv()).await.is_err(), "preferences changing before delivery cancel the alert");
         server.abort(); drop(app); let _ = std::fs::remove_dir_all(home);
+    }
+
+    /// A phone that alerts by itself: a synced reply alerts once its turn ends, with the turn's
+    /// last words; a chat read meanwhile, a muted chat, and a backlog alert nothing.
+    #[tokio::test]
+    async fn synced_replies_alert_on_the_phone_once_their_turn_ends() {
+        use crate::model::*;
+
+        let home = std::env::temp_dir().join(format!("lorca-local-notice-{}", uuid::Uuid::new_v4()));
+        let app = App::load(crate::config::Config { home: home.clone(), port: 0 }).unwrap();
+        app.local_notices.store(true, std::sync::atomic::Ordering::Relaxed);
+        let bot = Bot {
+            id: "bot".into(), name: "Chef".into(), description: String::new(), symbol_name: "sparkles".into(),
+            accent: "indigo".into(), avatar: None, runner_id: "runner".into(), provider: "deepseek".into(),
+            model: None, thinking: None, legacy_instructions: String::new(), setting_up: false, workdir: None, permissions: None, created_at: 1.0,
+        };
+        app.state.lock().unwrap().bots.push(bot.clone());
+        for id in ["reply", "read", "muted"] {
+            let mute = (id == "muted").then(|| Mute { until: None });
+            app.state.lock().unwrap().chats.push(Chat {
+                meta: ChatMeta { id: id.into(), kind: "dm".into(), title: None, bot_ids: vec![bot.id.clone()], owner_bot_id: None, description: None,
+                    is_pinned: false, section_id: None, is_hidden: false, mute, created_at: 1.0, channel: None },
+                unread_count: 0, usage: None, compactions: vec![],
+            });
+        }
+        // The Runner lists the reply chat's turn as running.
+        app.state.lock().unwrap().turns_online.insert("runner".into());
+        app.set_device_turns("runner", vec![LiveTurn { job_id: "job".into(), chat_id: "reply".into(), bot_id: bot.id.clone(), routine_id: None, activity: None }]);
+        let mut events = app.events.subscribe();
+        let land = |chat: &str, text: &str| {
+            let message = Message::new(chat, Author::Bot { bot_id: bot.id.clone() }, Body::text(text));
+            app.upsert_message(message.clone(), false);
+            local(&app, &message);
+        };
+        land("reply", "First part");
+        land("reply", "All done");
+        land("read", "Seen elsewhere");
+        land("muted", "Quiet");
+        app.mark_read("read", false);
+        app.bulk_sync.store(true, std::sync::atomic::Ordering::Relaxed);
+        land("reply", "From a backlog");
+        app.bulk_sync.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        async fn next_notice(events: &mut tokio::sync::broadcast::Receiver<crate::events::Event>) -> (String, String, String) {
+            loop {
+                if let crate::events::Event::Notice { chat_id, body, title, .. } = events.recv().await.unwrap() {
+                    return (chat_id, body, title);
+                }
+            }
+        }
+        assert!(tokio::time::timeout(READ_GRACE + Duration::from_secs(1), next_notice(&mut events)).await.is_err(), "a reply waits for its turn to end");
+        app.set_device_turns("runner", Vec::new());
+        let (chat_id, body, title) = tokio::time::timeout(Duration::from_secs(3), next_notice(&mut events)).await.unwrap();
+        assert_eq!((chat_id.as_str(), body.as_str(), title.as_str()), ("reply", "All done", "Chef"));
+        assert!(tokio::time::timeout(Duration::from_millis(1500), next_notice(&mut events)).await.is_err(), "one alert per turn, none for a read or muted chat");
+        drop(app);
+        let _ = std::fs::remove_dir_all(home);
     }
 
     #[test]

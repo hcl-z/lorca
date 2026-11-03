@@ -1322,8 +1322,16 @@ fn apply_chat_op(app: &Arc<App>, op: ChatBlob) {
                     });
                 }
             }
+            // What alerts is what turns unread here, not an edit of a message that already was.
+            let alerts = app.local_notices.load(Ordering::Relaxed)
+                && message.counts_unread()
+                && !app.message(&message.chat_id, &message.id).is_some_and(|known| known.counts_unread());
+            let landed = alerts.then(|| message.clone());
             // The cycle saves state once after the page.
             app.upsert_message(message, false);
+            if let Some(message) = landed {
+                crate::push::local(app, &message);
+            }
             #[cfg(feature = "runner")]
             if let Some(message) = heard {
                 crate::turns::hear_user_message(app, &message);

@@ -224,6 +224,12 @@ pub struct App {
     /// history). Message and roster events are held back and state is not written per
     /// message; the cycle saves once and emits one snapshot when the page is applied.
     pub bulk_sync: AtomicBool,
+    /// A phone's background service keeps the sync socket open, and this Device alerts by itself
+    /// for what a sync lands (`push::local`).
+    pub local_notices: AtomicBool,
+    /// By chat, which of its synced messages last asked to alert; an older one still waiting
+    /// gives way.
+    pub(crate) local_notice_due: Mutex<HashMap<String, u64>>,
     /// This process has checked the encrypted attention and project context records after an
     /// upgrade from a build that advanced last_seq without recognizing those blob kinds.
     pub attention_backfilled: AtomicBool,
@@ -375,6 +381,8 @@ impl App {
             relay_problem: Mutex::new(None),
             presence_stale: AtomicBool::new(false),
             bulk_sync: AtomicBool::new(false),
+            local_notices: AtomicBool::new(false),
+            local_notice_due: Mutex::new(HashMap::new()),
             attention_backfilled: AtomicBool::new(false),
             rotation_due: AtomicBool::new(false),
             // Blobs held when the last run ended are tried once this one has its keys.
@@ -1088,6 +1096,11 @@ impl App {
             turns.entry(id.clone()).or_insert_with(|| job.turn(id));
         }
         turns
+    }
+
+    /// Whether a turn this Device knows of is running in the chat.
+    pub fn has_turn_in(&self, chat_id: &str) -> bool {
+        self.known_turns().values().any(|turn| turn.chat_id == chat_id)
     }
 
     /// Tells the local app which turns started and ended since it last heard, and what each is

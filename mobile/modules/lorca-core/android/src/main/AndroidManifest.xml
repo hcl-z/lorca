@@ -3,12 +3,19 @@
   <!-- The app installs its own releases (Updater): with the second, from Android 12 without asking. -->
   <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
   <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
+  <!-- Keep Connected (SyncService): the sync socket stays open in the background. -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+  <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
   <application>
     <!-- Ahead of expo-notifications' own service (priority -1): pushes here are ciphertext. -->
     <service android:name=".PushService" android:exported="false">
       <intent-filter>
         <action android:name="com.google.firebase.MESSAGING_EVENT" />
       </intent-filter>
+    </service>
+    <service android:name=".SyncService" android:exported="false" android:foregroundServiceType="specialUse">
+      <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Keeps the end-to-end encrypted sync connection to the user's own Devices open, so replies and questions from them alert at once." />
     </service>
     <receiver android:name=".UpdateReceiver" android:exported="false" />
   </application>

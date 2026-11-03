@@ -47,6 +47,10 @@ pub enum Event {
     /// A turn finished and the chat's usage moved.
     #[serde(rename = "chat.usage")]
     ChatUsageChanged { chat_id: String, usage: ChatUsage },
+    /// A reply, a failure, or a question a sync landed on a phone that alerts by itself
+    /// (`push::local`), with what its notification shows.
+    #[serde(rename = "notice")]
+    Notice { title: String, subtitle: Option<String>, body: String, chat_id: String, message_id: String },
     #[serde(rename = "relay.status")]
     /// `update_required`: the relay refused this build's protocol, and only a newer Lorca
     /// connects again. `error`: why the last try to connect failed, until one goes through.

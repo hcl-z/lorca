@@ -12,6 +12,14 @@ interface Native {
   setOpenChat?(chatId: string | null): void;
   /// Android only.
   installUpdate?(url: string, sha256: string, size: number): Promise<void>;
+  /// Android only.
+  backgroundStatus?(): BackgroundStatus | null;
+  /// Android only.
+  setKeepConnected?(on: boolean): void;
+  /// Android only.
+  requestBatteryExemption?(): void;
+  /// Android only.
+  openMakerSettings?(): void;
   addListener(event: "event", listener: (payload: { json: string }) => void): EventSubscription;
   addListener(event: "update", listener: (status: InstallStatus) => void): EventSubscription;
 }
@@ -78,6 +86,36 @@ export function wake() {
 /// posts nothing for it and clears what it posted for it. iOS asks the notification handler.
 export function setOpenChat(chatId: string | null) {
   native.setOpenChat?.(chatId);
+}
+
+/// Android's Keep Connected: whether it is on, whether its service runs now, and what lets it
+/// keep running (battery optimization, and whether the phone's maker has switches of its own).
+export interface BackgroundStatus {
+  enabled: boolean;
+  running: boolean;
+  batteryExempt: boolean;
+  makerSettings: boolean;
+}
+
+/// Android only; null elsewhere.
+export const canKeepConnected = !!native.setKeepConnected;
+
+export function backgroundStatus(): BackgroundStatus | null {
+  return native.backgroundStatus?.() ?? null;
+}
+
+/// Android: a foreground service keeps the sync socket open in the background, and replies
+/// alert from it at once.
+export function setKeepConnected(on: boolean) {
+  native.setKeepConnected?.(on);
+}
+
+export function requestBatteryExemption() {
+  native.requestBatteryExemption?.();
+}
+
+export function openMakerSettings() {
+  native.openMakerSettings?.();
 }
 
 /// Where installing a release stands, as the Android module reports it.

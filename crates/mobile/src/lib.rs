@@ -116,6 +116,17 @@ impl Core {
     pub fn wake(&self) {
         self.app.wake_sync();
     }
+
+    /// Android's background service keeps the sync socket open: what a sync lands that would
+    /// have come as a push arrives as a `notice` event instead, for the service to post.
+    pub fn set_local_notices(&self, on: bool) {
+        self.app.local_notices.store(on, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Whether the sync socket is open now.
+    pub fn relay_connected(&self) -> bool {
+        self.app.relay_connected.load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 /// Every event on the bus, as its websocket frame. A listener that fell behind gets a fresh

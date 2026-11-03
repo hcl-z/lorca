@@ -37,8 +37,9 @@ export type CoreEvent =
   | { kind: "budgets.changed"; budgets: BudgetState[] }
   | { kind: "projects.changed"; chatId: string }
   // The phone keeps no state for these: feedback has its own screen, pairing listens for
-  // `pair.posted` itself, and the push key lives in the native extension.
-  | { kind: "feedback.changed" | "pair.posted" | "pair.completed" | "account.key_changed" };
+  // `pair.posted` itself, the push key lives in the native extension, and a `notice` is
+  // Android's background service's to post.
+  | { kind: "feedback.changed" | "pair.posted" | "pair.completed" | "account.key_changed" | "notice" };
 
 class Malformed extends Error {}
 
@@ -144,6 +145,7 @@ function decode(name: string, data: unknown): CoreEvent | null {
     case "pair.posted":
     case "pair.completed":
     case "account.key_changed":
+    case "notice":
       return { kind: name };
   }
   return null;
