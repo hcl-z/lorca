@@ -1,0 +1,71 @@
+crates/cli/src/events.rs
+  s_801a7bd480c9b9::t_d606644fe531cc 50-53
+mobile/modules/lorca-core/android/src/main/java/app/lorca/core/PushService.kt
+  s_801a7bd480c9b9::t_b4372a2adae541 13-14,16,20,36
+mobile/modules/lorca-core/android/src/main/java/app/lorca/core/BackgroundAccess.kt
+  s_801a7bd480c9b9::t_78df7dcc65999e 1-62,65-69
+  s_801a7bd480c9b9::t_f8d2486058c8ac 63-64
+crates/cli/src/app.rs
+  s_801a7bd480c9b9::t_d606644fe531cc 227-232,384-385,1101-1103
+crates/cli/src/sync.rs
+  s_801a7bd480c9b9::t_d606644fe531cc 1325-1329,1332-1334
+mobile/modules/lorca-core/android/src/main/java/app/lorca/core/SyncService.kt
+  s_801a7bd480c9b9::t_6e1862a5d32957 1-127
+mobile/app/settings/index.tsx
+  s_801a7bd480c9b9::t_f6509ad6221c19 423-424
+  s_801a7bd480c9b9::t_54673c5c2fc3b8 17
+docs/architecture/phone-app.md
+  s_801a7bd480c9b9::t_2bc64c3ed44312 28
+crates/mobile/src/lib.rs
+  s_801a7bd480c9b9::t_c5c2ac5990b3d8 119-129
+mobile/modules/lorca-core/android/src/main/java/app/lorca/core/Notices.kt
+  s_801a7bd480c9b9::t_ab9174858f28f8 1-47
+mobile/modules/lorca-core/android/src/main/java/app/lorca/core/CoreHolder.kt
+  s_d508d79e959939::t_4efddbd9072a0e 1-48
+mobile/src/ui/KeepConnectedSection.tsx
+  s_801a7bd480c9b9::t_29f2043d4ae9aa 1-54
+mobile/src/core/events.ts
+  s_801a7bd480c9b9::t_fb3ffa60215d2d 40-42,148
+mobile/src/i18n/zh.ts
+  s_801a7bd480c9b9::t_211de592ce3c4e 149-156
+mobile/modules/lorca-core/android/src/main/AndroidManifest.xml
+  s_801a7bd480c9b9::t_bce767a8d7c532 6-9,17-18
+mobile/src/core/engine.ts
+  s_801a7bd480c9b9::t_aa3b447cc27c38 259-260
+  s_801a7bd480c9b9::t_fb3ffa60215d2d 268
+mobile/modules/lorca-core/index.ts
+  s_801a7bd480c9b9::t_1fbb202ec47ec8 15-22
+  s_801a7bd480c9b9::t_b8900d8eacc605 91-120
+crates/cli/src/push.rs
+  s_801a7bd480c9b9::t_d606644fe531cc 101-106,110,136,201-264
+  s_801a7bd480c9b9::t_1dbcd7f26624f7 328-343,345-368,370,373-374,377,379,381-384
+  s_801a7bd480c9b9::t_487d0531b51936 344
+mobile/modules/lorca-core/android/src/main/java/app/lorca/core/LorcaCoreModule.kt
+  s_801a7bd480c9b9::t_bab8082446fff6 103-104
+  s_801a7bd480c9b9::t_010246a737f299 11-12,14-16,25-29,32-33,36-38
+  s_801a7bd480c9b9::t_a056c12ca111ba 61-84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "492766470837bb9983005be7b395fa12adf51985",
+  "prompts": {},
+  "sessions": {
+    "s_801a7bd480c9b9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2a5a6c51-a1ba-46ce-99ff-a37012d57ca5",
+        "model": "kiro/claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    },
+    "s_d508d79e959939": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b0fa1a9-5be0-4ff8-9edd-9dc8ea27680a",
+        "model": "kiro/claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
