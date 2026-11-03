@@ -664,14 +664,14 @@ pub fn sent_marker_id(request: &HandoffRequest) -> String {
 pub const SENT_MARKER_PREFIX: &str = "sent-";
 
 /// The request as its "Message from" marker in the recipient's DM shows it, and as the
-/// recipient reads it: the user's words it carries, the message, then what was supplied with it.
+/// recipient reads it: the message, whose first line the marker shows, then the user's words it
+/// carries and what was supplied with it.
 pub fn request_text(request: &HandoffRequest) -> String {
-    let mut text = String::new();
+    let mut text = request.message.clone();
     if !request.user_words.trim().is_empty() {
         let quoted = request.user_words.trim().lines().map(|line| format!("> {line}")).collect::<Vec<_>>().join("\n");
-        text.push_str(&format!("The user's words:\n{quoted}\n\n"));
+        text.push_str(&format!("\n\nThe user's words:\n{quoted}"));
     }
-    text.push_str(&request.message);
     if !request.context.trim().is_empty() {
         text.push_str(&format!("\n\nContext:\n{}", request.context.trim()));
     }
@@ -1703,8 +1703,8 @@ pub fn prompt(app: &App, job: &Job) -> String {
                 words = if request.user_words.trim().is_empty() {
                     ""
                 } else {
-                    " The user's words come first and settle what is meant: where the request reads differently, follow them, \
-                     and when the two conflict, ask the user."
+                    " The user's words, quoted with the request, settle what is meant: where the request reads differently, \
+                     follow them, and when the two conflict, ask the user."
                 }
             )
         }

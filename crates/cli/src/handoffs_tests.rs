@@ -983,8 +983,8 @@ async fn contracts_and_reports_reload_into_their_turns_prompts() {
     let request = delegate_work(&f);
     let job = request_job(&request);
     let prompt = prompt(&f.target, &job);
-    // The user's words come first, quoted, ahead of the requester's own.
-    assert!(prompt.contains(&format!("The user's words:\n> {WORDS}\n\nReview the parser")), "{prompt}");
+    // The request leads, so the marker's first line is what was asked, and the user's words follow it, quoted.
+    assert!(request_text(&request).starts_with(&format!("Review the parser\n\nThe user's words:\n> {WORDS}\n\nContext:")), "{prompt}");
     assert!(prompt.contains("follow them"), "{prompt}");
     assert_eq!(user_words(&f.target, &job), WORDS);
     assert!(prompt.contains(&request.expected_output));

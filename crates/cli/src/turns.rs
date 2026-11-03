@@ -325,6 +325,8 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         recalled: recalled_note(app, &bot, &store, job),
         cue: if job.kind == "room_turn" { Some(room_turn_cue(app, &chat, &bot, job)) } else if job.kind == SETUP_JOB { Some("[You were just created. Start setting yourself up with the user now.]".to_string()) } else { event.as_ref().map(|e| e.data.clone()).or(command_end.clone()).or(check_found).map(|cue| without_secrets(app, cue)) },
         setup: job.setup.as_ref().map(|setup| setup_cue(app, setup)),
+        named: if unattended { None } else { named_teammates_note(app, &bot, &chat, job) },
+        acknowledge: matches!(job.handoff, Some(crate::handoffs::HandoffJob::Request { .. })).then(|| ACKNOWLEDGE_HANDOFF.to_string()),
     };
     let (mut messages, mut cache_points) = with_turn_notes(messages, &notes, trigger_message_cue(app, job));
 
@@ -1275,7 +1277,17 @@ struct TurnNotes {
     cue: Option<String>,
     /// The first turn of a bot added from a marketplace template.
     setup: Option<String>,
+    /// The teammates outside the chat the user's message names, to hand that work to.
+    named: Option<String>,
+    /// A handoff's turn: answer the request in a line before the work. It goes once, after the
+    /// transcript, not in the brief that closes every request, or each step would say it again.
+    acknowledge: Option<String>,
 }
+
+/// What a handoff's turn reads once before it starts, so the recipient's DM answers the request
+/// at once.
+const ACKNOWLEDGE_HANDOFF: &str = "[Start your reply with one line to the user saying you took this request and what you do \
+first, and make your first tool call in that same reply. Say it once; after that, only report what you found.]";
 
 /// The notes every request of a turn ends with, made fresh for it: the bot's memory, the
 /// user's profile, the group's current shared context, and the clock. They change as work goes
@@ -1411,7 +1423,38 @@ fn with_turn_notes(
     if let Some(setup) = &notes.setup {
         messages.push(AgentMessage::User(UserMessage::text(setup.clone())));
     }
+    if let Some(named) = &notes.named {
+        messages.push(AgentMessage::User(UserMessage::text(named.clone())));
+    }
+    if let Some(acknowledge) = &notes.acknowledge {
+        messages.push(AgentMessage::User(UserMessage::text(acknowledge.clone())));
+    }
     (messages, cache_points)
+}
+
+/// The teammates outside `chat` that the user's message behind `job` names, by an `@` mention or
+/// by name, as a note that the work named for them is theirs: a bot with a long history of doing
+/// things itself reads the routing rule in its system prompt and still does them. `None` when the
+/// message names nobody else.
+fn named_teammates_note(app: &App, bot: &Bot, chat: &Chat, job: &Job) -> Option<String> {
+    let message = app.message(&job.chat_id, &job.trigger_message_id).filter(|message| message.author == Author::You)?;
+    let Body::Text { text, mentions, .. } = &message.body else { return None };
+    let lowered = text.to_lowercase();
+    let bots = app.state.lock().unwrap().bots.clone();
+    let named: Vec<String> = bots
+        .iter()
+        .filter(|other| other.id != bot.id && !other.setting_up && !chat.meta.bot_ids.contains(&other.id))
+        .filter(|other| mentions.contains(&other.id) || (other.name.chars().count() >= 2 && lowered.contains(&other.name.to_lowercase())))
+        .map(|other| format!("{} (id {})", other.name, other.id))
+        .collect();
+    if named.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "[The user's message names {}. Hand what it asks of them to them with message_bot, however small; do not do it, \
+         read for it, or answer it yourself.]",
+        named.join(", ")
+    ))
 }
 
 /// The message that started the turn, as the cue an empty transcript falls back to. A normal
@@ -2396,10 +2439,12 @@ fn team_prompt(app: &App, bot: &Bot, chat: &Chat, unattended: bool) -> String {
             return prompt;
         }
         prompt.push_str(
-            "Route work before you start it. A part that falls in a teammate's job goes to them with message_bot, even when \
+            "Route work before you start it. When the user names a teammate for something, it goes to that teammate with \
+             message_bot, however small. A part that falls in a teammate's job goes to them with message_bot, even when \
              you could do it yourself; split a request that spans several jobs and hand each part to one teammate. Do the work yourself only when it is your own job, when no \
-             teammate's job covers it, or when a line from what you already know answers it. Tell the user in one line who \
-             took which part. Results report back here on their own and start your next turn: check them against what you \
+             teammate's job covers it, or when a line from what you already know answers it; decide that before you hand \
+             anything off. A part you handed off is the teammate's: do not do it, answer it, or cancel it yourself. Tell the \
+             user in one line who took which part and end your turn. Results report back here on their own and start your next turn: check them against what you \
              asked for, then answer the user. Work a teammate handed to you is yours; pass on only a part that is plainly \
              another teammate's job.\n",
         );
@@ -2926,7 +2971,11 @@ impl Tool for MessageBot {
         let value = crate::handoffs::delegate(&self.app, &self.bot.id, &self.chat_id, self.hops, &self.origin, &words, input).map_err(ToolError)?;
         let name = name_of(&self.app, &target);
         let result = json!({ "handoff_id": value["handoff_id"], "job_id": value["job_id"], "target_runner_id": value["target_runner_id"], "delivery": value["delivery"] });
-        Ok(ToolResult::text(result.to_string())
+        let next = format!(
+            "{name} has it now, and their result starts your next turn here. Do not do this part yourself, answer it, or cancel it. \
+             Once you have handed off any other parts, tell the user in one line who took what and end your turn."
+        );
+        Ok(ToolResult::text(format!("{result}\n{next}"))
             .with_details(json!({ "summary": format!("Handed off to {name}"), "bot_id": target, "message": message })))
     }
 }
@@ -4446,7 +4495,7 @@ mod tests {
             },
             _ => String::new(),
         };
-        let none = TurnNotes { recent_work: None, recalled: None, cue: None, setup: None };
+        let none = TurnNotes { recent_work: None, recalled: None, cue: None, setup: None, named: None, acknowledge: None };
 
         // In a group the bot's last reply is followed by everyone else's messages.
         let transcript = vec![AgentMessage::user("plan it?"), reply("I'll draft it."), AgentMessage::user("[Scout]: done"), AgentMessage::user("thanks")];
@@ -4455,6 +4504,8 @@ mod tests {
             recalled: Some("[What you remember that bears on …]".into()),
             cue: Some("[Your turn in the group …]".into()),
             setup: None,
+            named: None,
+            acknowledge: None,
         };
         let (messages, points) = with_turn_notes(transcript.clone(), &notes, None);
         assert_eq!(points, vec![4, 1], "the transcript's end, and the last turn's before the bot's reply");
@@ -4491,7 +4542,7 @@ mod tests {
         let cue = trigger_message_cue(app, &job).expect("the trigger message as a cue");
         assert!(cue.contains("帮我拉lorca的main最新分支"), "{cue}");
 
-        let none = TurnNotes { recent_work: None, recalled: None, cue: None, setup: None };
+        let none = TurnNotes { recent_work: None, recalled: None, cue: None, setup: None, named: None, acknowledge: None };
         let (messages, _) = with_turn_notes(Vec::new(), &none, Some(cue));
         assert_eq!(messages.len(), 1, "{messages:?}");
         let AgentMessage::User(UserMessage { content, .. }) = &messages[0] else {
@@ -6920,6 +6971,28 @@ mod tests {
         job.trigger_message_id = String::new();
         assert_eq!(recalled_note(app, &chef, &store, &job), None, "nothing of the user's started it");
         assert_eq!(crate::memory_trace::recent(&app.config.home, "b1", 5).len(), 1, "and its trace says nothing");
+    }
+
+    /// A message naming a teammate outside the chat tells the bot that work is theirs; one that
+    /// names nobody, or only the bot itself, says nothing.
+    #[test]
+    fn a_message_naming_a_teammate_hands_that_work_to_them() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        let chef = bot("b1", "Chef");
+        app.state.lock().unwrap().bots = vec![chef.clone(), bot("b2", "小码")];
+        let dm = chat("c1", "dm", None, &["b1"]);
+        app.state.lock().unwrap().chats.push(dm.clone());
+        let mut job = Job::local("turn", "c1", "b1", "test");
+        let asked = said("c1", Author::You, "让小码看看这个函数，一句话告诉我", 1.0);
+        app.upsert_message(asked.clone(), false);
+        job.trigger_message_id = asked.id.clone();
+        let note = named_teammates_note(app, &chef, &dm, &job).unwrap();
+        assert!(note.contains("小码 (id b2)") && note.contains("message_bot"), "{note}");
+        let own = said("c1", Author::You, "Chef, what does this do?", 2.0);
+        app.upsert_message(own.clone(), false);
+        job.trigger_message_id = own.id.clone();
+        assert_eq!(named_teammates_note(app, &chef, &dm, &job), None);
     }
 
     /// A fact about the user saved through profile_update says so in the chat, and a fact it
