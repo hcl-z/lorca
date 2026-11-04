@@ -1,0 +1,22 @@
+mobile/app/chat-info/[id].tsx
+  s_a9430c68c165c0::t_ca2e599fa67c6f 21
+  s_a9430c68c165c0::t_9392fd0ff8631c 500
+  s_a9430c68c165c0::t_124174d28e034e 180
+  s_a9430c68c165c0::t_3468689f44e122 599-603
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "83b632ef20668b3f7ae0196904ebd9d383840ec6",
+  "prompts": {},
+  "sessions": {
+    "s_a9430c68c165c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "97c32966-1b06-41fd-9ca4-4a03a0bc13e8",
+        "model": "kiro/claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
