@@ -1,10 +1,12 @@
-// Colors and type. One monochrome palette on both platforms, the desktop app's (`desktop/theme.go`):
-// neutral surfaces, ink (near-black in light, near-white in dark) for the primary button, the
-// user's bubble, and a switch that is on; system blue only for links. Bots keep their accents.
+// Colors and type, by the screens' own names for them, drawn from the tokens (`tokens.ts`): an
+// ivory or near-black surface, near-white cards with a hairline, neutral text in three steps, ink
+// (the inverted call-to-action color) for the primary button and a switch that is on, and blue
+// only for links and the caret. Bots keep their accents.
 
 import { getMaterialColors, type MaterialColors, type RgbaHex } from "@expo/ui/jetpack-compose";
 import { Platform, useColorScheme, type ColorValue, type ViewStyle } from "react-native";
 import type { Accent } from "../core/model";
+import { darkColors, lightColors, typeScale } from "./tokens";
 
 export interface Palette {
   label: ColorValue;
@@ -71,72 +73,38 @@ export function useMaterialPalette(): MaterialColors | null {
 }
 
 function makePalette(dark: boolean): Palette {
-  if (dark) {
-    return {
-      label: "#F2F2F2",
-      secondaryLabel: "rgba(242,242,242,0.58)",
-      tertiaryLabel: "rgba(242,242,242,0.34)",
-      separator: "rgba(255,255,255,0.09)",
-      background: "#0A0A0A",
-      groupedBackground: "#000000",
-      cell: "#1C1C1E",
-      fill: "rgba(255,255,255,0.10)",
-      secondaryFill: "rgba(255,255,255,0.07)",
-      tint: "#F5F5F5",
-      ink: "#F5F5F5",
-      inkText: "#0A0A0A",
-      userBubble: "#F5F5F5",
-      userBubbleText: "#0A0A0A",
-      botBubble: "#1C1C1E",
-      botBubbleText: "#F2F2F2",
-      innerCard: "#2C2C2E",
-      cardBorder: "rgba(255,255,255,0.10)",
-      chrome: "#1F1F21",
-      chromeBorder: "rgba(255,255,255,0.10)",
-      shadow: "#000000",
-      outputCard: "#161618",
-      code: "rgba(255,255,255,0.06)",
-      // `cell` (#1C1C1E) under `code`.
-      codeFade: ["rgb(42,42,44)", "rgba(42,42,44,0)"],
-      green: "#30D158",
-      red: "#FF453A",
-      link: "#4EA1FF",
-      chip: "#2A2A2C",
-      chipBorder: "rgba(255,255,255,0.10)",
-      dark,
-    };
-  }
+  const c = dark ? darkColors : lightColors;
   return {
-    label: "#0A0A0A",
-    secondaryLabel: "rgba(10,10,10,0.56)",
-    tertiaryLabel: "rgba(10,10,10,0.34)",
-    separator: "rgba(0,0,0,0.08)",
-    background: "#FFFFFF",
-    groupedBackground: "#F4F4F4",
-    cell: "#FFFFFF",
-    fill: "rgba(0,0,0,0.06)",
-    secondaryFill: "rgba(0,0,0,0.04)",
-    tint: "#0A0A0A",
-    ink: "#0A0A0A",
-    inkText: "#FFFFFF",
-    userBubble: "#0A0A0A",
-    userBubbleText: "#FFFFFF",
-    botBubble: "#F2F2F2",
-    botBubbleText: "#0A0A0A",
-    innerCard: "#FFFFFF",
-    cardBorder: "rgba(0,0,0,0.09)",
-    chrome: "#FFFFFF",
-    chromeBorder: "rgba(0,0,0,0.06)",
+    label: c.textPrimary,
+    secondaryLabel: c.textSecondary,
+    tertiaryLabel: c.textTertiary,
+    separator: c.border,
+    background: c.surface,
+    groupedBackground: c.surface,
+    cell: c.surfaceElevated,
+    fill: c.surfaceChip,
+    secondaryFill: c.borderTranslucent,
+    tint: c.cta,
+    ink: c.cta,
+    inkText: c.ctaText,
+    userBubble: c.surfaceElevated,
+    userBubbleText: c.textPrimary,
+    botBubble: c.surfaceChip,
+    botBubbleText: c.textPrimary,
+    innerCard: c.surface,
+    cardBorder: c.border,
+    chrome: c.surfaceElevated,
+    chromeBorder: c.border,
     shadow: "#000000",
-    outputCard: "#FFFFFF",
-    code: "rgba(0,0,0,0.05)",
-    // `cell` (#FFFFFF) under `code`.
-    codeFade: ["rgb(242,242,242)", "rgba(242,242,242,0)"],
-    green: "#1F9E47",
-    red: "#FF3B30",
-    link: "#0068DA",
-    chip: "#FFFFFF",
-    chipBorder: "rgba(0,0,0,0.09)",
+    outputCard: c.surfaceElevated,
+    code: c.chatCodeSurface,
+    // `code` is solid: the fade runs from it to itself clear.
+    codeFade: [c.chatCodeSurface, withAlpha(c.chatCodeSurface, 0)],
+    green: c.statusDone,
+    red: c.statusError,
+    link: c.inputCaret,
+    chip: c.surfaceChip,
+    chipBorder: c.border,
     dark,
   };
 }
@@ -148,35 +116,34 @@ function rgba(hex: string, alpha = 1): RgbaHex {
 }
 
 function makeMaterial(dark: boolean): MaterialColors {
-  // A gray seed gives neutral tonal roles; the ones the app's controls show are set to the palette.
+  // A gray seed gives neutral tonal roles; the ones the app's controls show are set to the tokens.
+  const c = dark ? darkColors : lightColors;
   const base = getMaterialColors({ scheme: dark ? "dark" : "light", seedColor: "#808080" });
-  const ink = dark ? "#F5F5F5" : "#0A0A0A";
-  const onInk = dark ? "#0A0A0A" : "#FFFFFF";
-  const surface = dark ? "#0A0A0A" : "#FFFFFF";
-  const container = dark ? "#1C1C1E" : "#F4F4F4";
   return {
     ...base,
-    primary: rgba(ink),
-    onPrimary: rgba(onInk),
-    primaryContainer: rgba(container),
-    onPrimaryContainer: rgba(ink),
-    secondary: rgba(ink),
-    onSecondary: rgba(onInk),
-    secondaryContainer: rgba(dark ? "#2C2C2E" : "#EBEBEB"),
-    onSecondaryContainer: rgba(ink),
-    tertiary: rgba(ink),
-    onTertiary: rgba(onInk),
-    surfaceTint: rgba(surface, 0),
-    background: rgba(surface),
-    onBackground: rgba(ink),
-    surface: rgba(surface),
-    onSurface: rgba(ink),
-    surfaceContainerLowest: rgba(surface),
-    surfaceContainerLow: rgba(dark ? "#121214" : "#FAFAFA"),
-    surfaceContainer: rgba(container),
-    surfaceContainerHigh: rgba(dark ? "#222224" : "#EFEFEF"),
-    surfaceContainerHighest: rgba(dark ? "#2C2C2E" : "#E8E8E8"),
-    error: rgba(dark ? "#FF453A" : "#FF3B30"),
+    primary: rgba(c.cta),
+    onPrimary: rgba(c.ctaText),
+    primaryContainer: rgba(c.surfaceElevated),
+    onPrimaryContainer: rgba(c.textPrimary),
+    secondary: rgba(c.cta),
+    onSecondary: rgba(c.ctaText),
+    secondaryContainer: rgba(c.surfaceChip),
+    onSecondaryContainer: rgba(c.textPrimary),
+    tertiary: rgba(c.cta),
+    onTertiary: rgba(c.ctaText),
+    surfaceTint: rgba(c.surface, 0),
+    background: rgba(c.surface),
+    onBackground: rgba(c.textPrimary),
+    surface: rgba(c.surface),
+    onSurface: rgba(c.textPrimary),
+    surfaceContainerLowest: rgba(c.surface),
+    surfaceContainerLow: rgba(c.surfaceElevated),
+    surfaceContainer: rgba(c.surfaceElevated),
+    surfaceContainerHigh: rgba(c.surfaceElevated),
+    surfaceContainerHighest: rgba(c.surfaceChip),
+    outline: rgba(c.borderStrong),
+    outlineVariant: rgba(c.border),
+    error: rgba(c.statusError),
   };
 }
 
@@ -223,11 +190,13 @@ export function accentColor(accent: string, dark: boolean): string {
   return accentColors(accent, dark)[1];
 }
 
+/// The type sizes the screens name, in the tokens' steps: a row's title and a field, a message's
+/// text, a caption, an author's name and a row's subtitle, and code.
 export const Font = {
-  body: Platform.OS === "android" ? 16 : 17,
-  message: Platform.OS === "android" ? 16 : 16.5,
-  caption: 12,
-  author: Platform.OS === "android" ? 12 : 13,
-  small: Platform.OS === "android" ? 12 : 13,
-  code: 14,
+  body: typeScale.body,
+  message: typeScale.bodyLarge,
+  caption: typeScale.caption,
+  author: typeScale.footnote,
+  small: typeScale.footnote,
+  code: typeScale.bodySmall - 1,
 } as const;
