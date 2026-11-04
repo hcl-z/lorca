@@ -154,8 +154,8 @@ export default function PairScreen() {
           ) : (
             <>
               <Pressable onPress={scan} style={({ pressed }) => [styles.primary, { backgroundColor: p.tint, opacity: pressed ? 0.85 : 1 }]}>
-                <Symbol name="qrcode.viewfinder" size={20} color={p.userBubbleText} weight="semibold" />
-                <Text style={[styles.primaryText, { color: p.userBubbleText }]}>{t("Scan Code")}</Text>
+                <Symbol name="qrcode.viewfinder" size={20} color={p.inkText} weight="semibold" />
+                <Text style={[styles.primaryText, { color: p.inkText }]}>{t("Scan Code")}</Text>
               </Pressable>
               {Clipboard.isPasteButtonAvailable ? (
                 // UIKit's paste control: the code arrives on a tap, with no "Allow Paste" question.
