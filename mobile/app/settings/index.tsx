@@ -13,6 +13,7 @@ import { deviceLanguage, languageNames, languages, setAppLanguage, t, useLanguag
 import { FieldRow, MenuRow, Row, Section, ToggleRow, type MenuChoice } from "../../src/ui/forms";
 import { lastSeen } from "../../src/ui/format";
 import { Symbol } from "../../src/ui/Symbol";
+import { iconSize, lineHeight, radius, spacing, typeScale } from "../../src/ui/tokens";
 import { TimingSection } from "../../src/ui/TimingSection";
 import { KeepConnectedSection } from "../../src/ui/KeepConnectedSection";
 import { usePalette } from "../../src/ui/theme";
@@ -242,7 +243,8 @@ export default function SettingsScreen() {
       <CloseToolbar label={Platform.OS === "android" ? t("Close") : t("Done")} onClose={() => router.dismiss()} />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{ paddingBottom: 40 }}
+        style={{ backgroundColor: p.groupedBackground }}
+        contentContainerStyle={styles.content}
         keyboardDismissMode="on-drag"
       >
         <Section
@@ -398,10 +400,10 @@ export default function SettingsScreen() {
                   .filter(Boolean)
                   .join(" · ")}
                 leading={
-                  <View style={styles.deviceIcon}>
+                  <View style={[styles.deviceIcon, { backgroundColor: p.fill }]}>
                     <Symbol
                       name={deviceSymbol(device.os, device.model)}
-                      size={22}
+                      size={iconSize.lg}
                       color={p.label}
                     />
                     <View
@@ -518,16 +520,18 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  deviceIcon: { width: 32, alignItems: "center" },
+  content: { paddingBottom: spacing.xxl + spacing.sm },
+  // A device's glyph on a small rounded tile, as Cindy's settings lead a row with one.
+  deviceIcon: { width: 32, height: 32, borderRadius: radius.control, alignItems: "center", justifyContent: "center" },
   deviceDot: {
     position: "absolute",
-    right: 0,
-    bottom: -2,
+    right: -3,
+    bottom: -3,
     width: 10,
     height: 10,
     borderRadius: 5,
     borderWidth: 2,
   },
-  version: { textAlign: "center", fontSize: 12, marginTop: 28 },
+  version: { textAlign: "center", fontSize: typeScale.caption, lineHeight: lineHeight.caption, marginTop: spacing.xl },
   dialogHost: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0 },
 });

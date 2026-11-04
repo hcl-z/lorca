@@ -1,6 +1,7 @@
-// Inset grouped lists, the way Settings and Contacts lay out forms, in the app's monochrome look:
-// a section title, white cards with a hairline edge on the grouped background, hairline
-// separators, and ink for checkmarks, switches, and actions.
+// Inset grouped lists after Cindy's settings groups: a small semibold title in the tertiary color,
+// cards with a 12 pt corner and a hairline edge on the surface, 52 pt rows with a medium label
+// and the value at the trailing edge, hairline separators, and ink for checkmarks, switches, and
+// actions.
 
 import { Button as MenuButton, Divider, HStack, Host, Image as MenuImage, Menu, Text as MenuText } from "@expo/ui/swift-ui";
 import { contentShape, font, foregroundStyle, frame, lineLimit, menuOrder, padding, shapes, tint, truncationMode } from "@expo/ui/swift-ui/modifiers";
@@ -11,6 +12,7 @@ import { Platform, StyleSheet, Switch, Text, TextInput, useWindowDimensions, Vie
 import { Pressable } from "./Pressable";
 import { Symbol } from "./Symbol";
 import { Font, usePalette } from "./theme";
+import { fontWeight, iconSize, lineHeight, radius, spacing, typeScale } from "./tokens";
 
 export function Section({ title, footer, children, style }: { title?: string; footer?: string; children: ReactNode; style?: StyleProp<ViewStyle> }) {
   const p = usePalette();
@@ -20,8 +22,11 @@ export function Section({ title, footer, children, style }: { title?: string; fo
   const rows = Children.toArray(children).filter(isValidElement);
   return (
     <View style={[styles.section, style]}>
-      {/* Material's list subheaders take the primary color; iOS's are secondary and uppercase. */}
-      {title ? <Text style={[styles.sectionTitle, { color: Platform.OS === "ios" ? p.secondaryLabel : p.tint }]}>{Platform.OS === "ios" ? title.toUpperCase() : title}</Text> : null}
+      {title ? (
+        <Text accessibilityRole="header" style={[styles.sectionTitle, { color: p.tertiaryLabel }]}>
+          {title}
+        </Text>
+      ) : null}
       <View style={[styles.group, { backgroundColor: p.cell, borderColor: p.cardBorder }]}>
         {rows.map((row, index) => (
           <View key={row.key}>
@@ -46,8 +51,8 @@ export function SectionCell({ first, last, children }: { first: boolean; last: b
         style={[
           styles.cellGroup,
           { backgroundColor: p.cell, borderColor: p.cardBorder },
-          first && { borderTopWidth: StyleSheet.hairlineWidth, borderTopLeftRadius: 14, borderTopRightRadius: 14 },
-          last && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomLeftRadius: 14, borderBottomRightRadius: 14 },
+          first && { borderTopWidth: StyleSheet.hairlineWidth, borderTopLeftRadius: radius.container, borderTopRightRadius: radius.container },
+          last && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomLeftRadius: radius.container, borderBottomRightRadius: radius.container },
         ]}
       >
         {!first && <View style={[styles.separator, { backgroundColor: p.separator }]} />}
@@ -86,10 +91,10 @@ function MenuAccessory({ value, title, choices }: { value: string; title: string
         onPressAction={({ nativeEvent }) => choices[Number(nativeEvent.event)]?.onPress()}
       >
         <View style={styles.androidMenuTrigger} accessible accessibilityRole="button" accessibilityLabel={`${title}, ${value}`}>
-          <Text style={[styles.rowDetail, { color: p.secondaryLabel, maxWidth: Math.min(220, width * 0.52), textAlign: "right" }]} numberOfLines={1}>
+          <Text style={[styles.rowDetail, { color: p.secondaryLabel, maxWidth: Math.min(220, width * 0.52) }]} numberOfLines={1}>
             {value}
           </Text>
-          <Symbol name="chevron.up.chevron.down" size={16} color={p.secondaryLabel} />
+          <Symbol name="chevron.up.chevron.down" size={iconSize.md} color={p.tertiaryLabel} />
         </View>
       </MenuView>
     );
@@ -102,7 +107,7 @@ function MenuAccessory({ value, title, choices }: { value: string; title: string
         label={
           <HStack spacing={4}>
             <MenuText modifiers={[foregroundStyle(p.secondaryLabel as any), lineLimit(1), truncationMode("tail")]}>{value}</MenuText>
-            <MenuImage systemName="chevron.up.chevron.down" size={12} color={p.secondaryLabel} />
+            <MenuImage systemName="chevron.up.chevron.down" size={iconSize.xs} color={p.tertiaryLabel} />
           </HStack>
         }
       >
@@ -146,9 +151,9 @@ export function MenuRow({ title, icon, choices }: { title: string; icon?: string
       <Menu
         modifiers={[menuOrder("fixed"), tint(p.tint as any)]}
         label={
-          <HStack spacing={12} modifiers={[frame({ maxWidth: 10000, minHeight: 44, alignment: "leading" }), padding({ horizontal: 16 }), contentShape(shapes.rectangle())]}>
+          <HStack spacing={spacing.md} modifiers={[frame({ maxWidth: 10000, minHeight: ROW_HEIGHT, alignment: "leading" }), padding({ horizontal: spacing.lg }), contentShape(shapes.rectangle())]}>
             {icon ? <MenuImage systemName={icon as any} size={17} color={p.tint} modifiers={[frame({ width: 20 })]} /> : null}
-            <MenuText modifiers={[font({ size: Font.body }), foregroundStyle(p.tint as any), lineLimit(1)]}>{title}</MenuText>
+            <MenuText modifiers={[font({ size: Font.body, weight: "medium" }), foregroundStyle(p.tint as any), lineLimit(1)]}>{title}</MenuText>
           </HStack>
         }
       >
@@ -208,7 +213,7 @@ export function Row({
       accessibilityState={disabled ? { disabled } : undefined}
       style={({ pressed }) => [styles.row, pressed && { backgroundColor: p.fill }]}
     >
-      {leading ?? (icon ? <Symbol name={icon} size={20} color={color} /> : null)}
+      {leading ?? (icon ? <Symbol name={icon} size={iconSize.action} color={color} /> : null)}
       <View style={menu ? styles.rowTextWhole : styles.rowText}>
         <Text style={[styles.rowTitle, { color }]} numberOfLines={titleLines}>
           {title}
@@ -226,8 +231,7 @@ export function Row({
         </Text>
       ) : null}
       {accessory}
-      {/* A disclosure chevron is iOS's; a Material list item that opens a screen has none. */}
-      {chevron && Platform.OS === "ios" && <Symbol name="chevron.right" size={14} color={p.tertiaryLabel} weight="semibold" />}
+      {chevron && <Symbol name="chevron.right" size={iconSize.lg} color={p.tertiaryLabel} />}
     </Pressable>
   );
 }
@@ -239,7 +243,7 @@ export function ToggleRow({ title, value, onValueChange, icon }: { title: string
   if (Platform.OS === "android")
     return (
       <Pressable onPress={() => onValueChange(!value)} style={styles.row} accessibilityRole="switch" accessibilityState={{ checked: value }} accessibilityLabel={title}>
-        {icon ? <Symbol name={icon} size={20} color={p.label} /> : null}
+        {icon ? <Symbol name={icon} size={iconSize.action} color={p.label} /> : null}
         <Text style={[styles.rowTitle, { color: p.label, flex: 1 }]}>{title}</Text>
         <ComposeHost matchContents>
           <ComposeSwitch value={value} onCheckedChange={onValueChange} />
@@ -248,9 +252,9 @@ export function ToggleRow({ title, value, onValueChange, icon }: { title: string
     );
   return (
     <View style={styles.row}>
-      {icon ? <Symbol name={icon} size={20} color={p.label} /> : null}
+      {icon ? <Symbol name={icon} size={iconSize.action} color={p.label} /> : null}
       <Text style={[styles.rowTitle, { color: p.label, flex: 1 }]}>{title}</Text>
-      <Switch value={value} onValueChange={onValueChange} trackColor={{ false: p.fill as string, true: p.dark ? "#636366" : p.ink }} />
+      <Switch value={value} onValueChange={onValueChange} trackColor={{ false: p.fill as string, true: p.ink }} thumbColor={p.dark ? (p.inkText as string) : undefined} />
     </View>
   );
 }
@@ -300,31 +304,35 @@ export function CheckRow({ title, subtitle, checked, onPress, leading, multiple,
           </Text>
         ) : null}
       </View>
-      {checked && !android ? <Symbol name="checkmark" size={16} color={p.tint} weight="semibold" /> : null}
+      {checked && !android ? <Symbol name="checkmark" size={iconSize.md} color={p.tint} weight="semibold" /> : null}
     </Pressable>
   );
 }
 
+/// A row's height: Cindy's settings rhythm.
+const ROW_HEIGHT = 52;
+
 const styles = StyleSheet.create({
-  section: { paddingHorizontal: 16, paddingTop: Platform.OS === "android" ? 24 : 20 },
-  sectionTitle: { fontSize: Platform.OS === "android" ? 14 : 13, marginLeft: 16, marginBottom: 7, letterSpacing: Platform.OS === "android" ? 0.1 : 0.2, fontWeight: Platform.OS === "android" ? "500" : "400" },
-  footer: { fontSize: 13, marginHorizontal: 16, marginTop: 7, lineHeight: 18 },
-  group: { borderRadius: 14, overflow: "hidden", borderWidth: StyleSheet.hairlineWidth },
-  separator: { height: StyleSheet.hairlineWidth, marginLeft: 16 },
-  cellRow: { paddingHorizontal: 16 },
-  cellFirst: { paddingTop: Platform.OS === "android" ? 24 : 20 },
+  section: { paddingHorizontal: spacing.lg, paddingTop: spacing.xl },
+  sectionTitle: { fontSize: typeScale.footnote, lineHeight: lineHeight.caption, fontWeight: fontWeight.semibold, marginHorizontal: spacing.md, marginBottom: spacing.sm },
+  footer: { fontSize: typeScale.footnote, lineHeight: lineHeight.caption, marginHorizontal: spacing.md, marginTop: spacing.sm },
+  group: { borderRadius: radius.container, overflow: "hidden", borderWidth: StyleSheet.hairlineWidth },
+  separator: { height: StyleSheet.hairlineWidth, marginLeft: spacing.lg },
+  cellRow: { paddingHorizontal: spacing.lg },
+  cellFirst: { paddingTop: spacing.xl },
   cellGroup: { overflow: "hidden", borderLeftWidth: StyleSheet.hairlineWidth, borderRightWidth: StyleSheet.hairlineWidth },
-  row: { flexDirection: "row", alignItems: "center", minHeight: Platform.OS === "android" ? 56 : 44, paddingHorizontal: 16, paddingVertical: 10, gap: 12 },
+  row: { flexDirection: "row", alignItems: "center", minHeight: ROW_HEIGHT, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, gap: spacing.md },
   rowMultiline: { alignItems: "flex-start" },
-  rowText: { flex: 1, gap: 2 },
+  rowText: { flex: 1, minWidth: 0, gap: 2 },
   rowTextWhole: { flexShrink: 0, gap: 2 },
   menu: { flex: 1, minWidth: 0 },
   menuRow: { alignSelf: "stretch" },
   androidMenu: { flex: 1, minWidth: 0, alignItems: "flex-end" },
-  androidMenuTrigger: { minHeight: 36, maxWidth: "100%", flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 4, paddingLeft: 8 },
-  rowTitle: { fontSize: Font.body },
-  rowSubtitle: { fontSize: Font.small },
-  rowDetail: { fontSize: Font.body, maxWidth: "55%" },
-  input: { flex: 1, fontSize: Font.body, paddingVertical: 0 },
+  androidMenuTrigger: { minHeight: 36, maxWidth: "100%", flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: spacing.xs, paddingLeft: spacing.sm },
+  rowTitle: { fontSize: typeScale.body, lineHeight: lineHeight.body, fontWeight: fontWeight.medium },
+  rowSubtitle: { fontSize: typeScale.footnote, lineHeight: lineHeight.caption },
+  // The value keeps to the trailing edge, cut short within 60% of the row.
+  rowDetail: { flexShrink: 0, fontSize: typeScale.body, lineHeight: lineHeight.body, maxWidth: "60%", textAlign: "right" },
+  input: { flex: 1, fontSize: typeScale.body, paddingVertical: 0 },
   inputMultiline: { minHeight: 96, textAlignVertical: "top" },
 });
