@@ -30,6 +30,7 @@ import { t, useLanguage } from "../i18n";
 import { joinDictation } from "./format";
 import { Symbol } from "./Symbol";
 import { floatShadow, Font, usePalette } from "./theme";
+import { fontWeight, lineHeight, radius, typeScale } from "./tokens";
 import { Float, ROUND, RoundButton } from "./chrome";
 import { AndroidIcons } from "./navigation";
 import { alert } from "./alert";
@@ -447,7 +448,7 @@ export const Composer = memo(function Composer({
             <Pressable
               key={`${target.kind}:${target.id}`}
               onPress={() => pickMention(target)}
-              style={({ pressed }) => [styles.chip, { backgroundColor: pressed ? p.secondaryFill : p.cell, opacity: pressed ? 0.8 : 1 }]}
+              style={({ pressed }) => [styles.chip, { backgroundColor: pressed ? p.fill : p.cell, borderColor: p.separator, opacity: pressed ? 0.8 : 1 }]}
             >
               <BotAvatar bot={target.bot} size={20} />
               <Text style={[styles.chipText, { color: p.label }]}>{target.name}</Text>
@@ -563,24 +564,24 @@ const styles = StyleSheet.create({
   // Chips wrap; the padding leaves room for the remove button hanging off a chip's corner.
   files: { flexDirection: "row", flexWrap: "wrap", gap: 12, paddingTop: 8, paddingHorizontal: 6, paddingBottom: 4 },
   reply: { flexDirection: "row", alignItems: "center", gap: 6, paddingTop: 6, paddingBottom: 2, paddingHorizontal: 9 },
-  replyText: { flex: 1, fontSize: 13 },
+  replyText: { flex: 1, fontSize: typeScale.footnote, lineHeight: lineHeight.caption },
   inputBox: { flex: 1, marginVertical: 7, marginLeft: 10, marginRight: 4 },
   input: { fontSize: Font.body, paddingTop: 0, paddingBottom: 0, margin: 0 },
   // At the right of the field, beside Send, where Grok Bot puts it.
-  recordingPill: { flexDirection: "row", alignItems: "center", gap: 6, height: 28, borderRadius: 14, paddingLeft: 4, paddingRight: 10, marginLeft: "auto", marginBottom: 3, marginRight: 4 },
+  recordingPill: { flexDirection: "row", alignItems: "center", gap: 6, height: 28, borderRadius: radius.pill, paddingLeft: 4, paddingRight: 10, marginLeft: "auto", marginBottom: 3, marginRight: 4 },
   stop: { width: 22, height: 22, alignItems: "center", justifyContent: "center" },
-  elapsed: { fontSize: 14, fontVariant: ["tabular-nums"] },
+  elapsed: { fontSize: typeScale.footnote, fontVariant: ["tabular-nums"] },
   bars: { flexDirection: "row", alignItems: "center", gap: 2.5, height: 14 },
   levelBar: { width: 3, borderRadius: 1.5, opacity: 0.85 },
   disc: { width: DISC, height: DISC, borderRadius: DISC / 2, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   androidDiscHost: { width: DISC + 1, height: DISC + 1, alignItems: "center", justifyContent: "center" },
   chips: { paddingHorizontal: 12, paddingBottom: 8, gap: 8 },
-  chip: { flexDirection: "row", alignItems: "center", gap: 6, paddingLeft: 4, paddingRight: 10, paddingVertical: 4, borderRadius: 14 },
-  chipText: { fontSize: 14, fontWeight: "500" },
+  chip: { flexDirection: "row", alignItems: "center", gap: 6, paddingLeft: 4, paddingRight: 10, paddingVertical: 4, borderRadius: radius.pill, borderWidth: StyleSheet.hairlineWidth },
+  chipText: { fontSize: typeScale.bodySmall, lineHeight: lineHeight.bodySmall, fontWeight: fontWeight.medium },
   fileChip: { height: CHIP, maxWidth: "100%" },
-  thumb: { width: CHIP, height: CHIP, borderRadius: 10 },
-  fileCard: { height: CHIP, width: FILE_CHIP, maxWidth: "100%", borderRadius: 10, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 10 },
-  fileName: { fontSize: 13, fontWeight: "500" },
+  thumb: { width: CHIP, height: CHIP, borderRadius: radius.control },
+  fileCard: { height: CHIP, width: FILE_CHIP, maxWidth: "100%", borderRadius: radius.control, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 10 },
+  fileName: { fontSize: typeScale.footnote, lineHeight: lineHeight.caption, fontWeight: fontWeight.medium },
   fileSize: { fontSize: Font.caption },
   remove: { position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: 9, backgroundColor: "rgba(0,0,0,0.7)", alignItems: "center", justifyContent: "center" },
 });

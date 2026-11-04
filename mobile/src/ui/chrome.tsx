@@ -1,7 +1,7 @@
-// The floating pieces of the bars and the composer, after the reference's phone app: a round
-// button (a white disc with a soft shadow, liquid glass where iOS has it) and a capsule of the
-// same height. iOS's own bars draw their buttons as glass discs themselves; these are what the
-// app draws where the bar is its own (Android's headers) and around the composer.
+// The floating pieces of the bars and the composer, after Cindy's phone app: a round button (a
+// card-colored disc with a hairline and a soft shadow, liquid glass where iOS has it) and a
+// capsule of the same height. iOS's own bars draw their buttons as glass discs themselves; these
+// are what the app draws where the bar is its own (Android's headers) and around the composer.
 
 import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
 import { forwardRef, type ReactNode } from "react";
@@ -9,6 +9,7 @@ import { Platform, StyleSheet, View, type StyleProp, type ViewStyle } from "reac
 import { Pressable } from "./Pressable";
 import { Symbol } from "./Symbol";
 import { floatShadow, usePalette } from "./theme";
+import { spacing } from "./tokens";
 
 export const ROUND = 44;
 const GLASS = Platform.OS === "ios" && isLiquidGlassAvailable();
@@ -68,5 +69,5 @@ export function CapsuleButton({ children, label, onPress, style }: { children: R
 
 const styles = StyleSheet.create({
   round: { alignItems: "center", justifyContent: "center" },
-  capsule: { height: ROUND, flexDirection: "row", alignItems: "center", gap: 8, paddingLeft: 7, paddingRight: 16, flexShrink: 1 },
+  capsule: { height: ROUND, flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingLeft: 7, paddingRight: spacing.lg, flexShrink: 1 },
 });

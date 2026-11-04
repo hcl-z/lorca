@@ -1,5 +1,4 @@
 import { LegendList, type LegendListRef } from "@legendapp/list/react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import {
@@ -54,7 +53,10 @@ import { CapsuleButton, Float, RoundButton } from "../../../src/ui/chrome";
 import { KeyboardFoot } from "../../../src/ui/KeyboardFoot";
 import { useWide } from "../../../src/ui/layout";
 import { Symbol } from "../../../src/ui/Symbol";
-import { usePalette, withAlpha } from "../../../src/ui/theme";
+import { usePalette } from "../../../src/ui/theme";
+import { BlurBackdrop, FLOATING_CHROME_BLUR_INTENSITY } from "../../../src/ui/BlurBackdrop";
+import { useTheme } from "../../../src/ui/ThemeProvider";
+import { fontWeight, lineHeight, typeScale } from "../../../src/ui/tokens";
 import { haptic } from "../../../src/ui/haptics";
 import { quoteText } from "../../../src/ui/format";
 import { AnswerSheet } from "../../../src/ui/AnswerSheet";
@@ -802,14 +804,10 @@ const ChatHeader = memo(function ChatHeader({
   useLanguage();
   const router = useRouter();
   const p = usePalette();
+  const { colors } = useTheme();
   const options = useMemo(() => ({ title, headerTitle: "" }), [title]);
-  const veil = useMemo(() => {
-    const surface = p.background as string;
-    return [withAlpha(surface, 0.97), withAlpha(surface, 0.86), withAlpha(surface, 0.68), withAlpha(surface, 0)] as const;
-  }, [p]);
   const visibleHeaderHeight = top + ANDROID_BAR_HEIGHT;
   const androidHeaderHeight = visibleHeaderHeight + ANDROID_FADE_HEIGHT;
-  const androidHeaderStop = visibleHeaderHeight / androidHeaderHeight;
   const info = () => router.push(`/chat-info/${id}`);
   const tasks = onTasks;
   const label = t("{title}, participants", { title });
@@ -841,14 +839,10 @@ const ChatHeader = memo(function ChatHeader({
         </>
       ) : (
         <View pointerEvents="box-none" style={[styles.androidHeader, { height: androidHeaderHeight }]}>
-          <LinearGradient
-            pointerEvents="none"
-            colors={veil}
-            locations={[0, androidHeaderStop * 0.55, androidHeaderStop, 1]}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
+          {/* Cindy's chat bar: frosted glass in the header's surface over a faint line. */}
+          <View pointerEvents="none" style={[styles.androidHeaderGlass, { height: visibleHeaderHeight, borderBottomColor: colors.chatHeaderDivider }]}>
+            <BlurBackdrop intensity={FLOATING_CHROME_BLUR_INTENSITY} overlayColor={colors.chatHeaderSurface} />
+          </View>
           <View pointerEvents="box-none" style={[styles.androidHeaderControls, { height: visibleHeaderHeight, paddingTop: top }]}>
             {/* Beside the sidebar there is nothing to go back to. */}
             {wide ? null : <RoundButton icon="chevron.left" label={t("Back")} onPress={() => router.back()} />}
@@ -868,6 +862,7 @@ const styles = StyleSheet.create({
   transcript: { flex: 1 },
   missing: { flex: 1, alignItems: "center", justifyContent: "center" },
   androidHeader: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 100 },
+  androidHeaderGlass: { position: "absolute", top: 0, left: 0, right: 0, overflow: "hidden", borderBottomWidth: StyleSheet.hairlineWidth },
   androidHeaderControls: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16 },
   composer: { position: "absolute", left: 0, right: 0, bottom: 0 },
   jump: { position: "absolute", right: 12 },
@@ -887,5 +882,5 @@ const styles = StyleSheet.create({
     paddingRight: 10,
     height: 36,
   },
-  titleText: { fontSize: 17, fontWeight: "600", flexShrink: 1, letterSpacing: -0.2 },
+  titleText: { fontSize: typeScale.body, lineHeight: lineHeight.body, fontWeight: fontWeight.semibold, flexShrink: 1 },
 });

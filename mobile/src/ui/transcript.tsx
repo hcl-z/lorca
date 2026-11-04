@@ -34,7 +34,10 @@ import type { MessageFrame } from "./longMessage";
 import { Button } from "./Button";
 import { Symbol } from "./Symbol";
 import { usePaneWidth } from "./layout";
-import { accentColor, Font, usePalette } from "./theme";
+import { accentColor, Font, usePalette, withAlpha } from "./theme";
+import { BUBBLE_PADDING, messageBubbleBase, USER_BUBBLE_SHARE, userMessageBubble } from "./messageBubbleStyles";
+import { useTheme } from "./ThemeProvider";
+import { radius, spacing } from "./tokens";
 import { alert } from "./alert";
 import { draftStateWord, draftTitle, fileSize, sendable, type DraftBody } from "./drafts";
 import { secretCaption, secretTitle } from "./secrets";
@@ -179,6 +182,7 @@ export const MessageRow = memo(function MessageRow({
   const reply = useMemo(() => (onReply && canBeQuoted(row.message) ? () => onReply(row.message) : undefined), [onReply, row.message]);
   useLanguage();
   const p = usePalette();
+  const { colors } = useTheme();
   const paneWidth = usePaneWidth();
   const { message, groupStart, groupEnd, showsName, stackAbove, stackBelow } = row;
   const quote = message.body.kind === "text" ? message.body.reply_to : undefined;
@@ -197,13 +201,13 @@ export const MessageRow = memo(function MessageRow({
   const showsAvatar = speakers && !isYou;
   // A bot's published output is a card of its own, without a bubble.
   const isOutput = isOutputCard(message);
-  // The bubble column is 80% of the pane, up to a readable line; the bubble pads 13 a side.
-  // Attachments and the text both fit that width.
-  const columnWidth = Math.min(Math.floor(paneWidth * 0.8), BUBBLE_COLUMN_MAX);
-  const attachmentWidth = columnWidth - 26 - (showsAvatar ? AVATAR + GUTTER : 0);
+  // The bubble column is 80% of the pane for a bot and 86% for the user, up to a readable line;
+  // the bubble pads 12 a side inside its hairline. Attachments and the text both fit that width.
+  const columnWidth = Math.min(Math.floor(paneWidth * (isYou ? USER_BUBBLE_SHARE : 0.8)), BUBBLE_COLUMN_MAX);
+  const attachmentWidth = columnWidth - 2 * BUBBLE_PADDING - 1 - (showsAvatar ? AVATAR + GUTTER : 0);
   const bubble = useRef<View>(null);
   // The fill behind the text: a folded message's fade runs into it.
-  const bubbleBackground = isYou ? p.userBubble : failed ? "rgba(255,59,48,0.14)" : p.botBubble;
+  const bubbleBackground = isYou ? p.userBubble : failed ? withAlpha(colors.statusError, 0.14) : p.botBubble;
   const openWhole = useMemo(() => {
     if (!onOpenMessage) return undefined;
     return () => bubble.current?.measureInWindow((x, y, w, h) => onOpenMessage(message, { x, y, w, h }));
@@ -257,8 +261,8 @@ export const MessageRow = memo(function MessageRow({
         <Animated.View
           ref={bubble}
           style={[
-            styles.bubble,
-            isYou ? [styles.bubbleYou, { backgroundColor: bubbleBackground }] : { backgroundColor: bubbleBackground },
+            messageBubbleBase,
+            isYou ? [userMessageBubble(colors), { backgroundColor: bubbleBackground }] : { backgroundColor: bubbleBackground, borderColor: colors.border },
             pulsing,
             held && styles.held,
           ]}
@@ -1402,9 +1406,6 @@ const styles = StyleSheet.create({
   held: { opacity: 0.55 },
   sendNow: { alignSelf: "flex-end", marginTop: 4, marginRight: 6 },
   sendNowText: { fontSize: 13, fontWeight: "600" },
-  bubble: { borderRadius: 20, paddingHorizontal: 14, paddingVertical: 10, gap: 2 },
-  // The user's bubble is a capsule while it holds one line, as the reference's.
-  bubbleYou: { borderRadius: 22 },
   actions: { flexDirection: "row", alignItems: "center", gap: 2, marginTop: 4, marginLeft: 2 },
   actionsYou: { alignSelf: "flex-end", marginLeft: 0, marginRight: 2 },
   action: { width: 30, height: 28, alignItems: "center", justifyContent: "center", borderRadius: 14 },
@@ -1418,7 +1419,7 @@ const styles = StyleSheet.create({
   // The card takes what the row leaves beside the avatar column, up to `maxWidth`.
   // A card in the transcript, after the reference's: a gray panel as the bot's bubbles are, what it
   // holds on white cards inside it, and its choices as equal buttons, the first in ink.
-  permission: { flex: 1, borderRadius: 20, padding: 14, gap: 8, maxWidth: 420 },
+  permission: { flex: 1, borderRadius: radius.container, borderWidth: StyleSheet.hairlineWidth, borderColor: "transparent", padding: BUBBLE_PADDING, gap: spacing.sm, maxWidth: 420 },
   permissionTitle: { fontSize: 15, fontWeight: "600", flexShrink: 1 },
   permissionButton: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10 },
   cardButtons: { flexDirection: "row", gap: 8, marginTop: 4 },
@@ -1430,7 +1431,7 @@ const styles = StyleSheet.create({
   recommended: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
   recommendedText: { fontSize: 11, fontWeight: "600" },
   cardButton: { flex: 1, paddingHorizontal: 10 },
-  innerCard: { borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, gap: 6 },
+  innerCard: { borderRadius: radius.control, paddingHorizontal: spacing.md, paddingVertical: spacing.md, gap: 6 },
   choiceButton: { paddingHorizontal: 12, paddingVertical: 9, borderRadius: 8 },
   agentCard: { gap: 12, paddingBottom: 10 },
   waitBadge: { height: 22, paddingHorizontal: 8, borderRadius: 11, justifyContent: "center", flexShrink: 1 },
@@ -1442,7 +1443,7 @@ const styles = StyleSheet.create({
   draftSubject: { fontSize: 15, fontWeight: "600", lineHeight: 20 },
   draftBody: { fontSize: 15.5, lineHeight: 22 },
   headerButton: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 7 },
-  command: { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, marginTop: 2 },
+  command: { borderRadius: radius.control, paddingHorizontal: 12, paddingVertical: 9, marginTop: 2 },
   commandText: { fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 12.5, lineHeight: 17 },
   output: { borderRadius: 8, marginTop: 2, overflow: "hidden" },
   // Six lines of `commandText`, then the block scrolls.
