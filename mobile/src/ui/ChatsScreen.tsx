@@ -8,7 +8,6 @@ import { Link, Stack, useRouter } from "expo-router";
 import Swipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Platform, StyleSheet, Text, useWindowDimensions, type ImageSourcePropType, type StyleProp, type TextStyle, View } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Pressable } from "./Pressable";
 import { chatTitle, engine } from "../core/engine";
@@ -24,7 +23,10 @@ import { lastActivity, muteSpans, preview, stamp } from "./format";
 import { SearchField } from "./SidebarSearch";
 import { RoundButton } from "./chrome";
 import { Symbol } from "./Symbol";
-import { Font, usePalette, withAlpha } from "./theme";
+import { BlurBackdrop, FLOATING_CHROME_BLUR_INTENSITY } from "./BlurBackdrop";
+import { usePalette } from "./theme";
+import { useTheme } from "./ThemeProvider";
+import { fontWeight, iconSize, lineHeight, radius, spacing, typeScale } from "./tokens";
 import { AndroidIcons } from "./navigation";
 import { alert, prompt } from "./alert";
 import { ActionSheet } from "./Sheet";
@@ -327,15 +329,14 @@ export function ChatsScreen({ sidebar = false }: { sidebar?: boolean }) {
   );
 }
 
-/// Android's bar over the list, drawn by the app as the chat's is: the surface color fading into
-/// the list under round buttons, Settings and Attention at the start, Search and New at the end.
+/// Android's bar over the list: frosted glass in the surface color under round buttons, Settings
+/// and Attention at the start, Search and New at the end.
 function AndroidListBar({ top, status, needsAttention, onSettings, onAttention, onSearch, onNew }: { top: number; status: React.ReactNode; needsAttention: boolean; onSettings: () => void; onAttention: () => void; onSearch: () => void; onNew: () => void }) {
   useLanguage();
-  const p = usePalette();
-  const surface = p.background as string;
+  const { colors } = useTheme();
   return (
-    <View pointerEvents="box-none" style={[styles.androidBar, { height: top + BAR + 20 }]}>
-      <LinearGradient pointerEvents="none" colors={[withAlpha(surface, 0.97), withAlpha(surface, 0.9), withAlpha(surface, 0)]} locations={[0, 0.7, 1]} style={StyleSheet.absoluteFill} />
+    <View pointerEvents="box-none" style={[styles.androidBar, { height: top + BAR }]}>
+      <BlurBackdrop intensity={FLOATING_CHROME_BLUR_INTENSITY} overlayColor={colors.surfaceTranslucent} style={[styles.androidBarGlass, { borderBottomColor: colors.border }]} />
       <View pointerEvents="box-none" style={[styles.androidBarRow, { marginTop: top }]}>
         <RoundButton icon="person.crop.circle" label={t("Settings")} onPress={onSettings} />
         {needsAttention ? <RoundButton icon="tray.full" label={t("Attention")} onPress={onAttention} /> : null}
@@ -439,10 +440,10 @@ const GroupHeader = memo(function GroupHeader({ group, collapsed, sections, widt
       accessibilityLabel={title}
       accessibilityState={{ expanded: !collapsed }}
     >
-      <Text style={[styles.headerTitle, { color: ios ? p.label : p.tint }]} numberOfLines={1}>
+      <Text style={[styles.headerTitle, { color: p.tertiaryLabel }]} numberOfLines={1}>
         {title}
       </Text>
-      <Symbol name={collapsed ? "chevron.right" : "chevron.down"} size={ios ? 15 : 20} color={ios ? p.tint : p.secondaryLabel} weight="semibold" />
+      <Symbol name={collapsed ? "chevron.right" : "chevron.down"} size={iconSize.sm} color={p.tertiaryLabel} weight="semibold" />
     </Pressable>
   );
   if (!actions.length) return header;
@@ -547,6 +548,7 @@ const MenuChatRow = memo(function MenuChatRow({ chat, bots, working, responding,
 /// swipe to the left offers Pin and Delete and one to the right Mark as Read.
 const PeekChatRow = memo(function PeekChatRow({ chat, bots, working, responding, sections, onDelete }: { chat: Chat; bots: Map<string, Bot>; working: boolean; responding: boolean; sections: Section[]; onDelete: (chat: Chat) => void }) {
   useLanguage();
+  const { colors } = useTheme();
   const router = useRouter();
   const title = chatTitle(chat);
   const onPress = useCallback(() => router.push(`/chat/${chat.id}`), [router, chat.id]);
@@ -562,7 +564,7 @@ const PeekChatRow = memo(function PeekChatRow({ chat, bots, working, responding,
         <SwipeAction
           icon={chat.is_pinned ? "pin.slash.fill" : "pin.fill"}
           label={chat.is_pinned ? t("Unpin") : t("Pin")}
-          color="#FF9500"
+          color={colors.swipeActionPin}
           onPress={() => {
             swipeable.close();
             void engine.pinChat(chat.id, !chat.is_pinned);
@@ -571,7 +573,7 @@ const PeekChatRow = memo(function PeekChatRow({ chat, bots, working, responding,
         <SwipeAction
           icon="trash.fill"
           label={t("Delete")}
-          color="#FF3B30"
+          color={colors.destructive}
           onPress={() => {
             swipeable.close();
             onDelete(chat);
@@ -579,7 +581,7 @@ const PeekChatRow = memo(function PeekChatRow({ chat, bots, working, responding,
         />
       </View>
     ),
-    [chat, onDelete],
+    [chat, colors, onDelete],
   );
   const leading = useCallback(
     (_progress: unknown, _translation: unknown, swipeable: SwipeableMethods) => (
@@ -587,7 +589,7 @@ const PeekChatRow = memo(function PeekChatRow({ chat, bots, working, responding,
         <SwipeAction
           icon="checkmark.message.fill"
           label={t("Read")}
-          color="#007AFF"
+          color={colors.swipeActionRead}
           onPress={() => {
             swipeable.close();
             markRead(chat.id);
@@ -595,7 +597,7 @@ const PeekChatRow = memo(function PeekChatRow({ chat, bots, working, responding,
         />
       </View>
     ),
-    [chat.id],
+    [chat.id, colors],
   );
   return (
     <Swipeable ref={swipeRef} friction={1.6} overshootFriction={8} rightThreshold={40} leftThreshold={40} renderRightActions={trailing} renderLeftActions={unread ? leading : undefined} onSwipeableWillOpen={opening}>
@@ -651,10 +653,11 @@ let openRow: SwipeableMethods | null = null;
 
 /// One button behind a swiped row: a full-height colored cell with its symbol over its name.
 function SwipeAction({ icon, label, color, onPress }: { icon: string; label: string; color: string; onPress: () => void }) {
+  const { colors } = useTheme();
   return (
     <Pressable onPress={onPress} style={[styles.swipeAction, { backgroundColor: color }]} accessibilityRole="button" accessibilityLabel={label}>
-      <Symbol name={icon} size={20} color="#FFFFFF" />
-      <Text style={styles.swipeLabel} numberOfLines={1}>
+      <Symbol name={icon} size={iconSize.action} color={colors.swipeActionText} />
+      <Text style={[styles.swipeLabel, { color: colors.swipeActionText }]} numberOfLines={1}>
         {label}
       </Text>
     </Pressable>
@@ -677,11 +680,11 @@ function SearchResultRow({ item, bots, query, onOpen }: { item: SearchRow; bots:
   const at = item.createdAt ?? lastActivity(item.chat);
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.searchRow, { backgroundColor: pressed ? p.fill : "transparent" }]}>
-      <AvatarCluster bots={members} size={44} />
+      <AvatarCluster bots={members} size={48} />
       <View style={styles.searchText}>
         <View style={styles.searchTitleLine}>
           <HighlightedText text={chatTitle(item.chat)} query={query} style={[styles.searchTitle, { color: p.label }]} numberOfLines={1} />
-          <Text style={[styles.searchStamp, { color: p.secondaryLabel }]}>{stamp(new Date(at * 1000))}</Text>
+          <Text style={[styles.searchStamp, { color: p.tertiaryLabel }]}>{stamp(new Date(at * 1000))}</Text>
         </View>
         <HighlightedText text={item.snippet} query={query} style={[styles.searchSnippet, { color: p.secondaryLabel }]} numberOfLines={2} />
       </View>
@@ -692,7 +695,7 @@ function SearchResultRow({ item, bots, query, onOpen }: { item: SearchRow; bots:
 
 function HighlightedText({ text, query, style, numberOfLines }: { text: string; query: string; style: StyleProp<TextStyle>; numberOfLines?: number }) {
   const p = usePalette();
-  const matchStyle: TextStyle = { color: p.label, backgroundColor: p.secondaryFill, fontWeight: "700" };
+  const matchStyle: TextStyle = { color: p.label, backgroundColor: p.fill, fontWeight: fontWeight.semibold };
   const terms = query.match(/[\p{L}\p{N}]+/gu) ?? [];
   if (!terms.length) return <Text style={style} numberOfLines={numberOfLines}>{text}</Text>;
   const expression = new RegExp(`(${terms.map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "giu");
@@ -714,27 +717,27 @@ function HighlightedText({ text, query, style, numberOfLines }: { text: string; 
 
 const styles = StyleSheet.create({
   swipeActions: { flexDirection: "row" },
-  swipeAction: { width: 76, alignItems: "center", justifyContent: "center", gap: 4 },
-  swipeLabel: { color: "#FFFFFF", fontSize: 13, fontWeight: "500" },
+  swipeAction: { width: 76, alignItems: "center", justifyContent: "center", gap: spacing.xs },
+  swipeLabel: { fontSize: typeScale.footnote, lineHeight: lineHeight.caption, fontWeight: fontWeight.medium },
   screen: { flex: 1 },
   list: { flex: 1 },
   androidBar: { position: "absolute", top: 0, left: 0, right: 0 },
-  androidBarRow: { height: BAR, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16 },
+  androidBarGlass: { borderBottomWidth: StyleSheet.hairlineWidth },
+  androidBarRow: { height: BAR, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: spacing.lg },
   androidStatus: { flex: 1, alignItems: "center" },
-  // iOS's collapsible list sections head with a bold title and a tinted chevron; Material's with
-  // a subheader in the primary color.
-  header: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingTop: Platform.OS === "ios" ? 18 : 16, paddingBottom: Platform.OS === "ios" ? 6 : 8 },
-  headerTitle: { flex: 1, fontSize: Platform.OS === "ios" ? 20 : 14, fontWeight: Platform.OS === "ios" ? "700" : "500", letterSpacing: Platform.OS === "ios" ? 0.35 : 0.1 },
-  status: { flexDirection: "row", alignItems: "center", gap: 8 },
+  // A group heads with a small label in the tertiary color and its chevron, as Cindy's groups do.
+  header: { flexDirection: "row", alignItems: "center", gap: spacing.xs, minHeight: 40, paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.xs },
+  headerTitle: { flexShrink: 1, fontSize: typeScale.footnote, lineHeight: lineHeight.caption, fontWeight: fontWeight.semibold },
+  status: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   statusPressed: { opacity: 0.4 },
-  statusText: { fontSize: Font.small, fontWeight: "500" },
-  empty: { alignItems: "center", paddingTop: 120, paddingHorizontal: 40, gap: 8 },
-  emptyTitle: { fontSize: 20, fontWeight: "600", marginTop: 8 },
-  emptyText: { fontSize: 15, textAlign: "center", lineHeight: 21 },
-  searchRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 9, gap: 12 },
-  searchText: { flex: 1, gap: 3 },
-  searchTitleLine: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
-  searchTitle: { flex: 1, fontSize: Font.body, fontWeight: "600" },
-  searchStamp: { fontSize: 14 },
-  searchSnippet: { fontSize: 15, lineHeight: 20 },
+  statusText: { fontSize: typeScale.footnote, lineHeight: lineHeight.caption, fontWeight: fontWeight.medium },
+  empty: { alignItems: "center", paddingTop: 120, paddingHorizontal: 40, gap: spacing.sm },
+  emptyTitle: { fontSize: typeScale.title, lineHeight: lineHeight.title, fontWeight: fontWeight.semibold, marginTop: spacing.sm },
+  emptyText: { fontSize: typeScale.bodySmall, lineHeight: lineHeight.bodySmall, textAlign: "center" },
+  searchRow: { flexDirection: "row", alignItems: "center", minHeight: 78, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, gap: spacing.md, borderRadius: radius.control },
+  searchText: { flex: 1, minWidth: 0 },
+  searchTitleLine: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
+  searchTitle: { flex: 1, fontSize: typeScale.subtitle, lineHeight: lineHeight.listTitle, fontWeight: fontWeight.medium },
+  searchStamp: { fontSize: typeScale.footnote, lineHeight: lineHeight.body },
+  searchSnippet: { fontSize: typeScale.bodySmall, lineHeight: lineHeight.bodySmall },
 });
