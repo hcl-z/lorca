@@ -1,7 +1,8 @@
 // The phone's quick sheets, on the native bottom sheet Expo SDK 57 ships
 // (`@expo/ui/community/bottom-sheet`): a content-sized action list, a picker, a one-line form, or
-// a short scroll. The native sheet owns the keyboard, the drag indicator, and the scrim; we give
-// it the palette and the content.
+// a short scroll. The native sheet owns the keyboard, the drag indicator, the corners, and the
+// scrim; we give it Cindy's sheet surface and the content: a 44 pt header with the title centered
+// at 16/22 semibold, and 52 pt rows on hairlines.
 //
 // One sheet at a time per screen. To open another after this one, pass the next step to
 // `onDismiss` (or `dismissThen`), never present both at once: iOS dismisses a sheet and presents
@@ -21,6 +22,8 @@ import {
 import { Pressable } from "./Pressable";
 import { Symbol } from "./Symbol";
 import { usePalette } from "./theme";
+import { useTheme } from "./ThemeProvider";
+import { fontWeight, iconSize, lineHeight, radius, spacing, typeScale } from "./tokens";
 import { haptic } from "./haptics";
 import { SHEET_PRESETS, orderActions } from "./sheetPresets";
 import { t, useLanguage } from "../i18n";
@@ -46,7 +49,7 @@ export interface SheetProps {
 }
 
 export function Sheet({ visible, onClose, title, subtitle, snapPoints, scroll, children }: SheetProps) {
-  const p = usePalette();
+  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const ref = useRef<SheetRef>(null);
   useEffect(() => {
@@ -65,18 +68,18 @@ export function Sheet({ visible, onClose, title, subtitle, snapPoints, scroll, c
       snapPoints={snapPoints}
       enablePanDownToClose
       onDismiss={onClose}
-      backgroundStyle={{ backgroundColor: p.cell }}
+      backgroundStyle={{ backgroundColor: colors.sheetSurface }}
     >
       {scroll ? (
         <BottomSheetScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 12 }}
+          contentContainerStyle={{ paddingBottom: insets.bottom + spacing.md }}
           keyboardShouldPersistTaps="handled"
         >
           {body}
         </BottomSheetScrollView>
       ) : (
-        <BottomSheetView style={{ paddingBottom: insets.bottom + 12 }}>{body}</BottomSheetView>
+        <BottomSheetView style={{ paddingBottom: insets.bottom + spacing.md }}>{body}</BottomSheetView>
       )}
     </BottomSheetModal>
   );
@@ -87,17 +90,17 @@ export function SheetHeader({ title, subtitle, onClose, closeLabel }: { title: s
   const p = usePalette();
   return (
     <View style={styles.header}>
-      <View style={styles.headerText}>
-        <Text accessibilityRole="header" style={[styles.title, { color: p.label }]}>
+      <View style={styles.headerBar}>
+        <Text accessibilityRole="header" style={[styles.title, { color: p.label }]} numberOfLines={1}>
           {title}
         </Text>
-        {subtitle ? <Text style={[styles.subtitle, { color: p.secondaryLabel }]}>{subtitle}</Text> : null}
+        {onClose ? (
+          <Pressable accessibilityRole="button" accessibilityLabel={closeLabel ?? t("Close")} onPress={onClose} hitSlop={12} style={[styles.close, { backgroundColor: p.fill }]}>
+            <Symbol name="xmark" size={iconSize.sm} color={p.secondaryLabel} weight="semibold" />
+          </Pressable>
+        ) : null}
       </View>
-      {onClose ? (
-        <Pressable accessibilityRole="button" accessibilityLabel={closeLabel ?? t("Close")} onPress={onClose} hitSlop={12} style={styles.close}>
-          <Symbol name="xmark" size={15} color={p.secondaryLabel} weight="semibold" />
-        </Pressable>
-      ) : null}
+      {subtitle ? <Text style={[styles.subtitle, { color: p.secondaryLabel }]}>{subtitle}</Text> : null}
     </View>
   );
 }
@@ -142,7 +145,7 @@ export function SheetActionRow({
       onPress={onPress}
       style={({ pressed }) => [styles.row, { borderBottomColor: p.separator, opacity: disabled ? 0.45 : 1, backgroundColor: pressed ? p.fill : "transparent" }]}
     >
-      {tile ? <View style={styles.tile}>{tile}</View> : icon ? <Symbol name={icon} size={20} color={destructive ? p.red : p.secondaryLabel} /> : null}
+      {tile ? <View style={styles.tile}>{tile}</View> : icon ? <Symbol name={icon} size={iconSize.action} color={destructive ? p.red : p.secondaryLabel} /> : null}
       <View style={styles.rowText}>
         <Text style={[styles.rowTitle, { color: tint }]} numberOfLines={1}>
           {title}
@@ -217,7 +220,7 @@ export function SheetPicker({
           placeholder={t("Search")}
           placeholderTextColor={p.tertiaryLabel as string}
           autoCorrect={false}
-          style={[styles.search, { color: p.label, backgroundColor: p.fill }]}
+          style={[styles.search, { color: p.label, backgroundColor: p.cell, borderColor: p.separator }]}
         />
       ) : null}
       <BottomSheetFlatList
@@ -229,7 +232,7 @@ export function SheetPicker({
           <SheetActionRow
             title={item.label}
             subtitle={item.description}
-            trailing={item.value === selected ? <Symbol name="checkmark" size={17} color={p.tint} weight="semibold" /> : null}
+            trailing={item.value === selected ? <Symbol name="checkmark" size={iconSize.md} color={p.tint} weight="semibold" /> : null}
             onPress={() => {
               onPick(item.value);
               onClose();
@@ -241,16 +244,21 @@ export function SheetPicker({
   );
 }
 
+/// The sheet header's bar, as tall as a navigation bar.
+const HEADER = 44;
+/// The close disc in the header's trailing corner.
+const CLOSE = 30;
+
 const styles = StyleSheet.create({
-  header: { flexDirection: "row", alignItems: "flex-start", gap: 12, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 10 },
-  headerText: { flex: 1, gap: 2 },
-  title: { fontSize: 18, fontWeight: "700", letterSpacing: -0.2 },
-  subtitle: { fontSize: 13, lineHeight: 18 },
-  close: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  row: { minHeight: 52, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
+  header: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm, gap: 2 },
+  headerBar: { height: HEADER, alignItems: "center", justifyContent: "center", paddingHorizontal: CLOSE + spacing.sm },
+  title: { fontSize: typeScale.body, lineHeight: lineHeight.body, fontWeight: fontWeight.semibold, textAlign: "center" },
+  subtitle: { fontSize: typeScale.footnote, lineHeight: lineHeight.caption, textAlign: "center" },
+  close: { position: "absolute", right: 0, width: CLOSE, height: CLOSE, borderRadius: CLOSE / 2, alignItems: "center", justifyContent: "center" },
+  row: { minHeight: 52, flexDirection: "row", alignItems: "center", gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth },
   tile: { width: 28, alignItems: "center", justifyContent: "center" },
-  rowText: { flex: 1, gap: 2 },
-  rowTitle: { fontSize: 16, fontWeight: "500" },
-  rowSubtitle: { fontSize: 13, lineHeight: 17 },
-  search: { height: 38, borderRadius: 10, paddingHorizontal: 12, fontSize: 16, marginHorizontal: 16, marginBottom: 8 },
+  rowText: { flex: 1, minWidth: 0, gap: 2 },
+  rowTitle: { fontSize: typeScale.body, lineHeight: lineHeight.body, fontWeight: fontWeight.medium },
+  rowSubtitle: { fontSize: typeScale.footnote, lineHeight: lineHeight.caption },
+  search: { height: 40, borderRadius: radius.container, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: spacing.md, fontSize: typeScale.bodySmall, marginHorizontal: spacing.lg, marginBottom: spacing.sm },
 });

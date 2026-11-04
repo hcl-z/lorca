@@ -18,6 +18,7 @@ import { lastSeen, muteSpans, time, upcoming } from "../../src/ui/format";
 import { problemNeedsUser, routineDetail, routineProblem, routineSchedule, routineSymbol } from "../../src/ui/routines";
 import { Symbol } from "../../src/ui/Symbol";
 import { usePalette } from "../../src/ui/theme";
+import { fontWeight, lineHeight, spacing, typeScale } from "../../src/ui/tokens";
 import { deviceSymbol } from "../../src/ui/devices";
 import { AndroidIcons, CloseToolbar } from "../../src/ui/navigation";
 import { haptic } from "../../src/ui/haptics";
@@ -176,7 +177,7 @@ export default function ChatInfoScreen() {
     <>
       <Stack.Screen options={{ title: isGroup ? t("Group Info") : t("Details") }} />
       <CloseToolbar label={Platform.OS === "android" ? t("Close") : t("Done")} onClose={() => router.dismiss()} />
-    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingBottom: 40 }} keyboardDismissMode="on-drag">
+    <ScrollView contentInsetAdjustmentBehavior="automatic" style={{ backgroundColor: p.groupedBackground }} contentContainerStyle={styles.content} keyboardDismissMode="on-drag">
       <View style={styles.hero}>
         {bot ? (
           <Pressable onPress={() => router.push(`/chat-info/look/${bot.id}`)} accessibilityLabel={t("Change {name}'s look", { name: bot.name })} accessibilityRole="button" hitSlop={8} ripple="borderless" rippleRadius={44}>
@@ -496,7 +497,7 @@ export default function ChatInfoScreen() {
                 leading={<BotAvatar bot={member} size={36} working={working.has(member.id)} />}
                 accessory={
                   chat.owner_bot_id === member.id ? (
-                    <Text style={{ color: p.secondaryLabel, fontSize: 13 }}>{t("Owner")}</Text>
+                    <Text style={{ color: p.tertiaryLabel, fontSize: typeScale.footnote, lineHeight: lineHeight.caption }}>{t("Owner")}</Text>
                   ) : removable && Platform.OS === "ios" ? (
                     <Pressable hitSlop={14} onPress={remove} accessibilityLabel={label}>
                       <Symbol name="xmark" size={14} color={p.tertiaryLabel} weight="semibold" />
@@ -595,9 +596,11 @@ export default function ChatInfoScreen() {
 }
 
 const styles = StyleSheet.create({
-  hero: { alignItems: "center", paddingTop: 16, gap: 6 },
-  heroTitle: { fontSize: 22, fontWeight: "700", marginTop: 6 },
-  heroSubtitle: { fontSize: 15, textAlign: "center", paddingHorizontal: 32 },
+  content: { paddingBottom: spacing.xxl + spacing.sm },
+  // Cindy's profile hero: a 72 pt avatar over a 20/25 semibold title and a 13/18 subtitle.
+  hero: { alignItems: "center", paddingTop: spacing.lg, paddingHorizontal: spacing.xxl, gap: spacing.xs },
+  heroTitle: { fontSize: typeScale.title, lineHeight: lineHeight.title, fontWeight: fontWeight.semibold, textAlign: "center", marginTop: spacing.sm },
+  heroSubtitle: { fontSize: typeScale.footnote, lineHeight: lineHeight.caption, textAlign: "center" },
   deviceIcon: { width: 32, alignItems: "center" },
   deviceDot: { position: "absolute", right: 0, bottom: -2, width: 10, height: 10, borderRadius: 5, borderWidth: 2 },
 });
