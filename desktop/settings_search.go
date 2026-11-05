@@ -60,20 +60,12 @@ func islandAllDisplaysEntry() settingsEntry {
 	return entry(model.PaneGeneral, L("Show the island on every display"), "", L("island display monitor screen second"))
 }
 
-func islandIdleEntry() settingsEntry {
-	return entry(model.PaneGeneral, L("Show the island when nothing runs"), "", L("island idle hidden empty"))
-}
-
 func islandHoverEntry() settingsEntry {
-	return entry(model.PaneGeneral, L("Grow the island under the pointer"), "", L("island hover grow point size"))
+	return entry(model.PaneGeneral, L("Open the island under the pointer"), "", L("island hover open expand list pointer"))
 }
 
-func islandSizeEntry() settingsEntry {
-	return entry(model.PaneGeneral, L("Island size"), "", L("island small regular large width compact"))
-}
-
-func islandResultEntry() settingsEntry {
-	return entry(model.PaneGeneral, L("Keep a result on the island for"), "", L("island result finished seconds duration"))
+func islandSoundsEntry() settingsEntry {
+	return entry(model.PaneGeneral, L("Play island sounds"), "", L("island sound chime alert done error"))
 }
 
 func unreadBadgeEntry() settingsEntry {
@@ -201,7 +193,7 @@ func entriesIn(pane model.SettingsPane, device *model.Device) []settingsEntry {
 	case model.PaneGeneral:
 		out := []settingsEntry{sendOnReturnEntry(), trayIconEntry(), unreadBadgeEntry()}
 		if runtime.GOOS == "darwin" {
-			out = append(out, islandEntry(), islandAllDisplaysEntry(), islandIdleEntry(), islandHoverEntry(), islandSizeEntry(), islandResultEntry())
+			out = append(out, islandEntry(), islandAllDisplaysEntry(), islandHoverEntry(), islandSoundsEntry())
 		}
 		out = append(out, appearanceEntry(), appLanguageEntry())
 		if updatesEnabled() {

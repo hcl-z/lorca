@@ -1,0 +1,11 @@
+The island (island.go, island_state.go, island_store.go, island_metrics.go, and island_darwin.go)
+ports the look, motion, and rules of Cindy's Agent Island, under the Apache License 2.0:
+
+  Cindy
+  Copyright 2026 XD Inc.
+  https://github.com/makecindy/cindy
+
+  This product includes software developed by XD Inc.
+
+The island's shape follows Cindy's NotchShape, which Cindy adapts from Code Island's MIT-licensed
+NotchPanelShape (Copyright (c) 2026 wxtsky).

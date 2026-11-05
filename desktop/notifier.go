@@ -139,6 +139,7 @@ func (n *notifier) watchingChanged() {
 	}
 	watched := n.watchedChat()
 	store.SetWatchedChat(watched)
+	app.island.watchingChanged(watched)
 	// Whatever arrived for the chat now on screen, or was posted for it, has been seen.
 	if watched != "" {
 		store.MarkRead(watched)

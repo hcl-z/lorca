@@ -63,6 +63,9 @@ func windows() []*appWindow {
 	if app.settings != nil {
 		out = append(out, &app.settings.appWindow)
 	}
+	if app.gallery != nil {
+		out = append(out, &app.gallery.appWindow)
+	}
 	return out
 }
 
