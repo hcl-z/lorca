@@ -31,16 +31,13 @@ type Preferences struct {
 	// ShowsIsland is the window at the top of the screen that says what the bots are doing
 	// (island.go); it starts on, and macOS alone has it. The island's own choices follow:
 	// IslandAllDisplays shows one on every display rather than the main one alone,
-	// IslandIdleVisible keeps its idle capsule on screen, IslandHoverGrow grows it under the
-	// pointer, IslandSize is "small", "regular", or "large", and IslandResultSeconds is how long
-	// a finished turn stays on it.
-	ShowsIsland         bool   `json:"showsIsland"`
-	IslandAllDisplays   bool   `json:"islandAllDisplays"`
-	IslandIdleVisible   bool   `json:"islandIdleVisible"`
-	IslandHoverGrow     bool   `json:"islandHoverGrow"`
-	IslandSize          string `json:"islandSize"`
-	IslandResultSeconds int    `json:"islandResultSeconds"`
-	RelayURL            string `json:"relayURL"`
+	// IslandHoverGrow opens it into its list under the pointer, and IslandSounds plays a sound as
+	// work starts, asks, ends, or fails. With nothing at work it shows nothing.
+	ShowsIsland       bool   `json:"showsIsland"`
+	IslandAllDisplays bool   `json:"islandAllDisplays"`
+	IslandHoverGrow   bool   `json:"islandHoverGrow"`
+	IslandSounds      bool   `json:"islandSounds"`
+	RelayURL          string `json:"relayURL"`
 	// CLIPort is the port the app looks for the CLI on. `LORCA_PORT` wins, so a second app
 	// instance can run against its own CLI.
 	CLIPort int `json:"cliPort"`
@@ -70,10 +67,8 @@ type PreferencesPatch struct {
 	UnreadBadge         *bool   `json:"unreadBadge,omitempty"`
 	ShowsIsland         *bool   `json:"showsIsland,omitempty"`
 	IslandAllDisplays   *bool   `json:"islandAllDisplays,omitempty"`
-	IslandIdleVisible   *bool   `json:"islandIdleVisible,omitempty"`
 	IslandHoverGrow     *bool   `json:"islandHoverGrow,omitempty"`
-	IslandSize          *string `json:"islandSize,omitempty"`
-	IslandResultSeconds *int    `json:"islandResultSeconds,omitempty"`
+	IslandSounds        *bool   `json:"islandSounds,omitempty"`
 	RelayURL            *string `json:"relayURL,omitempty"`
 	CLIPort             *int    `json:"cliPort,omitempty"`
 	AppLanguage         *string `json:"appLanguage,omitempty"`
@@ -107,8 +102,8 @@ func (s *prefsStore) loadFrom(path string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.value = Preferences{ShowsInspector: true, SendOnReturn: true, ShowsTrayIcon: true, UnreadBadge: true,
-		ShowsIsland: true, IslandAllDisplays: true, IslandIdleVisible: true, IslandHoverGrow: true,
-		IslandSize: "regular", IslandResultSeconds: 8}
+		ShowsIsland: true, IslandAllDisplays: true, IslandHoverGrow: true,
+		IslandSounds: true}
 	s.path = path
 	if data, err := os.ReadFile(path); path != "" && err == nil {
 		_ = json.Unmarshal(data, &s.value)
@@ -167,17 +162,11 @@ func (s *prefsStore) update(patch PreferencesPatch) Preferences {
 	if patch.IslandAllDisplays != nil {
 		v.IslandAllDisplays = *patch.IslandAllDisplays
 	}
-	if patch.IslandIdleVisible != nil {
-		v.IslandIdleVisible = *patch.IslandIdleVisible
-	}
 	if patch.IslandHoverGrow != nil {
 		v.IslandHoverGrow = *patch.IslandHoverGrow
 	}
-	if patch.IslandSize != nil {
-		v.IslandSize = *patch.IslandSize
-	}
-	if patch.IslandResultSeconds != nil {
-		v.IslandResultSeconds = *patch.IslandResultSeconds
+	if patch.IslandSounds != nil {
+		v.IslandSounds = *patch.IslandSounds
 	}
 	if patch.RelayURL != nil {
 		v.RelayURL = *patch.RelayURL
@@ -242,8 +231,7 @@ func setPrefs(patch PreferencesPatch) Preferences {
 		setBadge(unreadTotal())
 	}
 	if (after.ShowsIsland != before.ShowsIsland || after.IslandAllDisplays != before.IslandAllDisplays ||
-		after.IslandIdleVisible != before.IslandIdleVisible || after.IslandHoverGrow != before.IslandHoverGrow ||
-		after.IslandSize != before.IslandSize || after.IslandResultSeconds != before.IslandResultSeconds) && app.island != nil {
+		after.IslandHoverGrow != before.IslandHoverGrow) && app.island != nil {
 		app.island.sync()
 	}
 	if after.CLIPort != before.CLIPort && app.cli != nil {

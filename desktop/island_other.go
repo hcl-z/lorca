@@ -12,3 +12,15 @@ const islandSupported = false
 func polishIslandWindow(w *mygo.Window) {}
 
 func revealIslandWindow(w *mygo.Window) {}
+
+// islandNotch is a display's notch and top strip, which no other platform has.
+type islandNotch struct {
+	Width  float32
+	TopBar float32
+}
+
+func islandNotchOf(displayID int64) islandNotch { return islandNotch{} }
+
+func islandMouseDown() bool { return false }
+
+func playIslandSound(e islandSoundEvent) {}

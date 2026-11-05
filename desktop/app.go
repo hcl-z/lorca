@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"os"
 	"runtime"
 	"sync"
 	"time"
@@ -38,6 +39,8 @@ type appDelegate struct {
 	// island is the system-level window of the coding agents at work, apart from the main window
 	// so hiding it leaves the island up (island.go).
 	island *island
+	// gallery is Debug › Island Gallery, every look of the island in a window (island_gallery.go).
+	gallery *islandGalleryWindow
 	// onboardingOverIdentity is onboarding opened again over an identity that still exists.
 	// Create, restore, and pair refuse to run there, so closing it is Cancel: the main window it
 	// hid comes back as it was.
@@ -110,9 +113,7 @@ func (a *appDelegate) didFinishLaunching() {
 			a.main.storeChanged(event)
 		}
 		a.notifier.storeChanged(event)
-		if event.Kind == model.EventTurnFinished {
-			a.island.turnFinished(event)
-		}
+		a.island.storeChanged()
 		a.island.sync()
 		invalidateWindows()
 	})
@@ -155,6 +156,10 @@ func (a *appDelegate) didFinishLaunching() {
 	if a.mainWindowIsDue() {
 		a.showMainWindow()
 		startupTrace("window shown")
+	}
+	// LORCA_ISLAND_GALLERY=1 opens Debug › Island Gallery at launch, for a look at every island.
+	if os.Getenv("LORCA_ISLAND_GALLERY") == "1" {
+		a.showIslandGallery()
 	}
 }
 
