@@ -1,0 +1,19 @@
+mobile/app/pair.tsx
+  s_a9430c68c165c0::t_d8f09894b05936 157-158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.51-trip",
+  "base_commit_sha": "f3dc672befebb52c3805efd2c86cfaaaf8f4c4b7",
+  "prompts": {},
+  "sessions": {
+    "s_a9430c68c165c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "97c32966-1b06-41fd-9ca4-4a03a0bc13e8",
+        "model": "kiro/claude-opus-5.5"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
