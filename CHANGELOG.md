@@ -8,6 +8,14 @@ phone app's.
 
 ## [Unreleased]
 
+## [1.0.37]
+
+- The island at the top of the screen is new, after Cindy's Agent Island. It hugs the notch, or a notch drawn on a display without one, and is gone while nothing runs: it grows out of the notch as a bot or coding agent starts and goes back in when the work is done. A bot or agent at work breathes in orange with its words shimmering; a finished turn shows its last words on a card for a few seconds; a question or an approval opens the island at once to be answered there; a failure shows the bot's avatar in a soft red ring.
+- Under the pointer the island opens into the list of what runs, waits, and finished; a finished card swipes right to be marked read, and its sound, Settings, and new-bot buttons sit beside the notch. The island plays a sound as work starts, asks, finishes, or fails, which General › Island turns off.
+- A coding agent's row on the island stands for the bot that waits on it, and an agent being checked or asked about before it starts no longer shows as done.
+- A handoff carries the user's own words to the teammate and to a coding agent, and an agent chooses where it works. A handed-off request is answered at once, and a bot that hands work off leaves it to the teammate.
+- The apps no longer show or undo automatic memory capture batches.
+
 ## [1.0.36]
 
 - You talk to a coding agent on its own page, on the desktop and the phone: a composer at the foot of the page takes text and images (pasted, picked, dropped, or from the camera), queues behind what the agent does now, and starts a stopped agent again on its session. The bot does not see these messages.
