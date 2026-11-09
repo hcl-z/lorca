@@ -125,6 +125,11 @@ impl LocalStore {
                  id   TEXT PRIMARY KEY NOT NULL,
                  name TEXT NOT NULL
              );
+             CREATE TABLE IF NOT EXISTS chat_previews (
+                 id       TEXT PRIMARY KEY NOT NULL,
+                 position INTEGER NOT NULL,
+                 json     TEXT NOT NULL
+             );
              CREATE TABLE IF NOT EXISTS device_seen (
                  id      TEXT PRIMARY KEY NOT NULL,
                  seen_at INTEGER NOT NULL
@@ -268,7 +273,10 @@ impl LocalStore {
             devices: load_json_table(&connection, "devices")?,
             bots: load_json_table(&connection, "bots")?,
             chats: load_json_table(&connection, "chats")?,
-            chat_previews: Default::default(),
+            chat_previews: load_json_table::<Message>(&connection, "chat_previews")?
+                .into_iter()
+                .map(|message| (message.chat_id.clone(), message))
+                .collect(),
             sections: load_json_table(&connection, "sidebar_sections")?,
             routines: load_json_table(&connection, "routines")?,
             workflows: load_json_table(&connection, "workflow_setups")?,
@@ -1746,6 +1754,15 @@ fn save_state_tx(tx: &Transaction<'_>, state: &State) -> anyhow::Result<()> {
     sync_chats(tx, state)?;
     sync_json_table(
         tx,
+        "chat_previews",
+        state
+            .chat_previews
+            .iter()
+            .map(|(id, message)| (id.clone(), serde_json::to_string(message)))
+            .collect::<Vec<_>>(),
+    )?;
+    sync_json_table(
+        tx,
         "routines",
         state
             .routines
@@ -2285,6 +2302,17 @@ mod tests {
         assert_eq!(store.next_outbox().unwrap().unwrap().id, "a-live");
         store.connection.lock().unwrap().execute("DELETE FROM outbox WHERE id = ?1", ["a-live"]).unwrap();
         assert_eq!(store.next_outbox().unwrap().unwrap().id, "b-window");
+    }
+
+    #[test]
+    fn chat_previews_survive_a_reopen() {
+        let scratch = scratch();
+        let store = &scratch.0;
+        let mut state = store.load_state().unwrap();
+        state.chat_previews.insert("chat".into(), Message::new("chat", Author::You, Body::text("preview")));
+        store.save_state(&state).unwrap();
+        let reopened = LocalStore::open(&scratch.1.join("lorca.sqlite3")).unwrap();
+        assert_eq!(reopened.load_state().unwrap().chat_previews["chat"].body, Body::text("preview"));
     }
 
     #[test]

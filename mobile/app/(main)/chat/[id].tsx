@@ -314,6 +314,11 @@ export default function ChatScreen() {
     return (sharedRows.current = shareRows(sharedRows.current, next));
   }, [chat, bots, workingBotIds, isWorking, status, language]);
   rowsRef.current = rows;
+  // A chat whose page is not here yet: ask for its first page as the screen opens. An empty
+  // transcript has no row to scroll into view, so `onLoad`/`onStartReached` never fire for it.
+  useEffect(() => {
+    if (chat && chat.messages.length === 0 && chat.has_more) void engine.loadOlder(id);
+  }, [id, chat?.messages.length, chat?.has_more]);
   const anchorIndex = anchorKey ? rows.findIndex((row) => row.key === anchorKey) : -1;
   const anchoredEndSpace = useMemo(
     () =>
