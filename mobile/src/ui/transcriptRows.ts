@@ -35,6 +35,9 @@ export interface PreviousRows {
   rows: Row[];
   isWorking: boolean;
   status: string | null;
+  bots: Map<string, Bot>;
+  workingBotIds: string[];
+  historyElsewhere: Chat["history_elsewhere"];
 }
 
 /// Builds the rows for a chat, the way the Mac app's ChatViewController does. With `previous`,
@@ -64,17 +67,23 @@ export function buildRows(
     const next = chat.messages;
     const sameVersion = (a: Message, b: Message) =>
       a.id === b.id && (a.rev !== undefined && b.rev !== undefined ? a.rev === b.rev : a.created_at === b.created_at && JSON.stringify(a.body) === JSON.stringify(b.body));
-    let suffix = 0;
     const limit = Math.min(old.length, next.length);
-    while (suffix < limit && sameVersion(old[old.length - 1 - suffix], next[next.length - 1 - suffix])) suffix++;
-    if (old.length === next.length && suffix === old.length && previousRows.isWorking === isWorking && previousRows.status === status) {
+    // The first message that may have moved. A batch can change one in the middle, so this is
+    // found from the start; comparisons are a revision number, not a message body.
+    let common = 0;
+    while (common < limit && sameVersion(old[common], next[common])) common++;
+    const sameBots = previousRows.bots.size === bots.size && [...bots].every(([id, bot]) => previousRows.bots.get(id) === bot);
+    const sameWorking =
+      previousRows.workingBotIds.length === workingBotIds.length && previousRows.workingBotIds.every((id, index) => id === workingBotIds[index]);
+    const sameElsewhere =
+      previousRows.historyElsewhere?.device_id === chat.history_elsewhere?.device_id &&
+      previousRows.historyElsewhere?.device_name === chat.history_elsewhere?.device_name;
+    if (!sameBots || !sameWorking || !sameElsewhere || previousRows.isWorking !== isWorking || previousRows.status !== status) {
+      common = 0;
+    }
+    if (old.length === next.length && common === old.length) {
       return previousRows.rows;
     }
-    // The first message that may have moved. One before it is rebuilt too when its envelope
-    // (author or time) changed, since that moves its day separator and grouping.
-    let common = Math.max(0, limit - suffix - 1);
-    // The working and status rows hang off the end; a change in either rebuilds the tail.
-    if (previousRows.isWorking !== isWorking || previousRows.status !== status) common = 0;
     let start = shown.findIndex(({ index }) => index >= common);
     if (start < 0) return previousRows.rows;
     const before = old[common];
@@ -175,7 +184,11 @@ export function buildRows(
     }
     previous = message;
   }
+  const header: Row[] = [];
+  if (chat.history_elsewhere) {
+    header.push({ key: "history-elsewhere", type: "status", text: t("History is on {name}", { name: chat.history_elsewhere.device_name }) });
+  }
   if (isWorking) rows.push({ key: "working", type: "working", bots: workingBotIds.map((id) => bots.get(id)).filter((b): b is Bot => !!b) });
   else if (status) rows.push({ key: "status", type: "status", text: status });
-  return [...kept, ...rows];
+  return [...kept, ...header, ...rows];
 }

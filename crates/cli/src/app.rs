@@ -529,7 +529,7 @@ impl App {
         match crate::crypto::encrypt_json(&dek, "credentials", &credentials) {
             Ok(ciphertext) => {
                 self.state.lock().unwrap().credentials_uploaded = true;
-                self.push_slot_blob("credentials", Slot::latest("credentials"), None, ciphertext);
+                self.push_slot_blob_with_priority("credentials", Slot::latest("credentials"), None, ciphertext, 0);
             }
             Err(error) => tracing::error!(%error, "encrypting credentials"),
         }
@@ -970,7 +970,7 @@ impl App {
         let device_id = device.id.clone();
         match crate::crypto::encrypt_json(&dek, "machine", &MachineBlob { device, turns, budgets, watching }) {
             Ok(ciphertext) => {
-                self.push_slot_blob("machine", Slot::latest(format!("machine-{}", device_id)), None, ciphertext);
+                self.push_slot_blob_with_priority("machine", Slot::latest(format!("machine-{}", device_id)), None, ciphertext, 0);
             }
             Err(error) => tracing::error!(%error, "encrypting machine blob"),
         }

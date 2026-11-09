@@ -77,6 +77,7 @@ import {
   WorkingRow,
   type Row,
 } from "../../../src/ui/transcript";
+import type { PreviousRows } from "../../../src/ui/transcriptRows";
 
 /// Breathing room between the last message and the composer, as on the Mac.
 const COMPOSER_GAP = 14;
@@ -87,7 +88,6 @@ const JUMP_DISTANCE = 160;
 const JUMP_DISC = 36;
 /** How far past the viewport, in points, the transcript keeps its rows drawn. */
 const DRAW_DISTANCE = 1000;
-/** A typical row's height before it is measured: a bubble of a line or two. */
 /// A guess at a row's height until LegendList measures its own. Tune it from
 /// `listRef.current?.getState().getAverageItemSizes()`: too small makes the first
 /// `initialScrollAtEnd` land short and jump when the rows measure.
@@ -301,7 +301,7 @@ export default function ChatScreen() {
   // diffs its data on every new array.
   const sharedRows = useRef<Row[]>([]);
   const rowsRef = useRef<Row[]>([]);
-  const previousRows = useRef<{ messages: Message[]; rows: Row[]; isWorking: boolean; status: string | null } | null>(null);
+  const previousRows = useRef<PreviousRows | null>(null);
   const previousLanguage = useRef(language);
   const rows = useMemo(() => {
     if (previousLanguage.current !== language) {
@@ -309,7 +309,7 @@ export default function ChatScreen() {
       previousRows.current = null;
     }
     const next = chat ? buildRows(chat, bots, workingBotIds, isWorking, status, previousRows.current ?? undefined) : [];
-    if (chat) previousRows.current = { messages: chat.messages, rows: next, isWorking, status };
+    if (chat) previousRows.current = { messages: chat.messages, rows: next, isWorking, status, bots, workingBotIds, historyElsewhere: chat.history_elsewhere };
     else previousRows.current = null;
     return (sharedRows.current = shareRows(sharedRows.current, next));
   }, [chat, bots, workingBotIds, isWorking, status, language]);
@@ -636,6 +636,9 @@ export default function ChatScreen() {
             onLoad={() => {
               loaded.current = true;
               chatShown();
+              // A chat whose window has not been fetched yet is empty; ask for its first page
+              // rather than waiting for a scroll that has nothing to scroll.
+              if (chat && chat.messages.length === 0 && chat.has_more) void engine.loadOlder(id);
             }}
             // Nearing the first message: the page before it, once the chat has opened at its end.
             onStartReached={() => {

@@ -339,11 +339,14 @@ pub async fn fetch_older(app: Arc<App>, chat_id: String) -> Result<(), RelayErro
         older_messages_from(&app, &url, &token, &chat_id).await?;
     }
     if app.store.history_before(&chat_id).map_err(local)?.is_none() {
-        match crate::history::fetch_origin_page(&app, &chat_id, None).await {
+        let before = app.store.oldest_message(&chat_id).map_err(local)?;
+        match crate::history::fetch_origin_page(&app, &chat_id, before).await {
             Ok(Some(page)) => app.store.set_origin_more(&chat_id, page.has_more, None).map_err(local)?,
             Ok(None) => {
-                let online = crate::history::origin_candidates(&app, &chat_id).into_iter().find(|id| app.device_is_online(id));
-                app.store.set_origin_more(&chat_id, false, online.as_deref()).map_err(local)?;
+                // Keep the first candidate even when it is offline: `chats.messages` names it in
+                // `history_elsewhere`, and retries once it is online again.
+                let device = crate::history::origin_candidates(&app, &chat_id).into_iter().next();
+                app.store.set_origin_more(&chat_id, false, device.as_deref()).map_err(local)?;
             }
             Err(error) => tracing::warn!(%error, %chat_id, "fetching an origin page"),
         }
@@ -358,11 +361,16 @@ pub async fn ensure_context(app: &Arc<App>, chat_id: &str, max: usize, budget: s
     let count = |app: &Arc<App>| app.store.page(chat_id, None, max).map(|(messages, _)| messages.len()).unwrap_or(0);
     loop {
         let here = count(app);
-        if here >= max || !app.history_is_partial(chat_id) || started.elapsed() >= budget {
+        if here >= max || !app.history_is_partial(chat_id) {
             return here;
         }
-        if fetch_older(app.clone(), chat_id.to_string()).await.is_err() {
+        let remaining = budget.saturating_sub(started.elapsed());
+        if remaining.is_zero() {
             return here;
+        }
+        match tokio::time::timeout(remaining, fetch_older(app.clone(), chat_id.to_string())).await {
+            Ok(Ok(())) => {}
+            Ok(Err(_)) | Err(_) => return here,
         }
         let after = count(app);
         if after <= here {
@@ -393,7 +401,7 @@ async fn older_messages_from(app: &Arc<App>, url: &str, token: &str, chat_id: &s
     let dek = app.dek().ok_or_else(|| local(anyhow::anyhow!("This Device is not paired")))?;
     // A slot's last blob is the message as it stands. A removal or a read mark is nothing to
     // show, and a read mark from back then must not clear what is unread now.
-    let newest_first: Vec<Message> = slots
+    let mut page: Vec<Message> = slots
         .iter()
         .rev()
         .filter_map(|slot| slot.blobs.last())
@@ -403,6 +411,13 @@ async fn older_messages_from(app: &Arc<App>, url: &str, token: &str, chat_id: &s
             _ => None,
         })
         .collect();
+    // The relay orders a group by slot `MIN(seq)`, which a live write can place ahead of an
+    // older window. The page itself is content order.
+    page.sort_by(|a, b| {
+        let at = |message: &Message| message.promoted_at.unwrap_or(message.created_at);
+        at(a).partial_cmp(&at(b)).unwrap_or(std::cmp::Ordering::Equal).then_with(|| a.id.cmp(&b.id))
+    });
+    let newest_first: Vec<Message> = page.into_iter().rev().collect();
     app.store.insert_older(&newest_first).map_err(local)?;
     let before = slots.first().map(|slot| slot.place).filter(|_| has_more);
     app.store.set_history_before(chat_id, before).map_err(local)?;
@@ -595,7 +610,7 @@ async fn drain_outbox(app: &Arc<App>, url: &str, token: &str) -> Result<(), Rela
     loop {
         let Some(item) = app
             .store
-            .first_outbox()
+            .next_outbox()
             .map_err(|error| RelayError { status: None, message: error.to_string() })?
         else {
             return Ok(());
@@ -1247,7 +1262,13 @@ fn apply_roster(app: &Arc<App>, mut roster: RosterBlob) {
         state.shared_links = roster.shared_links;
         state.device_names = roster.device_names;
         state.sections = roster.sections;
-        state.chat_previews = std::mem::take(&mut roster.previews);
+        for (chat_id, preview) in std::mem::take(&mut roster.previews) {
+            let at = |message: &Message| message.promoted_at.unwrap_or(message.created_at);
+            // A Device that was behind pushes an older preview; the newer one stays.
+            if state.chat_previews.get(&chat_id).is_none_or(|current| at(&preview) >= at(current)) {
+                state.chat_previews.insert(chat_id, preview);
+            }
+        }
         let incoming_ids: Vec<String> = roster.chats.iter().map(|c| c.id.clone()).collect();
         removed = state.chats.iter().filter(|c| !incoming_ids.contains(&c.meta.id)).map(|c| c.meta.id.clone()).collect();
         state.chats.retain(|c| incoming_ids.contains(&c.meta.id));
@@ -1417,6 +1438,75 @@ mod tests {
         async fn ask(&self, _app: &Arc<App>, _runner_id: &str, _verb: &str, _body: serde_json::Value, _timeout: Duration) -> Result<serde_json::Value, String> {
             Ok(serde_json::json!({ "messages": self.0.clone(), "has_more": false }))
         }
+    }
+
+    struct Paged;
+
+    #[async_trait::async_trait]
+    impl crate::requests::Remote for Paged {
+        async fn ask(&self, _app: &Arc<App>, _runner_id: &str, _verb: &str, body: serde_json::Value, _timeout: Duration) -> Result<serde_json::Value, String> {
+            let has_more = body["before"].is_null();
+            let start = if has_more { 100 } else { 0 };
+            let count = if has_more { 100 } else { 20 };
+            let chat_id = body["chat_id"].as_str().unwrap_or("chat");
+            let messages: Vec<Message> = (start..start + count)
+                .map(|i| {
+                    let mut message = Message::new(chat_id, Author::You, Body::text(format!("m{i}")));
+                    message.id = format!("m{i}");
+                    message.created_at = i as f64;
+                    message
+                })
+                .collect();
+            Ok(serde_json::json!({ "messages": messages, "has_more": has_more }))
+        }
+    }
+
+    struct SlowOrigin;
+
+    #[async_trait::async_trait]
+    impl crate::requests::Remote for SlowOrigin {
+        async fn ask(&self, _app: &Arc<App>, _runner_id: &str, _verb: &str, _body: serde_json::Value, _timeout: Duration) -> Result<serde_json::Value, String> {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            Ok(serde_json::json!({ "messages": [], "has_more": true }))
+        }
+    }
+
+    fn origin_chat(app: &Arc<App>) -> String {
+        crate::identity::create(app, Some("Runner".into())).unwrap();
+        let chat = app.state.lock().unwrap().chats[0].meta.id.clone();
+        let mut origin = app.local_device().unwrap();
+        origin.id = "origin".into();
+        origin.is_identity_device = true;
+        {
+            let mut state = app.state.lock().unwrap();
+            state.devices.push(origin);
+            state.device_online.insert("origin".into());
+        }
+        app.store.set_origin_more(&chat, true, None).unwrap();
+        chat
+    }
+
+    #[tokio::test]
+    async fn origin_pages_walk_back_with_a_cursor() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        let chat = origin_chat(app);
+        *app.remote.lock().unwrap() = Arc::new(Paged);
+        let got = ensure_context(app, &chat, 400, Duration::from_secs(2)).await;
+        assert_eq!(got, 120);
+        assert!(app.store.oldest_message(&chat).unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn a_slow_origin_does_not_hold_a_turn_past_its_budget() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        let chat = origin_chat(app);
+        *app.remote.lock().unwrap() = Arc::new(SlowOrigin);
+        let started = std::time::Instant::now();
+        let got = ensure_context(app, &chat, 400, Duration::from_millis(50)).await;
+        assert_eq!(got, 0);
+        assert!(started.elapsed() < Duration::from_secs(1));
     }
 
     #[tokio::test]

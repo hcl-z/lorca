@@ -664,10 +664,14 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
             let wait_ms = params["wait_ms"].as_u64().unwrap_or(600);
             let mut page = app.message_page(&chat_id, before, limit);
             let mut pending = false;
+            // An origin recorded while it was offline is asked again once it is back, at most
+            // every 60 s, or the chat would stay "complete" while its history waits there.
+            let origin_retry = app.store.origin_device(&chat_id).ok().flatten().is_some_and(|device| app.device_is_online(&device))
+                && app.store.origin_checked_at(&chat_id).ok().flatten().is_none_or(|checked| crate::config::now_unix() - checked >= 60);
             // The end of what is here, with more on the relay or an origin: read a page back and
             // look again. Past `wait_ms` the page arrives through `chat.messages.loaded` instead
             // of holding this call.
-            if page.0.len() < limit && app.history_is_partial(&chat_id) {
+            if page.0.len() < limit && (app.history_is_partial(&chat_id) || origin_retry) {
                 let fetch = crate::sync::fetch_older(app.clone(), chat_id.clone());
                 match tokio::time::timeout(std::time::Duration::from_millis(wait_ms), fetch).await {
                     Ok(Ok(())) => page = app.message_page(&chat_id, before, limit),
@@ -677,11 +681,12 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
                     }
                     Err(_) => {
                         pending = true;
+                        let page_before = before.map(str::to_string);
                         let background = app.clone();
                         let id = chat_id.clone();
                         tokio::spawn(async move {
                             if crate::sync::fetch_older(background.clone(), id.clone()).await.is_ok() {
-                                let (messages, has_more) = background.message_page(&id, None, SNAPSHOT_MESSAGES);
+                                let (messages, has_more) = background.message_page(&id, page_before.as_deref(), SNAPSHOT_MESSAGES);
                                 background.emit(crate::events::Event::ChatMessagesLoaded { chat_id: id, messages, has_more });
                             }
                         });

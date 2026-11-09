@@ -522,8 +522,16 @@ type WireRosterChanged struct {
 }
 
 type WireMessagePage struct {
-	Messages []WireMessage `json:"messages"`
-	HasMore  bool          `json:"has_more"`
+	Messages         []WireMessage         `json:"messages"`
+	HasMore          bool                  `json:"has_more"`
+	Pending          bool                  `json:"pending"`
+	HistoryElsewhere *WireHistoryElsewhere `json:"history_elsewhere"`
+}
+
+// WireHistoryElsewhere is the Device that holds a chat's older messages while it is offline.
+type WireHistoryElsewhere struct {
+	DeviceID   string `json:"device_id"`
+	DeviceName string `json:"device_name"`
 }
 
 type WireSearchResults struct {
@@ -1155,6 +1163,9 @@ func ToChat(wire WireChat, existing *Chat) *Chat {
 		chat.LastMessage = ToMessage(*wire.LastMessage)
 	} else if existing != nil {
 		chat.LastMessage = existing.LastMessage
+	}
+	if existing != nil {
+		chat.HistoryElsewhere = existing.HistoryElsewhere
 	}
 	switch {
 	case wire.UnreadCount != nil:

@@ -51,6 +51,9 @@ mock.module("../../modules/lorca-core", () => ({
     }
     if (method === "providers.disconnect") return { providers: [] };
     if (method === "providers.list_models") return params.base_url.includes("unlisted") ? { listed: false } : { listed: true, models: [{ id: "llama4", context_window: 131072 }] };
+    if (method === "chats.messages") {
+      return { messages: [{ id: "old", chat_id: params.chat_id, author: { kind: "you" }, body: { kind: "text", text: "old" }, state: { kind: "complete" }, created_at: 1 }], has_more: false };
+    }
     return method === "bootstrap" ? (heldSnapshot ?? snapshot([])) : null;
   },
 }));
@@ -225,6 +228,13 @@ test("events that arrive while a snapshot is on its way are applied after it", a
   engine.flushStreamedMessages();
   expect(useStore.getState().relayConnected).toBe(true);
   expect(useStore.getState().chats[0].messages.map((m) => m.id)).toEqual(["reply"]);
+});
+
+test("opening a chat with no messages loads its first page", async () => {
+  event({ event: "snapshot", data: snapshot([{ ...chat("open"), has_more: true }]) });
+  await flush();
+  await engine.loadOlder("open");
+  expect(useStore.getState().chats.find((c) => c.id === "open")?.messages.map((m) => m.id)).toEqual(["old"]);
 });
 
 function command(state: CommandRun["state"], session_id?: string, id = "call"): Message {

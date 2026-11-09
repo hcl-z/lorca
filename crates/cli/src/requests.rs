@@ -151,10 +151,13 @@ fn history_page(app: &Arc<App>, body: &Value) -> Result<Value, String> {
         .store
         .page_before(chat_id, before.as_ref().map(|(sort_at, id)| (*sort_at, id.as_str())), limit)
         .map_err(|error| error.to_string())?;
+    let total = messages.len();
     let mut out = Vec::new();
     let mut bytes = 0usize;
     for message in messages {
-        let value = json!(message.for_app());
+        // The full message: a turn's context needs tool arguments and results, while the apps
+        // trim their display themselves.
+        let value = json!(message);
         let size = serde_json::to_vec(&value).map(|bytes| bytes.len()).unwrap_or(0);
         if !out.is_empty() && bytes + size > max_bytes {
             break;
@@ -162,7 +165,7 @@ fn history_page(app: &Arc<App>, body: &Value) -> Result<Value, String> {
         bytes += size;
         out.push(value);
     }
-    Ok(json!({ "messages": out, "has_more": has_more }))
+    Ok(json!({ "messages": out, "has_more": has_more || out.len() < total }))
 }
 
 async fn answer(app: &Arc<App>, from: &str, request: &Request) -> Result<Value, String> {

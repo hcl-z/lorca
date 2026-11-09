@@ -154,6 +154,16 @@ class Engine {
     if (entries.length) upsertMessages(entries);
   }
 
+  private clearPendingMessages() {
+    if (this.pendingFlush) clearTimeout(this.pendingFlush);
+    this.pendingFlush = null;
+    this.pendingMessages.clear();
+  }
+
+  private dropPendingChat(chatId: string) {
+    for (const [id, entry] of this.pendingMessages) if (entry.message.chat_id === chatId) this.pendingMessages.delete(id);
+  }
+
   private receive(frame: core.Frame) {
     if (this.bootstraps) this.held.push(frame);
     else this.apply(frame.event, frame.data);
@@ -214,6 +224,7 @@ class Engine {
         useStore.setState({ attention: event.view });
         break;
       case "snapshot":
+        this.clearPendingMessages();
         replaceSnapshot(event.snapshot);
         saveCachedSnapshot(useStore.getState);
         break;
@@ -240,20 +251,28 @@ class Engine {
         this.queueMessage(event.message, event.kind === "message.added");
         break;
       case "message.removed":
+        this.pendingMessages.delete(event.messageId);
         removeMessage(event.chatId, event.messageId);
         break;
       // A page that `chats.messages` left pending: insert it and keep the chat's page state.
       case "chat.messages.loaded": {
         const chat = chatById(event.chatId);
-        if (!chat) break;
-        const known = new Set(chat.messages.map((m) => m.id));
-        const messages = [...event.messages.filter((m: Message) => !known.has(m.id)), ...chat.messages];
-        useStore.setState((s) => ({
-          chats: s.chats.map((c) => (c.id === event.chatId ? { ...c, messages, has_more: event.hasMore } : c)),
-        }));
+        if (chat) {
+          const known = new Set(chat.messages.map((m) => m.id));
+          const first = chat.messages[0];
+          const messages = [
+            ...event.messages.filter((m: Message) => !known.has(m.id) && (!first || m.created_at <= first.created_at)),
+            ...chat.messages,
+          ];
+          useStore.setState((s) => ({
+            chats: s.chats.map((c) => (c.id === event.chatId ? { ...c, messages, has_more: event.hasMore } : c)),
+          }));
+        }
+        this.loadingOlder.delete(event.chatId);
         break;
       }
       case "chat.removed":
+        this.dropPendingChat(event.chatId);
         removeChat(event.chatId);
         break;
       case "job.started":
@@ -393,24 +412,39 @@ class Engine {
   }
 
   /// The page of messages before the chat's first one, as the transcript nears its top. One
-  /// request per chat at a time.
+  /// request per chat at a time. With an empty chat it asks for the first page.
   async loadOlder(chatId: string): Promise<void> {
-    const first = chatById(chatId)?.messages[0];
-    if (!first || !chatById(chatId)?.has_more || this.loadingOlder.has(chatId)) return;
+    const chat = chatById(chatId);
+    const first = chat?.messages[0];
+    if (!chat?.has_more || this.loadingOlder.has(chatId)) return;
     this.loadingOlder.add(chatId);
+    let pending = false;
     try {
-      const page = await core.request<{ messages: Message[]; has_more: boolean }>("chats.messages", { chat_id: chatId, before: first.id });
+      const page = await core.request<{
+        messages: Message[];
+        has_more: boolean;
+        pending?: boolean;
+        history_elsewhere?: { device_id: string; device_name: string };
+      }>("chats.messages", first ? { chat_id: chatId, before: first.id } : { chat_id: chatId });
+      pending = !!page.pending;
       useStore.setState((s) => ({
         chats: s.chats.map((c) => {
-          if (c.id !== chatId || c.messages[0]?.id !== first.id) return c;
+          if (c.id !== chatId || (first && c.messages[0]?.id !== first.id)) return c;
           const known = new Set(c.messages.map((m) => m.id));
-          return { ...c, messages: [...page.messages.filter((m) => !known.has(m.id)), ...c.messages], has_more: page.has_more };
+          return {
+            ...c,
+            messages: [...page.messages.filter((m) => !known.has(m.id)), ...c.messages],
+            has_more: page.has_more,
+            history_elsewhere: page.history_elsewhere,
+          };
         }),
       }));
     } catch (error) {
       console.warn("loading older messages", error instanceof Error ? error.message : error);
     } finally {
-      this.loadingOlder.delete(chatId);
+      // A page still on its way arrives through `chat.messages.loaded`; the chat stays marked so
+      // a fast scroll does not ask again.
+      if (!pending) this.loadingOlder.delete(chatId);
     }
   }
 

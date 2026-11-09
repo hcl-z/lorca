@@ -871,6 +871,8 @@ export interface Chat extends ChatMeta {
   has_more?: boolean;
   /// The list's preview from the roster, before the chat's page has been fetched.
   last_message?: Message;
+  /// More history exists on a Device that is offline right now.
+  history_elsewhere?: { device_id: string; device_name: string };
   unread_count: number;
   usage?: ChatUsage;
 }
