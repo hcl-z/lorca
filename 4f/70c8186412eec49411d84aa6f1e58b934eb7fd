@@ -1,0 +1,30 @@
+ARCHITECTURE.md
+  s_3ba4960df8f6a6::t_55a4f10670f21b 77
+  s_3ba4960df8f6a6::t_7a96b65dbefce5 79
+  s_3ba4960df8f6a6::t_d827a0476e6c67 74-75
+  s_3ba4960df8f6a6::t_95ff225084682e 76
+  s_3ba4960df8f6a6::t_1e48c159b778be 82
+docs/architecture/history.md
+  s_3ba4960df8f6a6::t_d3884b5e3fd6b3 1-53
+docs/architecture/phone-app.md
+  s_3ba4960df8f6a6::t_073669052467fd 34
+  s_3ba4960df8f6a6::t_6711288fe9739d 33
+docs/architecture/relay.md
+  s_3ba4960df8f6a6::t_8b27ef54016114 65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.52-trip",
+  "base_commit_sha": "4f70c8186412eec49411d84aa6f1e58b934eb7fd",
+  "prompts": {},
+  "sessions": {
+    "s_3ba4960df8f6a6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c562669b-7d97-4140-b9e7-45d30e608e16",
+        "model": "ada-cli-golang-ctripcorp-com/claude-deepseek-v4.1-flash"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
