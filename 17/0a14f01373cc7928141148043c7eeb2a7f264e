@@ -1,0 +1,24 @@
+crates/cli/src/local_store.rs
+  s_3ba4960df8f6a6::t_65a6cdf6edc537 2056-2080
+  s_3ba4960df8f6a6::t_0db952a48b6d91 1082-1146
+crates/cli/src/model.rs
+  s_3ba4960df8f6a6::t_b291b8168cc2aa 1117-1119
+crates/cli/src/app.rs
+  s_3ba4960df8f6a6::t_f707d34a46bff9 341-345
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.52-trip",
+  "base_commit_sha": "170a14f01373cc7928141148043c7eeb2a7f264e",
+  "prompts": {},
+  "sessions": {
+    "s_3ba4960df8f6a6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c562669b-7d97-4140-b9e7-45d30e608e16",
+        "model": "ada-cli-golang-ctripcorp-com/claude-deepseek-v4.1-flash"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
