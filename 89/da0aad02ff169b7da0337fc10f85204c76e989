@@ -1,0 +1,35 @@
+desktop/model/models.go
+  s_3ba4960df8f6a6::t_3d65b0b5f22918 2283-2284
+desktop/model/chat_preview_test.go
+  s_3ba4960df8f6a6::t_9fa7c3b5bfa745 1-11
+mobile/src/core/model.ts
+  s_3ba4960df8f6a6::t_9a8ded8ff93467 870-871
+mobile/src/core/store.ts
+  s_3ba4960df8f6a6::t_d34af896a2a859 295
+  s_3ba4960df8f6a6::t_4cdb92734d1a70 305
+mobile/src/ui/format.ts
+  s_3ba4960df8f6a6::t_988977fa8f0440 168
+desktop/model/store.go
+  s_3ba4960df8f6a6::t_1e57ab85e394f3 942-943
+desktop/model/wire.go
+  s_3ba4960df8f6a6::t_442696b56b7066 351
+  s_3ba4960df8f6a6::t_fa2eddfa5060d3 1154-1158
+mobile/src/ui/format.test.ts
+  s_3ba4960df8f6a6::t_b21c3560f58015 1-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.52-trip",
+  "base_commit_sha": "89da0aad02ff169b7da0337fc10f85204c76e989",
+  "prompts": {},
+  "sessions": {
+    "s_3ba4960df8f6a6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c562669b-7d97-4140-b9e7-45d30e608e16",
+        "model": "ada-cli-golang-ctripcorp-com/claude-deepseek-v4.1-flash"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
