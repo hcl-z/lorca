@@ -351,6 +351,26 @@ pub async fn fetch_older(app: Arc<App>, chat_id: String) -> Result<(), RelayErro
     Ok(())
 }
 
+/// Fills a chat's local page up to `max` before a turn reads it: relay pages first, then an
+/// origin Device's, within `budget`. Returns how many messages the chat has here.
+pub async fn ensure_context(app: &Arc<App>, chat_id: &str, max: usize, budget: std::time::Duration) -> usize {
+    let started = std::time::Instant::now();
+    let count = |app: &Arc<App>| app.store.page(chat_id, None, max).map(|(messages, _)| messages.len()).unwrap_or(0);
+    loop {
+        let here = count(app);
+        if here >= max || !app.history_is_partial(chat_id) || started.elapsed() >= budget {
+            return here;
+        }
+        if fetch_older(app.clone(), chat_id.to_string()).await.is_err() {
+            return here;
+        }
+        let after = count(app);
+        if after <= here {
+            return after;
+        }
+    }
+}
+
 /// One chat at a time reads backwards, so two askers do not both take the same page.
 static READING_BACK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
@@ -1388,6 +1408,41 @@ mod tests {
         prepare_first_screen(app);
         assert_eq!(app.store.history_before(&chat_id).unwrap(), Some(i64::MAX));
         assert!(app.history_is_partial(&chat_id));
+    }
+
+    struct Origin(Vec<Message>);
+
+    #[async_trait::async_trait]
+    impl crate::requests::Remote for Origin {
+        async fn ask(&self, _app: &Arc<App>, _runner_id: &str, _verb: &str, _body: serde_json::Value, _timeout: Duration) -> Result<serde_json::Value, String> {
+            Ok(serde_json::json!({ "messages": self.0.clone(), "has_more": false }))
+        }
+    }
+
+    #[tokio::test]
+    async fn a_turn_fills_its_context_to_the_cap_when_pages_arrive_in_time() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        crate::identity::create(app, Some("Runner".into())).unwrap();
+        let chat = app.state.lock().unwrap().chats[0].meta.id.clone();
+        let mut origin = app.local_device().unwrap();
+        origin.id = "origin".into();
+        origin.is_identity_device = true;
+        {
+            let mut state = app.state.lock().unwrap();
+            state.devices.push(origin);
+            state.device_online.insert("origin".into());
+        }
+        app.store.set_origin_more(&chat, true, None).unwrap();
+        let mut messages = Vec::new();
+        for i in 1..=120 {
+            let mut message = Message::new(&chat, Author::You, Body::text(format!("m{i}")));
+            message.id = format!("m{i}");
+            messages.push(message);
+        }
+        *app.remote.lock().unwrap() = Arc::new(Origin(messages));
+        let got = ensure_context(app, &chat, 400, Duration::from_secs(2)).await;
+        assert_eq!(got, 120);
     }
 
     /// Once a newer account key is here, a message under an older one is history: read on a
