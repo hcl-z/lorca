@@ -588,6 +588,37 @@ impl LocalStore {
         Ok((messages, has_more))
     }
 
+    /// A page of messages strictly before the `(sort_at, id)` cursor, oldest first, plus whether
+    /// more lie below it. The cursor travels between Devices, so it is by time and id, not by
+    /// this Device's positions.
+    pub fn page_before(&self, chat_id: &str, before: Option<(f64, &str)>, limit: usize) -> anyhow::Result<(Vec<Message>, bool)> {
+        let connection = self.connection.lock().unwrap();
+        let mut messages = match before {
+            Some((sort_at, id)) => {
+                let mut statement = connection.prepare(
+                    "SELECT id, chat_id, position, message_json FROM messages
+                     WHERE chat_id = ?1 AND (sort_at < ?2 OR (sort_at = ?2 AND id < ?3))
+                     ORDER BY sort_at DESC, id DESC LIMIT ?4",
+                )?;
+                let page = collect_messages(statement.query_map(params![chat_id, sort_at, id, limit as i64 + 1], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))?)?;
+                page
+            }
+            None => {
+                let mut statement = connection.prepare(
+                    "SELECT id, chat_id, position, message_json FROM messages WHERE chat_id = ?1 ORDER BY sort_at DESC, id DESC LIMIT ?2",
+                )?;
+                let page = collect_messages(statement.query_map(params![chat_id, limit as i64 + 1], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))?)?;
+                page
+            }
+        };
+        let has_more = messages.len() > limit;
+        if has_more {
+            messages.pop();
+        }
+        messages.reverse();
+        Ok((messages, has_more))
+    }
+
     /// The newest `limit` messages after `message_id`, oldest first, and how many of the ones
     /// between it and them were left out.
     pub fn newest_after(&self, chat_id: &str, message_id: &str, limit: usize) -> anyhow::Result<(Vec<Message>, usize)> {
@@ -2085,6 +2116,20 @@ mod tests {
         }
         assert_eq!(store.prune_outbox_to_window(30).unwrap(), 10);
         assert_eq!(store.outbox().unwrap().len(), 30);
+    }
+
+    #[test]
+    fn page_before_walks_back_by_sort_time_and_id() {
+        let scratch = scratch();
+        let store = &scratch.0;
+        for i in 1..=5 {
+            let mut message = Message::new("chat", Author::You, Body::text(format!("m{i}")));
+            message.id = format!("m{i}");
+            message.created_at = i as f64;
+            store.upsert(&message).unwrap();
+        }
+        let (page, _more) = store.page_before("chat", Some((4.0, "m4")), 2).unwrap();
+        assert_eq!(page.iter().map(|message| message.id.as_str()).collect::<Vec<_>>(), ["m2", "m3"]);
     }
 
     #[test]
