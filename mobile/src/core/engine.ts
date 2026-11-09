@@ -220,6 +220,17 @@ class Engine {
       case "message.removed":
         removeMessage(event.chatId, event.messageId);
         break;
+      // A page that `chats.messages` left pending: insert it and keep the chat's page state.
+      case "chat.messages.loaded": {
+        const chat = chatById(event.chatId);
+        if (!chat) break;
+        const known = new Set(chat.messages.map((m) => m.id));
+        const messages = [...event.messages.filter((m: Message) => !known.has(m.id)), ...chat.messages];
+        useStore.setState((s) => ({
+          chats: s.chats.map((c) => (c.id === event.chatId ? { ...c, messages, has_more: event.hasMore } : c)),
+        }));
+        break;
+      }
       case "chat.removed":
         removeChat(event.chatId);
         break;

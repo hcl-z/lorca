@@ -1987,6 +1987,15 @@ impl App {
             return;
         }
         let _order = self.message_order.lock().unwrap();
+        // An edit of history this Device never loaded belongs to the origin that holds it; it
+        // must not append an old message to the end of the transcript.
+        if self.message(&message.chat_id, &message.id).is_none() && self.history_is_partial(&message.chat_id) {
+            if let Ok(Some(oldest)) = self.store.oldest_sort_at(&message.chat_id) {
+                if message.promoted_at.unwrap_or(message.created_at) < oldest {
+                    return;
+                }
+            }
+        }
         // A phone never runs a bot and never rebuilds model context. Keeping only the app view
         // avoids duplicating large tool arguments and results on every mobile Device.
         #[cfg(feature = "runner")]
@@ -2080,7 +2089,7 @@ impl App {
 
     /// True when the relay holds older messages of this chat than this Device has.
     pub fn history_is_partial(&self, chat_id: &str) -> bool {
-        self.store.history_before(chat_id).ok().flatten().is_some()
+        self.store.history_before(chat_id).ok().flatten().is_some() || self.store.origin_more(chat_id).unwrap_or(false)
     }
 
     pub fn message_page(&self, chat_id: &str, before: Option<&str>, limit: usize) -> (Vec<Message>, bool) {

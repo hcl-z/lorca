@@ -585,6 +585,15 @@ func (s *Store) handle(event WireEvent) {
 		delete(s.commandStarts, event.MessageID)
 		s.emit(Event{Kind: EventMessageRemoved, ChatID: event.ChatID, MessageID: event.MessageID})
 		s.noteOutput(nil, event.MessageID, event.ChatID)
+	case ChatMessagesEvent:
+		chat := s.Chat(event.ChatID)
+		if chat == nil {
+			return
+		}
+		for _, message := range event.Messages {
+			s.upsert(ToMessage(message), event.ChatID)
+		}
+		chat.HasMore = event.HasMore
 	case ChatRemovedEvent:
 		s.Chats = slices.DeleteFunc(slices.Clone(s.Chats), func(c *Chat) bool { return c.ID == event.ChatID })
 		s.runningJobs = slices.DeleteFunc(s.runningJobs, func(job runningJob) bool { return job.chatID == event.ChatID })

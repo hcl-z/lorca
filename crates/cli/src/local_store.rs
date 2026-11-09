@@ -159,6 +159,12 @@ impl LocalStore {
                  chat_id      TEXT PRIMARY KEY NOT NULL,
                  before_place INTEGER NOT NULL
              );
+             CREATE TABLE IF NOT EXISTS chat_history_origin (
+                 chat_id    TEXT PRIMARY KEY NOT NULL,
+                 more       INTEGER NOT NULL,
+                 device     TEXT,
+                 checked_at INTEGER NOT NULL
+             );
              CREATE TABLE IF NOT EXISTS messages (
                  id            TEXT PRIMARY KEY NOT NULL,
                  chat_id       TEXT NOT NULL,
@@ -419,8 +425,38 @@ impl LocalStore {
         Ok(())
     }
 
-    /// Puts messages read backwards from the relay ahead of everything the chat has here.
-    /// `newest_first` is the page in that order, so each lands before the one after it. One
+    pub fn origin_more(&self, chat_id: &str) -> anyhow::Result<bool> {
+        let connection = self.connection.lock().unwrap();
+        let more: Option<i64> = connection
+            .query_row("SELECT more FROM chat_history_origin WHERE chat_id = ?1", [chat_id], |row| row.get(0))
+            .optional()?;
+        Ok(more.unwrap_or(0) != 0)
+    }
+
+    pub fn set_origin_more(&self, chat_id: &str, more: bool, device: Option<&str>) -> anyhow::Result<()> {
+        let connection = self.connection.lock().unwrap();
+        connection.execute(
+            "INSERT INTO chat_history_origin (chat_id, more, device, checked_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(chat_id) DO UPDATE SET more = excluded.more, device = excluded.device, checked_at = excluded.checked_at",
+            params![chat_id, more as i64, device, crate::config::now_secs()],
+        )?;
+        Ok(())
+    }
+
+    pub fn origin_device(&self, chat_id: &str) -> anyhow::Result<Option<String>> {
+        let connection = self.connection.lock().unwrap();
+        Ok(connection
+            .query_row("SELECT device FROM chat_history_origin WHERE chat_id = ?1", [chat_id], |row| row.get(0))
+            .optional()?
+            .flatten())
+    }
+
+    pub fn oldest_sort_at(&self, chat_id: &str) -> anyhow::Result<Option<f64>> {
+        let connection = self.connection.lock().unwrap();
+        Ok(connection.query_row("SELECT MIN(sort_at) FROM messages WHERE chat_id = ?1", [chat_id], |row| row.get(0))?)
+    }
+
+    /// Puts messages read backwards from the relay ahead of everything the chat has here.    /// `newest_first` is the page in that order, so each lands before the one after it. One
     /// that is here already (a late edit arrived through the log and went to the end) moves
     /// to its place.
     pub fn insert_older(&self, newest_first: &[Message]) -> anyhow::Result<()> {

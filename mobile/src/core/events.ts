@@ -21,6 +21,7 @@ export type CoreEvent =
   | { kind: "roster.changed"; roster: Roster }
   | { kind: "message.added" | "message.updated"; message: Message }
   | { kind: "message.removed"; chatId: string; messageId: string }
+  | { kind: "chat.messages.loaded"; chatId: string; messages: Message[]; hasMore: boolean }
   | { kind: "chat.removed"; chatId: string }
   | { kind: "job.started" | "job.finished"; job: JobFacts }
   | { kind: "job.thinking"; chatId: string; botId: string }
@@ -98,6 +99,10 @@ function decode(name: string, data: unknown): CoreEvent | null {
     case "message.removed": {
       const fields = object(data, name);
       return { kind: name, chatId: text(fields, "chat_id"), messageId: text(fields, "message_id") };
+    }
+    case "chat.messages.loaded": {
+      const fields = object(data, name);
+      return { kind: name, chatId: text(fields, "chat_id"), messages: list<Message>(fields, "messages"), hasMore: fields["has_more"] === true };
     }
     case "chat.removed":
       return { kind: name, chatId: text(object(data, name), "chat_id") };

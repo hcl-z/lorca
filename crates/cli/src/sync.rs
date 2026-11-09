@@ -263,7 +263,7 @@ async fn pull_keyrings(app: &Arc<App>, url: &str, token: &str, machine_file: &cr
 /// Everything a Device polls for but the messages.
 const NOT_CHAT_KINDS: &str = "roster,task,project_context,playbook,machine,credentials,review,handoff,attention,job,event,job_cancel,job_result,request,response,key";
 /// Messages to a page when reading a chat backwards.
-const OLDER_PAGE: usize = 100;
+pub(crate) const OLDER_PAGE: usize = 100;
 
 /// A Device's first sync. The log holds every message of the account, so it is not replayed:
 /// the Device takes the rest of the log, which slots keep short, then the newest messages of
@@ -325,6 +325,30 @@ async fn first_sync_quietly(app: &Arc<App>, url: &str, token: &str, machine_file
     prepare_first_screen(app);
     app.state.lock().unwrap().last_seq = head.unwrap_or(0);
     Ok(FirstSync::Done)
+}
+
+/// Fetches one older page for a chat: from the relay while it has more, then from an origin
+/// Device. Records whether the origin holds more, so `chats.messages` knows where history ends.
+pub async fn fetch_older(app: Arc<App>, chat_id: String) -> Result<(), RelayError> {
+    let local = |error: anyhow::Error| RelayError { status: None, message: error.to_string() };
+    if app.store.history_before(&chat_id).map_err(local)?.is_some() {
+        let url = app.relay_url().ok_or_else(|| RelayError { status: None, message: "No relay configured".into() })?;
+        let machine_file = app.machine_file().ok_or_else(|| RelayError { status: None, message: "This Device is not paired".into() })?;
+        let machine = machine_file.machine().map_err(|error| RelayError { status: None, message: error.to_string() })?;
+        let token = token_or_register(&app, &url, &machine).await?;
+        older_messages_from(&app, &url, &token, &chat_id).await?;
+    }
+    if app.store.history_before(&chat_id).map_err(local)?.is_none() {
+        match crate::history::fetch_origin_page(&app, &chat_id, None).await {
+            Ok(Some(page)) => app.store.set_origin_more(&chat_id, page.has_more, None).map_err(local)?,
+            Ok(None) => {
+                let online = crate::history::origin_candidates(&app, &chat_id).into_iter().find(|id| app.device_is_online(id));
+                app.store.set_origin_more(&chat_id, false, online.as_deref()).map_err(local)?;
+            }
+            Err(error) => tracing::warn!(%error, %chat_id, "fetching an origin page"),
+        }
+    }
+    Ok(())
 }
 
 /// One chat at a time reads backwards, so two askers do not both take the same page.

@@ -661,20 +661,48 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
             }
             let limit = params["limit"].as_u64().unwrap_or(SNAPSHOT_MESSAGES as u64).clamp(1, 200) as usize;
             let before = params["before"].as_str();
+            let wait_ms = params["wait_ms"].as_u64().unwrap_or(600);
             let mut page = app.message_page(&chat_id, before, limit);
-            // The end of what is here, with more on the relay: read a page back and look again.
-            // A relay that cannot be reached ends the chat here for now.
+            let mut pending = false;
+            // The end of what is here, with more on the relay or an origin: read a page back and
+            // look again. Past `wait_ms` the page arrives through `chat.messages.loaded` instead
+            // of holding this call.
             if page.0.len() < limit && app.history_is_partial(&chat_id) {
-                match crate::sync::older_messages(app, &chat_id).await {
-                    Ok(_) => page = app.message_page(&chat_id, before, limit),
-                    Err(error) => {
+                let fetch = crate::sync::fetch_older(app.clone(), chat_id.clone());
+                match tokio::time::timeout(std::time::Duration::from_millis(wait_ms), fetch).await {
+                    Ok(Ok(())) => page = app.message_page(&chat_id, before, limit),
+                    Ok(Err(error)) => {
                         tracing::warn!(%error, %chat_id, "fetching older messages");
                         page.1 = false;
+                    }
+                    Err(_) => {
+                        pending = true;
+                        let background = app.clone();
+                        let id = chat_id.clone();
+                        tokio::spawn(async move {
+                            if crate::sync::fetch_older(background.clone(), id.clone()).await.is_ok() {
+                                let (messages, has_more) = background.message_page(&id, None, SNAPSHOT_MESSAGES);
+                                background.emit(crate::events::Event::ChatMessagesLoaded { chat_id: id, messages, has_more });
+                            }
+                        });
                     }
                 }
             }
             let (messages, has_more) = page;
-            Ok(json!({ "messages": messages, "has_more": has_more }))
+            let mut out = json!({ "messages": messages, "has_more": has_more });
+            if pending {
+                out["pending"] = json!(true);
+            }
+            if !has_more {
+                if let Ok(Some(device)) = app.store.origin_device(&chat_id) {
+                    if !app.device_is_online(&device) {
+                        if let Some(known) = app.device(&device) {
+                            out["history_elsewhere"] = json!({ "device_id": known.id, "device_name": known.name });
+                        }
+                    }
+                }
+            }
+            Ok(out)
         }
         "chats.mark_read" => {
             app.mark_read(&string(&params, "chat_id")?, true);
@@ -1116,5 +1144,90 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
         }
 
         other => Err(format!("unknown method {other}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+
+    struct Scratch(Arc<App>, std::path::PathBuf);
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.1);
+        }
+    }
+
+    fn scratch() -> Scratch {
+        let home = std::env::temp_dir().join(format!("lorca-api-{}", uuid::Uuid::new_v4()));
+        Scratch(App::load(Config { home: home.clone(), port: 0 }).unwrap(), home)
+    }
+
+    struct Slow(Message);
+
+    #[async_trait::async_trait]
+    impl crate::requests::Remote for Slow {
+        async fn ask(&self, _app: &Arc<App>, _runner_id: &str, _verb: &str, _body: Value, _timeout: std::time::Duration) -> Result<Value, String> {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            Ok(json!({ "messages": [json!(self.0.clone())], "has_more": false }))
+        }
+    }
+
+    #[tokio::test]
+    async fn a_local_chat_answers_at_once_without_pending() {
+        let scratch = scratch();
+        let app = &scratch.0;
+        crate::identity::create(app, Some("Runner".into())).unwrap();
+        let chat = app.state.lock().unwrap().chats[0].meta.id.clone();
+        app.upsert_message(Message::new(&chat, Author::You, Body::text("hello")), false);
+        let answer = dispatch(app, "chats.messages", json!({ "chat_id": chat, "wait_ms": 0 })).await.unwrap();
+        assert_eq!(answer["messages"].as_array().unwrap().len(), 1);
+        assert!(answer.get("pending").is_none());
+    }
+
+    #[tokio::test]
+    async fn a_remote_page_returns_local_with_pending_past_the_budget() {
+        let scratch = scratch();
+        let app = &scratch.0;
+        crate::identity::create(app, Some("Runner".into())).unwrap();
+        let chat = app.state.lock().unwrap().chats[0].meta.id.clone();
+        let mut origin = app.local_device().unwrap();
+        origin.id = "origin".into();
+        origin.is_identity_device = true;
+        {
+            let mut state = app.state.lock().unwrap();
+            state.devices.push(origin);
+            state.device_online.insert("origin".into());
+        }
+        app.store.set_origin_more(&chat, true, None).unwrap();
+        *app.remote.lock().unwrap() = Arc::new(Slow(Message::new(&chat, Author::You, Body::text("older"))));
+        let answer = dispatch(app, "chats.messages", json!({ "chat_id": chat, "wait_ms": 0 })).await.unwrap();
+        assert_eq!(answer["pending"], true);
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    #[test]
+    fn a_late_edit_outside_the_local_window_does_not_append() {
+        let scratch = scratch();
+        let app = &scratch.0;
+        crate::identity::create(app, Some("Runner".into())).unwrap();
+        let chat = app.state.lock().unwrap().chats[0].meta.id.clone();
+        for i in 1..=40 {
+            let mut message = Message::new(&chat, Author::You, Body::text(format!("m{i}")));
+            message.id = format!("m{i}");
+            app.upsert_message(message, false);
+        }
+        app.store.set_history_before(&chat, Some(i64::MAX)).unwrap();
+        let mut old = Message::new(&chat, Author::You, Body::text("old"));
+        old.id = "outside".into();
+        old.created_at = 0.0;
+        app.upsert_message(old, false);
+        assert!(app.message(&chat, "outside").is_none());
+    }
+
+    #[test]
+    fn an_old_relay_is_still_paged_from_its_history_place() {
+        assert_eq!(crate::sync::OLDER_PAGE, 100);
     }
 }

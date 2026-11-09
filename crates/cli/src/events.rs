@@ -29,6 +29,9 @@ pub enum Event {
     MessageUpdated { chat_id: String, message: Message },
     #[serde(rename = "message.removed")]
     MessageRemoved { chat_id: String, message_id: String },
+    /// A page fetched after `chats.messages` answered with `pending`.
+    #[serde(rename = "chat.messages.loaded")]
+    ChatMessagesLoaded { chat_id: String, messages: Vec<Message>, has_more: bool },
     #[serde(rename = "chat.removed")]
     ChatRemoved { chat_id: String },
     #[serde(rename = "projects.changed")]
