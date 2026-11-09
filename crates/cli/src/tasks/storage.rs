@@ -106,7 +106,7 @@ impl LocalStore {
                 )?;
             }
             for item in outbox {
-                crate::local_store::queue_outbox_tx(&tx, item)?;
+                crate::local_store::queue_outbox_tx(&tx, item, 1)?;
             }
             if let Some((id, ciphertext)) = local_run {
                 tx.execute(

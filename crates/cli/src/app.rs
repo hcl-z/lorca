@@ -752,12 +752,17 @@ impl App {
     }
 
     pub fn queue_blob(&self, item: OutboxItem) {
+        self.queue_blob_with_priority(item, 1);
+    }
+
+    /// Queues a blob at `0` (the first screen), `1` (live), or `2` (backfill).
+    pub fn queue_blob_with_priority(&self, item: OutboxItem, priority: u8) {
         let snapshot = {
             let mut state = self.state.lock().unwrap();
             remember_applied(&mut state, &item.id);
             state.clone()
         };
-        if let Err(error) = self.store.queue_outbox_with_state(&item, &snapshot) {
+        if let Err(error) = self.store.queue_outbox_with_state_priority(&item, &snapshot, priority) {
             self.state.lock().unwrap().applied_blob_ids.retain(|id| id != &item.id);
             tracing::error!(%error, kind = %item.kind, "queueing relay blob");
             return;
