@@ -1,0 +1,23 @@
+crates/cli/src/sync.rs
+  s_3ba4960df8f6a6::t_8deeae0e603670 292-300
+  s_3ba4960df8f6a6::t_8c4fafb1719ff5 1387
+  s_3ba4960df8f6a6::t_c2ccf8b0cfb68c 325
+  s_3ba4960df8f6a6::t_7483612d085296 392-393
+  s_3ba4960df8f6a6::t_428a78bd897b96 1358-1368
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.52-trip",
+  "base_commit_sha": "222d3305cd4edfba20063db34e1dc9fc8fcc2535",
+  "prompts": {},
+  "sessions": {
+    "s_3ba4960df8f6a6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c562669b-7d97-4140-b9e7-45d30e608e16",
+        "model": "ada-cli-golang-ctripcorp-com/claude-deepseek-v4.1-flash"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
