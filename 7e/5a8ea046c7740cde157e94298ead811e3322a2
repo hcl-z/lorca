@@ -1,0 +1,74 @@
+crates/cli/src/local_store.rs
+  s_3ba4960df8f6a6::t_f8091c96853534 1287-1320,1322-1323
+  s_3ba4960df8f6a6::t_48228e060a749a 1321
+  s_3ba4960df8f6a6::t_684c392efb17cc 2229-2289
+  s_3ba4960df8f6a6::t_8bd3442d88c5f1 459-479
+  s_3ba4960df8f6a6::t_192894fcafd8f6 1225
+  s_3ba4960df8f6a6::t_aea2663eb90929 441
+  s_3ba4960df8f6a6::t_3dc493aa7a7fee 1213
+mobile/src/core/model.ts
+  s_3ba4960df8f6a6::t_a7eeeda848ccb3 874-875
+mobile/src/core/reading.test.ts
+  s_3ba4960df8f6a6::t_dedf90f8174955 54-56
+  s_3ba4960df8f6a6::t_a2d34d5c79a558 233-239
+crates/cli/src/requests.rs
+  s_3ba4960df8f6a6::t_dbb5f888be3383 154,158-160,168
+desktop/chat.go
+  s_3ba4960df8f6a6::t_b9c7a7710b9177 158-160
+mobile/src/ui/transcriptRows.test.ts
+  s_3ba4960df8f6a6::t_987e45280ded53 51-58
+  s_3ba4960df8f6a6::t_53addf782369e4 46
+mobile/src/core/engine.ts
+  s_3ba4960df8f6a6::t_cd45cde95612e5 157-166
+  s_3ba4960df8f6a6::t_e90ae7d4fc74e1 227
+  s_3ba4960df8f6a6::t_4c121d7ebb81ec 254,260-271,275
+  s_3ba4960df8f6a6::t_99582b35a64523 415,417-419,421,423-429,432,434-439,445-447
+crates/cli/src/api.rs
+  s_3ba4960df8f6a6::t_aea2663eb90929 670
+  s_3ba4960df8f6a6::t_3c895dcbb9fb00 667-669,674,684,689
+crates/cli/src/app.rs
+  s_3ba4960df8f6a6::t_4a7e2a58c6b8ac 532,973
+desktop/model/store.go
+  s_3ba4960df8f6a6::t_154dc2cb11f055 589,594-610
+  s_3ba4960df8f6a6::t_502576d8ef538a 2659,2662-2665,2667-2670,2672,2674-2676,2678-2685,2700-2704
+mobile/src/ui/transcriptRows.ts
+  s_3ba4960df8f6a6::t_6117049942b7a5 38-40
+  s_3ba4960df8f6a6::t_9c68efcaef04aa 75-81
+  s_3ba4960df8f6a6::t_fa7e91cc8592e0 71-74,82-84
+  s_3ba4960df8f6a6::t_05a3ddf46b2836 187-190,193
+crates/cli/src/sync.rs
+  s_3ba4960df8f6a6::t_dbaf144907c584 364,367-368,371-373
+  s_3ba4960df8f6a6::t_7dfb02867a70b3 1265-1271
+  s_3ba4960df8f6a6::t_87abc67386af53 1451,1454
+  s_3ba4960df8f6a6::t_5e23c820890cda 613
+  s_3ba4960df8f6a6::t_73fb66e7d7980c 1443-1450,1452-1453,1455-1511
+  s_3ba4960df8f6a6::t_1eb0ff8ce34012 342-343,346-349
+  s_3ba4960df8f6a6::t_abd97e9c943a02 404,414-420
+mobile/app/(main)/chat/[id].tsx
+  s_3ba4960df8f6a6::t_166aeea720aaea 312
+  s_3ba4960df8f6a6::t_aacc299883c28d 80
+  s_3ba4960df8f6a6::t_fbd3e9268715ce 304
+  s_3ba4960df8f6a6::t_bc93ba0238ceef 639-641
+desktop/model/wire.go
+  s_3ba4960df8f6a6::t_8178ab08ac73cf 525-534
+  s_3ba4960df8f6a6::t_de8ec7897da239 1167-1169
+desktop/model/models.go
+  s_3ba4960df8f6a6::t_480c4a17a95104 2309-2313
+  s_3ba4960df8f6a6::t_e82e0ea13a3c87 2285-2286
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.52-trip",
+  "base_commit_sha": "7e5a8ea046c7740cde157e94298ead811e3322a2",
+  "prompts": {},
+  "sessions": {
+    "s_3ba4960df8f6a6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c562669b-7d97-4140-b9e7-45d30e608e16",
+        "model": "ada-cli-golang-ctripcorp-com/claude-deepseek-v4.1-flash"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
