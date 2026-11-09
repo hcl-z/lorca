@@ -1,0 +1,46 @@
+mobile/src/core/model.ts
+  s_3ba4960df8f6a6::t_dd196808661638 593-594
+mobile/src/core/store.ts
+  s_3ba4960df8f6a6::t_2bdfb91792facf 405-409
+  s_3ba4960df8f6a6::t_dc22ed3adb2103 378
+crates/cli/src/app.rs
+  s_3ba4960df8f6a6::t_491e62f1e6d920 2015-2016
+  s_3ba4960df8f6a6::t_409abffa481d72 2443-2450
+  s_3ba4960df8f6a6::t_255f9e51df6542 1985
+  s_3ba4960df8f6a6::t_66fd166b8ed99f 3031-3057
+  s_3ba4960df8f6a6::t_5ef768f9ce1d9f 2451
+mobile/src/core/engine.ts
+  s_3ba4960df8f6a6::t_553545f6fcd14d 139-144,155-156
+  s_3ba4960df8f6a6::t_6f6253656ab35c 50
+  s_3ba4960df8f6a6::t_bb05df3ccc9a34 145-154
+  s_3ba4960df8f6a6::t_d366514a07d6ce 240
+  s_3ba4960df8f6a6::t_c92517c767ac93 83-85
+crates/cli/src/memory_capture.rs
+  s_3ba4960df8f6a6::t_b1b48e7a43ec04 822
+mobile/src/core/reading.test.ts
+  s_3ba4960df8f6a6::t_268063c8892114 242,248,251
+  s_3ba4960df8f6a6::t_d16da36019fa37 225
+  s_3ba4960df8f6a6::t_330124e701d025 84
+  s_3ba4960df8f6a6::t_027bbfff98b4ec 201,205
+mobile/src/core/store.test.ts
+  s_3ba4960df8f6a6::t_814e9903eda6a9 73-84
+crates/cli/src/model.rs
+  s_3ba4960df8f6a6::t_c9b3c8cbd1264e 1174
+  s_3ba4960df8f6a6::t_64d7163845c87a 1113-1117
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.52-trip",
+  "base_commit_sha": "f46eff3bd4221fdf4a65b2cba7b9115aa2b0898a",
+  "prompts": {},
+  "sessions": {
+    "s_3ba4960df8f6a6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c562669b-7d97-4140-b9e7-45d30e608e16",
+        "model": "ada-cli-golang-ctripcorp-com/claude-deepseek-v4.1-flash"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
