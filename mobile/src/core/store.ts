@@ -292,7 +292,7 @@ function seenOf(devices: Device[]): Record<string, number> {
 
 /// `roster.changed`: bots replace, chat metadata merges over kept messages, chats not named
 /// are gone.
-export function applyRoster(roster: { devices: Device[]; bots: Bot[]; chats: (ChatMeta & { unread_count: number; usage?: ChatUsage })[]; routines?: Routine[]; auto_review?: AutoReview; providers?: ProviderStatus[]; models?: ProviderModel[]; shared_links?: SharedLink[]; sections?: Section[] }): { removed: string[] } {
+export function applyRoster(roster: { devices: Device[]; bots: Bot[]; chats: (ChatMeta & { unread_count: number; usage?: ChatUsage; last_message?: Message })[]; routines?: Routine[]; auto_review?: AutoReview; providers?: ProviderStatus[]; models?: ProviderModel[]; shared_links?: SharedLink[]; sections?: Section[] }): { removed: string[] } {
   const removed: string[] = [];
   useStore.setState((s) => {
     const incoming = new Set(roster.chats.map((c) => c.id));
@@ -302,7 +302,7 @@ export function applyRoster(roster: { devices: Device[]; bots: Bot[]; chats: (Ch
     // its identity, so the screens' memoized rows and lists built from it stay as they are.
     const next: Chat[] = roster.chats.map((meta) => {
       const old = existing.get(meta.id);
-      const chat = { ...meta, is_pinned: meta.is_pinned ?? false, messages: old?.messages ?? [], has_more: old?.has_more, unread_count: meta.unread_count ?? old?.unread_count ?? 0, usage: meta.usage ?? old?.usage };
+      const chat = { ...meta, is_pinned: meta.is_pinned ?? false, messages: old?.messages ?? [], has_more: old?.has_more, last_message: meta.last_message ?? old?.last_message, unread_count: meta.unread_count ?? old?.unread_count ?? 0, usage: meta.usage ?? old?.usage };
       return old && sameFields(old, chat) ? old : chat;
     });
     const chats = next.length === s.chats.length && next.every((chat, i) => chat === s.chats[i]) ? s.chats : next;

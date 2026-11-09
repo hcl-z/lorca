@@ -2280,6 +2280,8 @@ type Chat struct {
 	// HasMore is the CLI holding messages older than the ones here; the transcript asks for them
 	// by page.
 	HasMore bool
+	// LastMessage is the roster's preview for the list, before the chat's page has been fetched.
+	LastMessage *Message
 	// OwnerBotID is the group member holding the work, as the CLI last said.
 	OwnerBotID string
 	// GroupDescription is what a group is for, which every member reads in its system prompt.

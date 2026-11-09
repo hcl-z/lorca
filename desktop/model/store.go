@@ -939,6 +939,9 @@ func (s *Store) Preview(chat *Chat) string {
 		}
 	}
 	if last == nil {
+		last = chat.LastMessage
+	}
+	if last == nil {
 		return L("No messages yet")
 	}
 	var body string

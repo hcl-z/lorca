@@ -348,6 +348,7 @@ type WireChat struct {
 	Mute        *WireMute        `json:"mute"`
 	CreatedAt   float64          `json:"created_at"`
 	Messages    []WireMessage    `json:"messages"`
+	LastMessage *WireMessage     `json:"last_message"`
 	UnreadCount *int             `json:"unread_count"`
 	Usage       *WireChatUsage   `json:"usage"`
 	HasMore     *bool            `json:"has_more"`
@@ -1149,6 +1150,11 @@ func ToChat(wire WireChat, existing *Chat) *Chat {
 		}
 	} else if existing != nil {
 		chat.Messages = existing.Messages
+	}
+	if wire.LastMessage != nil {
+		chat.LastMessage = ToMessage(*wire.LastMessage)
+	} else if existing != nil {
+		chat.LastMessage = existing.LastMessage
 	}
 	switch {
 	case wire.UnreadCount != nil:
