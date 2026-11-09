@@ -44,6 +44,10 @@ pub struct Device {
     pub os: String,
     pub os_version: String,
     pub box_pubkey: String,
+    /// Whether this Device holds the account's identity key, so it can serve history another
+    /// Device never received.
+    #[serde(default)]
+    pub is_identity_device: bool,
     /// Plugins installed on that Runner, with their setup state. Secrets stay on the Runner.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub plugins: Vec<PluginStatus>,

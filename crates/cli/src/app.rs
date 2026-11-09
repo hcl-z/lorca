@@ -715,6 +715,7 @@ impl App {
             os: machine.os.clone(),
             os_version,
             box_pubkey: keys.box_pubkey(),
+            is_identity_device: self.is_identity_device(),
             plugins: self.plugins.lock().unwrap().statuses(),
             channels: self.channels.statuses(),
             version: config::VERSION.into(),
