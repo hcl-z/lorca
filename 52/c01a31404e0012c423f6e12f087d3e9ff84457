@@ -1,0 +1,28 @@
+mobile/src/ui/transcriptRows.test.ts
+  s_3ba4960df8f6a6::t_fc534774b4a285 51
+  s_3ba4960df8f6a6::t_7f2fd6e7fba096 42-50
+mobile/app/(main)/chat/[id].tsx
+  s_3ba4960df8f6a6::t_f18cc91b6f2fab 91-94
+  s_3ba4960df8f6a6::t_6c62b2f1cd7417 304-305,307-313
+  s_3ba4960df8f6a6::t_c0bb7d60d57528 619
+mobile/src/ui/transcriptRows.ts
+  s_3ba4960df8f6a6::t_0888ab0137944a 76-77
+  s_3ba4960df8f6a6::t_a6cda2646835db 32-49,51-53,57,59-64,71-72,78-102,112,129,180
+  s_3ba4960df8f6a6::t_bb21ecfa20cc95 65-70,73-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.52-trip",
+  "base_commit_sha": "52c01a31404e0012c423f6e12f087d3e9ff84457",
+  "prompts": {},
+  "sessions": {
+    "s_3ba4960df8f6a6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c562669b-7d97-4140-b9e7-45d30e608e16",
+        "model": "ada-cli-golang-ctripcorp-com/claude-deepseek-v4.1-flash"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
