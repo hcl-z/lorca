@@ -1,0 +1,43 @@
+docs/architecture/runtime.md
+  s_c970bca7f10d6b::t_5b24f0489106d7 3,22
+desktop/app.go
+  s_c970bca7f10d6b::t_07c87121fd0642 7-8
+  s_c970bca7f10d6b::t_7327869accf0ea 37-39,75-101,116-125,130-138,157-171,190-198,200,275,638-640
+desktop/prefs.go
+  s_c970bca7f10d6b::t_07c87121fd0642 238
+desktop/runtime.go
+  s_c970bca7f10d6b::t_52f661bc7360ab 25,28-29,61-64,73-82,84,91-92,95-96,161,164-167,169-170,173-179,184-186,189-191,194-203,211,213-218,220-226,229-233,236-239,241,249,258-261,303-304,307-309,311-312,321,326-328,335-337,342-343,346-354,356,358,362-370,374,376,428-446,448-465
+  s_c970bca7f10d6b::t_f477a29ed24a87 4,6,16,83,85-87,295,331-334,338,371-373,375,377-427
+desktop/runtime_test.go
+  s_c970bca7f10d6b::t_4240e37898fb0a 5,11-12,102-156
+  s_c970bca7f10d6b::t_07c87121fd0642 4,46
+docs/architecture/development.md
+  s_c970bca7f10d6b::t_4fd2bb21cbc1e2 38
+ARCHITECTURE.md
+  s_c970bca7f10d6b::t_af24def038e224 13,17,19,58
+  s_c970bca7f10d6b::t_cc4a974c09ddd4 5,11,22-27,30-31,36,72,125
+docs/architecture/desktop-app.md
+  s_c970bca7f10d6b::t_5b24f0489106d7 3,7
+desktop/client.go
+  s_c970bca7f10d6b::t_3d2a05825f7f8e 282-286
+crates/host/src/lib.rs
+  s_c970bca7f10d6b::t_07c87121fd0642 146-151
+docs/architecture/local-ws.md
+  s_c970bca7f10d6b::t_5b24f0489106d7 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.52-trip",
+  "base_commit_sha": "1376c49fadfc8539bf3f160cdcd8d4c370cadfef",
+  "prompts": {},
+  "sessions": {
+    "s_c970bca7f10d6b": {
+      "agent_id": {
+        "tool": "deepseekharness",
+        "id": "session-3cafb946-ddf8-42e2-8b4e-d9e51dbf93eb",
+        "model": "ada-cli-golang-ctripcorp-com/claude-deepseek-v4.1-flash[1M]"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
