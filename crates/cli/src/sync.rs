@@ -262,8 +262,6 @@ async fn pull_keyrings(app: &Arc<App>, url: &str, token: &str, machine_file: &cr
 
 /// Everything a Device polls for but the messages.
 const NOT_CHAT_KINDS: &str = "roster,task,project_context,playbook,machine,credentials,review,handoff,attention,job,event,job_cancel,job_result,request,response,key";
-/// How much of each chat a Device takes when it first syncs: what a bot's turn reads.
-const FIRST_SYNC_MESSAGES: usize = 400;
 /// Messages to a page when reading a chat backwards.
 const OLDER_PAGE: usize = 100;
 
@@ -289,8 +287,17 @@ enum FirstSync {
     Done,
     /// The relay's log is empty.
     NothingThere,
-    /// The relay cannot page a chat: the caller replays the log.
-    CannotPage,
+}
+
+/// Marks every chat as having more on the relay, so `chats.messages` fetches a chat's page when
+/// it opens. The first screen itself carries only the roster's previews.
+pub fn prepare_first_screen(app: &App) {
+    let chats: Vec<String> = app.state.lock().unwrap().chats.iter().map(|chat| chat.meta.id.clone()).collect();
+    for chat_id in chats {
+        if let Err(error) = app.store.set_history_before(&chat_id, Some(i64::MAX)) {
+            tracing::warn!(%error, %chat_id, "marking the chat for on-demand pages");
+        }
+    }
 }
 
 async fn first_sync_quietly(app: &Arc<App>, url: &str, token: &str, machine_file: &crate::keys::MachineFile) -> Result<FirstSync, RelayError> {
@@ -315,28 +322,7 @@ async fn first_sync_quietly(app: &Arc<App>, url: &str, token: &str, machine_file
     // The credentials are here, so onboarding can tell whether the account has a provider
     // without waiting for every chat.
     mark_account_pulled(app, machine_file);
-    let chats: Vec<String> = app.state.lock().unwrap().chats.iter().map(|chat| chat.meta.id.clone()).collect();
-    for chat_id in chats {
-        let page = app.relay.group_page(url, token, &crate::model::relay_name(&chat_id), None, FIRST_SYNC_MESSAGES).await;
-        let (slots, has_more) = match page {
-            Ok(page) => page,
-            Err(error) if matches!(error.status, Some(404 | 405)) => return Ok(FirstSync::CannotPage),
-            Err(error) => return Err(error),
-        };
-        // A message as it stands: its latest version, or its removal. The page keeps its place.
-        for blob in slots.iter().filter_map(|slot| slot.blobs.last()) {
-            apply_history_blob(app, machine_file, blob);
-        }
-        let before = slots.first().map(|slot| slot.place).filter(|_| has_more);
-        if let Err(error) = app.store.set_history_before(&chat_id, before) {
-            tracing::error!(%error, %chat_id, "recording where the chat begins");
-        }
-        // A page ends early at its byte budget; a bot's turn wants the whole count.
-        let mut here = slots.len();
-        while here < FIRST_SYNC_MESSAGES && app.history_is_partial(&chat_id) {
-            here += older_messages_from(app, url, token, &chat_id).await?.max(1);
-        }
-    }
+    prepare_first_screen(app);
     app.state.lock().unwrap().last_seq = head.unwrap_or(0);
     Ok(FirstSync::Done)
 }
@@ -403,13 +389,8 @@ async fn pull_blobs(app: &Arc<App>, url: &str, token: &str, machine_file: &crate
         }
         app.attention_backfilled.store(true, Ordering::Relaxed);
     }
-    if app.state.lock().unwrap().last_seq == 0 && first_sync(app, url, token, machine_file).await? == FirstSync::CannotPage {
-        // A relay that cannot page a chat: replay its log. It keeps the latest roster, which
-        // in a replay comes after the messages, so that is taken first as a preview.
-        let (blobs, _head) = app.relay.list_blobs(url, token, 0, "roster,machine").await?;
-        for blob in blobs {
-            apply_blob_contents(app, machine_file, &blob);
-        }
+    if app.state.lock().unwrap().last_seq == 0 {
+        first_sync(app, url, token, machine_file).await?;
     }
     loop {
         let since = app.state.lock().unwrap().last_seq;
@@ -830,13 +811,6 @@ fn apply_synced_blob(app: &Arc<App>, machine_file: &crate::keys::MachineFile, bl
 
 pub fn apply_blob(app: &Arc<App>, machine_file: &crate::keys::MachineFile, blob: &BlobIn) {
     apply_blob_as(app, machine_file, blob, false);
-}
-
-/// `apply_blob` for what a Device reads of a chat's history, the newest page of each chat on its
-/// first sync: a message under an older account key is history there, as on the pages it reads
-/// backwards (`older_messages`), where the live log takes none.
-fn apply_history_blob(app: &Arc<App>, machine_file: &crate::keys::MachineFile, blob: &BlobIn) {
-    apply_blob_as(app, machine_file, blob, true);
 }
 
 fn apply_blob_as(app: &Arc<App>, machine_file: &crate::keys::MachineFile, blob: &BlobIn, history: bool) {
@@ -1381,6 +1355,17 @@ mod tests {
         ScratchApp(app, home)
     }
 
+    #[test]
+    fn the_first_screen_marks_every_chat_for_on_demand_pages() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        crate::identity::create(app, Some("Runner".into())).unwrap();
+        let chat_id = app.state.lock().unwrap().chats[0].meta.id.clone();
+        prepare_first_screen(app);
+        assert_eq!(app.store.history_before(&chat_id).unwrap(), Some(i64::MAX));
+        assert!(app.history_is_partial(&chat_id));
+    }
+
     /// Once a newer account key is here, a message under an older one is history: read on a
     /// chat's first page, never taken from the live log.
     #[tokio::test]
@@ -1399,7 +1384,7 @@ mod tests {
         let (live, page) = (Message::new(&chat, Author::You, Body::text("live")), Message::new(&chat, Author::You, Body::text("on a page")));
         let machine_file = app.machine_file().unwrap();
         apply_blob(app, &machine_file, &blob(&live));
-        apply_history_blob(app, &machine_file, &blob(&page));
+        apply_blob_as(app, &machine_file, &blob(&page), true);
         assert!(app.message(&chat, &live.id).is_none());
         assert!(app.message(&chat, &page.id).is_some());
     }
