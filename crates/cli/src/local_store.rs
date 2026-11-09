@@ -1079,6 +1079,71 @@ impl LocalStore {
         Ok(())
     }
 
+    /// Drops what an older build's full-history backfill queued beyond each chat's latest
+    /// `window` messages, and the files only those messages reference. Live rows inside the
+    /// window and every non-chat row stay. Returns how many rows went.
+    pub fn prune_outbox_to_window(&self, window: usize) -> anyhow::Result<usize> {
+        let mut connection = self.connection.lock().unwrap();
+        let tx = connection.transaction()?;
+        let groups: Vec<String> = tx
+            .prepare("SELECT DISTINCT group_name FROM outbox WHERE group_name IS NOT NULL AND kind IN ('chat','file')")?
+            .query_map([], |row| row.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        let chat_ids: Vec<String> = tx
+            .prepare("SELECT DISTINCT chat_id FROM messages")?
+            .query_map([], |row| row.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        let mut removed = 0usize;
+        for chat_id in chat_ids {
+            let group = crate::model::relay_name(&chat_id);
+            if !groups.iter().any(|known| known == &group) {
+                continue;
+            }
+            let rows: Vec<(String, String)> = tx
+                .prepare("SELECT id, message_json FROM messages WHERE chat_id = ?1 ORDER BY position DESC LIMIT ?2")?
+                .query_map(params![chat_id, window as i64], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .collect::<rusqlite::Result<_>>()?;
+            let kept_slots: Vec<String> = rows.iter().map(|(id, _)| crate::model::relay_name(id)).collect();
+            let mut kept_files = std::collections::HashSet::new();
+            for (_, json) in &rows {
+                if let Ok(message) = serde_json::from_str::<Message>(json) {
+                    if let Body::Text { attachments, .. } = &message.body {
+                        for attachment in attachments {
+                            kept_files.insert(attachment.id.clone());
+                        }
+                    }
+                }
+            }
+            let chat_slots: Vec<String> = tx
+                .prepare("SELECT slot_name FROM outbox WHERE group_name = ?1 AND kind = 'chat'")?
+                .query_map([&group], |row| row.get::<_, Option<String>>(0))?
+                .filter_map(|row| row.ok().flatten())
+                .collect();
+            for slot in chat_slots {
+                if !kept_slots.contains(&slot) {
+                    removed += tx.execute(
+                        "DELETE FROM outbox WHERE group_name = ?1 AND kind = 'chat' AND slot_name = ?2",
+                        params![group, slot],
+                    )?;
+                }
+            }
+            let files: Vec<String> = tx
+                .prepare("SELECT id FROM outbox WHERE group_name = ?1 AND kind = 'file'")?
+                .query_map([&group], |row| row.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            for id in files {
+                if !kept_files.contains(&id) {
+                    removed += tx.execute(
+                        "DELETE FROM outbox WHERE group_name = ?1 AND kind = 'file' AND id = ?2",
+                        params![group, id],
+                    )?;
+                }
+            }
+        }
+        tx.commit()?;
+        Ok(removed)
+    }
+
     /// Project payloads are already encrypted. A local revision and its upload commit together.
     /// Existing ids are immutable, including across replay and remote echoes.
     pub fn insert_project_entry(&self, chat_id: &str, id: &str, ciphertext: &[u8], upload: Option<&OutboxItem>) -> anyhow::Result<bool> {
@@ -1985,6 +2050,32 @@ mod tests {
         store.queue_outbox_with_priority(&item("b"), 1).unwrap();
         assert_eq!(store.outbox().unwrap().len(), 1);
         assert_eq!(store.outbox_priorities().unwrap(), [("b".to_string(), 1)]);
+    }
+
+    #[test]
+    fn pruning_keeps_only_the_latest_window_of_chat_rows() {
+        let scratch = scratch();
+        let store = &scratch.0;
+        for i in 1..=40 {
+            let mut message = Message::new("chat", Author::You, Body::text(format!("m{i}")));
+            message.id = format!("m{i}");
+            store.upsert(&message).unwrap();
+            store
+                .queue_outbox_with_priority(
+                    &OutboxItem {
+                        id: format!("m{i}"),
+                        kind: "chat".into(),
+                        recipient: None,
+                        ciphertext: vec![0],
+                        slot: Some(Slot { name: format!("m{i}"), keep_first: true }),
+                        group: Some("chat".into()),
+                    },
+                    2,
+                )
+                .unwrap();
+        }
+        assert_eq!(store.prune_outbox_to_window(30).unwrap(), 10);
+        assert_eq!(store.outbox().unwrap().len(), 30);
     }
 
     #[test]

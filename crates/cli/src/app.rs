@@ -338,6 +338,11 @@ impl App {
         }
         let chat_ids: Vec<String> = state.chats.iter().map(|chat| chat.meta.id.clone()).collect();
         store.retain_chats(&chat_ids)?;
+        match store.prune_outbox_to_window(crate::model::CHAT_WINDOW) {
+            Ok(0) => {}
+            Ok(removed) => tracing::info!(removed, "pruned the old history backfill"),
+            Err(error) => tracing::warn!(%error, "pruning the old history backfill"),
+        }
         // A Runner uploads its metadata once per launch: a relay that changed or was reset since
         // the last upload has no copy. A phone's changes only with what it says (its version, OS,
         // name), which the hash catches; a relay that lost it does not know the phone either, and

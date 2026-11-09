@@ -1114,6 +1114,9 @@ const APP_TOOL_DETAIL_CHARS: usize = 400;
 pub const APP_COMMAND_CHARS: usize = 8000;
 /// How many of a chat's newest messages a snapshot carries; older ones are asked for by page.
 pub const SNAPSHOT_MESSAGES: usize = 60;
+/// How many of a chat's newest messages a Device uploads and keeps on the relay; older ones are
+/// served by the Device that holds them when a reader scrolls back.
+pub const CHAT_WINDOW: usize = 30;
 
 impl Message {
     /// The message as the apps get it. A tool row keeps what they show (the name, the summary,
