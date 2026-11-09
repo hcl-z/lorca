@@ -1,0 +1,39 @@
+crates/cli/src/local_store.rs
+  s_3ba4960df8f6a6::t_a05dd1eadf4dcd 265
+  s_3ba4960df8f6a6::t_313c4e175c1006 1299-1306
+crates/cli/src/app.rs
+  s_3ba4960df8f6a6::t_c23e7fa40b3644 1249,1253-1262
+  s_3ba4960df8f6a6::t_a4a3213e40c214 388
+  s_3ba4960df8f6a6::t_158a58d63849ff 2990-3007,3010-3011
+  s_3ba4960df8f6a6::t_c9a261df2837d9 804-816,831
+  s_3ba4960df8f6a6::t_aea6715fd0ef46 2032-2034
+  s_3ba4960df8f6a6::t_e8bd94e62ddd51 2352-2362,2369
+  s_3ba4960df8f6a6::t_8cd1e34942d15a 230-231
+  s_3ba4960df8f6a6::t_f50f38652d4a8e 792-800
+  s_3ba4960df8f6a6::t_8dd326ab7e55bf 79-81
+  s_3ba4960df8f6a6::t_c6b9ceb9f95037 802
+  s_3ba4960df8f6a6::t_3f9808f6533f26 3008-3009
+crates/cli/src/sync.rs
+  s_3ba4960df8f6a6::t_c3032fe1cff529 22-30
+  s_3ba4960df8f6a6::t_d3c0fff3ef035f 1232
+crates/cli/src/model.rs
+  s_3ba4960df8f6a6::t_7f8b8299efc379 1493-1496
+crates/cli/src/events.rs
+  s_3ba4960df8f6a6::t_9d2d41b5512203 98-100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.52-trip",
+  "base_commit_sha": "ce812a8f4e28557c7c307393cd2a64a9fd63112c",
+  "prompts": {},
+  "sessions": {
+    "s_3ba4960df8f6a6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c562669b-7d97-4140-b9e7-45d30e608e16",
+        "model": "ada-cli-golang-ctripcorp-com/claude-deepseek-v4.1-flash"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
