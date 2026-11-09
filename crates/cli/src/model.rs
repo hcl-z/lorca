@@ -1110,6 +1110,11 @@ pub struct Message {
     /// Unix seconds; the apps say Edited.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub edited_at: Option<f64>,
+    /// Changes whenever the content does, so an app can skip a message it already shows
+    /// without comparing its JSON. It is a hash of the content, so it is the same on every
+    /// Device that holds the same message.
+    #[serde(default)]
+    pub rev: u64,
 }
 
 /// How much of a tool call's detail the apps get: enough for the "Messaged ◉ X" marker.
@@ -1166,6 +1171,7 @@ impl Message {
             output: None,
             external_id: None,
             edited_at: None,
+            rev: 0,
         }
     }
 

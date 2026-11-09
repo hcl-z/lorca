@@ -375,7 +375,7 @@ export function upsertMessage(message: Message, isNew = true): { added: boolean 
     if (index < 0) {
       added = true;
       next = { ...chat, messages: [...chat.messages, message] };
-    } else if (JSON.stringify(previous) !== JSON.stringify(message)) {
+    } else if (previous.rev !== undefined && message.rev !== undefined ? previous.rev !== message.rev : JSON.stringify(previous) !== JSON.stringify(message)) {
       const messages = chat.messages.slice();
       messages[index] = message;
       next = { ...chat, messages };
@@ -400,6 +400,11 @@ export function upsertMessage(message: Message, isNew = true): { added: boolean 
   if (started) setTimeout(() => useStore.setState((s) => ({ pendingTasks: omit(s.pendingTasks, message.id) })), TASK_DELAY_MS);
   if (added && isNew) messageArrived(message.created_at);
   return { added };
+}
+
+/// Applies a batch of coalesced streamed updates, keeping each message's "new" flag.
+export function upsertMessages(entries: { message: Message; isNew: boolean }[]): void {
+  for (const { message, isNew } of entries) upsertMessage(message, isNew);
 }
 
 export function removeMessage(chatId: string, messageId: string) {

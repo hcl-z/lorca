@@ -1982,7 +1982,7 @@ impl App {
     /// response, or pending confirmation counts as unread once, locally or from the relay.
     /// One that finishes while the user looks at its chat is read here, and so everywhere.
     /// A message the user sends, from any Device, says they have read what came before it.
-    pub fn upsert_message(&self, message: Message, upload: bool) {
+    pub fn upsert_message(&self, mut message: Message, upload: bool) {
         if !self.state.lock().unwrap().chats.iter().any(|chat| chat.meta.id == message.chat_id) {
             return;
         }
@@ -2012,6 +2012,8 @@ impl App {
         if !stored_upsert.changed {
             return;
         }
+        message.rev = 0;
+        message.rev = message_revision(&message);
         let watching = self.is_watching(&message.chat_id);
         let outcome = {
             let mut state = self.state.lock().unwrap();
@@ -2438,8 +2440,15 @@ fn models_out() -> Vec<Value> {
 
 /// Where a chat's read mark goes among its messages: after all of them when this Device has
 /// read the chat, else before the last `unread` of those that count as unread.
-fn read_mark_at(messages: &[Message], unread: u32) -> usize {
-    if unread == 0 {
+/// A message's content hash, for the apps to skip one they already show.
+fn message_revision(message: &Message) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    serde_json::to_vec(message).unwrap_or_default().hash(&mut hasher);
+    hasher.finish()
+}
+
+fn read_mark_at(messages: &[Message], unread: u32) -> usize {    if unread == 0 {
         return messages.len();
     }
     let mut left = unread;
@@ -3017,6 +3026,33 @@ mod tests {
         let snapshot = app.snapshot();
         let chat = snapshot["chats"].as_array().unwrap().iter().find(|chat| chat["id"] == "chat").unwrap();
         assert_eq!(chat["last_message"]["body"]["text"], "hello");
+    }
+
+    #[test]
+    fn each_streamed_update_carries_a_new_revision() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        crate::identity::create(app, Some("Workbench".into())).unwrap();
+        app.state.lock().unwrap().chats.push(chat("chat", "dm", &["b1"], Some("b1")));
+        let mut events = app.events.subscribe();
+        let mut message = Message::new("chat", Author::You, Body::text("a"));
+        app.upsert_message(message.clone(), false);
+        let first = loop {
+            match events.try_recv().unwrap() {
+                Event::MessageAdded { message, .. } => break message.rev,
+                _ => continue,
+            }
+        };
+        message.body = Body::text("ab");
+        app.upsert_message(message, false);
+        let second = loop {
+            match events.try_recv().unwrap() {
+                Event::MessageUpdated { message, .. } => break message.rev,
+                _ => continue,
+            }
+        };
+        assert_ne!(first, second);
+        assert_ne!(first, 0);
     }
 
     /// A phone's metadata goes up again only when it changed: a launch alone sends nothing, while a

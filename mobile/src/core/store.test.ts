@@ -70,3 +70,15 @@ test("a message keeps every other chat as it was", async () => {
   upsertMessage(message("m2", "c", "early"));
   expect(useStore.getState().chats.map((c) => c.id)).toEqual(["a", "b", "c"]);
 });
+
+test("an unchanged revision does not replace the message", async () => {
+  const { upsertMessage } = await import("./store");
+  applyRoster({ devices: [], bots: [bot], chats: [meta("r")] });
+  const message = (rev: number, text: string) => ({ id: "m1", chat_id: "r", author: { kind: "you" }, body: { kind: "text", text }, state: { kind: "complete" }, created_at: 1, rev }) as never;
+  expect(upsertMessage(message(1, "hi")).added).toBe(true);
+  const first = useStore.getState().chats.find((c) => c.id === "r")!.messages[0];
+  upsertMessage(message(1, "changed"), false);
+  expect(useStore.getState().chats.find((c) => c.id === "r")!.messages[0]).toBe(first);
+  upsertMessage(message(2, "changed"), false);
+  expect(useStore.getState().chats.find((c) => c.id === "r")!.messages[0]).not.toBe(first);
+});

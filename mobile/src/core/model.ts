@@ -590,6 +590,8 @@ export interface Message {
   edited_at?: number | null;
   /** A file or document link a bot published: this message is one version of it. */
   output?: Output;
+  /** A content hash: an incoming message with the same revision is already shown. */
+  rev?: number;
 }
 
 /// A published output: `id` names it across its versions, the message carrying it is the version.

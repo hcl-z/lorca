@@ -47,6 +47,7 @@ import {
   setStatus,
   setThinking,
   upsertMessage,
+  upsertMessages,
   useStore,
   deviceIsOnline,
 } from "./store";
@@ -79,6 +80,9 @@ class Engine {
   /// Snapshots on their way, and the events that arrived meanwhile (see `bootstrap`).
   private bootstraps = 0;
   private held: core.Frame[] = [];
+  /// Streamed message updates waiting for the next store pass, the latest version of each.
+  private pendingMessages = new Map<string, { message: Message; isNew: boolean }>();
+  private pendingFlush: ReturnType<typeof setTimeout> | null = null;
 
   // MARK: - Lifecycle
 
@@ -130,6 +134,24 @@ class Engine {
       this.bootstraps -= 1;
       if (!this.bootstraps) this.applyHeld();
     }
+  }
+
+  /// One store pass per 100 ms for streamed updates: a fast reply changes a message many times,
+  /// and only its latest version needs drawing.
+  private queueMessage(message: Message, isNew: boolean) {
+    const seen = this.pendingMessages.get(message.id);
+    this.pendingMessages.set(message.id, { message, isNew: seen?.isNew || isNew });
+    if (this.pendingFlush) return;
+    this.pendingFlush = setTimeout(() => this.flushStreamedMessages(), 100);
+  }
+
+  /// Applies the streamed updates waiting for the next pass now.
+  flushStreamedMessages() {
+    if (this.pendingFlush) clearTimeout(this.pendingFlush);
+    this.pendingFlush = null;
+    const entries = [...this.pendingMessages.values()];
+    this.pendingMessages.clear();
+    if (entries.length) upsertMessages(entries);
   }
 
   private receive(frame: core.Frame) {
@@ -215,7 +237,7 @@ class Engine {
       }
       case "message.added":
       case "message.updated":
-        upsertMessage(event.message, event.kind === "message.added");
+        this.queueMessage(event.message, event.kind === "message.added");
         break;
       case "message.removed":
         removeMessage(event.chatId, event.messageId);
