@@ -1996,6 +1996,10 @@ impl App {
                 }
             }
         }
+        // The revision is a hash of the content, stored with the message so a read back from
+        // SQLite carries it too.
+        message.rev = 0;
+        message.rev = message_revision(&message);
         // A phone never runs a bot and never rebuilds model context. Keeping only the app view
         // avoids duplicating large tool arguments and results on every mobile Device.
         #[cfg(feature = "runner")]
@@ -2012,8 +2016,6 @@ impl App {
         if !stored_upsert.changed {
             return;
         }
-        message.rev = 0;
-        message.rev = message_revision(&message);
         let watching = self.is_watching(&message.chat_id);
         let outcome = {
             let mut state = self.state.lock().unwrap();
