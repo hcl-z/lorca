@@ -19,6 +19,15 @@ pub const POLL_KINDS: &str = "roster,task,project_context,playbook,chat,machine,
 
 pub async fn run(app: Arc<App>) {
     crate::identity::publish_keyring(&app);
+    {
+        let previews = app.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                previews.refresh_previews_if_dirty();
+            }
+        });
+    }
     let mut failures: u32 = 0;
     // The last try's bearer was refused and the next one went at once: a second refusal in a
     // row waits out the backoff.
@@ -1220,6 +1229,7 @@ fn apply_roster(app: &Arc<App>, mut roster: RosterBlob) {
         state.shared_links = roster.shared_links;
         state.device_names = roster.device_names;
         state.sections = roster.sections;
+        state.chat_previews = std::mem::take(&mut roster.previews);
         let incoming_ids: Vec<String> = roster.chats.iter().map(|c| c.id.clone()).collect();
         removed = state.chats.iter().filter(|c| !incoming_ids.contains(&c.meta.id)).map(|c| c.meta.id.clone()).collect();
         state.chats.retain(|c| incoming_ids.contains(&c.meta.id));

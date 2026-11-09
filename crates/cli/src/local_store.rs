@@ -262,6 +262,7 @@ impl LocalStore {
             devices: load_json_table(&connection, "devices")?,
             bots: load_json_table(&connection, "bots")?,
             chats: load_json_table(&connection, "chats")?,
+            chat_previews: Default::default(),
             sections: load_json_table(&connection, "sidebar_sections")?,
             routines: load_json_table(&connection, "routines")?,
             workflows: load_json_table(&connection, "workflow_setups")?,
@@ -1291,6 +1292,14 @@ impl LocalStore {
     pub fn outbox_priorities(&self) -> anyhow::Result<Vec<(String, u8)>> {
         let connection = self.connection.lock().unwrap();
         let mut statement = connection.prepare("SELECT id, priority FROM outbox ORDER BY priority, position")?;
+        let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>().map_err(Into::into)
+    }
+
+    #[cfg(test)]
+    pub fn outbox_slots(&self) -> anyhow::Result<Vec<(String, u8)>> {
+        let connection = self.connection.lock().unwrap();
+        let mut statement = connection.prepare("SELECT slot_name, priority FROM outbox WHERE slot_name IS NOT NULL ORDER BY priority, position")?;
         let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
         rows.collect::<rusqlite::Result<Vec<_>>>().map_err(Into::into)
     }

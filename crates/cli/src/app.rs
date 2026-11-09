@@ -76,6 +76,9 @@ pub struct State {
     pub devices: Vec<Device>,
     pub bots: Vec<Bot>,
     pub chats: Vec<Chat>,
+    /// Each chat's latest message from the roster, used for the list until the chat's own page
+    /// lands. The local transcript wins where it has the message.
+    pub chat_previews: std::collections::BTreeMap<String, Message>,
     /// The sidebar's sections, in order.
     pub sections: Vec<Section>,
     pub routines: Vec<Routine>,
@@ -224,6 +227,8 @@ pub struct App {
     /// history). Message and roster events are held back and state is not written per
     /// message; the cycle saves once and emits one snapshot when the page is applied.
     pub bulk_sync: AtomicBool,
+    /// A message moved since the roster last carried the list's previews.
+    pub previews_dirty: AtomicBool,
     /// This process has checked the encrypted attention and project context records after an
     /// upgrade from a build that advanced last_seq without recognizing those blob kinds.
     pub attention_backfilled: AtomicBool,
@@ -380,6 +385,7 @@ impl App {
             relay_problem: Mutex::new(None),
             presence_stale: AtomicBool::new(false),
             bulk_sync: AtomicBool::new(false),
+            previews_dirty: AtomicBool::new(false),
             attention_backfilled: AtomicBool::new(false),
             rotation_due: AtomicBool::new(false),
             // Blobs held when the last run ended are tried once this one has its keys.
@@ -783,10 +789,31 @@ impl App {
         self.outbox_notify.notify_waiters();
     }
 
+    /// Pushes the roster with fresh list previews when a message moved since the last push.
+    /// The standing loop calls this every few seconds, so a streaming reply does not rewrite the
+    /// roster on every chunk.
+    pub fn refresh_previews_if_dirty(&self) {
+        if self.previews_dirty.swap(false, Ordering::Relaxed) {
+            self.push_roster();
+        }
+    }
+
     pub fn push_roster(&self) {
-        let Some(dek) = self.dek() else { return };
-        // Read before the state lock: what this Runner's PROFILE.md changed goes out with it.
+        let Some(dek) = self.dek() else { return };        // Read before the state lock: what this Runner's PROFILE.md changed goes out with it.
         let profile = crate::profile_sync::for_roster(&self.config.home, cfg!(feature = "runner"));
+        let previews: std::collections::BTreeMap<String, Message> = {
+            let chat_ids: Vec<String> = self.state.lock().unwrap().chats.iter().map(|chat| chat.meta.id.clone()).collect();
+            chat_ids
+                .into_iter()
+                .filter_map(|id| {
+                    self.store
+                        .page(&id, None, 1)
+                        .ok()
+                        .and_then(|(mut messages, _)| messages.pop())
+                        .map(|message| (id, message.for_app()))
+                })
+                .collect()
+        };
         let roster = {
             let state = self.state.lock().unwrap();
             RosterBlob {
@@ -801,6 +828,7 @@ impl App {
                 device_names: state.device_names.clone(),
                 unpaired: state.unpaired.clone(),
                 deleted: state.deleted.clone(),
+                previews,
                 updated_at: config::now_secs(),
             }
         };
@@ -1218,11 +1246,20 @@ impl App {
     // MARK: - Roster mutations (local + roster upload)
 
     pub fn roster_summary(&self) -> Event {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().unwrap().clone();
         Event::RosterChanged {
             devices: self.devices_out(&state),
             bots: state.bots.clone(),
-            chats: state.chats.iter().map(|c| ChatSummary { meta: c.meta.clone(), unread_count: c.unread_count, usage: c.usage.clone() }).collect(),
+            chats: state
+                .chats
+                .iter()
+                .map(|chat| ChatSummary {
+                    meta: chat.meta.clone(),
+                    unread_count: chat.unread_count,
+                    usage: chat.usage.clone(),
+                    last_message: self.last_message_for(&chat.meta.id),
+                })
+                .collect(),
             sections: state.sections.clone(),
             routines: self.routines_out(&state),
             auto_review: state.auto_review.clone(),
@@ -1992,6 +2029,9 @@ impl App {
             let _ = self.store.remove(&message.chat_id, &message.id);
             return;
         };
+        if added || changed {
+            self.previews_dirty.store(true, Ordering::Relaxed);
+        }
         if added {
             self.emit(Event::MessageAdded { chat_id: message.chat_id.clone(), message: message.for_app() });
         } else if changed {
@@ -2309,12 +2349,24 @@ impl App {
 
     /// A chat as a snapshot carries it: its newest messages in the apps' form, and `has_more`
     /// when older ones remain in SQLite for `chats.messages` to page.
+    /// A chat's latest message, from the local transcript when it has it, else from the
+    /// roster's preview. The apps show it in the list before the transcript page lands.
+    fn last_message_for(&self, chat_id: &str) -> Option<Message> {
+        self.store
+            .page(chat_id, None, 1)
+            .ok()
+            .and_then(|(mut messages, _)| messages.pop())
+            .or_else(|| self.state.lock().unwrap().chat_previews.get(chat_id).cloned())
+            .map(|message| message.for_app())
+    }
+
     fn chat_for_app(&self, chat: &Chat) -> Value {
         let (messages, has_more) = self.message_page(&chat.meta.id, None, SNAPSHOT_MESSAGES);
         let mut out = serde_json::to_value(ChatSummary {
             meta: chat.meta.clone(),
             unread_count: chat.unread_count,
             usage: chat.usage.clone(),
+            last_message: self.last_message_for(&chat.meta.id),
         })
         .unwrap_or_default();
         out["messages"] = json!(messages);
@@ -2933,6 +2985,28 @@ mod tests {
             (11..=40).map(|i| format!("m{i}")).collect::<Vec<_>>()
         );
         assert!(queued.iter().all(|(_, priority)| *priority == 2));
+    }
+
+    #[test]
+    fn the_roster_and_snapshot_carry_each_chat_s_latest_message() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        crate::identity::create(app, Some("Workbench".into())).unwrap();
+        app.state.lock().unwrap().chats.push(chat("chat", "dm", &["b1"], Some("b1")));
+        app.upsert_message(Message::new("chat", Author::You, Body::text("hello")), false);
+        app.push_roster();
+        let item = app
+            .store
+            .outbox()
+            .unwrap()
+            .into_iter()
+            .find(|item| item.slot.as_ref().is_some_and(|slot| slot.name == "roster"))
+            .unwrap();
+        let roster: crate::model::RosterBlob = crate::crypto::decrypt_json(&app.dek().unwrap(), "roster", &item.ciphertext).unwrap();
+        assert_eq!(roster.previews["chat"].body, Body::text("hello"));
+        let snapshot = app.snapshot();
+        let chat = snapshot["chats"].as_array().unwrap().iter().find(|chat| chat["id"] == "chat").unwrap();
+        assert_eq!(chat["last_message"]["body"]["text"], "hello");
     }
 
     /// A phone's metadata goes up again only when it changed: a launch alone sends nothing, while a

@@ -95,4 +95,7 @@ pub struct ChatSummary {
     pub unread_count: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<ChatUsage>,
+    /// The list's preview, before the chat's transcript page has been fetched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_message: Option<Message>,
 }

@@ -1490,6 +1490,10 @@ pub struct RosterBlob {
     /// from a Device that had not heard of a new bot yet does not delete it.
     #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
     pub deleted: std::collections::BTreeSet<String>,
+    /// Each chat's latest message, so the list shows a preview before a Device has fetched the
+    /// chat's transcript page. The message itself supersedes it once it lands.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub previews: std::collections::BTreeMap<String, Message>,
     pub updated_at: f64,
 }
 
