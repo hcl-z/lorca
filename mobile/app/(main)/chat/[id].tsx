@@ -88,7 +88,10 @@ const JUMP_DISC = 36;
 /** How far past the viewport, in points, the transcript keeps its rows drawn. */
 const DRAW_DISTANCE = 1000;
 /** A typical row's height before it is measured: a bubble of a line or two. */
-const ESTIMATED_ROW = 72;
+/// A guess at a row's height until LegendList measures its own. Tune it from
+/// `listRef.current?.getState().getAverageItemSizes()`: too small makes the first
+/// `initialScrollAtEnd` land short and jump when the rows measure.
+const ESTIMATED_ROW = 160;
 /// The transcript follows its end while the reader rests within this share of the screen of it.
 const FOLLOW_THRESHOLD = 0.1;
 const SCROLL_OWNS_ANCHOR_SPACE = { anchoredEndSpaceOwnerInternal: "scroll" } as object;
@@ -298,8 +301,16 @@ export default function ChatScreen() {
   // diffs its data on every new array.
   const sharedRows = useRef<Row[]>([]);
   const rowsRef = useRef<Row[]>([]);
+  const previousRows = useRef<{ messages: Message[]; rows: Row[]; isWorking: boolean; status: string | null } | null>(null);
+  const previousLanguage = useRef(language);
   const rows = useMemo(() => {
-    const next = chat ? buildRows(chat, bots, workingBotIds, isWorking, status) : [];
+    if (previousLanguage.current !== language) {
+      previousLanguage.current = language;
+      previousRows.current = null;
+    }
+    const next = chat ? buildRows(chat, bots, workingBotIds, isWorking, status, previousRows.current ?? undefined) : [];
+    if (chat) previousRows.current = { messages: chat.messages, rows: next, isWorking, status };
+    else previousRows.current = null;
     return (sharedRows.current = shareRows(sharedRows.current, next));
   }, [chat, bots, workingBotIds, isWorking, status, language]);
   rowsRef.current = rows;
@@ -605,7 +616,7 @@ export default function ChatScreen() {
             maintainScrollAtEnd={{ animated: true }}
             maintainScrollAtEndThreshold={FOLLOW_THRESHOLD}
             // A page loaded above keeps the rows on screen where they are.
-            maintainVisibleContentPosition={{ data: true }}
+            maintainVisibleContentPosition={{ data: true, size: true }}
             anchoredEndSpace={anchoredEndSpace}
             // The space is the scroll view's inset (`blankSpace`), not padding in the list, as in
             // LegendList's KeyboardAwareLegendList; the prop is LegendList's internal one for it.
