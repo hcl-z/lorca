@@ -745,15 +745,23 @@ impl App {
     /// Queues a `file` blob under its attachment's id. A message's attachment goes with its
     /// chat; a bot's avatar belongs to none.
     pub fn push_file_blob(&self, id: String, chat_id: Option<&str>, ciphertext: Vec<u8>) {
+        self.push_file_blob_with_priority(id, chat_id, ciphertext, 1);
+    }
+
+    pub fn push_file_blob_with_priority(&self, id: String, chat_id: Option<&str>, ciphertext: Vec<u8>, priority: u8) {
         let group = chat_id.map(crate::model::relay_name);
-        self.queue_blob(OutboxItem { id, kind: "file".into(), recipient: None, ciphertext, slot: None, group });
+        self.queue_blob_with_priority(OutboxItem { id, kind: "file".into(), recipient: None, ciphertext, slot: None, group }, priority);
     }
 
     /// Queues a version of `slot`. A version still waiting in the outbox gives way to this
     /// one, in its place in the queue, so a Device that was offline uploads each message once.
     pub fn push_slot_blob(&self, kind: &str, slot: Slot, group: Option<String>, ciphertext: Vec<u8>) {
+        self.push_slot_blob_with_priority(kind, slot, group, ciphertext, 1);
+    }
+
+    pub fn push_slot_blob_with_priority(&self, kind: &str, slot: Slot, group: Option<String>, ciphertext: Vec<u8>, priority: u8) {
         let id = uuid::Uuid::new_v4().to_string();
-        self.queue_blob(OutboxItem { id, kind: kind.to_string(), recipient: None, ciphertext, slot: Some(slot), group });
+        self.queue_blob_with_priority(OutboxItem { id, kind: kind.to_string(), recipient: None, ciphertext, slot: Some(slot), group }, priority);
     }
 
     pub fn queue_blob(&self, item: OutboxItem) {
@@ -798,7 +806,7 @@ impl App {
         };
         match crate::crypto::encrypt_json(&dek, "roster", &roster) {
             Ok(ciphertext) => {
-                self.push_slot_blob("roster", Slot::latest("roster"), None, ciphertext);
+                self.push_slot_blob_with_priority("roster", Slot::latest("roster"), None, ciphertext, 0);
             }
             Err(error) => tracing::error!(%error, "encrypting roster"),
         }
@@ -812,6 +820,7 @@ impl App {
     /// its place ahead of older messages. A chat goes up under the message order lock, so no new
     /// message lands between its old ones.
     pub fn push_history(&self) {
+        self.push_roster();
         if let Err(error) = crate::attention::push_history(self) {
             tracing::warn!(%error, "queueing attention history");
         }
@@ -823,15 +832,15 @@ impl App {
                 state.chats.iter().map(|chat| (chat.meta.id.clone(), chat.unread_count)).collect(),
             )
         };
-        let push_file = |chat_id: Option<&str>, attachment: &Attachment| {
+        let push_file = |chat_id: Option<&str>, attachment: &Attachment, priority: u8| {
             if crate::files::is_local(self, &attachment.id) {
-                if let Err(error) = crate::files::push_blob(self, chat_id, attachment) {
+                if let Err(error) = crate::files::push_blob_with_priority(self, chat_id, attachment, priority) {
                     tracing::warn!(%error, name = %attachment.name, "queueing an attachment again");
                 }
             }
         };
         for avatar in &avatars {
-            push_file(None, avatar);
+            push_file(None, avatar, 0);
         }
         for (chat_id, unread) in chats {
             let _order = self.message_order.lock().unwrap();
@@ -849,21 +858,22 @@ impl App {
                     continue;
                 }
             };
-            let read_mark = read_mark_at(&messages, unread);
-            let count = messages.len();
-            for (index, message) in messages.into_iter().enumerate() {
+            let start = messages.len().saturating_sub(crate::model::CHAT_WINDOW);
+            let window = &messages[start..];
+            let read_mark = read_mark_at(window, unread);
+            for (index, message) in window.iter().enumerate() {
                 if index == read_mark {
-                    self.push_chat_op(&ChatBlob::ClearUnread { chat_id: chat_id.clone() });
+                    self.push_chat_op_with_priority(&ChatBlob::ClearUnread { chat_id: chat_id.clone() }, 2);
                 }
                 if let Body::Text { attachments, .. } = &message.body {
                     for attachment in attachments {
-                        push_file(Some(&chat_id), attachment);
+                        push_file(Some(&chat_id), attachment, 2);
                     }
                 }
-                self.push_chat_op(&ChatBlob::Upsert { message });
+                self.push_chat_op_with_priority(&ChatBlob::Upsert { message: message.clone() }, 2);
             }
-            if read_mark == count {
-                self.push_chat_op(&ChatBlob::ClearUnread { chat_id });
+            if read_mark == window.len() {
+                self.push_chat_op_with_priority(&ChatBlob::ClearUnread { chat_id }, 2);
             }
         }
     }
@@ -879,10 +889,14 @@ impl App {
     }
 
     pub fn push_chat_op(&self, op: &ChatBlob) {
+        self.push_chat_op_with_priority(op, 1);
+    }
+
+    pub fn push_chat_op_with_priority(&self, op: &ChatBlob, priority: u8) {
         let Some(dek) = self.dek() else { return };
         match crate::crypto::encrypt_json(&dek, "chat", op) {
             Ok(ciphertext) => {
-                self.push_slot_blob("chat", op.slot(), Some(op.group()), ciphertext);
+                self.push_slot_blob_with_priority("chat", op.slot(), Some(op.group()), ciphertext, priority);
             }
             Err(error) => tracing::error!(%error, "encrypting chat op"),
         }
@@ -2894,6 +2908,31 @@ mod tests {
 
         assert_eq!(read_mark_at(&messages, 0), messages.len());
         assert_eq!(read_mark_at(&messages, 9), 0);
+    }
+
+    #[test]
+    fn history_uploads_only_the_recent_window_in_order() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        crate::identity::create(app, Some("Workbench".into())).unwrap();
+        app.state.lock().unwrap().chats.push(chat("chat", "dm", &["b1"], Some("b1")));
+        for i in 1..=40 {
+            let mut message = Message::new("chat", Author::You, Body::text(format!("m{i}")));
+            message.id = format!("m{i}");
+            app.upsert_message(message, false);
+        }
+        app.push_history();
+        let slots = app.store.outbox_slots().unwrap();
+        assert_eq!(slots.iter().find(|(name, _)| name == "roster").map(|(_, priority)| *priority), Some(0));
+        let queued: Vec<(String, u8)> = slots
+            .into_iter()
+            .filter(|(name, _)| name.strip_prefix('m').is_some_and(|rest| !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit())))
+            .collect();
+        assert_eq!(
+            queued.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>(),
+            (11..=40).map(|i| format!("m{i}")).collect::<Vec<_>>()
+        );
+        assert!(queued.iter().all(|(_, priority)| *priority == 2));
     }
 
     /// A phone's metadata goes up again only when it changed: a launch alone sends nothing, while a
