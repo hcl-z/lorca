@@ -329,7 +329,9 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         named: if unattended { None } else { named_teammates_note(app, &bot, &chat, job) },
         acknowledge: matches!(job.handoff, Some(crate::handoffs::HandoffJob::Request { .. })).then(|| ACKNOWLEDGE_HANDOFF.to_string()),
     };
-    let (mut messages, mut cache_points) = with_turn_notes(messages, &notes, trigger_message_cue(app, job));
+    // What changes as work goes on is read once, here, and opens every request of the turn.
+    let after: Vec<String> = request_notes(app, &bot, &chat.meta.id, now_secs() as i64);
+    let (mut messages, mut cache_points) = with_turn_notes(messages, &notes, &after, brief.as_deref(), trigger_message_cue(app, job));
 
     let sink = Arc::new(TurnSink(std::sync::Mutex::new(TurnState {
         app: app.clone(),
@@ -368,7 +370,7 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         plugin_tools: plugin_tools.clone(),
         steering: steering.clone(),
         follow_up: (!chat.meta.is_group() && chat.meta.channel.is_none()).then(FollowUp::default),
-        brief,
+        brief: brief.clone(),
         trace: trace.clone(),
         prompt_inputs,
         profile: std::sync::Mutex::new(Profile::of(&bot)),
@@ -429,7 +431,7 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
                 Ok(Some(tokens_before)) => {
                     tracing::info!(bot = %bot.name, chat = %chat.meta.id, tokens_before, "the context overflowed; compacted and retried");
                     let latest = app.chat(&job.chat_id).unwrap_or(latest);
-                    (messages, cache_points) = with_turn_notes(transcript_for(app, &latest, &bot, &workdir), &notes, trigger_message_cue(app, job));
+                    (messages, cache_points) = with_turn_notes(transcript_for(app, &latest, &bot, &workdir), &notes, &after, brief.as_deref(), trigger_message_cue(app, job));
                     let mut state = sink.0.lock().unwrap();
                     state.failed = false;
                     state.last_error = None;
@@ -1398,12 +1400,18 @@ fn turn_brief(app: &App, job: &Job, routine: Option<&Routine>, event: Option<&cr
 /// How the turn's brief opens.
 const TURN_BRIEF_MARKER: &str = "[This turn, from Lorca:";
 
-/// The rebuilt transcript followed by the turn's notes, and the transcript's cache points.
-/// `trigger_cue` stands in for an empty transcript: a failed rebuild, or a chat whose first
-/// message is this turn's trigger, must not turn into "Continue." and lose the message.
+/// The rebuilt transcript followed by the turn's notes, the brief that says what started it, and
+/// the transcript's cache points. `trigger_cue` stands in for an empty transcript: a failed
+/// rebuild, or a chat whose first message is this turn's trigger, must not lose the message.
+///
+/// These are the messages every request of the turn starts from; nothing is added to them later.
+/// `after` is `request_notes` in order, and comes before the brief, as the brief is the last
+/// thing a turn reads.
 fn with_turn_notes(
     mut messages: Vec<AgentMessage>,
     notes: &TurnNotes,
+    after: &[String],
+    brief: Option<&str>,
     trigger_cue: Option<String>,
 ) -> (Vec<AgentMessage>, Vec<usize>) {
     let cache_points = transcript_cache_points(&messages);
@@ -1433,6 +1441,12 @@ fn with_turn_notes(
     }
     if let Some(acknowledge) = &notes.acknowledge {
         messages.push(AgentMessage::User(UserMessage::text(acknowledge.clone())));
+    }
+    for note in after {
+        messages.push(AgentMessage::User(UserMessage::text(note.clone())));
+    }
+    if let Some(brief) = brief {
+        messages.push(AgentMessage::User(UserMessage::text(brief.to_string())));
     }
     (messages, cache_points)
 }
@@ -4486,6 +4500,36 @@ mod tests {
         assert_eq!(chunk_boundary(text, 11, Duration::from_secs(2)), Some("First para.\n\nSecond para done.".len()));
     }
 
+    /// A message's text as the turn's notes carry it.
+    fn said_of(message: &AgentMessage) -> String {
+        match message {
+            AgentMessage::User(UserMessage { content, .. }) => match content.as_slice() {
+                [ContentPart::Text { text }] => text.clone(),
+                _ => String::new(),
+            },
+            _ => String::new(),
+        }
+    }
+
+    /// What changes as work goes on rides the turn's opening messages once, not every request.
+    #[test]
+    fn a_turns_notes_and_brief_open_the_turn() {
+        let notes = TurnNotes { recent_work: None, recalled: None, cue: Some("[Your turn in the group …]".into()), setup: None, named: None, acknowledge: None };
+        let after = vec![
+            "[Durable tasks (current records; use tasks get/list for full records).\n{}]".to_string(),
+            "[It is now Tuesday 2026-11-10, 21:45 local time on your Runner (UTC+08:00); trust this over any date you infer.]".to_string(),
+        ];
+        let brief = "[This turn, from Lorca:\nGitHub 管家 reported back on work you handed off.]";
+        let transcript = vec![AgentMessage::user("发布吧"), AgentMessage::user("[Message from GitHub 管家]: done")];
+        let (messages, points) = with_turn_notes(transcript, &notes, &after, Some(brief), None);
+        assert_eq!(points, vec![2], "the cache point still names the transcript's end, before the notes");
+        assert_eq!(messages.len(), 6, "{messages:?}");
+        assert_eq!(
+            messages[2..].iter().map(said_of).collect::<Vec<_>>(),
+            ["[Your turn in the group …]", after[0].as_str(), after[1].as_str(), brief]
+        );
+    }
+
     #[test]
     fn a_turn_caches_its_transcript_and_the_last_turns_but_not_its_notes() {
         let reply = |text: &str| {
@@ -4512,7 +4556,7 @@ mod tests {
             named: None,
             acknowledge: None,
         };
-        let (messages, points) = with_turn_notes(transcript.clone(), &notes, None);
+        let (messages, points) = with_turn_notes(transcript.clone(), &notes, &[], None, None);
         assert_eq!(points, vec![4, 1], "the transcript's end, and the last turn's before the bot's reply");
         assert_eq!(
             messages[4..].iter().map(said).collect::<Vec<_>>(),
@@ -4520,16 +4564,16 @@ mod tests {
         );
 
         // A turn no new message opened goes on from the bot's reply.
-        let (messages, points) = with_turn_notes(transcript[..2].to_vec(), &none, None);
+        let (messages, points) = with_turn_notes(transcript[..2].to_vec(), &none, &[], None, None);
         assert_eq!(points, vec![2, 1]);
         assert_eq!(said(messages.last().unwrap()), "Continue.");
 
         // A first turn caches its transcript alone.
-        let (messages, points) = with_turn_notes(vec![AgentMessage::user("hi")], &none, None);
+        let (messages, points) = with_turn_notes(vec![AgentMessage::user("hi")], &none, &[], None, None);
         assert_eq!((points, messages.len()), (vec![1], 1));
 
         // An empty transcript is not the bot's own reply: it must not become "Continue.".
-        let (messages, points) = with_turn_notes(Vec::new(), &none, None);
+        let (messages, points) = with_turn_notes(Vec::new(), &none, &[], None, None);
         assert!(messages.is_empty(), "{messages:?}");
         assert!(points.is_empty(), "{points:?}");
     }
@@ -4548,7 +4592,7 @@ mod tests {
         assert!(cue.contains("帮我拉lorca的main最新分支"), "{cue}");
 
         let none = TurnNotes { recent_work: None, recalled: None, cue: None, setup: None, named: None, acknowledge: None };
-        let (messages, _) = with_turn_notes(Vec::new(), &none, Some(cue));
+        let (messages, _) = with_turn_notes(Vec::new(), &none, &[], None, Some(cue));
         assert_eq!(messages.len(), 1, "{messages:?}");
         let AgentMessage::User(UserMessage { content, .. }) = &messages[0] else {
             panic!("{messages:?}")
