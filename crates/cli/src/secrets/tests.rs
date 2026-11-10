@@ -150,7 +150,9 @@ async fn a_card_asks_and_the_answer_reaches_only_the_runner() {
     let variables = CommandSecrets { app: app.clone(), bot_id: bot.id.clone() }.variables(&["GITHUB_TOKEN".into()]).unwrap();
     assert_eq!(variables, vec![(OsString::from("GITHUB_TOKEN"), OsString::from("ghp_0123456789"))]);
     assert!(CommandSecrets { app: app.clone(), bot_id: "bot-other".into() }.variables(&["GITHUB_TOKEN".into()]).is_err());
-    assert!(prompt(app, &bot.id).contains("GITHUB_TOKEN (commands)"));
+    // The names ride the note after the transcript, never the system prompt's stable text.
+    assert!(note(app, &bot.id).unwrap().contains("GITHUB_TOKEN (commands)"));
+    assert!(!prompt(app, &bot.id).contains("GITHUB_TOKEN"), "the prompt names no secret, so a save leaves it unchanged");
 
     // Not now: nothing is kept, and the bot hears it.
     let args = json!({ "use": "command", "why": "Deploy.", "secrets": [{ "name": "DEPLOY_KEY", "label": "Deploy key" }] });

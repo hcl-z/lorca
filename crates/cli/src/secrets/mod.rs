@@ -494,9 +494,25 @@ pub fn named_in(args: &Value) -> Vec<String> {
     args.get("secrets").and_then(Value::as_array).map(|names| names.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default()
 }
 
-/// The part of the system prompt that names the bot's saved secrets, when it has any.
+/// The part of the system prompt about saved secrets: that they exist and are used by name.
+/// It names none, so one the user saves mid-session does not change the prompt and throw away
+/// the provider's cache for it: the names ride the notes after the transcript (`note`), made
+/// for every request.
 pub fn prompt(app: &App, bot_id: &str) -> String {
-    let Ok(items) = loaded(app) else { return String::new() };
+    match note(app, bot_id) {
+        // No secrets: nothing worth saying.
+        None => String::new(),
+        Some(_) => "Secrets the user saved for you are named in the note after the transcript. You use one by name and \
+                    never see its value: `{{secret:NAME}}` in what Browser types on the secret's site, `bash`'s \
+                    `secrets: [\"NAME\"]` for a command's environment, or a plugin's setting.\n"
+            .to_string(),
+    }
+}
+
+/// The bot's saved secrets, as the note after the transcript names them: what each is for, never
+/// its value. `None` when it has none.
+pub fn note(app: &App, bot_id: &str) -> Option<String> {
+    let items = loaded(app).ok()?;
     let mine: Vec<String> = items
         .iter()
         .filter(|secret| secret.bot_id == bot_id)
@@ -506,9 +522,9 @@ pub fn prompt(app: &App, bot_id: &str) -> String {
         })
         .collect();
     if mine.is_empty() {
-        return String::new();
+        return None;
     }
-    format!("Secrets the user saved for you, which you use by name and never see: {}.\n", mine.join(", "))
+    Some(format!("[Secrets the user saved for you, used by name and never seen: {}]", mine.join(", ")))
 }
 
 /// The user answered secret request `message` with `values`, by field name. They are kept, or

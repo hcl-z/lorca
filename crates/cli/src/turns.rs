@@ -53,7 +53,7 @@ const MAX_CONTEXT_MESSAGES: usize = 400;
 /// Compaction as configured on this Runner: pi's defaults, off with `LORCA_COMPACTION=0`.
 /// With the model's window known, one summarization request carries at most the window less
 /// twice the reserve, and a longer history is summarized in pieces.
-fn compaction_settings(window: u64) -> CompactionSettings {
+pub(crate) fn compaction_settings(window: u64) -> CompactionSettings {
     let mut settings = CompactionSettings::default();
     if std::env::var("LORCA_COMPACTION").ok().as_deref() == Some("0") {
         settings.enabled = false;
@@ -1116,7 +1116,7 @@ async fn compact_messages(
 
 /// Compacts a bot's view of the chat as stored, for the next turn. `Ok(None)` when there is
 /// nothing to summarize.
-async fn compact_chat(app: &Arc<App>, chat: &Chat, bot: &Bot, provider: &Arc<dyn Provider>, settings: &CompactionSettings, cancel: &CancellationToken) -> Result<Option<u64>, String> {
+pub(crate) async fn compact_chat(app: &Arc<App>, chat: &Chat, bot: &Bot, provider: &Arc<dyn Provider>, settings: &CompactionSettings, cancel: &CancellationToken) -> Result<Option<u64>, String> {
     let workdir = bot.working_directory(&app.config.home);
     // The whole chat since the last summary, not the window a turn rebuilds: what a turn would
     // leave out is exactly what the summary must carry.
@@ -1298,6 +1298,10 @@ fn context_notes(app: &App, bot: &Bot, chat_id: &str, now: i64) -> Vec<String> {
         memory_note(&MemoryStore::for_bot(&app.config.home, bot)),
         crate::profile::note(&crate::profile::store(&app.config.home)),
         crate::project_context::entries_note(app, chat_id, &bot.id),
+        // What a bot saves mid-session changes these, so they ride a note per request instead of
+        // the system prompt, whose stable prefix the provider's cache is built on.
+        crate::secrets::note(app, &bot.id),
+        crate::skills_turn::note(app, bot, chat_id),
         Some(clock_note(now)),
     ]
     .into_iter()
@@ -4630,7 +4634,13 @@ mod tests {
         assert_eq!(first.cache_points, vec![2]);
         assert_eq!(format!("{:?}", &first.messages[..4]), format!("{:?}", convert_with_compaction(&messages)));
         // The turn's notes come after the transcript, as on its own requests, then the instruction.
-        assert!(format!("{:?}", &first.messages[4]).contains("[It is now"), "{:?}", first.messages[4]);
+        let transcript_len = convert_with_compaction(&messages).len();
+        let notes = &first.messages[transcript_len..first.messages.len() - 1];
+        assert!(notes.iter().any(|message| format!("{message:?}").contains("[It is now")), "{notes:?}");
+        assert!(
+            notes.iter().any(|message| format!("{message:?}").contains("[Skills you can read this turn")),
+            "a turn's skills ride its notes"
+        );
         let LlmMessage::User(instruction) = first.messages.last().unwrap() else { panic!("the instruction") };
         let instruction = instruction.content[0].as_text().unwrap();
         assert!(instruction.contains("Everything before your message that begins \"On it.\""), "{instruction}");
