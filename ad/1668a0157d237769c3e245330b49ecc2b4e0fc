@@ -1,0 +1,22 @@
+mobile/app/(main)/chat/[id].tsx
+  s_3ba4960df8f6a6::t_d984cf9d615190 596-597,600-601
+  s_3ba4960df8f6a6::t_481062f20a486e 95-97,99
+  s_3ba4960df8f6a6::t_6474c17ab096c7 100
+  s_3ba4960df8f6a6::t_b329f2fbfc1d0c 98,101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.52-trip",
+  "base_commit_sha": "ad1668a0157d237769c3e245330b49ecc2b4e0fc",
+  "prompts": {},
+  "sessions": {
+    "s_3ba4960df8f6a6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c562669b-7d97-4140-b9e7-45d30e608e16",
+        "model": "ada-cli-golang-ctripcorp-com/claude-deepseek-v4.1-flash"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
