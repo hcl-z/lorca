@@ -11,11 +11,13 @@ import { useEffect, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
-import Animated, { Easing, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from "react-native-reanimated";
+import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 import { t, useLanguage } from "../i18n";
 import type { Message } from "../core/model";
 import { collapsedPrefix, type MessageFrame } from "./longMessage";
 import { Markdown } from "./Markdown";
+import { EASE_OUT } from "./motion";
 import { pageReveal, sheetFill, sheetPose } from "./readerTransition";
 import { Symbol } from "./Symbol";
 import { lightPalette } from "./theme";
@@ -40,13 +42,13 @@ export function MessageReader({ message, frame, onClose }: { message: Message; f
 
   useEffect(() => {
     if (reduceMotion) {
-      progress.value = 1;
+      progress.set(1);
       setWhole(true);
       return;
     }
-    progress.value = withTiming(1, { duration: OPEN_MS, easing: Easing.out(Easing.cubic) }, (done) => {
-      if (done) runOnJS(setWhole)(true);
-    });
+    progress.set(withTiming(1, { duration: OPEN_MS, easing: EASE_OUT }, (done) => {
+      if (done) scheduleOnRN(setWhole, true);
+    }));
   }, [progress, reduceMotion]);
 
   const close = () => {
@@ -54,16 +56,17 @@ export function MessageReader({ message, frame, onClose }: { message: Message; f
       onClose();
       return;
     }
-    closing.value = withTiming(1, { duration: CLOSE_MS, easing: Easing.out(Easing.quad) }, (done) => {
-      if (done) runOnJS(onClose)();
-    });
+    closing.set(withTiming(1, { duration: CLOSE_MS, easing: EASE_OUT }, (done) => {
+      if (done) scheduleOnRN(onClose);
+    }));
   };
 
   // The chat dims, the page's fill fades in as it grows out of the bubble's rect, and its corner
   // rounds off.
-  const backdrop = useAnimatedStyle(() => ({ opacity: progress.value * 0.4 * (1 - closing.value) }));
+  const backdrop = useAnimatedStyle(() => ({ opacity: progress.get() * 0.4 * (1 - closing.get()) }));
   const sheet = useAnimatedStyle(() => {
-    const pose = sheetPose(frame, width, height, progress.value);
+    const at = progress.get();
+    const pose = sheetPose(frame, width, height, at);
     return {
       transform: [
         { translateX: pose.translateX },
@@ -71,14 +74,14 @@ export function MessageReader({ message, frame, onClose }: { message: Message; f
         { scaleX: pose.scaleX },
         { scaleY: pose.scaleY },
       ],
-      borderRadius: RADIUS * (1 - progress.value),
-      opacity: sheetFill(progress.value) * (1 - closing.value),
+      borderRadius: RADIUS * (1 - at),
+      opacity: sheetFill(at) * (1 - closing.get()),
     };
   });
   // The page's text comes in as the fill covers the bubble, rising a little as it does.
   const page = useAnimatedStyle(() => {
-    const reveal = pageReveal(progress.value);
-    return { opacity: reveal * (1 - closing.value), transform: [{ translateY: (1 - reveal) * 12 }] };
+    const reveal = pageReveal(progress.get());
+    return { opacity: reveal * (1 - closing.get()), transform: [{ translateY: (1 - reveal) * 12 }] };
   });
 
   return (

@@ -10,7 +10,9 @@
 import { MenuView, type MenuAction, type MenuComponentProps, type MenuComponentRef } from "@expo/ui/community/menu";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Modal, Platform, ScrollView, StyleSheet, Text, useWindowDimensions, View, type ImageSourcePropType } from "react-native";
-import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
+import { EASE_OUT } from "./motion";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AndroidIcons } from "./navigation";
 import { Pressable } from "./Pressable";
@@ -142,21 +144,22 @@ function PopupCard({ anchor, actions, onClose }: { anchor: Anchor; actions: Menu
   const closing = useRef(false);
 
   useEffect(() => {
-    progress.value = withTiming(1, { duration: 170, easing: Easing.out(Easing.cubic) });
+    progress.value = withTiming(1, { duration: 170, easing: EASE_OUT });
   }, [progress]);
 
   const dismiss = useCallback(
     (id: string | null) => {
       if (closing.current) return;
       closing.current = true;
-      progress.value = withTiming(0, { duration: 110, easing: Easing.in(Easing.quad) }, (finished) => {
-        if (finished) runOnJS(onClose)(id);
+      // Leaving is an exit too: it eases out rather than winding up before it goes.
+      progress.value = withTiming(0, { duration: 120, easing: EASE_OUT }, (finished) => {
+        if (finished) scheduleOnRN(onClose, id);
       });
     },
     [onClose, progress],
   );
 
-  const cardStyle = useAnimatedStyle(() => ({ opacity: progress.value, transform: [{ scale: 0.88 + 0.12 * progress.value }] }));
+  const cardStyle = useAnimatedStyle(() => ({ opacity: progress.value, transform: [{ scale: 0.92 + 0.08 * progress.value }] }));
   const scrimStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
 
   const choose = (action: MenuAction) => {
