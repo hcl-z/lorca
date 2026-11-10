@@ -8,6 +8,16 @@ phone app's.
 
 ## [Unreleased]
 
+## [1.0.38]
+
+- The phone opens on your chats at once after pairing or a relay reset: the first sync brings the bot list, the sections, and each chat's latest message with its time, and a chat's messages arrive when you open it — from the relay, or from a Device that still has them — a page at a time as you scroll up.
+- Opening a chat no longer makes you wait: a chat you have read opens on its page straight away, a page still on its way says so instead of showing an empty screen, and a fetch that fails leaves the history unfinished so opening the chat again tries once more.
+- What the phone uploads is ordered by what you need first: the bot list, then each bot's newest 30 messages, so a newly paired phone has something to show before its first relay round trip.
+- The phone's transcript redraws only what changed, keeps your place when older messages load above, and no longer loses what it has loaded when the account refreshes.
+- The conversation sits on a soft sky gradient with white message cards, and a folded message fades into its own card.
+- Reading a long message grows it out of its bubble without stretching its text, on a white page in either appearance, and closes by fading back into the chat.
+- Scrolling no longer fades message rows in as they appear, and a swipe to reply carries its flick's speed back.
+
 ## [1.0.37]
 
 - The island at the top of the screen is new, after Cindy's Agent Island. It hugs the notch, or a notch drawn on a display without one, and is gone while nothing runs: it grows out of the notch as a bot or coding agent starts and goes back in when the work is done. A bot or agent at work breathes in orange with its words shimmering; a finished turn shows its last words on a card for a few seconds; a question or an approval opens the island at once to be answered there; a failure shows the bot's avatar in a soft red ring.
