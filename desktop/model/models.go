@@ -2280,6 +2280,10 @@ type Chat struct {
 	// HasMore is the CLI holding messages older than the ones here; the transcript asks for them
 	// by page.
 	HasMore bool
+	// LastMessage is the roster's preview for the list, before the chat's page has been fetched.
+	LastMessage *Message
+	// HistoryElsewhere is the Device that holds older messages while it is offline.
+	HistoryElsewhere *HistoryElsewhere
 	// OwnerBotID is the group member holding the work, as the CLI last said.
 	OwnerBotID string
 	// GroupDescription is what a group is for, which every member reads in its system prompt.
@@ -2300,6 +2304,11 @@ type Chat struct {
 // ChatMute is a chat's alerts off until Until, or until unmuted when Until is zero.
 type ChatMute struct {
 	Until time.Time
+}
+
+// HistoryElsewhere is the Device that holds a chat's older messages while it is offline.
+type HistoryElsewhere struct {
+	DeviceID, DeviceName string
 }
 
 // IsMuted is the chat's alerts off at `now`. The unread count is kept either way.

@@ -590,6 +590,8 @@ export interface Message {
   edited_at?: number | null;
   /** A file or document link a bot published: this message is one version of it. */
   output?: Output;
+  /** A content hash: an incoming message with the same revision is already shown. */
+  rev?: number;
 }
 
 /// A published output: `id` names it across its versions, the message carrying it is the version.
@@ -867,6 +869,10 @@ export interface Chat extends ChatMeta {
   messages: Message[];
   /// The core holds messages older than these; the transcript asks for them by page.
   has_more?: boolean;
+  /// The list's preview from the roster, before the chat's page has been fetched.
+  last_message?: Message;
+  /// More history exists on a Device that is offline right now.
+  history_elsewhere?: { device_id: string; device_name: string };
   unread_count: number;
   usage?: ChatUsage;
 }

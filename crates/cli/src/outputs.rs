@@ -190,10 +190,8 @@ pub fn publish(app: &App, chat_id: &str, bot_id: &str, workdir: &Path, request: 
     let mut message = Message::new(chat_id, Author::Bot { bot_id: bot_id.into() }, Body::Text { text, attachments, mentions: Vec::new(), reply_to: None });
     message.output = Some(output);
     app.upsert_message(message.clone(), true);
-    if app.message(chat_id, &message.id).is_none() {
-        return Err("Output could not be stored; the chat may have been deleted".into());
-    }
-    Ok(message)
+    let stored = app.message(chat_id, &message.id).ok_or("Output could not be stored; the chat may have been deleted")?;
+    Ok(stored)
 }
 
 /// What every app shows for the output in the transcript: the link, and what the bot checked. A

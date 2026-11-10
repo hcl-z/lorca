@@ -69,6 +69,9 @@ export interface StoreState {
   pendingTasks: Record<string, true>;
   /// The chat on screen: new replies there do not count as unread.
   openChatId: string | null;
+  /// Chats whose first page is on its way, by chat id: the transcript says so instead of
+  /// showing an empty list.
+  olderLoading: Record<string, true>;
   /// Only foreground UI can acknowledge a reply as read.
   appActive: boolean;
   /// When the app last came to the foreground, in ms.
@@ -129,6 +132,7 @@ function empty(): Omit<StoreState, "ready" | "dictation_lang" | "appActive" | "a
     statuses: {},
     pendingTasks: {},
     openChatId: null,
+    olderLoading: {},
     files: {},
     fileErrors: {},
     outputs: {},
@@ -161,6 +165,17 @@ export function resetStore() {
 }
 
 // MARK: - Lookup
+
+/// Marks a chat's first page as on its way, or no longer. The transcript shows the wait, so an
+/// empty list never reads as an empty chat.
+export function setOlderLoading(chatId: string, loading: boolean) {
+  useStore.setState((s) => {
+    const olderLoading = { ...s.olderLoading };
+    if (loading) olderLoading[chatId] = true;
+    else delete olderLoading[chatId];
+    return { olderLoading };
+  });
+}
 
 export function thisDeviceId(): string | null {
   return useStore.getState().deviceId;
@@ -232,7 +247,14 @@ export function replaceSnapshot(snapshot: {
       const messages = c.messages ?? [];
       const old = loaded.get(c.id);
       const at = old && messages.length ? old.messages.findIndex((m) => m.id === messages[0].id) : -1;
-      const kept = at > 0 ? { messages: [...old!.messages.slice(0, at), ...messages], has_more: old!.has_more } : { messages };
+      // A snapshot can carry no page for a chat this phone already pulled: every message it has
+      // stays, so opening the chat again draws it without asking the core for it.
+      const kept =
+        messages.length === 0
+          ? { messages: old?.messages ?? [], has_more: old?.has_more }
+          : at > 0
+            ? { messages: [...old!.messages.slice(0, at), ...messages], has_more: old!.has_more }
+            : { messages };
       return { ...c, ...kept, unread_count: c.unread_count ?? 0 };
     }),
     routines: snapshot.routines ?? [],
@@ -292,7 +314,7 @@ function seenOf(devices: Device[]): Record<string, number> {
 
 /// `roster.changed`: bots replace, chat metadata merges over kept messages, chats not named
 /// are gone.
-export function applyRoster(roster: { devices: Device[]; bots: Bot[]; chats: (ChatMeta & { unread_count: number; usage?: ChatUsage })[]; routines?: Routine[]; auto_review?: AutoReview; providers?: ProviderStatus[]; models?: ProviderModel[]; shared_links?: SharedLink[]; sections?: Section[] }): { removed: string[] } {
+export function applyRoster(roster: { devices: Device[]; bots: Bot[]; chats: (ChatMeta & { unread_count: number; usage?: ChatUsage; last_message?: Message })[]; routines?: Routine[]; auto_review?: AutoReview; providers?: ProviderStatus[]; models?: ProviderModel[]; shared_links?: SharedLink[]; sections?: Section[] }): { removed: string[] } {
   const removed: string[] = [];
   useStore.setState((s) => {
     const incoming = new Set(roster.chats.map((c) => c.id));
@@ -302,7 +324,7 @@ export function applyRoster(roster: { devices: Device[]; bots: Bot[]; chats: (Ch
     // its identity, so the screens' memoized rows and lists built from it stay as they are.
     const next: Chat[] = roster.chats.map((meta) => {
       const old = existing.get(meta.id);
-      const chat = { ...meta, is_pinned: meta.is_pinned ?? false, messages: old?.messages ?? [], has_more: old?.has_more, unread_count: meta.unread_count ?? old?.unread_count ?? 0, usage: meta.usage ?? old?.usage };
+      const chat = { ...meta, is_pinned: meta.is_pinned ?? false, messages: old?.messages ?? [], has_more: old?.has_more, last_message: meta.last_message ?? old?.last_message, unread_count: meta.unread_count ?? old?.unread_count ?? 0, usage: meta.usage ?? old?.usage };
       return old && sameFields(old, chat) ? old : chat;
     });
     const chats = next.length === s.chats.length && next.every((chat, i) => chat === s.chats[i]) ? s.chats : next;
@@ -375,7 +397,7 @@ export function upsertMessage(message: Message, isNew = true): { added: boolean 
     if (index < 0) {
       added = true;
       next = { ...chat, messages: [...chat.messages, message] };
-    } else if (JSON.stringify(previous) !== JSON.stringify(message)) {
+    } else if (previous.rev !== undefined && message.rev !== undefined ? previous.rev !== message.rev : JSON.stringify(previous) !== JSON.stringify(message)) {
       const messages = chat.messages.slice();
       messages[index] = message;
       next = { ...chat, messages };
@@ -400,6 +422,11 @@ export function upsertMessage(message: Message, isNew = true): { added: boolean 
   if (started) setTimeout(() => useStore.setState((s) => ({ pendingTasks: omit(s.pendingTasks, message.id) })), TASK_DELAY_MS);
   if (added && isNew) messageArrived(message.created_at);
   return { added };
+}
+
+/// Applies a batch of coalesced streamed updates, keeping each message's "new" flag.
+export function upsertMessages(entries: { message: Message; isNew: boolean }[]): void {
+  for (const { message, isNew } of entries) upsertMessage(message, isNew);
 }
 
 export function removeMessage(chatId: string, messageId: string) {

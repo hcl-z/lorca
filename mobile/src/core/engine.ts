@@ -42,11 +42,13 @@ import {
   replaceSnapshot,
   resetStore,
   setChatUsage,
+  setOlderLoading,
   setRetry,
   setRunning,
   setStatus,
   setThinking,
   upsertMessage,
+  upsertMessages,
   useStore,
   deviceIsOnline,
 } from "./store";
@@ -79,6 +81,9 @@ class Engine {
   /// Snapshots on their way, and the events that arrived meanwhile (see `bootstrap`).
   private bootstraps = 0;
   private held: core.Frame[] = [];
+  /// Streamed message updates waiting for the next store pass, the latest version of each.
+  private pendingMessages = new Map<string, { message: Message; isNew: boolean }>();
+  private pendingFlush: ReturnType<typeof setTimeout> | null = null;
 
   // MARK: - Lifecycle
 
@@ -130,6 +135,34 @@ class Engine {
       this.bootstraps -= 1;
       if (!this.bootstraps) this.applyHeld();
     }
+  }
+
+  /// One store pass per 100 ms for streamed updates: a fast reply changes a message many times,
+  /// and only its latest version needs drawing.
+  private queueMessage(message: Message, isNew: boolean) {
+    const seen = this.pendingMessages.get(message.id);
+    this.pendingMessages.set(message.id, { message, isNew: seen?.isNew || isNew });
+    if (this.pendingFlush) return;
+    this.pendingFlush = setTimeout(() => this.flushStreamedMessages(), 100);
+  }
+
+  /// Applies the streamed updates waiting for the next pass now.
+  flushStreamedMessages() {
+    if (this.pendingFlush) clearTimeout(this.pendingFlush);
+    this.pendingFlush = null;
+    const entries = [...this.pendingMessages.values()];
+    this.pendingMessages.clear();
+    if (entries.length) upsertMessages(entries);
+  }
+
+  private clearPendingMessages() {
+    if (this.pendingFlush) clearTimeout(this.pendingFlush);
+    this.pendingFlush = null;
+    this.pendingMessages.clear();
+  }
+
+  private dropPendingChat(chatId: string) {
+    for (const [id, entry] of this.pendingMessages) if (entry.message.chat_id === chatId) this.pendingMessages.delete(id);
   }
 
   private receive(frame: core.Frame) {
@@ -192,6 +225,7 @@ class Engine {
         useStore.setState({ attention: event.view });
         break;
       case "snapshot":
+        this.clearPendingMessages();
         replaceSnapshot(event.snapshot);
         saveCachedSnapshot(useStore.getState);
         break;
@@ -215,12 +249,31 @@ class Engine {
       }
       case "message.added":
       case "message.updated":
-        upsertMessage(event.message, event.kind === "message.added");
+        this.queueMessage(event.message, event.kind === "message.added");
         break;
       case "message.removed":
+        this.pendingMessages.delete(event.messageId);
         removeMessage(event.chatId, event.messageId);
         break;
+      // A page that `chats.messages` left pending: insert it and keep the chat's page state.
+      case "chat.messages.loaded": {
+        const chat = chatById(event.chatId);
+        if (chat) {
+          const known = new Set(chat.messages.map((m) => m.id));
+          const first = chat.messages[0];
+          const messages = [
+            ...event.messages.filter((m: Message) => !known.has(m.id) && (!first || m.created_at <= first.created_at)),
+            ...chat.messages,
+          ];
+          useStore.setState((s) => ({
+            chats: s.chats.map((c) => (c.id === event.chatId ? { ...c, messages, has_more: event.hasMore } : c)),
+          }));
+        }
+        this.clearOlderLoading(event.chatId);
+        break;
+      }
       case "chat.removed":
+        this.dropPendingChat(event.chatId);
         removeChat(event.chatId);
         break;
       case "job.started":
@@ -360,25 +413,48 @@ class Engine {
   }
 
   /// The page of messages before the chat's first one, as the transcript nears its top. One
-  /// request per chat at a time.
+  /// request per chat at a time. With an empty chat it asks for the first page.
   async loadOlder(chatId: string): Promise<void> {
-    const first = chatById(chatId)?.messages[0];
-    if (!first || !chatById(chatId)?.has_more || this.loadingOlder.has(chatId)) return;
+    const chat = chatById(chatId);
+    const first = chat?.messages[0];
+    // A chat whose page state is not known yet is asked for once, rather than left empty.
+    if (chat?.has_more === false || this.loadingOlder.has(chatId)) return;
     this.loadingOlder.add(chatId);
+    setOlderLoading(chatId, true);
+    let pending = false;
     try {
-      const page = await core.request<{ messages: Message[]; has_more: boolean }>("chats.messages", { chat_id: chatId, before: first.id });
+      const page = await core.request<{
+        messages: Message[];
+        has_more: boolean;
+        pending?: boolean;
+        history_elsewhere?: { device_id: string; device_name: string };
+      }>("chats.messages", first ? { chat_id: chatId, before: first.id, wait_ms: 0 } : { chat_id: chatId, wait_ms: 0 });
+      pending = !!page.pending;
       useStore.setState((s) => ({
         chats: s.chats.map((c) => {
-          if (c.id !== chatId || c.messages[0]?.id !== first.id) return c;
+          if (c.id !== chatId || (first && c.messages[0]?.id !== first.id)) return c;
           const known = new Set(c.messages.map((m) => m.id));
-          return { ...c, messages: [...page.messages.filter((m) => !known.has(m.id)), ...c.messages], has_more: page.has_more };
+          return {
+            ...c,
+            messages: [...page.messages.filter((m) => !known.has(m.id)), ...c.messages],
+            has_more: page.has_more,
+            history_elsewhere: page.history_elsewhere,
+          };
         }),
       }));
     } catch (error) {
       console.warn("loading older messages", error instanceof Error ? error.message : error);
     } finally {
-      this.loadingOlder.delete(chatId);
+      // A page still on its way arrives through `chat.messages.loaded`; the chat stays marked so
+      // a fast scroll does not ask again.
+      if (!pending) this.clearOlderLoading(chatId);
     }
+  }
+
+  /// The chat's page is no longer on its way.
+  private clearOlderLoading(chatId: string): void {
+    this.loadingOlder.delete(chatId);
+    setOlderLoading(chatId, false);
   }
 
   async searchChats(query: string): Promise<ChatSearchResults> {

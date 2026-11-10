@@ -39,8 +39,24 @@ describe("transcript rows", () => {
     expect(rows.map((row) => row.groupStart)).toEqual([true, false]);
   });
 
-  test("a message an agent wrote into the chat before reads as its bot's", () => {
-    // From when an agent took part in the chat: its words carried `agent`, which no longer counts.
+  test("a streamed last message rebuilds only the last rows", () => {
+    const messages = [text("m1", { kind: "you" }, "one", 1), text("m2", { kind: "you" }, "two", 2)];
+    const first = buildRows(chat(messages), new Map(), [], false, null);
+    const changed = [...messages.slice(0, -1), { ...messages[1], body: { kind: "text", text: "two!" }, rev: 2 } as Message];
+    const next = buildRows(chat(changed), new Map(), [], false, null, { messages, rows: first, isWorking: false, status: null, bots: new Map(), workingBotIds: [], historyElsewhere: undefined });
+    expect(next[0]).toBe(first[0]);
+    expect(next.at(-1)).not.toBe(first.at(-1));
+  });
+
+  test("a change before the last message rebuilds it too", () => {
+    const messages = [text("m1", { kind: "you" }, "one", 1), text("m2", { kind: "you" }, "two", 2)];
+    const first = buildRows(chat(messages), new Map(), [], false, null);
+    const changed = [{ ...messages[0], body: { kind: "text", text: "one!" }, rev: 5 } as Message, messages[1]];
+    const next = buildRows(chat(changed), new Map(), [], false, null, { messages, rows: first, isWorking: false, status: null, bots: new Map(), workingBotIds: [], historyElsewhere: undefined });
+    expect(next[0]).not.toBe(first[0]);
+  });
+
+  test("a message an agent wrote into the chat before reads as its bot's", () => {    // From when an agent took part in the chat: its words carried `agent`, which no longer counts.
     const old = { ...text("m1", { kind: "bot", bot_id: "b1" }, "one", 2), agent: { id: "a1", name: "Claude Code", kind: "claude" } } as Message;
     const messages = [text("u1", { kind: "you" }, "hi", 1), old];
     const rows = buildRows(chat(messages), new Map([["b1", bot("b1", "Chef")]]), [], false, null).filter((row) => row.type === "message");

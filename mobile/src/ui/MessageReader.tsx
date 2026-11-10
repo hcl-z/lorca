@@ -1,72 +1,102 @@
-// A message read whole, over the chat: the bubble's folded text grows from where the bubble
-// stands to a page of its own, and closes back into it. The full message is laid out once the
-// growth is done, so the reader's own height does not stall the motion; the head it shows then is
-// the head the bubble showed, so nothing at the top moves.
+// A message read whole, over the chat: a white page on black text, the same in either appearance,
+// grows out of the bubble. The bubble's fill grows into the page, and the message fades in as the
+// page covers the bubble. Only the page's plain fill is stretched; the text is laid out once at
+// its reading width, so it never distorts. The full message is laid out once the growth is done,
+// so the reader's own height does not stall the motion.
+//
+// It closes by fading out where it stands, so the chat and the bubble come back through it; folding
+// the page back into the bubble would hide the message behind a blank card until it vanished.
 
 import { useEffect, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
+import { StatusBar } from "expo-status-bar";
+import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 import { t, useLanguage } from "../i18n";
 import type { Message } from "../core/model";
 import { collapsedPrefix, type MessageFrame } from "./longMessage";
 import { Markdown } from "./Markdown";
+import { EASE_OUT } from "./motion";
+import { pageReveal, sheetFill, sheetPose } from "./readerTransition";
 import { Symbol } from "./Symbol";
-import { usePalette } from "./theme";
+import { lightPalette } from "./theme";
 
-/// How long the page takes to grow from the bubble, and to fold back into it.
-const OPEN_MS = 260;
-const CLOSE_MS = 200;
+/// How long the page takes to grow from the bubble, and to fade back into the chat.
+const OPEN_MS = 280;
+const CLOSE_MS = 180;
+/// The bubble's corner, which the page's fill starts with.
+const RADIUS = 20;
 
 export function MessageReader({ message, frame, onClose }: { message: Message; frame: MessageFrame; onClose: () => void }) {
   useLanguage();
-  const p = usePalette();
+  const p = lightPalette();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
+  const reduceMotion = useReducedMotion();
   const text = message.body.kind === "text" ? message.body.text : "";
   // The head is what the bubble already laid out; the whole waits for the page to finish growing.
   const [whole, setWhole] = useState(false);
   const progress = useSharedValue(0);
+  const closing = useSharedValue(0);
 
   useEffect(() => {
-    progress.value = withTiming(1, { duration: OPEN_MS, easing: Easing.out(Easing.cubic) }, (done) => {
-      if (done) runOnJS(setWhole)(true);
-    });
-  }, [progress]);
+    if (reduceMotion) {
+      progress.set(1);
+      setWhole(true);
+      return;
+    }
+    progress.set(withTiming(1, { duration: OPEN_MS, easing: EASE_OUT }, (done) => {
+      if (done) scheduleOnRN(setWhole, true);
+    }));
+  }, [progress, reduceMotion]);
 
   const close = () => {
-    progress.value = withTiming(0, { duration: CLOSE_MS, easing: Easing.in(Easing.cubic) }, (done) => {
-      if (done) runOnJS(onClose)();
-    });
+    if (reduceMotion) {
+      onClose();
+      return;
+    }
+    closing.set(withTiming(1, { duration: CLOSE_MS, easing: EASE_OUT }, (done) => {
+      if (done) scheduleOnRN(onClose);
+    }));
   };
 
-  const backdrop = useAnimatedStyle(() => ({ opacity: progress.value }));
-  const growing = useAnimatedStyle(() => {
-    const at = progress.value;
-    const back = 1 - at;
-    const scaleX = Math.max(0.05, frame.w / width);
-    const scaleY = Math.max(0.05, frame.h / height);
+  // The chat dims, the page's fill fades in as it grows out of the bubble's rect, and its corner
+  // rounds off.
+  const backdrop = useAnimatedStyle(() => ({ opacity: progress.get() * 0.4 * (1 - closing.get()) }));
+  const sheet = useAnimatedStyle(() => {
+    const at = progress.get();
+    const pose = sheetPose(frame, width, height, at);
     return {
       transform: [
-        { translateX: back * (frame.x + frame.w / 2 - width / 2) },
-        { translateY: back * (frame.y + frame.h / 2 - height / 2) },
-        { scaleX: 1 + back * (scaleX - 1) },
-        { scaleY: 1 + back * (scaleY - 1) },
+        { translateX: pose.translateX },
+        { translateY: pose.translateY },
+        { scaleX: pose.scaleX },
+        { scaleY: pose.scaleY },
       ],
+      borderRadius: RADIUS * (1 - at),
+      opacity: sheetFill(at) * (1 - closing.get()),
     };
   });
-  const control = useAnimatedStyle(() => ({ opacity: progress.value }));
+  // The page's text comes in as the fill covers the bubble, rising a little as it does.
+  const page = useAnimatedStyle(() => {
+    const reveal = pageReveal(progress.get());
+    return { opacity: reveal * (1 - closing.get()), transform: [{ translateY: (1 - reveal) * 12 }] };
+  });
 
   return (
     <Modal transparent visible animationType="none" onRequestClose={close} statusBarTranslucent>
+    {/* The page is white whatever the appearance, so its status bar is dark too. */}
+    <StatusBar style="dark" />
     <View style={StyleSheet.absoluteFill} accessibilityViewIsModal onAccessibilityEscape={close}>
-      <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: p.background }, backdrop]} />
-      <Animated.View style={[StyleSheet.absoluteFill, growing]}>
+      <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: "#000" }, backdrop]} />
+      <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: p.background }, sheet]} pointerEvents="none" />
+      <Animated.View style={[StyleSheet.absoluteFill, page]}>
         <ScrollView contentContainerStyle={{ paddingTop: insets.top + 56, paddingHorizontal: 20, paddingBottom: insets.bottom + 40 }}>
           <Markdown text={whole ? text : collapsedPrefix(text)} color={p.label} maxWidth={Math.min(width - 40, 620)} sources={message.author.kind === "bot"} />
         </ScrollView>
       </Animated.View>
-      <Animated.View style={[styles.close, { top: insets.top + 8 }, control]}>
+      <Animated.View style={[styles.close, { top: insets.top + 8 }, page]}>
         <Pressable onPress={close} accessibilityRole="button" accessibilityLabel={t("Close")} hitSlop={8} style={({ pressed }) => [{ backgroundColor: p.code }, styles.disc, pressed && { opacity: 0.6 }]}>
           <Symbol name="xmark" size={17} color={p.label} weight="semibold" />
         </Pressable>

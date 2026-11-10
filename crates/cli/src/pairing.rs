@@ -267,6 +267,7 @@ async fn join(app: &Arc<App>, pairing_string: &str, device_name: Option<String>)
         os,
         os_version,
         box_pubkey: machine.box_pubkey(),
+        is_identity_device: false,
         plugins: Vec::new(),
         channels: Vec::new(),
         version: crate::config::VERSION.into(),

@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Platform, type ScrollViewProps, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Platform, type ScrollViewProps, StyleSheet, Text, View } from "react-native";
 import { Pressable } from "../../../src/ui/Pressable";
 import {
   KeyboardChatScrollView,
@@ -77,6 +77,7 @@ import {
   WorkingRow,
   type Row,
 } from "../../../src/ui/transcript";
+import type { PreviousRows } from "../../../src/ui/transcriptRows";
 
 /// Breathing room between the last message and the composer, as on the Mac.
 const COMPOSER_GAP = 14;
@@ -87,8 +88,17 @@ const JUMP_DISTANCE = 160;
 const JUMP_DISC = 36;
 /** How far past the viewport, in points, the transcript keeps its rows drawn. */
 const DRAW_DISTANCE = 1000;
-/** A typical row's height before it is measured: a bubble of a line or two. */
-const ESTIMATED_ROW = 72;
+/// A guess at a row's height until LegendList measures its own. Tune it from
+/// `listRef.current?.getState().getAverageItemSizes()`: too small makes the first
+/// `initialScrollAtEnd` land short and jump when the rows measure.
+const ESTIMATED_ROW = 160;
+/// The transcript's backdrop, the same in either appearance: a pastel sky, teal at the head
+/// through periwinkle to a pale foot, so white cards stand out of it. The stops come from the
+/// design's `oklch` gradient, converted to sRGB because the native gradient takes plain colors.
+const BACKDROP = {
+  colors: ["#7CCED7", "#9BCBE2", "#B7CEFB", "#CCDCE9", "#DBE8D9", "#DDF2F3"] as const,
+  locations: [0, 0.2, 0.4, 0.6, 0.8, 1] as const,
+} as const;
 /// The transcript follows its end while the reader rests within this share of the screen of it.
 const FOLLOW_THRESHOLD = 0.1;
 const SCROLL_OWNS_ANCHOR_SPACE = { anchoredEndSpaceOwnerInternal: "scroll" } as object;
@@ -110,6 +120,8 @@ export default function ChatScreen() {
   const isWorking = useIsWorking(id);
   const hasTasks = useRunningTasks(id).length > 0;
   const status = useStore((s) => s.statuses[id] ?? null);
+  // The chat's first page is on its way from the core: the list has nothing to draw until it lands.
+  const loadingOlder = useStore((s) => !!s.olderLoading[id]);
   // A long message read whole, from the place its bubble stands.
   const [reader, setReader] = useState<{ message: Message; frame: MessageFrame } | null>(null);
   const openReader = useCallback((message: Message, frame: MessageFrame) => setReader({ message, frame }), []);
@@ -298,11 +310,24 @@ export default function ChatScreen() {
   // diffs its data on every new array.
   const sharedRows = useRef<Row[]>([]);
   const rowsRef = useRef<Row[]>([]);
+  const previousRows = useRef<PreviousRows | null>(null);
+  const previousLanguage = useRef(language);
   const rows = useMemo(() => {
-    const next = chat ? buildRows(chat, bots, workingBotIds, isWorking, status) : [];
+    if (previousLanguage.current !== language) {
+      previousLanguage.current = language;
+      previousRows.current = null;
+    }
+    const next = chat ? buildRows(chat, bots, workingBotIds, isWorking, status, previousRows.current ?? undefined) : [];
+    if (chat) previousRows.current = { messages: chat.messages, rows: next, isWorking, status, bots, workingBotIds, historyElsewhere: chat.history_elsewhere };
+    else previousRows.current = null;
     return (sharedRows.current = shareRows(sharedRows.current, next));
   }, [chat, bots, workingBotIds, isWorking, status, language]);
   rowsRef.current = rows;
+  // A chat whose page is not here yet: ask for its first page as the screen opens. An empty
+  // transcript has no row to scroll into view, so `onLoad`/`onStartReached` never fire for it.
+  useEffect(() => {
+    if (chat && chat.messages.length === 0 && chat.has_more !== false) void engine.loadOlder(id);
+  }, [id, chat?.messages.length, chat?.has_more]);
   const anchorIndex = anchorKey ? rows.findIndex((row) => row.key === anchorKey) : -1;
   const anchoredEndSpace = useMemo(
     () =>
@@ -567,7 +592,17 @@ export default function ChatScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: p.background }}>
+    <View style={{ flex: 1 }}>
+      {/* The transcript sits on the design's sky gradient: the white bubbles and cards stand out
+          of it, and a message read whole opens onto the same white page. */}
+      <LinearGradient
+        pointerEvents="none"
+        colors={BACKDROP.colors}
+        locations={BACKDROP.locations}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
       <ChatHeader
         id={id}
         title={title}
@@ -605,7 +640,7 @@ export default function ChatScreen() {
             maintainScrollAtEnd={{ animated: true }}
             maintainScrollAtEndThreshold={FOLLOW_THRESHOLD}
             // A page loaded above keeps the rows on screen where they are.
-            maintainVisibleContentPosition={{ data: true }}
+            maintainVisibleContentPosition={{ data: true, size: true }}
             anchoredEndSpace={anchoredEndSpace}
             // The space is the scroll view's inset (`blankSpace`), not padding in the list, as in
             // LegendList's KeyboardAwareLegendList; the prop is LegendList's internal one for it.
@@ -625,6 +660,9 @@ export default function ChatScreen() {
             onLoad={() => {
               loaded.current = true;
               chatShown();
+              // A chat whose window has not been fetched yet is empty; ask for its first page
+              // rather than waiting for a scroll that has nothing to scroll.
+              if (chat && chat.messages.length === 0 && chat.has_more !== false) void engine.loadOlder(id);
             }}
             // Nearing the first message: the page before it, once the chat has opened at its end.
             onStartReached={() => {
@@ -639,6 +677,12 @@ export default function ChatScreen() {
             onMomentumScrollEnd={scrollEnded}
           />
         </SoftScrollEdgeView>
+        {rows.length === 0 && loadingOlder ? (
+          <View style={styles.loadingOlder} pointerEvents="none">
+            <ActivityIndicator color={p.secondaryLabel} />
+            <Text style={{ color: p.secondaryLabel, fontSize: 14 }}>{t("Loading…")}</Text>
+          </View>
+        ) : null}
         <KeyboardFoot
           style={[styles.jump, { bottom: composerHeight + 10 }]}
           tuck={insets.bottom}
@@ -866,6 +910,7 @@ const ChatHeader = memo(function ChatHeader({
 
 const styles = StyleSheet.create({
   transcript: { flex: 1 },
+  loadingOlder: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", gap: 10 },
   missing: { flex: 1, alignItems: "center", justifyContent: "center" },
   androidHeader: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 100 },
   androidHeaderControls: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16 },

@@ -51,6 +51,9 @@ mock.module("../../modules/lorca-core", () => ({
     }
     if (method === "providers.disconnect") return { providers: [] };
     if (method === "providers.list_models") return params.base_url.includes("unlisted") ? { listed: false } : { listed: true, models: [{ id: "llama4", context_window: 131072 }] };
+    if (method === "chats.messages") {
+      return { messages: [{ id: "old", chat_id: params.chat_id, author: { kind: "you" }, body: { kind: "text", text: "old" }, state: { kind: "complete" }, created_at: 1 }], has_more: false };
+    }
     return method === "bootstrap" ? (heldSnapshot ?? snapshot([])) : null;
   },
 }));
@@ -81,6 +84,7 @@ beforeEach(async () => {
 });
 
 async function flush() {
+  engine.flushStreamedMessages();
   // markRead imports the native bridge asynchronously.
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
@@ -197,9 +201,11 @@ test("a turn on the Runner reads as thinking, its command, and its retry", () =>
   expect(row()).toBe("Thinking…");
   // The bot's next message is what its thinking came to.
   event({ event: "message.added", data: { chat_id: "open", message: command(true) } });
+  engine.flushStreamedMessages();
   expect(row()).toBe("Running command: Install dependencies…");
   event({ event: "job.thinking", data: { chat_id: "open", bot_id: "bot" } });
   event({ event: "message.updated", data: { chat_id: "open", message: command(false) } });
+  engine.flushStreamedMessages();
   expect(row()).toBe("Thinking…");
   event({ event: "job.retry", data: { chat_id: "open", bot_id: "bot", attempt: 1, max_attempts: 3, delay_ms: 2000, error: "overloaded" } });
   expect(row()).toBe("Retrying (1 of 3) in 2 s…");
@@ -219,8 +225,16 @@ test("events that arrive while a snapshot is on its way are applied after it", a
   answer({ ...snapshot([chat("open"), chat("other")]), relay_connected: false });
   heldSnapshot = null;
   await paired;
+  engine.flushStreamedMessages();
   expect(useStore.getState().relayConnected).toBe(true);
   expect(useStore.getState().chats[0].messages.map((m) => m.id)).toEqual(["reply"]);
+});
+
+test("opening a chat with no messages loads its first page", async () => {
+  event({ event: "snapshot", data: snapshot([{ ...chat("open"), has_more: true }]) });
+  await flush();
+  await engine.loadOlder("open");
+  expect(useStore.getState().chats.find((c) => c.id === "open")?.messages.map((m) => m.id)).toEqual(["old"]);
 });
 
 function command(state: CommandRun["state"], session_id?: string, id = "call"): Message {
@@ -235,13 +249,16 @@ test("a command becomes a running task once it has run in its terminal for a mom
   event({ event: "message.added", data: { chat_id: "open", message: command("running") } });
   event({ event: "message.updated", data: { chat_id: "open", message: command("checking") } });
   event({ event: "message.updated", data: { chat_id: "open", message: command("running", "bash-1") } });
+  engine.flushStreamedMessages();
   expect(tasks()).toEqual([]);
   await new Promise((resolve) => setTimeout(resolve, TASK_DELAY_MS + 50));
   expect(tasks()).toEqual(["call"]);
   // Waiting at a question is still running.
   event({ event: "message.updated", data: { chat_id: "open", message: command("waiting", "bash-1") } });
+  engine.flushStreamedMessages();
   expect(tasks()).toEqual(["call"]);
   event({ event: "message.updated", data: { chat_id: "open", message: command("exited", "bash-1") } });
+  engine.flushStreamedMessages();
   expect(tasks()).toEqual([]);
 });
 

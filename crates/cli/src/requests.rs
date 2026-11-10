@@ -135,6 +135,39 @@ pub fn serve(app: Arc<App>, from: String, request: Request, blob_id: String) {
 /// Send now has a turn here read a message it holds. The update verbs install the latest release
 /// of this CLI, or turn its automatic updates on or off. A request names no release and no
 /// download: the Runner installs only what its own signed manifest offers.
+/// A page of a chat older than the `(sort_at, message_id)` cursor, from this Device's local copy.
+/// `not_here` says this Device does not list the chat, so the asker tries another origin.
+fn history_page(app: &Arc<App>, body: &Value) -> Result<Value, String> {
+    let chat_id = body["chat_id"].as_str().ok_or("missing chat_id")?;
+    if app.chat(chat_id).is_none() {
+        return Ok(json!({ "not_here": true }));
+    }
+    let before = body.get("before").and_then(|before| {
+        Some((before["sort_at"].as_f64()?, before["message_id"].as_str()?.to_string()))
+    });
+    let limit = body["limit"].as_u64().unwrap_or(100).clamp(1, 200) as usize;
+    let max_bytes = body["max_bytes"].as_u64().unwrap_or(256 * 1024) as usize;
+    let (messages, has_more) = app
+        .store
+        .page_before(chat_id, before.as_ref().map(|(sort_at, id)| (*sort_at, id.as_str())), limit)
+        .map_err(|error| error.to_string())?;
+    let total = messages.len();
+    let mut out = Vec::new();
+    let mut bytes = 0usize;
+    for message in messages {
+        // The full message: a turn's context needs tool arguments and results, while the apps
+        // trim their display themselves.
+        let value = json!(message);
+        let size = serde_json::to_vec(&value).map(|bytes| bytes.len()).unwrap_or(0);
+        if !out.is_empty() && bytes + size > max_bytes {
+            break;
+        }
+        bytes += size;
+        out.push(value);
+    }
+    Ok(json!({ "messages": out, "has_more": has_more || out.len() < total }))
+}
+
 async fn answer(app: &Arc<App>, from: &str, request: &Request) -> Result<Value, String> {
     let body = &request.body;
     match request.verb.as_str() {
@@ -151,6 +184,8 @@ async fn answer(app: &Arc<App>, from: &str, request: &Request) -> Result<Value, 
         verb if verb.starts_with("reviews.") => crate::review_queue::serve(app, verb, body, from).await,
         verb if verb.starts_with("tasks.") => crate::tasks::serve(app, verb, body, from),
         "memory.read" => memory_read(app, body["bot_id"].as_str().ok_or("missing bot_id")?),
+        // A page of a chat older than the asker's local copy, served from this Device.
+        "history.page" => history_page(app, body),
         "memory.write" => {
             let text = body["text"].as_str().ok_or("missing text")?;
             memory_write(app, body["bot_id"].as_str().ok_or("missing bot_id")?, text, body["expected_hash"].as_str())
@@ -328,6 +363,14 @@ pub(crate) mod tests {
     fn scratch() -> Scratch {
         let home = std::env::temp_dir().join(format!("lorca-requests-{}", uuid::Uuid::new_v4()));
         Scratch(App::load(Config { home: home.clone(), port: 0 }).unwrap(), home)
+    }
+
+    #[tokio::test]
+    async fn history_page_answers_not_here_for_a_chat_it_does_not_list() {
+        let scratch = scratch();
+        let app = &scratch.0;
+        let answer = answer(app, "peer", &Request { id: "r".into(), verb: "history.page".into(), body: json!({ "chat_id": "missing" }) }).await.unwrap();
+        assert_eq!(answer["not_here"], true);
     }
 
     /// A verb about another Runner goes to it and comes back with its answer; one about this

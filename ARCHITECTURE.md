@@ -71,14 +71,15 @@ One doc per subject under `docs/architecture/`, each read in one pass: `bun run 
 
 | Doc | Read it for |
 | --- | --- |
-| [Identity](docs/architecture/identity.md) | Key pairs and the identity device, pairing and unpairing, Devices and Runners, what the relay sees, the account's provider credentials |
-| [Relay](docs/architecture/relay.md) | `crates/relay`: storage on SQLite or Postgres, files, housekeeping, quotas, metrics, rate limits, auth, tables and migrations, the blob, sync socket, and push APIs, deploys |
-| [Relay trust](docs/architecture/relay-trust.md) | What a Device takes from the relay and how it checks it: Device records, unpaired keys, signed envelopes, the challenge nonce, the pairing reply key, account key generations and rotation on unpair |
+| [Identity](docs/architecture/identity.md) | Key pairs and the identity device, pairing, Devices and Runners, what the relay sees, provider credentials |
+| [Relay](docs/architecture/relay.md) | `crates/relay`: storage, files, housekeeping, quotas, metrics, rate limits, auth, tables, blob, socket, push APIs, deploys |
+| [History](docs/architecture/history.md) | First screen, 30-message window, on-demand pages, turn context, revs |
+| [Relay trust](docs/architecture/relay-trust.md) | What a Device takes from the relay and how it checks it: Device records, unpaired keys, envelopes, challenge nonce, pairing reply key, key generations, rotation on unpair |
 | [Protocols](docs/architecture/protocols.md) | Relay requests/blobs; [local websocket](docs/architecture/local-ws.md) |
-| [CLI (runtime)](docs/architecture/runtime.md) | The `lorca` binary and its data directory, installing it, its signed self-updates and `lorca service`, the agent loop and a turn on a Runner |
+| [CLI (runtime)](docs/architecture/runtime.md) | The `lorca` binary and its data directory, installing it, signed self-updates and `lorca service`, the agent loop and a turn on a Runner |
 | [Turn context](docs/architecture/turn-context.md) | A turn's system prompt, brief and notes, and the follow-up on announced work |
 | [Turn traces](docs/architecture/traces.md) | A turn's steps and end reason, `lorca traces` |
-| [Notifications](docs/architecture/notifications.md) | Phone pushes for replies, failures, and questions, the desktop app's own notifications, reads on another Device, the chat on screen |
+| [Notifications](docs/architecture/notifications.md) | Phone pushes for replies, failures, and questions, the desktop app's notifications, reads on another Device, the chat on screen |
 | [Bot permissions](docs/architecture/bot-permissions.md) | A bot's Access to plugins, tools, files, and shell; where the CLI checks it; access requests |
 | [Tools](docs/architecture/tools.md) | Team, memory, and coding tools |
 | [Auto-review](docs/architecture/auto-review.md) | Fast paths, what it reads, its rules and two passes, holds back to the bot, asks |

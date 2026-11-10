@@ -109,10 +109,14 @@ fn write_local(app: &App, id: &str, bytes: &[u8]) -> anyhow::Result<()> {
 /// Queues the attachment's bytes as a `file` blob. Call before the chat op that names it, so
 /// the relay hands Runners the bytes before the message that needs them.
 pub fn push_blob(app: &App, chat_id: Option<&str>, attachment: &Attachment) -> anyhow::Result<()> {
+    push_blob_with_priority(app, chat_id, attachment, 1)
+}
+
+pub fn push_blob_with_priority(app: &App, chat_id: Option<&str>, attachment: &Attachment, priority: u8) -> anyhow::Result<()> {
     let Some(dek) = app.dek() else { return Ok(()) };
     let bytes = std::fs::read(local_path(app, &attachment.id))?;
     let ciphertext = crate::crypto::encrypt(&dek, "file", &bytes)?;
-    app.push_file_blob(attachment.id.clone(), chat_id, ciphertext);
+    app.push_file_blob_with_priority(attachment.id.clone(), chat_id, ciphertext, priority);
     Ok(())
 }
 

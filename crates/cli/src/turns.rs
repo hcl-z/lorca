@@ -206,6 +206,7 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         tracing::warn!(%error, dir = %workdir.display(), "creating the bot's working directory");
     }
     // Attachments another Device sent are fetched before the transcript names them.
+    let _ = crate::sync::ensure_context(app, &chat.meta.id, MAX_CONTEXT_MESSAGES, std::time::Duration::from_secs(2)).await;
     let recent_messages = app.store.page(&chat.meta.id, None, MAX_CONTEXT_MESSAGES).map(|(messages, _)| messages).unwrap_or_default();
     let attachments: Vec<Attachment> = recent_messages
         .iter()
@@ -6544,6 +6545,7 @@ mod tests {
                 os: "ios".into(),
                 os_version: String::new(),
                 box_pubkey: phone_keys.box_pubkey(),
+                is_identity_device: false,
                 plugins: Vec::new(), channels: Vec::new(),
                 version: String::new(),
                 update: None,

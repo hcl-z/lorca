@@ -6,7 +6,7 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { Pressable, StyleSheet, Text, View, type ColorValue } from "react-native";
 import { t, useLanguage } from "../i18n";
-import { collapsedPrefix, COLLAPSED_HEIGHT, isLongMessage } from "./longMessage";
+import { clearEnd, collapsedPrefix, COLLAPSED_HEIGHT, isLongMessage } from "./longMessage";
 import { Markdown } from "./Markdown";
 import { Font } from "./theme";
 
@@ -45,7 +45,7 @@ export function FoldedText({
       <Markdown text={folded ? collapsedPrefix(text) : text} color={color} maxWidth={maxWidth} size={size} sources={sources} />
       {folded ? (
         <>
-          <LinearGradient colors={["transparent", background]} style={styles.fade} pointerEvents="none" />
+          <LinearGradient colors={[clearEnd(background as string), background, background]} locations={[0, 0.58, 1]} style={styles.fade} pointerEvents="none" />
           <Pressable onPress={onToggle} accessibilityRole="button" accessibilityLabel={t("Show more")} style={[styles.action, { backgroundColor: background }]}>
             <Text style={[styles.actionText, { color: actionColor }]}>{t("Show more")}</Text>
           </Pressable>
@@ -61,7 +61,7 @@ export function FoldedText({
 }
 
 const styles = StyleSheet.create({
-  fade: { position: "absolute", left: 0, right: 0, bottom: 32, height: 56 },
+  fade: { position: "absolute", left: 0, right: 0, bottom: 0, height: 104 },
   action: { position: "absolute", left: 0, right: 0, bottom: 0, paddingTop: 8, paddingBottom: 2 },
   actionText: { fontSize: 14, fontWeight: "600" },
   less: { paddingTop: 8, paddingBottom: 2 },

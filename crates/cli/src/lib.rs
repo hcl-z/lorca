@@ -32,6 +32,7 @@ pub mod favicon;
 pub mod files;
 pub mod feedback;
 pub mod handoffs;
+pub mod history;
 #[cfg(feature = "runner")]
 pub mod groups;
 pub mod identity;

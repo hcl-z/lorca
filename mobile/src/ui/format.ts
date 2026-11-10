@@ -165,6 +165,7 @@ export function preview(chat: Chat, bots: Map<string, Bot>): string {
     const m = chat.messages[i];
     if (m.body.kind !== "tool" || isSentMessage(m.body)) shown = m;
   }
+  shown ??= chat.last_message;
   if (!shown) return t("No messages yet");
   let body: string;
   switch (shown.body.kind) {

@@ -29,6 +29,9 @@ pub enum Event {
     MessageUpdated { chat_id: String, message: Message },
     #[serde(rename = "message.removed")]
     MessageRemoved { chat_id: String, message_id: String },
+    /// A page fetched after `chats.messages` answered with `pending`.
+    #[serde(rename = "chat.messages.loaded")]
+    ChatMessagesLoaded { chat_id: String, messages: Vec<Message>, has_more: bool },
     #[serde(rename = "chat.removed")]
     ChatRemoved { chat_id: String },
     #[serde(rename = "projects.changed")]
@@ -95,4 +98,7 @@ pub struct ChatSummary {
     pub unread_count: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<ChatUsage>,
+    /// The list's preview, before the chat's transcript page has been fetched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_message: Option<Message>,
 }
