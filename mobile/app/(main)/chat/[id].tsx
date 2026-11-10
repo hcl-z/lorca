@@ -659,6 +659,13 @@ export default function ChatScreen() {
             extraData={renderItem}
             keyExtractor={(row) => row.key}
             getItemType={(row) => row.type}
+            // Views are reused as rows come back into the window rather than mounted again per
+            // message: off by default, which mounts a fresh row — and with it a native Markdown
+            // view that has to build its text views — every time a row is scrolled back to, so a
+            // long transcript gets slower the further it is scrolled. A recycled row is never stale:
+            // `getItemType` keeps a message's view off a separator's, and `MarkdownView` rebuilds its
+            // text views whenever its Markdown changes.
+            recycleItems
             estimatedItemSize={ESTIMATED_ROW}
             // The chat opens at its last message, with no scroll to get there, and a transcript
             // shorter than the screen sits at its bottom, above the composer.
@@ -682,8 +689,8 @@ export default function ChatScreen() {
             scrollIndicatorInsets={scrollIndicatorInsets}
             // Rows are laid out ahead of the viewport so a quick flick finds them drawn: the
             // default 250 leaves bare background at the edge when the rows' heights are still
-            // being measured. LegendList never detaches offscreen views, which would blank a
-            // row until it is attached again.
+            // being measured. Their views are reused as they come back into this window rather
+            // than mounted again per message, so the distance costs a bounded set of rows.
             drawDistance={DRAW_DISTANCE}
             keyboardDismissMode="interactive"
             onLoad={() => {
