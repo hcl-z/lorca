@@ -1,0 +1,29 @@
+docs/architecture/runtime.md
+  s_2d68e2caaa2c0e::t_cce8ad664d4e73 54,70
+docs/architecture/turn-context.md
+  s_2d68e2caaa2c0e::t_0ca03768666a16 23
+  s_2d68e2caaa2c0e::t_163b03742168f4 9,11,13
+crates/cli/src/turns/context.rs
+  s_2d68e2caaa2c0e::t_7a84aedd0a07a3 53-57
+  s_2d68e2caaa2c0e::t_5c53b04b04224d 3
+docs/architecture/memory.md
+  s_2d68e2caaa2c0e::t_11d02759b7609a 9
+docs/architecture/tasks.md
+  s_2d68e2caaa2c0e::t_11d02759b7609a 47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.52-trip",
+  "base_commit_sha": "beac581ecd2915fc7a88462a523446744e4b2294",
+  "prompts": {},
+  "sessions": {
+    "s_2d68e2caaa2c0e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fa05e664-70d8-42a3-bed5-e14e5e739c32",
+        "model": "ada-cli-golang-ctripcorp-com/claude-deepseek-v4.1-flash"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
