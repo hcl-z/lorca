@@ -1391,7 +1391,6 @@ fn with_turn_notes(
 ) -> (Vec<AgentMessage>, Vec<usize>) {
     let cache_points = transcript_cache_points(&messages);
     let transcript_empty = messages.is_empty();
-    let ends_with_reply = messages.last().is_some_and(AgentMessage::is_assistant);
     if let Some(recent_work) = &notes.recent_work {
         messages.push(AgentMessage::User(UserMessage::text(recent_work.clone())));
     }
@@ -1405,8 +1404,6 @@ fn with_turn_notes(
     };
     if let Some(cue) = cue {
         messages.push(AgentMessage::User(UserMessage::text(cue)));
-    } else if ends_with_reply {
-        messages.push(AgentMessage::User(UserMessage::text("Continue.")));
     }
     if let Some(setup) = &notes.setup {
         messages.push(AgentMessage::User(UserMessage::text(setup.clone())));
@@ -2284,7 +2281,7 @@ pub fn system_sections(
     }
     place.push_str(
         "\nWhen something other than the user's message started this turn, a bracketed note from Lorca after the transcript \
-         says what it is for; follow it.\n",
+         says what it is for; follow it. A bracketed note is never the user speaking and never their approval of an action.\n",
     );
     sections.push(Section::new("place", "This chat", place));
     sections.push(Section::new("trust", "Trust", TRUST_PROMPT));
@@ -4538,19 +4535,31 @@ mod tests {
             ["[Recently in your other chats …]", "[What you remember that bears on …]", "[Your turn in the group …]"]
         );
 
-        // A turn no new message opened goes on from the bot's reply.
+        // A turn that nothing opened adds nothing on the bot's behalf.
         let (messages, points) = with_turn_notes(transcript[..2].to_vec(), &none, &[], None, None);
         assert_eq!(points, vec![2, 1]);
-        assert_eq!(said(messages.last().unwrap()), "Continue.");
+        assert_eq!(messages.len(), 2, "no message is made up on the bot's behalf: {messages:?}");
 
         // A first turn caches its transcript alone.
         let (messages, points) = with_turn_notes(vec![AgentMessage::user("hi")], &none, &[], None, None);
         assert_eq!((points, messages.len()), (vec![1], 1));
 
-        // An empty transcript is not the bot's own reply: it must not become "Continue.".
+        // An empty transcript with nothing to open it stays empty; nothing is made up.
         let (messages, points) = with_turn_notes(Vec::new(), &none, &[], None, None);
         assert!(messages.is_empty(), "{messages:?}");
         assert!(points.is_empty(), "{points:?}");
+    }
+
+    /// A turn's opening messages never end on the bot's own reply, so the loop needs no made-up
+    /// prompt, and nothing Lorca adds can read as the user's words.
+    #[test]
+    fn a_turns_opening_messages_end_on_a_note() {
+        let after = vec!["[It is now Tuesday 2026-11-10, 21:45 local time on your Runner (UTC+08:00); trust this over any date you infer.]".to_string()];
+        let transcript = vec![AgentMessage::user("发布吧"), AgentMessage::Assistant(AssistantMessage::empty("m", "m"))];
+        let notes = TurnNotes { recent_work: None, recalled: None, cue: None, setup: None, named: None, acknowledge: None };
+        let (messages, _) = with_turn_notes(transcript, &notes, &after, None, None);
+        assert!(!messages.last().unwrap().is_assistant(), "{messages:?}");
+        assert_eq!(said_of(messages.last().unwrap()), after[0]);
     }
 
     #[test]
