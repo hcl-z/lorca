@@ -1,0 +1,21 @@
+crates/cli/src/api.rs
+  s_3ba4960df8f6a6::t_ac041ed63c66e9 1231,1238-1241
+  s_3ba4960df8f6a6::t_75fa180c419a63 1186-1187,1196-1197
+  s_3ba4960df8f6a6::t_3b5ffdb03be72c 1188-1195
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.52-trip",
+  "base_commit_sha": "5fe31cc15111af91fe263bb52b0bcef1ea78b5d8",
+  "prompts": {},
+  "sessions": {
+    "s_3ba4960df8f6a6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c562669b-7d97-4140-b9e7-45d30e608e16",
+        "model": "ada-cli-golang-ctripcorp-com/claude-deepseek-v4.1-flash"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
