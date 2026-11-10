@@ -92,12 +92,13 @@ const DRAW_DISTANCE = 1000;
 /// `listRef.current?.getState().getAverageItemSizes()`: too small makes the first
 /// `initialScrollAtEnd` land short and jump when the rows measure.
 const ESTIMATED_ROW = 160;
-/// The transcript's backdrop, the same in either appearance: a pastel sky, teal at the head
-/// through periwinkle to a pale foot, so white cards stand out of it. The stops come from the
-/// design's `oklch` gradient, converted to sRGB because the native gradient takes plain colors.
+/// The transcript's backdrop, the same in either appearance: the reference's wallpaper, light blue
+/// at the head warming to cream at the foot, so white cards stand out of it and a message read whole
+/// opens onto a page of its own white. The stops are the reference's own, sampled down its left edge
+/// frame by frame, so the screen behind the bubbles is the one the motion was measured against.
 const BACKDROP = {
-  colors: ["#7CCED7", "#9BCBE2", "#B7CEFB", "#CCDCE9", "#DBE8D9", "#DDF2F3"] as const,
-  locations: [0, 0.2, 0.4, 0.6, 0.8, 1] as const,
+  colors: ["#AECBE7", "#ACCCEC", "#BCD4EF", "#D3E1EF", "#DEE7F3", "#EBE6DD", "#F0DFD0", "#E7D0BA", "#FBDAB9"] as const,
+  locations: [0, 0.167, 0.333, 0.5, 0.583, 0.75, 0.833, 0.917, 1] as const,
 } as const;
 /// The transcript follows its end while the reader rests within this share of the screen of it.
 const FOLLOW_THRESHOLD = 0.1;
@@ -122,10 +123,30 @@ export default function ChatScreen() {
   const status = useStore((s) => s.statuses[id] ?? null);
   // The chat's first page is on its way from the core: the list has nothing to draw until it lands.
   const loadingOlder = useStore((s) => !!s.olderLoading[id]);
+  const listRef = useRef<LegendListRef>(null);
   // A long message read whole, from the place its bubble stands.
   const [reader, setReader] = useState<{ message: Message; frame: MessageFrame } | null>(null);
-  const openReader = useCallback((message: Message, frame: MessageFrame) => setReader({ message, frame }), []);
-  const listRef = useRef<LegendListRef>(null);
+  /// Set while the reader covers the chat, which on Android is a window of its own.
+  const readerOver = useRef(false);
+  /// The chat's own content insets — the last ones the list was given — kept across the reader,
+  /// whose window reports insets of its own.
+  const chatInset = useRef<{ top: number; bottom: number; left: number; right: number } | null>(null);
+  const openReader = useCallback((message: Message, frame: MessageFrame) => {
+    // The reader takes the screen, as a sheet or an agent page does: the chat's keyboard goes down
+    // behind it rather than being found lifted on the way back.
+    void KeyboardController.dismiss();
+    readerOver.current = true;
+    setReader({ message, frame });
+  }, []);
+  const closeReader = useCallback(() => {
+    readerOver.current = false;
+    setReader(null);
+    // The list measures its end in the chat's insets. Android's reader is a window of its own, so
+    // what arrived while it was up was that window's: the chat's last one is given back now that it
+    // is gone.
+    const inset = chatInset.current;
+    if (Platform.OS === "android" && inset) requestAnimationFrame(() => listRef.current?.reportContentInset(inset));
+  }, []);
   // The composer floats over the transcript and rides the keyboard (KeyboardFoot). The
   // list is never resized: the chat scroll view keeps a bottom inset for the composer and adds
   // the keyboard's height to it frame by frame, lifting the last messages with the keys.
@@ -268,6 +289,13 @@ export default function ChatScreen() {
   // own KeyboardAwareLegendList, with the composer's resting space under the anchor's as its floor.
   // Its insets are reported back to the list, which counts them in where its end is.
   const reportInset = useCallback((inset: { top: number; bottom: number; left: number; right: number }) => {
+    // On Android the reader is a window of its own, and the insets the scroll view reports while it
+    // is over the chat are that window's, not the chat's. The list's end is measured in these, and an
+    // end measured against a window that is not the chat's puts the transcript somewhere it never
+    // was; so while the reader is up the reports are held, and the chat's last one is given back when
+    // it is gone.
+    if (Platform.OS === "android" && readerOver.current) return;
+    chatInset.current = inset;
     listRef.current?.reportContentInset(inset);
   }, []);
   const ChatScroll = useCallback(
@@ -593,8 +621,9 @@ export default function ChatScreen() {
 
   return (
     <View style={{ flex: 1 }}>
-      {/* The transcript sits on the design's sky gradient: the white bubbles and cards stand out
-          of it, and a message read whole opens onto the same white page. */}
+      {/* The transcript sits on the reference's gradient: the white bubbles and cards stand out of
+          it, and a message read whole opens onto a page of its own white, which the panel brings with
+          it as it grows out of the bubble. */}
       <LinearGradient
         pointerEvents="none"
         colors={BACKDROP.colors}
@@ -807,7 +836,7 @@ export default function ChatScreen() {
         }}
         onStopAgent={(messageId) => engine.stopAgent(id, messageId)}
       />
-      {reader ? <MessageReader message={reader.message} frame={reader.frame} onClose={() => setReader(null)} /> : null}
+      {reader ? <MessageReader message={reader.message} frame={reader.frame} onClose={closeReader} /> : null}
     </View>
   );
 }
