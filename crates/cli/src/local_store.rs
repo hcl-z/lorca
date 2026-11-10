@@ -125,6 +125,11 @@ impl LocalStore {
                  id   TEXT PRIMARY KEY NOT NULL,
                  name TEXT NOT NULL
              );
+             CREATE TABLE IF NOT EXISTS chat_previews (
+                 id       TEXT PRIMARY KEY NOT NULL,
+                 position INTEGER NOT NULL,
+                 json     TEXT NOT NULL
+             );
              CREATE TABLE IF NOT EXISTS device_seen (
                  id      TEXT PRIMARY KEY NOT NULL,
                  seen_at INTEGER NOT NULL
@@ -159,6 +164,12 @@ impl LocalStore {
                  chat_id      TEXT PRIMARY KEY NOT NULL,
                  before_place INTEGER NOT NULL
              );
+             CREATE TABLE IF NOT EXISTS chat_history_origin (
+                 chat_id    TEXT PRIMARY KEY NOT NULL,
+                 more       INTEGER NOT NULL,
+                 device     TEXT,
+                 checked_at INTEGER NOT NULL
+             );
              CREATE TABLE IF NOT EXISTS messages (
                  id            TEXT PRIMARY KEY NOT NULL,
                  chat_id       TEXT NOT NULL,
@@ -187,7 +198,8 @@ impl LocalStore {
                  ciphertext      BLOB NOT NULL,
                  slot_name       TEXT,
                  slot_keep_first INTEGER NOT NULL DEFAULT 0,
-                 group_name      TEXT
+                 group_name      TEXT,
+                 priority        INTEGER NOT NULL DEFAULT 1
              );
              CREATE UNIQUE INDEX IF NOT EXISTS outbox_slot
                  ON outbox(slot_name) WHERE slot_name IS NOT NULL;
@@ -230,6 +242,7 @@ impl LocalStore {
              );
              PRAGMA user_version = 1;",
         )?;
+        migrate_outbox_priority(&connection)?;
         crate::tasks::storage::initialize(&connection)?;
         crate::config::set_private(path)?;
         Ok(Self {
@@ -260,6 +273,10 @@ impl LocalStore {
             devices: load_json_table(&connection, "devices")?,
             bots: load_json_table(&connection, "bots")?,
             chats: load_json_table(&connection, "chats")?,
+            chat_previews: load_json_table::<Message>(&connection, "chat_previews")?
+                .into_iter()
+                .map(|message| (message.chat_id.clone(), message))
+                .collect(),
             sections: load_json_table(&connection, "sidebar_sections")?,
             routines: load_json_table(&connection, "routines")?,
             workflows: load_json_table(&connection, "workflow_setups")?,
@@ -414,6 +431,56 @@ impl LocalStore {
             None => connection.execute("DELETE FROM chat_history WHERE chat_id = ?1", [chat_id])?,
         };
         Ok(())
+    }
+
+    pub fn origin_more(&self, chat_id: &str) -> anyhow::Result<bool> {
+        let connection = self.connection.lock().unwrap();
+        let more: Option<i64> = connection
+            .query_row("SELECT more FROM chat_history_origin WHERE chat_id = ?1", [chat_id], |row| row.get(0))
+            .optional()?;
+        Ok(more.unwrap_or(0) != 0)
+    }
+
+    pub fn set_origin_more(&self, chat_id: &str, more: bool, device: Option<&str>) -> anyhow::Result<()> {
+        let connection = self.connection.lock().unwrap();
+        connection.execute(
+            "INSERT INTO chat_history_origin (chat_id, more, device, checked_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(chat_id) DO UPDATE SET more = excluded.more, device = excluded.device, checked_at = excluded.checked_at",
+            params![chat_id, more as i64, device, crate::config::now_unix()],
+        )?;
+        Ok(())
+    }
+
+    pub fn origin_device(&self, chat_id: &str) -> anyhow::Result<Option<String>> {
+        let connection = self.connection.lock().unwrap();
+        Ok(connection
+            .query_row("SELECT device FROM chat_history_origin WHERE chat_id = ?1", [chat_id], |row| row.get(0))
+            .optional()?
+            .flatten())
+    }
+
+    pub fn oldest_sort_at(&self, chat_id: &str) -> anyhow::Result<Option<f64>> {
+        let connection = self.connection.lock().unwrap();
+        Ok(connection.query_row("SELECT MIN(sort_at) FROM messages WHERE chat_id = ?1", [chat_id], |row| row.get(0))?)
+    }
+
+    /// The oldest message's content cursor, for an origin page.
+    pub fn oldest_message(&self, chat_id: &str) -> anyhow::Result<Option<(f64, String)>> {
+        let connection = self.connection.lock().unwrap();
+        Ok(connection
+            .query_row(
+                "SELECT sort_at, id FROM messages WHERE chat_id = ?1 ORDER BY sort_at, id LIMIT 1",
+                [chat_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?)
+    }
+
+    pub fn origin_checked_at(&self, chat_id: &str) -> anyhow::Result<Option<i64>> {
+        let connection = self.connection.lock().unwrap();
+        Ok(connection
+            .query_row("SELECT checked_at FROM chat_history_origin WHERE chat_id = ?1", [chat_id], |row| row.get(0))
+            .optional()?)
     }
 
     /// Puts messages read backwards from the relay ahead of everything the chat has here.
@@ -577,6 +644,37 @@ impl LocalStore {
                 Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
             })?,
         )?;
+        let has_more = messages.len() > limit;
+        if has_more {
+            messages.pop();
+        }
+        messages.reverse();
+        Ok((messages, has_more))
+    }
+
+    /// A page of messages strictly before the `(sort_at, id)` cursor, oldest first, plus whether
+    /// more lie below it. The cursor travels between Devices, so it is by time and id, not by
+    /// this Device's positions.
+    pub fn page_before(&self, chat_id: &str, before: Option<(f64, &str)>, limit: usize) -> anyhow::Result<(Vec<Message>, bool)> {
+        let connection = self.connection.lock().unwrap();
+        let mut messages = match before {
+            Some((sort_at, id)) => {
+                let mut statement = connection.prepare(
+                    "SELECT id, chat_id, position, message_json FROM messages
+                     WHERE chat_id = ?1 AND (sort_at < ?2 OR (sort_at = ?2 AND id < ?3))
+                     ORDER BY sort_at DESC, id DESC LIMIT ?4",
+                )?;
+                let page = collect_messages(statement.query_map(params![chat_id, sort_at, id, limit as i64 + 1], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))?)?;
+                page
+            }
+            None => {
+                let mut statement = connection.prepare(
+                    "SELECT id, chat_id, position, message_json FROM messages WHERE chat_id = ?1 ORDER BY sort_at DESC, id DESC LIMIT ?2",
+                )?;
+                let page = collect_messages(statement.query_map(params![chat_id, limit as i64 + 1], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))?)?;
+                page
+            }
+        };
         let has_more = messages.len() > limit;
         if has_more {
             messages.pop();
@@ -1034,14 +1132,23 @@ impl LocalStore {
     /// its queue position, so reconnecting still uploads messages in transcript order.
     #[cfg(test)]
     pub fn queue_outbox(&self, item: &OutboxItem) -> anyhow::Result<()> {
+        self.queue_outbox_with_priority(item, 1)
+    }
+
+    #[cfg(test)]
+    pub fn queue_outbox_with_priority(&self, item: &OutboxItem, priority: u8) -> anyhow::Result<()> {
         let mut connection = self.connection.lock().unwrap();
         let tx = connection.transaction()?;
-        queue_outbox_tx(&tx, item)?;
+        queue_outbox_tx(&tx, item, priority)?;
         tx.commit()?;
         Ok(())
     }
 
     pub fn queue_outbox_with_state(&self, item: &OutboxItem, state: &State) -> anyhow::Result<()> {
+        self.queue_outbox_with_state_priority(item, state, 1)
+    }
+
+    pub fn queue_outbox_with_state_priority(&self, item: &OutboxItem, state: &State, priority: u8) -> anyhow::Result<()> {
         let mut connection = self.connection.lock().unwrap();
         let tx = connection.transaction()?;
         save_metadata_tx(&tx, state)?;
@@ -1056,7 +1163,7 @@ impl LocalStore {
         )?;
         sync_chats(&tx, state)?;
         append_applied_blob_tx(&tx, &item.id)?;
-        queue_outbox_tx(&tx, item)?;
+        queue_outbox_tx(&tx, item, priority)?;
         tx.commit()?;
         Ok(())
     }
@@ -1066,6 +1173,71 @@ impl LocalStore {
     pub fn drop_outbox_group(&self, group: &str) -> anyhow::Result<()> {
         self.connection.lock().unwrap().execute("DELETE FROM outbox WHERE group_name = ?1", [group])?;
         Ok(())
+    }
+
+    /// Drops what an older build's full-history backfill queued beyond each chat's latest
+    /// `window` messages, and the files only those messages reference. Live rows inside the
+    /// window and every non-chat row stay. Returns how many rows went.
+    pub fn prune_outbox_to_window(&self, window: usize) -> anyhow::Result<usize> {
+        let mut connection = self.connection.lock().unwrap();
+        let tx = connection.transaction()?;
+        let groups: Vec<String> = tx
+            .prepare("SELECT DISTINCT group_name FROM outbox WHERE group_name IS NOT NULL AND kind IN ('chat','file')")?
+            .query_map([], |row| row.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        let chat_ids: Vec<String> = tx
+            .prepare("SELECT DISTINCT chat_id FROM messages")?
+            .query_map([], |row| row.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        let mut removed = 0usize;
+        for chat_id in chat_ids {
+            let group = crate::model::relay_name(&chat_id);
+            if !groups.iter().any(|known| known == &group) {
+                continue;
+            }
+            let rows: Vec<(String, String)> = tx
+                .prepare("SELECT id, message_json FROM messages WHERE chat_id = ?1 ORDER BY position DESC LIMIT ?2")?
+                .query_map(params![chat_id, window as i64], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .collect::<rusqlite::Result<_>>()?;
+            let kept_slots: Vec<String> = rows.iter().map(|(id, _)| crate::model::relay_name(id)).collect();
+            let mut kept_files = std::collections::HashSet::new();
+            for (_, json) in &rows {
+                if let Ok(message) = serde_json::from_str::<Message>(json) {
+                    if let Body::Text { attachments, .. } = &message.body {
+                        for attachment in attachments {
+                            kept_files.insert(attachment.id.clone());
+                        }
+                    }
+                }
+            }
+            let chat_slots: Vec<String> = tx
+                .prepare("SELECT slot_name FROM outbox WHERE group_name = ?1 AND kind = 'chat'")?
+                .query_map([&group], |row| row.get::<_, Option<String>>(0))?
+                .filter_map(|row| row.ok().flatten())
+                .collect();
+            for slot in chat_slots {
+                if !kept_slots.contains(&slot) {
+                    removed += tx.execute(
+                        "DELETE FROM outbox WHERE group_name = ?1 AND kind = 'chat' AND slot_name = ?2 AND priority >= 2",
+                        params![group, slot],
+                    )?;
+                }
+            }
+            let files: Vec<String> = tx
+                .prepare("SELECT id FROM outbox WHERE group_name = ?1 AND kind = 'file'")?
+                .query_map([&group], |row| row.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            for id in files {
+                if !kept_files.contains(&id) {
+                    removed += tx.execute(
+                        "DELETE FROM outbox WHERE group_name = ?1 AND kind = 'file' AND id = ?2 AND priority >= 2",
+                        params![group, id],
+                    )?;
+                }
+            }
+        }
+        tx.commit()?;
+        Ok(removed)
     }
 
     /// Project payloads are already encrypted. A local revision and its upload commit together.
@@ -1079,7 +1251,7 @@ impl LocalStore {
         )? > 0;
         if inserted {
             if let Some(upload) = upload {
-                queue_outbox_tx(&tx, upload)?;
+                queue_outbox_tx(&tx, upload, 1)?;
             }
         }
         tx.commit()?;
@@ -1112,12 +1284,49 @@ impl LocalStore {
         connection
             .query_row(
                 "SELECT id, kind, recipient, ciphertext, slot_name, slot_keep_first, group_name
-                 FROM outbox ORDER BY position LIMIT 1",
+                 FROM outbox ORDER BY priority, position LIMIT 1",
                 [],
                 outbox_row,
             )
             .optional()
             .map_err(Into::into)
+    }
+
+    /// The next row to upload. The first screen goes first, then a live write — but a chat's
+    /// pending window goes before that chat's live writes, so the relay's slot order stays the
+    /// content order. Another chat's window may wait behind it.
+    pub fn next_outbox(&self) -> anyhow::Result<Option<OutboxItem>> {
+        let connection = self.connection.lock().unwrap();
+        let one = |priority: u8| -> rusqlite::Result<Option<OutboxItem>> {
+            connection
+                .query_row(
+                    "SELECT id, kind, recipient, ciphertext, slot_name, slot_keep_first, group_name
+                     FROM outbox WHERE priority = ?1 ORDER BY position LIMIT 1",
+                    [priority],
+                    outbox_row,
+                )
+                .optional()
+        };
+        if let Some(item) = one(0)? {
+            return Ok(Some(item));
+        }
+        if let Some(item) = one(1)? {
+            if let Some(group) = &item.group {
+                if let Some(window) = connection
+                    .query_row(
+                        "SELECT id, kind, recipient, ciphertext, slot_name, slot_keep_first, group_name
+                         FROM outbox WHERE priority = 2 AND group_name = ?1 ORDER BY position LIMIT 1",
+                        [group],
+                        outbox_row,
+                    )
+                    .optional()?
+                {
+                    return Ok(Some(window));
+                }
+            }
+            return Ok(Some(item));
+        }
+        Ok(one(2)?)
     }
 
     #[cfg(test)]
@@ -1204,11 +1413,27 @@ impl LocalStore {
         let connection = self.connection.lock().unwrap();
         let mut statement = connection.prepare(
             "SELECT id, kind, recipient, ciphertext, slot_name, slot_keep_first, group_name
-             FROM outbox ORDER BY position",
+             FROM outbox ORDER BY priority, position",
         )?;
         let rows = statement.query_map([], outbox_row)?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .map_err(Into::into)
+    }
+
+    #[cfg(test)]
+    pub fn outbox_priorities(&self) -> anyhow::Result<Vec<(String, u8)>> {
+        let connection = self.connection.lock().unwrap();
+        let mut statement = connection.prepare("SELECT id, priority FROM outbox ORDER BY priority, position")?;
+        let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>().map_err(Into::into)
+    }
+
+    #[cfg(test)]
+    pub fn outbox_slots(&self) -> anyhow::Result<Vec<(String, u8)>> {
+        let connection = self.connection.lock().unwrap();
+        let mut statement = connection.prepare("SELECT slot_name, priority FROM outbox WHERE slot_name IS NOT NULL ORDER BY priority, position")?;
+        let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>().map_err(Into::into)
     }
 
     /// Handoff contracts and reports stay encrypted even in the local database. Queue the
@@ -1219,7 +1444,7 @@ impl LocalStore {
         tx.execute("INSERT INTO handoffs (id, ciphertext) VALUES (?1, ?2)
                     ON CONFLICT(id) DO UPDATE SET ciphertext = excluded.ciphertext", params![id, ciphertext])?;
         for item in outbox {
-            queue_outbox_tx(&tx, item)?;
+            queue_outbox_tx(&tx, item, 1)?;
         }
         tx.commit()?;
         Ok(())
@@ -1247,7 +1472,7 @@ impl LocalStore {
         };
         anyhow::ensure!(changed == 1, "This changed on another Device. Review it again.");
         if let Some(item) = upload {
-            queue_outbox_tx(&tx, item)?;
+            queue_outbox_tx(&tx, item, 1)?;
         }
         tx.commit()?;
         Ok(())
@@ -1410,7 +1635,7 @@ impl LocalStore {
              ON CONFLICT(id) DO UPDATE SET ciphertext = excluded.ciphertext",
             params![id, ciphertext],
         )?;
-        queue_outbox_tx(&tx, item)?;
+        queue_outbox_tx(&tx, item, 1)?;
         tx.commit()?;
         Ok(())
     }
@@ -1431,7 +1656,25 @@ impl LocalStore {
     }
 }
 
-pub(crate) fn queue_outbox_tx(tx: &Transaction<'_>, item: &OutboxItem) -> anyhow::Result<()> {
+/// Adds the outbox's `priority` to a database opened before it existed. Everything already
+/// waiting is what the old full-history backfill queued, so it becomes priority 2; the account's
+/// keyrings and roster are the first screen and go to 0.
+fn migrate_outbox_priority(connection: &Connection) -> anyhow::Result<()> {
+    let columns: Vec<String> = connection
+        .prepare("PRAGMA table_info(outbox)")?
+        .query_map([], |row| row.get(1))?
+        .collect::<rusqlite::Result<_>>()?;
+    if columns.iter().any(|name| name == "priority") {
+        return Ok(());
+    }
+    connection.execute_batch(
+        "ALTER TABLE outbox ADD COLUMN priority INTEGER NOT NULL DEFAULT 2;
+         UPDATE outbox SET priority = 0 WHERE kind IN ('key','roster','machine','credentials');",
+    )?;
+    Ok(())
+}
+
+pub(crate) fn queue_outbox_tx(tx: &Transaction<'_>, item: &OutboxItem, priority: u8) -> anyhow::Result<()> {
     let waiting: Option<i64> = match item.slot.as_ref() {
         Some(slot) => tx
             .query_row(
@@ -1452,8 +1695,8 @@ pub(crate) fn queue_outbox_tx(tx: &Transaction<'_>, item: &OutboxItem) -> anyhow
         }
         let front: i64 = tx.query_row("SELECT COALESCE(MIN(position), 1) - 1 FROM outbox", [], |row| row.get(0))?;
         tx.execute(
-            "INSERT INTO outbox (position, id, kind, recipient, ciphertext, slot_name, slot_keep_first, group_name)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO outbox (position, id, kind, recipient, ciphertext, slot_name, slot_keep_first, group_name, priority)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0)",
             params![front, item.id, item.kind, item.recipient, item.ciphertext, slot_name, keep_first, item.group],
         )?;
         return Ok(());
@@ -1462,7 +1705,8 @@ pub(crate) fn queue_outbox_tx(tx: &Transaction<'_>, item: &OutboxItem) -> anyhow
         Some(position) => {
             tx.execute(
                 "UPDATE outbox SET id = ?1, kind = ?2, recipient = ?3, ciphertext = ?4,
-                     slot_name = ?5, slot_keep_first = ?6, group_name = ?7 WHERE position = ?8",
+                     slot_name = ?5, slot_keep_first = ?6, group_name = ?7,
+                     priority = MIN(priority, ?8) WHERE position = ?9",
                 params![
                     item.id,
                     item.kind,
@@ -1471,15 +1715,16 @@ pub(crate) fn queue_outbox_tx(tx: &Transaction<'_>, item: &OutboxItem) -> anyhow
                     slot_name,
                     keep_first,
                     item.group,
+                    priority,
                     position
                 ],
             )?;
         }
         None => {
             tx.execute(
-                    "INSERT INTO outbox (id, kind, recipient, ciphertext, slot_name, slot_keep_first, group_name)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                    params![item.id, item.kind, item.recipient, item.ciphertext, slot_name, keep_first, item.group],
+                    "INSERT INTO outbox (id, kind, recipient, ciphertext, slot_name, slot_keep_first, group_name, priority)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    params![item.id, item.kind, item.recipient, item.ciphertext, slot_name, keep_first, item.group, priority],
                 )?;
         }
     }
@@ -1507,6 +1752,15 @@ fn save_state_tx(tx: &Transaction<'_>, state: &State) -> anyhow::Result<()> {
             .collect::<Vec<_>>(),
     )?;
     sync_chats(tx, state)?;
+    sync_json_table(
+        tx,
+        "chat_previews",
+        state
+            .chat_previews
+            .iter()
+            .map(|(id, message)| (id.clone(), serde_json::to_string(message)))
+            .collect::<Vec<_>>(),
+    )?;
     sync_json_table(
         tx,
         "routines",
@@ -1901,6 +2155,185 @@ mod tests {
         let home = std::env::temp_dir().join(format!("lorca-transcript-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&home).unwrap();
         Scratch(LocalStore::open(&home.join("lorca.sqlite3")).unwrap(), home)
+    }
+
+    #[test]
+    fn the_outbox_drains_by_priority_then_position() {
+        let scratch = scratch();
+        let store = &scratch.0;
+        let item = |id: &str, kind: &str| OutboxItem {
+            id: id.into(),
+            kind: kind.into(),
+            recipient: None,
+            ciphertext: vec![1],
+            slot: None,
+            group: None,
+        };
+        store.queue_outbox_with_priority(&item("live", "chat"), 1).unwrap();
+        store.queue_outbox_with_priority(&item("back", "chat"), 2).unwrap();
+        store.queue_outbox_with_priority(&item("first", "roster"), 0).unwrap();
+        assert_eq!(store.first_outbox().unwrap().unwrap().id, "first");
+        assert_eq!(
+            store.outbox().unwrap().iter().map(|item| item.id.as_str()).collect::<Vec<_>>(),
+            ["first", "live", "back"]
+        );
+        assert_eq!(
+            store.outbox_priorities().unwrap(),
+            [("first".to_string(), 0), ("live".to_string(), 1), ("back".to_string(), 2)]
+        );
+    }
+
+    #[test]
+    fn a_live_update_promotes_a_backfill_row() {
+        let scratch = scratch();
+        let store = &scratch.0;
+        let slot = Slot { name: "m1".into(), keep_first: true };
+        let item = |id: &str| OutboxItem {
+            id: id.into(),
+            kind: "chat".into(),
+            recipient: None,
+            ciphertext: vec![0],
+            slot: Some(slot.clone()),
+            group: Some("chat".into()),
+        };
+        store.queue_outbox_with_priority(&item("a"), 2).unwrap();
+        store.queue_outbox_with_priority(&item("b"), 1).unwrap();
+        assert_eq!(store.outbox().unwrap().len(), 1);
+        assert_eq!(store.outbox_priorities().unwrap(), [("b".to_string(), 1)]);
+    }
+
+    #[test]
+    fn pruning_keeps_only_the_latest_window_of_chat_rows() {
+        let scratch = scratch();
+        let store = &scratch.0;
+        for i in 1..=40 {
+            let mut message = Message::new("chat", Author::You, Body::text(format!("m{i}")));
+            message.id = format!("m{i}");
+            store.upsert(&message).unwrap();
+            store
+                .queue_outbox_with_priority(
+                    &OutboxItem {
+                        id: format!("m{i}"),
+                        kind: "chat".into(),
+                        recipient: None,
+                        ciphertext: vec![0],
+                        slot: Some(Slot { name: format!("m{i}"), keep_first: true }),
+                        group: Some("chat".into()),
+                    },
+                    2,
+                )
+                .unwrap();
+        }
+        assert_eq!(store.prune_outbox_to_window(30).unwrap(), 10);
+        assert_eq!(store.outbox().unwrap().len(), 30);
+    }
+
+    #[test]
+    fn page_before_walks_back_by_sort_time_and_id() {
+        let scratch = scratch();
+        let store = &scratch.0;
+        for i in 1..=5 {
+            let mut message = Message::new("chat", Author::You, Body::text(format!("m{i}")));
+            message.id = format!("m{i}");
+            message.created_at = i as f64;
+            store.upsert(&message).unwrap();
+        }
+        let (page, _more) = store.page_before("chat", Some((4.0, "m4")), 2).unwrap();
+        assert_eq!(page.iter().map(|message| message.id.as_str()).collect::<Vec<_>>(), ["m2", "m3"]);
+    }
+
+    #[test]
+    fn pruning_keeps_live_rows_outside_the_window() {
+        let scratch = scratch();
+        let store = &scratch.0;
+        for i in 1..=40 {
+            let mut message = Message::new("chat", Author::You, Body::text(format!("m{i}")));
+            message.id = format!("m{i}");
+            store.upsert(&message).unwrap();
+            store
+                .queue_outbox_with_priority(
+                    &OutboxItem {
+                        id: format!("m{i}"),
+                        kind: "chat".into(),
+                        recipient: None,
+                        ciphertext: vec![0],
+                        slot: Some(Slot { name: format!("m{i}"), keep_first: true }),
+                        group: Some("chat".into()),
+                    },
+                    2,
+                )
+                .unwrap();
+        }
+        // A live removal of a message outside the window replaced its row at priority 1.
+        store
+            .queue_outbox_with_priority(
+                &OutboxItem {
+                    id: "remove-m1".into(),
+                    kind: "chat".into(),
+                    recipient: None,
+                    ciphertext: vec![1],
+                    slot: Some(Slot { name: "m1".into(), keep_first: false }),
+                    group: Some("chat".into()),
+                },
+                1,
+            )
+            .unwrap();
+        assert_eq!(store.prune_outbox_to_window(30).unwrap(), 9);
+        assert!(store.outbox().unwrap().iter().any(|item| item.id == "remove-m1"));
+    }
+
+    #[test]
+    fn a_chat_s_window_drains_before_its_live_write() {
+        let scratch = scratch();
+        let store = &scratch.0;
+        let item = |id: &str, group: &str| OutboxItem {
+            id: id.into(),
+            kind: "chat".into(),
+            recipient: None,
+            ciphertext: vec![0],
+            slot: Some(Slot { name: id.into(), keep_first: true }),
+            group: Some(group.into()),
+        };
+        store.queue_outbox_with_priority(&item("b-window", "b"), 2).unwrap();
+        store.queue_outbox_with_priority(&item("a-window", "a"), 2).unwrap();
+        store.queue_outbox_with_priority(&item("a-live", "a"), 1).unwrap();
+        assert_eq!(store.next_outbox().unwrap().unwrap().id, "a-window");
+        store.connection.lock().unwrap().execute("DELETE FROM outbox WHERE id = ?1", ["a-window"]).unwrap();
+        assert_eq!(store.next_outbox().unwrap().unwrap().id, "a-live");
+        store.connection.lock().unwrap().execute("DELETE FROM outbox WHERE id = ?1", ["a-live"]).unwrap();
+        assert_eq!(store.next_outbox().unwrap().unwrap().id, "b-window");
+    }
+
+    #[test]
+    fn chat_previews_survive_a_reopen() {
+        let scratch = scratch();
+        let store = &scratch.0;
+        let mut state = store.load_state().unwrap();
+        state.chat_previews.insert("chat".into(), Message::new("chat", Author::You, Body::text("preview")));
+        store.save_state(&state).unwrap();
+        let reopened = LocalStore::open(&scratch.1.join("lorca.sqlite3")).unwrap();
+        assert_eq!(reopened.load_state().unwrap().chat_previews["chat"].body, Body::text("preview"));
+    }
+
+    #[test]
+    fn an_old_outbox_gains_the_priority_column_as_backfill() {
+        let home = std::env::temp_dir().join(format!("lorca-outbox-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&home).unwrap();
+        let path = home.join("lorca.sqlite3");
+        {
+            let store = LocalStore::open(&path).unwrap();
+            let connection = store.connection.lock().unwrap();
+            connection
+                .execute_batch(
+                    "DROP TABLE outbox;
+                     CREATE TABLE outbox (position INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE NOT NULL, kind TEXT NOT NULL, recipient TEXT, ciphertext BLOB NOT NULL, slot_name TEXT, slot_keep_first INTEGER NOT NULL DEFAULT 0, group_name TEXT);
+                     INSERT INTO outbox (id, kind, ciphertext) VALUES ('old', 'chat', x'00');",
+                )
+                .unwrap();
+        }
+        let reopened = LocalStore::open(&path).unwrap();
+        assert_eq!(reopened.outbox_priorities().unwrap(), [("old".to_string(), 2)]);
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     fn message(id: &str, at: f64) -> Message {

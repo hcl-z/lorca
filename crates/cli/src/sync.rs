@@ -19,6 +19,15 @@ pub const POLL_KINDS: &str = "roster,task,project_context,playbook,chat,machine,
 
 pub async fn run(app: Arc<App>) {
     crate::identity::publish_keyring(&app);
+    {
+        let previews = app.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                previews.refresh_previews_if_dirty();
+            }
+        });
+    }
     let mut failures: u32 = 0;
     // The last try's bearer was refused and the next one went at once: a second refusal in a
     // row waits out the backoff.
@@ -253,10 +262,8 @@ async fn pull_keyrings(app: &Arc<App>, url: &str, token: &str, machine_file: &cr
 
 /// Everything a Device polls for but the messages.
 const NOT_CHAT_KINDS: &str = "roster,task,project_context,playbook,machine,credentials,review,handoff,attention,job,event,job_cancel,job_result,request,response,key";
-/// How much of each chat a Device takes when it first syncs: what a bot's turn reads.
-const FIRST_SYNC_MESSAGES: usize = 400;
 /// Messages to a page when reading a chat backwards.
-const OLDER_PAGE: usize = 100;
+pub(crate) const OLDER_PAGE: usize = 100;
 
 /// A Device's first sync. The log holds every message of the account, so it is not replayed:
 /// the Device takes the rest of the log, which slots keep short, then the newest messages of
@@ -280,8 +287,17 @@ enum FirstSync {
     Done,
     /// The relay's log is empty.
     NothingThere,
-    /// The relay cannot page a chat: the caller replays the log.
-    CannotPage,
+}
+
+/// Marks every chat as having more on the relay, so `chats.messages` fetches a chat's page when
+/// it opens. The first screen itself carries only the roster's previews.
+pub fn prepare_first_screen(app: &App) {
+    let chats: Vec<String> = app.state.lock().unwrap().chats.iter().map(|chat| chat.meta.id.clone()).collect();
+    for chat_id in chats {
+        if let Err(error) = app.store.set_history_before(&chat_id, Some(i64::MAX)) {
+            tracing::warn!(%error, %chat_id, "marking the chat for on-demand pages");
+        }
+    }
 }
 
 async fn first_sync_quietly(app: &Arc<App>, url: &str, token: &str, machine_file: &crate::keys::MachineFile) -> Result<FirstSync, RelayError> {
@@ -306,30 +322,61 @@ async fn first_sync_quietly(app: &Arc<App>, url: &str, token: &str, machine_file
     // The credentials are here, so onboarding can tell whether the account has a provider
     // without waiting for every chat.
     mark_account_pulled(app, machine_file);
-    let chats: Vec<String> = app.state.lock().unwrap().chats.iter().map(|chat| chat.meta.id.clone()).collect();
-    for chat_id in chats {
-        let page = app.relay.group_page(url, token, &crate::model::relay_name(&chat_id), None, FIRST_SYNC_MESSAGES).await;
-        let (slots, has_more) = match page {
-            Ok(page) => page,
-            Err(error) if matches!(error.status, Some(404 | 405)) => return Ok(FirstSync::CannotPage),
-            Err(error) => return Err(error),
-        };
-        // A message as it stands: its latest version, or its removal. The page keeps its place.
-        for blob in slots.iter().filter_map(|slot| slot.blobs.last()) {
-            apply_history_blob(app, machine_file, blob);
-        }
-        let before = slots.first().map(|slot| slot.place).filter(|_| has_more);
-        if let Err(error) = app.store.set_history_before(&chat_id, before) {
-            tracing::error!(%error, %chat_id, "recording where the chat begins");
-        }
-        // A page ends early at its byte budget; a bot's turn wants the whole count.
-        let mut here = slots.len();
-        while here < FIRST_SYNC_MESSAGES && app.history_is_partial(&chat_id) {
-            here += older_messages_from(app, url, token, &chat_id).await?.max(1);
-        }
-    }
+    prepare_first_screen(app);
     app.state.lock().unwrap().last_seq = head.unwrap_or(0);
     Ok(FirstSync::Done)
+}
+
+/// Fetches one older page for a chat: from the relay while it has more, then from an origin
+/// Device. Records whether the origin holds more, so `chats.messages` knows where history ends.
+pub async fn fetch_older(app: Arc<App>, chat_id: String) -> Result<(), RelayError> {
+    let local = |error: anyhow::Error| RelayError { status: None, message: error.to_string() };
+    if app.store.history_before(&chat_id).map_err(local)?.is_some() {
+        let url = app.relay_url().ok_or_else(|| RelayError { status: None, message: "No relay configured".into() })?;
+        let machine_file = app.machine_file().ok_or_else(|| RelayError { status: None, message: "This Device is not paired".into() })?;
+        let machine = machine_file.machine().map_err(|error| RelayError { status: None, message: error.to_string() })?;
+        let token = token_or_register(&app, &url, &machine).await?;
+        older_messages_from(&app, &url, &token, &chat_id).await?;
+    }
+    if app.store.history_before(&chat_id).map_err(local)?.is_none() {
+        let before = app.store.oldest_message(&chat_id).map_err(local)?;
+        match crate::history::fetch_origin_page(&app, &chat_id, before).await {
+            Ok(Some(page)) => app.store.set_origin_more(&chat_id, page.has_more, None).map_err(local)?,
+            Ok(None) => {
+                // Keep the first candidate even when it is offline: `chats.messages` names it in
+                // `history_elsewhere`, and retries once it is online again.
+                let device = crate::history::origin_candidates(&app, &chat_id).into_iter().next();
+                app.store.set_origin_more(&chat_id, false, device.as_deref()).map_err(local)?;
+            }
+            Err(error) => tracing::warn!(%error, %chat_id, "fetching an origin page"),
+        }
+    }
+    Ok(())
+}
+
+/// Fills a chat's local page up to `max` before a turn reads it: relay pages first, then an
+/// origin Device's, within `budget`. Returns how many messages the chat has here.
+pub async fn ensure_context(app: &Arc<App>, chat_id: &str, max: usize, budget: std::time::Duration) -> usize {
+    let started = std::time::Instant::now();
+    let count = |app: &Arc<App>| app.store.page(chat_id, None, max).map(|(messages, _)| messages.len()).unwrap_or(0);
+    loop {
+        let here = count(app);
+        if here >= max || !app.history_is_partial(chat_id) {
+            return here;
+        }
+        let remaining = budget.saturating_sub(started.elapsed());
+        if remaining.is_zero() {
+            return here;
+        }
+        match tokio::time::timeout(remaining, fetch_older(app.clone(), chat_id.to_string())).await {
+            Ok(Ok(())) => {}
+            Ok(Err(_)) | Err(_) => return here,
+        }
+        let after = count(app);
+        if after <= here {
+            return after;
+        }
+    }
 }
 
 /// One chat at a time reads backwards, so two askers do not both take the same page.
@@ -354,7 +401,7 @@ async fn older_messages_from(app: &Arc<App>, url: &str, token: &str, chat_id: &s
     let dek = app.dek().ok_or_else(|| local(anyhow::anyhow!("This Device is not paired")))?;
     // A slot's last blob is the message as it stands. A removal or a read mark is nothing to
     // show, and a read mark from back then must not clear what is unread now.
-    let newest_first: Vec<Message> = slots
+    let mut page: Vec<Message> = slots
         .iter()
         .rev()
         .filter_map(|slot| slot.blobs.last())
@@ -364,6 +411,13 @@ async fn older_messages_from(app: &Arc<App>, url: &str, token: &str, chat_id: &s
             _ => None,
         })
         .collect();
+    // The relay orders a group by slot `MIN(seq)`, which a live write can place ahead of an
+    // older window. The page itself is content order.
+    page.sort_by(|a, b| {
+        let at = |message: &Message| message.promoted_at.unwrap_or(message.created_at);
+        at(a).partial_cmp(&at(b)).unwrap_or(std::cmp::Ordering::Equal).then_with(|| a.id.cmp(&b.id))
+    });
+    let newest_first: Vec<Message> = page.into_iter().rev().collect();
     app.store.insert_older(&newest_first).map_err(local)?;
     let before = slots.first().map(|slot| slot.place).filter(|_| has_more);
     app.store.set_history_before(chat_id, before).map_err(local)?;
@@ -394,13 +448,8 @@ async fn pull_blobs(app: &Arc<App>, url: &str, token: &str, machine_file: &crate
         }
         app.attention_backfilled.store(true, Ordering::Relaxed);
     }
-    if app.state.lock().unwrap().last_seq == 0 && first_sync(app, url, token, machine_file).await? == FirstSync::CannotPage {
-        // A relay that cannot page a chat: replay its log. It keeps the latest roster, which
-        // in a replay comes after the messages, so that is taken first as a preview.
-        let (blobs, _head) = app.relay.list_blobs(url, token, 0, "roster,machine").await?;
-        for blob in blobs {
-            apply_blob_contents(app, machine_file, &blob);
-        }
+    if app.state.lock().unwrap().last_seq == 0 {
+        first_sync(app, url, token, machine_file).await?;
     }
     loop {
         let since = app.state.lock().unwrap().last_seq;
@@ -561,7 +610,7 @@ async fn drain_outbox(app: &Arc<App>, url: &str, token: &str) -> Result<(), Rela
     loop {
         let Some(item) = app
             .store
-            .first_outbox()
+            .next_outbox()
             .map_err(|error| RelayError { status: None, message: error.to_string() })?
         else {
             return Ok(());
@@ -821,13 +870,6 @@ fn apply_synced_blob(app: &Arc<App>, machine_file: &crate::keys::MachineFile, bl
 
 pub fn apply_blob(app: &Arc<App>, machine_file: &crate::keys::MachineFile, blob: &BlobIn) {
     apply_blob_as(app, machine_file, blob, false);
-}
-
-/// `apply_blob` for what a Device reads of a chat's history, the newest page of each chat on its
-/// first sync: a message under an older account key is history there, as on the pages it reads
-/// backwards (`older_messages`), where the live log takes none.
-fn apply_history_blob(app: &Arc<App>, machine_file: &crate::keys::MachineFile, blob: &BlobIn) {
-    apply_blob_as(app, machine_file, blob, true);
 }
 
 fn apply_blob_as(app: &Arc<App>, machine_file: &crate::keys::MachineFile, blob: &BlobIn, history: bool) {
@@ -1220,6 +1262,13 @@ fn apply_roster(app: &Arc<App>, mut roster: RosterBlob) {
         state.shared_links = roster.shared_links;
         state.device_names = roster.device_names;
         state.sections = roster.sections;
+        for (chat_id, preview) in std::mem::take(&mut roster.previews) {
+            let at = |message: &Message| message.promoted_at.unwrap_or(message.created_at);
+            // A Device that was behind pushes an older preview; the newer one stays.
+            if state.chat_previews.get(&chat_id).is_none_or(|current| at(&preview) >= at(current)) {
+                state.chat_previews.insert(chat_id, preview);
+            }
+        }
         let incoming_ids: Vec<String> = roster.chats.iter().map(|c| c.id.clone()).collect();
         removed = state.chats.iter().filter(|c| !incoming_ids.contains(&c.meta.id)).map(|c| c.meta.id.clone()).collect();
         state.chats.retain(|c| incoming_ids.contains(&c.meta.id));
@@ -1371,6 +1420,121 @@ mod tests {
         ScratchApp(app, home)
     }
 
+    #[test]
+    fn the_first_screen_marks_every_chat_for_on_demand_pages() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        crate::identity::create(app, Some("Runner".into())).unwrap();
+        let chat_id = app.state.lock().unwrap().chats[0].meta.id.clone();
+        prepare_first_screen(app);
+        assert_eq!(app.store.history_before(&chat_id).unwrap(), Some(i64::MAX));
+        assert!(app.history_is_partial(&chat_id));
+    }
+
+    struct Origin(Vec<Message>);
+
+    #[async_trait::async_trait]
+    impl crate::requests::Remote for Origin {
+        async fn ask(&self, _app: &Arc<App>, _runner_id: &str, _verb: &str, _body: serde_json::Value, _timeout: Duration) -> Result<serde_json::Value, String> {
+            Ok(serde_json::json!({ "messages": self.0.clone(), "has_more": false }))
+        }
+    }
+
+    struct Paged;
+
+    #[async_trait::async_trait]
+    impl crate::requests::Remote for Paged {
+        async fn ask(&self, _app: &Arc<App>, _runner_id: &str, _verb: &str, body: serde_json::Value, _timeout: Duration) -> Result<serde_json::Value, String> {
+            let has_more = body["before"].is_null();
+            let start = if has_more { 100 } else { 0 };
+            let count = if has_more { 100 } else { 20 };
+            let chat_id = body["chat_id"].as_str().unwrap_or("chat");
+            let messages: Vec<Message> = (start..start + count)
+                .map(|i| {
+                    let mut message = Message::new(chat_id, Author::You, Body::text(format!("m{i}")));
+                    message.id = format!("m{i}");
+                    message.created_at = i as f64;
+                    message
+                })
+                .collect();
+            Ok(serde_json::json!({ "messages": messages, "has_more": has_more }))
+        }
+    }
+
+    struct SlowOrigin;
+
+    #[async_trait::async_trait]
+    impl crate::requests::Remote for SlowOrigin {
+        async fn ask(&self, _app: &Arc<App>, _runner_id: &str, _verb: &str, _body: serde_json::Value, _timeout: Duration) -> Result<serde_json::Value, String> {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            Ok(serde_json::json!({ "messages": [], "has_more": true }))
+        }
+    }
+
+    fn origin_chat(app: &Arc<App>) -> String {
+        crate::identity::create(app, Some("Runner".into())).unwrap();
+        let chat = app.state.lock().unwrap().chats[0].meta.id.clone();
+        let mut origin = app.local_device().unwrap();
+        origin.id = "origin".into();
+        origin.is_identity_device = true;
+        {
+            let mut state = app.state.lock().unwrap();
+            state.devices.push(origin);
+            state.device_online.insert("origin".into());
+        }
+        app.store.set_origin_more(&chat, true, None).unwrap();
+        chat
+    }
+
+    #[tokio::test]
+    async fn origin_pages_walk_back_with_a_cursor() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        let chat = origin_chat(app);
+        *app.remote.lock().unwrap() = Arc::new(Paged);
+        let got = ensure_context(app, &chat, 400, Duration::from_secs(2)).await;
+        assert_eq!(got, 120);
+        assert!(app.store.oldest_message(&chat).unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn a_slow_origin_does_not_hold_a_turn_past_its_budget() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        let chat = origin_chat(app);
+        *app.remote.lock().unwrap() = Arc::new(SlowOrigin);
+        let started = std::time::Instant::now();
+        let got = ensure_context(app, &chat, 400, Duration::from_millis(50)).await;
+        assert_eq!(got, 0);
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[tokio::test]
+    async fn a_turn_fills_its_context_to_the_cap_when_pages_arrive_in_time() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        crate::identity::create(app, Some("Runner".into())).unwrap();
+        let chat = app.state.lock().unwrap().chats[0].meta.id.clone();
+        let mut origin = app.local_device().unwrap();
+        origin.id = "origin".into();
+        origin.is_identity_device = true;
+        {
+            let mut state = app.state.lock().unwrap();
+            state.devices.push(origin);
+            state.device_online.insert("origin".into());
+        }
+        app.store.set_origin_more(&chat, true, None).unwrap();
+        let mut messages = Vec::new();
+        for i in 1..=120 {
+            let mut message = Message::new(&chat, Author::You, Body::text(format!("m{i}")));
+            message.id = format!("m{i}");
+            messages.push(message);
+        }
+        *app.remote.lock().unwrap() = Arc::new(Origin(messages));
+        let got = ensure_context(app, &chat, 400, Duration::from_secs(2)).await;
+        assert_eq!(got, 120);
+    }
+
     /// Once a newer account key is here, a message under an older one is history: read on a
     /// chat's first page, never taken from the live log.
     #[tokio::test]
@@ -1389,7 +1553,7 @@ mod tests {
         let (live, page) = (Message::new(&chat, Author::You, Body::text("live")), Message::new(&chat, Author::You, Body::text("on a page")));
         let machine_file = app.machine_file().unwrap();
         apply_blob(app, &machine_file, &blob(&live));
-        apply_history_blob(app, &machine_file, &blob(&page));
+        apply_blob_as(app, &machine_file, &blob(&page), true);
         assert!(app.message(&chat, &live.id).is_none());
         assert!(app.message(&chat, &page.id).is_some());
     }
@@ -1684,7 +1848,7 @@ mod tests {
         let entry = snapshot["devices"].as_array().unwrap().iter().find(|d| d["id"] == silent.as_str()).unwrap();
         assert_eq!((entry["name"].as_str(), entry["os"].as_str(), entry["is_this_device"].as_bool()), (Some(""), Some(""), Some(false)));
 
-        let device = Device { id: silent.clone(), name: "Laptop".into(), model: String::new(), os: "windows".into(), os_version: String::new(), box_pubkey: String::new(), plugins: Vec::new(), channels: Vec::new(), version: String::new(), update: None, updated_at: now };
+        let device = Device { id: silent.clone(), name: "Laptop".into(), model: String::new(), os: "windows".into(), os_version: String::new(), box_pubkey: String::new(), is_identity_device: false, plugins: Vec::new(), channels: Vec::new(), version: String::new(), update: None, updated_at: now };
         upsert_device(&mut app.state.lock().unwrap().devices, device);
         assert!(unknown().is_empty(), "its blob landed");
         assert!(settle_unknown_machines(app));

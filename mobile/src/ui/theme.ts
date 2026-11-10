@@ -1,6 +1,7 @@
 // Colors and type. One monochrome palette on both platforms, the desktop app's (`desktop/theme.go`):
 // neutral surfaces, ink (near-black in light, near-white in dark) for the primary button, the
-// user's bubble, and a switch that is on; system blue only for links. Bots keep their accents.
+// user's bubble, and a switch that is on; system blue only for links. Bots keep their accents. The
+// transcript is the one place with color of its own: a fixed blue gradient under white cards.
 
 import { getMaterialColors, type MaterialColors, type RgbaHex } from "@expo/ui/jetpack-compose";
 import { Platform, useColorScheme, type ColorValue, type ViewStyle } from "react-native";
@@ -11,7 +12,7 @@ export interface Palette {
   secondaryLabel: ColorValue;
   tertiaryLabel: ColorValue;
   separator: ColorValue;
-  /// A screen's own background: the chat list and the transcript.
+  /// A screen's own background: the chat list. The transcript draws its own blue gradient.
   background: ColorValue;
   /// Behind a form's grouped cards: settings, Details, and the sheets.
   groupedBackground: ColorValue;
@@ -59,6 +60,11 @@ const materials: { light?: MaterialColors; dark?: MaterialColors } = {};
 export function usePalette(): Palette {
   const dark = useColorScheme() === "dark";
   return (palettes[dark ? "dark" : "light"] ??= makePalette(dark));
+}
+
+/// The light palette whatever the appearance: the message reader is a white page in both.
+export function lightPalette(): Palette {
+  return (palettes.light ??= makePalette(false));
 }
 
 /// Android's Material 3 palette for the Compose views (`@expo/ui`), given to them once from the
@@ -121,9 +127,9 @@ function makePalette(dark: boolean): Palette {
     inkText: "#FFFFFF",
     userBubble: "#0A0A0A",
     userBubbleText: "#FFFFFF",
-    botBubble: "#F2F2F2",
+    botBubble: "#FFFFFF",
     botBubbleText: "#0A0A0A",
-    innerCard: "#FFFFFF",
+    innerCard: "#F4F5F7",
     cardBorder: "rgba(0,0,0,0.09)",
     chrome: "#FFFFFF",
     chromeBorder: "rgba(0,0,0,0.06)",

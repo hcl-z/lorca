@@ -25,6 +25,13 @@ type MessageEvent struct {
 
 type MessageRemovedEvent struct{ ChatID, MessageID string }
 
+// ChatMessagesEvent is a page `chats.messages` left pending, delivered once it landed.
+type ChatMessagesEvent struct {
+	ChatID   string
+	Messages []WireMessage
+	HasMore  bool
+}
+
 type ChatRemovedEvent struct{ ChatID string }
 
 // JobEvent is a turn in flight on some Runner (`job.started`), or its end (`job.finished`).
@@ -71,6 +78,7 @@ func (SnapshotEvent) wireEvent()              {}
 func (RosterChangedEvent) wireEvent()         {}
 func (MessageEvent) wireEvent()               {}
 func (MessageRemovedEvent) wireEvent()        {}
+func (ChatMessagesEvent) wireEvent()          {}
 func (ChatRemovedEvent) wireEvent()           {}
 func (JobEvent) wireEvent()                   {}
 func (JobRetryEvent) wireEvent()              {}
@@ -125,6 +133,14 @@ func decodeEvent(name string, data json.RawMessage) (WireEvent, error) {
 		}
 		err := json.Unmarshal(data, &payload)
 		return MessageRemovedEvent{payload.ChatID, payload.MessageID}, err
+	case "chat.messages.loaded":
+		var payload struct {
+			ChatID   string        `json:"chat_id"`
+			Messages []WireMessage `json:"messages"`
+			HasMore  bool          `json:"has_more"`
+		}
+		err := json.Unmarshal(data, &payload)
+		return ChatMessagesEvent{payload.ChatID, payload.Messages, payload.HasMore}, err
 	case "chat.removed":
 		var payload struct {
 			ChatID string `json:"chat_id"`

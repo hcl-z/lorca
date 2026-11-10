@@ -47,6 +47,27 @@ test("a snapshot keeps a newer task, and one it does not list, for the same iden
   expect(useStore.getState().tasks.map((t) => t.goal)).toEqual(["c r1"]);
 });
 
+// A snapshot carries a chat's newest page, and a chat's page can be missing from it: the
+// messages already pulled for that chat stay, so opening it again draws them without a fetch.
+test("a snapshot with no page for a chat keeps the messages already loaded", async () => {
+  const { upsertMessage } = await import("./store");
+  applyRoster({ devices: [], bots: [bot], chats: [meta("kept")] });
+  const message = (id: string) => ({ id, chat_id: "kept", author: { kind: "you" }, body: { kind: "text", text: id }, state: { kind: "complete" }, created_at: 1 }) as never;
+  upsertMessage(message("kept-1"));
+  replaceSnapshot({
+    has_identity: true,
+    identity_id: "me",
+    this_device_id: "phone",
+    relay_url: null,
+    relay_connected: true,
+    devices: [],
+    bots: [bot],
+    chats: [meta("kept")] as Chat[],
+    running_turns: [],
+  });
+  expect(useStore.getState().chats.find((c) => c.id === "kept")!.messages.map((m) => m.id)).toEqual(["kept-1"]);
+});
+
 // A message changes its own chat alone: the others keep their identity, so the chat list's rows
 // and the agents' cards built from them are not drawn again.
 test("a message keeps every other chat as it was", async () => {
@@ -69,4 +90,16 @@ test("a message keeps every other chat as it was", async () => {
   // A message ahead of its roster waits under a placeholder chat.
   upsertMessage(message("m2", "c", "early"));
   expect(useStore.getState().chats.map((c) => c.id)).toEqual(["a", "b", "c"]);
+});
+
+test("an unchanged revision does not replace the message", async () => {
+  const { upsertMessage } = await import("./store");
+  applyRoster({ devices: [], bots: [bot], chats: [meta("r")] });
+  const message = (rev: number, text: string) => ({ id: "m1", chat_id: "r", author: { kind: "you" }, body: { kind: "text", text }, state: { kind: "complete" }, created_at: 1, rev }) as never;
+  expect(upsertMessage(message(1, "hi")).added).toBe(true);
+  const first = useStore.getState().chats.find((c) => c.id === "r")!.messages[0];
+  upsertMessage(message(1, "changed"), false);
+  expect(useStore.getState().chats.find((c) => c.id === "r")!.messages[0]).toBe(first);
+  upsertMessage(message(2, "changed"), false);
+  expect(useStore.getState().chats.find((c) => c.id === "r")!.messages[0]).not.toBe(first);
 });

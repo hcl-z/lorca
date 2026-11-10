@@ -44,6 +44,10 @@ pub struct Device {
     pub os: String,
     pub os_version: String,
     pub box_pubkey: String,
+    /// Whether this Device holds the account's identity key, so it can serve history another
+    /// Device never received.
+    #[serde(default)]
+    pub is_identity_device: bool,
     /// Plugins installed on that Runner, with their setup state. Secrets stay on the Runner.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub plugins: Vec<PluginStatus>,
@@ -1106,6 +1110,11 @@ pub struct Message {
     /// Unix seconds; the apps say Edited.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub edited_at: Option<f64>,
+    /// Changes whenever the content does, so an app can skip a message it already shows
+    /// without comparing its JSON. It is a hash of the content, so it is the same on every
+    /// Device that holds the same message.
+    #[serde(default)]
+    pub rev: u64,
 }
 
 /// How much of a tool call's detail the apps get: enough for the "Messaged ◉ X" marker.
@@ -1114,6 +1123,9 @@ const APP_TOOL_DETAIL_CHARS: usize = 400;
 pub const APP_COMMAND_CHARS: usize = 8000;
 /// How many of a chat's newest messages a snapshot carries; older ones are asked for by page.
 pub const SNAPSHOT_MESSAGES: usize = 60;
+/// How many of a chat's newest messages a Device uploads and keeps on the relay; older ones are
+/// served by the Device that holds them when a reader scrolls back.
+pub const CHAT_WINDOW: usize = 30;
 
 impl Message {
     /// The message as the apps get it. A tool row keeps what they show (the name, the summary,
@@ -1159,6 +1171,7 @@ impl Message {
             output: None,
             external_id: None,
             edited_at: None,
+            rev: 0,
         }
     }
 
@@ -1487,6 +1500,10 @@ pub struct RosterBlob {
     /// from a Device that had not heard of a new bot yet does not delete it.
     #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
     pub deleted: std::collections::BTreeSet<String>,
+    /// Each chat's latest message, so the list shows a preview before a Device has fetched the
+    /// chat's transcript page. The message itself supersedes it once it lands.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub previews: std::collections::BTreeMap<String, Message>,
     pub updated_at: f64,
 }
 

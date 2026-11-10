@@ -10,7 +10,8 @@ import { Pressable } from "./Pressable";
 import * as Clipboard from "expo-clipboard";
 import { haptic } from "./haptics";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Animated, { FadeIn, LinearTransition, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withSequence, withSpring, withTiming } from "react-native-reanimated";
+import Animated, { LinearTransition, useAnimatedStyle, useReducedMotion, useSharedValue, withSequence, withSpring, withTiming } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { ShimmerView } from "../../modules/lorca-core/ShimmerView";
@@ -125,24 +126,26 @@ function useSwipeToReply(onReply?: () => void) {
         if ((event.allTouches[0]?.absoluteX ?? 0) < BACK_EDGE) manager.fail();
       })
       .onUpdate((event) => {
-        offset.value = Math.max(0, Math.min(REPLY_SWIPE * 1.4, event.translationX));
-        const past = offset.value >= REPLY_SWIPE;
-        if (past !== armed.value) {
-          armed.value = past;
-          if (past) runOnJS(tick)();
+        offset.set(Math.max(0, Math.min(REPLY_SWIPE * 1.4, event.translationX)));
+        const past = offset.get() >= REPLY_SWIPE;
+        if (past !== armed.get()) {
+          armed.set(past);
+          if (past) scheduleOnRN(tick);
         }
       })
       .onEnd(() => {
-        if (armed.value) runOnJS(reply)();
+        if (armed.get()) scheduleOnRN(reply);
       })
-      .onFinalize(() => {
-        armed.value = false;
-        offset.value = withSpring(0, { damping: 22, stiffness: 260 });
+      .onFinalize((event) => {
+        armed.set(false);
+        // The snap back takes the flick's own speed, so the row carries the gesture through
+        // instead of restarting from rest.
+        offset.set(withSpring(0, { duration: 400, dampingRatio: 0.8, velocity: event.velocityX }));
       });
   }, [onReply, offset, armed]);
-  const follow = useAnimatedStyle(() => ({ transform: [{ translateX: offset.value }] }));
+  const follow = useAnimatedStyle(() => ({ transform: [{ translateX: offset.get() }] }));
   const arrow = useAnimatedStyle(() => {
-    const progress = Math.min(1, offset.value / REPLY_SWIPE);
+    const progress = Math.min(1, offset.get() / REPLY_SWIPE);
     return { opacity: progress, transform: [{ scale: 0.6 + 0.4 * progress }] };
   });
   return { pan, follow, arrow };
@@ -210,7 +213,8 @@ export const MessageRow = memo(function MessageRow({
   }, [message, onOpenMessage]);
   const quoteName = quote ? quoteAuthorName(quote, bots) : "";
   const reduceMotion = useReducedMotion();
-  const appear = reduceMotion ? undefined : FadeIn.duration(180);
+  // No entrance on the rows themselves: a list mounts rows as it scrolls, and a fade that
+  // replays on every row that comes into view is motion the reader never asked for.
   const settle = reduceMotion ? undefined : LinearTransition;
   const swipe = useSwipeToReply(reply);
   return (
@@ -221,14 +225,14 @@ export const MessageRow = memo(function MessageRow({
     <Animated.View style={swipe.follow}>
     <View style={[styles.messageRow, { paddingTop: stackAbove ? 0 : groupStart ? 14 : 3 }, isYou ? styles.messageRowYou : styles.messageRowBot]}>
       {showsAvatar && (
-        <Animated.View entering={appear} layout={settle} style={{ width: AVATAR + GUTTER, alignSelf: "flex-end" }}>
+        <Animated.View layout={settle} style={{ width: AVATAR + GUTTER, alignSelf: "flex-end" }}>
           {groupEnd &&
             (contact !== undefined ? <ContactAvatar name={contact} size={AVATAR} /> : <BotAvatar bot={bot} size={AVATAR} />)}
         </Animated.View>
       )}
       <View style={[styles.bubbleColumn, { maxWidth: columnWidth }, isYou && styles.bubbleColumnYou]}>
         {showsName && (
-          <Animated.View entering={appear} layout={settle}>
+          <Animated.View layout={settle}>
             <Text style={[styles.author, { color: p.secondaryLabel }]} numberOfLines={1}>
               {contact ?? bot?.name ?? t("Bot")}
             </Text>

@@ -585,6 +585,31 @@ func (s *Store) handle(event WireEvent) {
 		delete(s.commandStarts, event.MessageID)
 		s.emit(Event{Kind: EventMessageRemoved, ChatID: event.ChatID, MessageID: event.MessageID})
 		s.noteOutput(nil, event.MessageID, event.ChatID)
+	case ChatMessagesEvent:
+		delete(s.loadingOlder, event.ChatID)
+		chat := s.Chat(event.ChatID)
+		if chat == nil {
+			return
+		}
+		known := map[string]bool{}
+		for _, message := range chat.Messages {
+			known[message.ID] = true
+		}
+		var older []*Message
+		for _, wire := range event.Messages {
+			if message := ToMessage(wire); !known[message.ID] {
+				older = append(older, message)
+			}
+		}
+		if len(older) > 0 {
+			slices.SortStableFunc(older, func(a, b *Message) int { return a.CreatedAt.Compare(b.CreatedAt) })
+			chat.Messages = append(older, chat.Messages...)
+			for _, message := range older {
+				s.noteCommand(message, event.ChatID)
+			}
+			s.emit(Event{Kind: EventOlderMessagesLoaded, ChatID: event.ChatID})
+		}
+		chat.HasMore = event.HasMore
 	case ChatRemovedEvent:
 		s.Chats = slices.DeleteFunc(slices.Clone(s.Chats), func(c *Chat) bool { return c.ID == event.ChatID })
 		s.runningJobs = slices.DeleteFunc(s.runningJobs, func(job runningJob) bool { return job.chatID == event.ChatID })
@@ -928,6 +953,9 @@ func (s *Store) Preview(chat *Chat) string {
 			last = message
 			break
 		}
+	}
+	if last == nil {
+		last = chat.LastMessage
 	}
 	if last == nil {
 		return L("No messages yet")
@@ -2628,17 +2656,33 @@ func (s *Store) MoveChat(id, sectionID string) {
 // transcript calls this as it nears the top; one request per chat at a time.
 func (s *Store) LoadOlderMessages(id string) {
 	chat := s.Chat(id)
-	if s.IsMock || s.loadingOlder[id] || chat == nil || !chat.HasMore || len(chat.Messages) == 0 {
+	if s.IsMock || s.loadingOlder[id] || chat == nil || !chat.HasMore {
 		return
 	}
-	first := chat.Messages[0].ID
+	first := ""
+	if len(chat.Messages) > 0 {
+		first = chat.Messages[0].ID
+	}
 	s.loadingOlder[id] = true
+	params := map[string]any{"chat_id": id}
+	if first != "" {
+		params["before"] = first
+	}
 	Async(s, func() (WireMessagePage, error) {
-		return call[WireMessagePage](s, "chats.messages", map[string]any{"chat_id": id, "before": first})
+		return call[WireMessagePage](s, "chats.messages", params)
 	}, func(page WireMessagePage, err error) {
-		delete(s.loadingOlder, id)
+		if !page.Pending {
+			delete(s.loadingOlder, id)
+		}
 		current := s.Chat(id)
-		if err != nil || current == nil || len(current.Messages) == 0 || current.Messages[0].ID != first {
+		if err != nil || current == nil {
+			return
+		}
+		if first == "" {
+			if len(current.Messages) != 0 {
+				return
+			}
+		} else if len(current.Messages) == 0 || current.Messages[0].ID != first {
 			return
 		}
 		known := map[string]bool{}
@@ -2653,6 +2697,11 @@ func (s *Store) LoadOlderMessages(id string) {
 		}
 		current.Messages = append(older, current.Messages...)
 		current.HasMore = page.HasMore
+		if page.HistoryElsewhere != nil {
+			current.HistoryElsewhere = &HistoryElsewhere{DeviceID: page.HistoryElsewhere.DeviceID, DeviceName: page.HistoryElsewhere.DeviceName}
+		} else {
+			current.HistoryElsewhere = nil
+		}
 		for _, message := range older {
 			s.noteCommand(message, id)
 		}

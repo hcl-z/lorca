@@ -60,6 +60,20 @@ export function isLongMessage(text: string, width: number, size: number, height 
   return estimatedLines(text, width, size) * size * LINE_HEIGHT > height;
 }
 
+/// A color at no alpha, for the clear end of a folded message's fade. `transparent` is
+/// rgba(0, 0, 0, 0), which a gradient interpolates through gray, so a white bubble's fade would
+/// darken before it clears.
+export function clearEnd(color: string): string {
+  const hex = /^#([0-9a-f]{6})$/i.exec(color);
+  if (hex) {
+    const at = parseInt(hex[1], 16);
+    return `rgba(${(at >> 16) & 255},${(at >> 8) & 255},${at & 255},0)`;
+  }
+  const rgb = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(color);
+  if (rgb) return `rgba(${rgb[1]},${rgb[2]},${rgb[3]},0)`;
+  return "transparent";
+}
+
 /// The head of `text` a folded message lays out: cut at a line where it can be, and a code fence
 /// left open closed, so the tail reads as the code it is.
 export function collapsedPrefix(text: string, limit = PREFIX_CHARS): string {

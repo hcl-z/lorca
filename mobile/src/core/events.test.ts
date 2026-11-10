@@ -11,6 +11,7 @@ test("every event the core sends decodes", () => {
     "message.added": { chat_id: "c", message: { id: "m", chat_id: "c" } },
     "message.updated": { chat_id: "c", message: { id: "m", chat_id: "c" } },
     "message.removed": { chat_id: "c", message_id: "m" },
+    "chat.messages.loaded": { chat_id: "c", messages: [], has_more: true },
     "chat.removed": { chat_id: "c" },
     "projects.changed": { chat_id: "c", entry_id: "e" },
     "job.started": { chat_id: "c", bot_id: "b", job_id: "j" },

@@ -155,6 +155,9 @@ func isImageOutput(message *model.Message) bool {
 // or a status line.
 func buildRows(chat *model.Chat, working []string, stoppedNotice string) []chatRow {
 	var rows []chatRow
+	if chat.HistoryElsewhere != nil {
+		rows = append(rows, chatRow{kind: rowStatus, key: "history-elsewhere", text: L("History is on %@", chat.HistoryElsewhere.DeviceName)})
+	}
 	var previousAuthor *model.Author
 	var previousDate time.Time
 	for _, message := range chat.Messages {
