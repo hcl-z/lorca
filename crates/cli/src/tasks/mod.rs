@@ -826,10 +826,5 @@ pub(crate) fn context(app: &App, bot_id: &str, chat_id: &str) -> Option<String> 
     Some(out)
 }
 
-#[cfg(feature = "runner")]
-pub(crate) fn is_context(text: &str) -> bool {
-    text.starts_with(CONTEXT_MARKER)
-}
-
 #[cfg(test)]
 mod tests;

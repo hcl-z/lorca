@@ -370,13 +370,11 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         plugin_tools: plugin_tools.clone(),
         steering: steering.clone(),
         follow_up: (!chat.meta.is_group() && chat.meta.channel.is_none()).then(FollowUp::default),
-        brief: brief.clone(),
         trace: trace.clone(),
         prompt_inputs,
         profile: std::sync::Mutex::new(Profile::of(&bot)),
         full_tools,
         cancel: cancel.clone(),
-        noted: std::sync::atomic::AtomicBool::new(false),
     });
     let config = AgentLoopConfig {
         provider: provider.clone(),
@@ -591,8 +589,6 @@ struct TurnHooks {
     /// Direct chats only: a group member's reply is its whole turn, and a channel's reply has
     /// gone to the contact.
     follow_up: Option<FollowUp>,
-    /// `turn_brief`, closing every request.
-    brief: Option<String>,
     trace: Option<Arc<crate::traces::Trace>>,
     /// What the system prompt is made of besides the bot, to make it again mid-turn.
     prompt_inputs: PromptInputs,
@@ -601,8 +597,6 @@ struct TurnHooks {
     /// The usual tools, for a turn that starts in setup and finishes it.
     full_tools: Option<Vec<Arc<dyn Tool>>>,
     cancel: CancellationToken,
-    /// Whether a request of this turn carried the open tasks' note.
-    noted: std::sync::atomic::AtomicBool,
 }
 
 /// How the model sees a transcript that may open with a compaction summary.
@@ -876,25 +870,10 @@ impl LoopHooks for TurnHooks {
         if let Some(follow_up) = &self.follow_up {
             follow_up.step();
         }
-        let mut messages = materialize_steering_messages(&self.app, &self.bot, &self.workdir, messages).await;
-        messages.retain(|message| !matches!(message, AgentMessage::User(user) if user.content.iter().filter_map(ContentPart::as_text).any(crate::tasks::is_context)));
-        // The note is the request's last message and moves on with each request, so a reply
-        // made after it no longer follows what it followed, and its thinking (bound to that,
-        // on some models) goes.
-        if self.noted.load(std::sync::atomic::Ordering::Relaxed) {
-            drop_bound_thinking(self.provider.model_id(), &mut messages);
-        }
-        let notes = request_notes(&self.app, &self.bot, &self.chat_id, now_secs() as i64);
-        if notes.iter().any(|note| crate::tasks::is_context(note)) {
-            self.noted.store(true, std::sync::atomic::Ordering::Relaxed);
-        }
-        for note in notes {
-            messages.push(AgentMessage::User(UserMessage::text(note)));
-        }
-        if let Some(brief) = &self.brief {
-            messages.push(AgentMessage::User(UserMessage::text(brief.clone())));
-        }
-        messages
+        // Steering still becomes a user message here until Task 4 moves that to the drain, where
+        // the message is also promoted. What the turn opened with is left as it is: adding to it
+        // would move every later message and strip the thinking bound to them.
+        materialize_steering_messages(&self.app, &self.bot, &self.workdir, messages).await
     }
 
     fn convert_to_llm(&self, messages: &[AgentMessage]) -> Vec<LlmMessage> {
@@ -1015,12 +994,8 @@ impl TurnHooks {
     /// outgrows the window.
     async fn next_turn(&self, ctx: PrepareNextTurnContext<'_>) -> Option<TurnUpdate> {
         let mut context = ctx.context.clone();
+        // Steering still reaches the context here until Task 4 moves it to the drain.
         context.messages = materialize_steering_messages(&self.app, &self.bot, &self.workdir, context.messages).await;
-        // As in `transform_context`, so the memory flush and the summary, which send these
-        // messages without the note, carry no thinking bound to it.
-        if self.noted.load(std::sync::atomic::Ordering::Relaxed) {
-            drop_bound_thinking(self.provider.model_id(), &mut context.messages);
-        }
         let refreshed = self.refresh_profile(&mut context);
         let context_changed = refreshed || context.messages != ctx.context.messages;
 
@@ -4711,10 +4686,10 @@ mod tests {
         }
     }
 
-    /// The open tasks' note is each request's last message, so a reply made after it is sent
-    /// later without it before; the reply's thinking, bound to it, does not go with it.
+    /// Nothing moves below the transcript any more, so a request adds nothing, and the thinking
+    /// of a model that binds it to what precedes it survives every step.
     #[tokio::test]
-    async fn thinking_made_after_the_tasks_note_is_not_sent_without_it() {
+    async fn a_request_adds_no_note_and_keeps_bound_thinking() {
         let scratch = scratch_app();
         let app = &scratch.0;
         crate::identity::create(app, None).unwrap();
@@ -4727,22 +4702,12 @@ mod tests {
         let messages = vec![AgentMessage::user("Deploy now?"), AgentMessage::Assistant(reply)];
         let thinks = |messages: &[AgentMessage]| messages.iter().any(|m| matches!(m, AgentMessage::Assistant(a) if a.content.iter().any(|p| matches!(p, AssistantPart::Thinking { .. }))));
 
-        // No open task, no note: the thinking stays.
-        let sent = hooks.transform_context(messages.clone(), &CancellationToken::new()).await;
-        assert!(thinks(&sent));
-
         crate::tasks::dispatch(app, "tasks.create", json!({"request_id":"r1","owner_bot_id":chef.id,"chat_ids":[chat_id],"goal":"Ship it","acceptance_criteria":["Deployed"],"next_action":"Deploy"})).await.unwrap();
-        // The request that first carries the note sends what came before it as it was.
-        let sent = hooks.transform_context(messages.clone(), &CancellationToken::new()).await;
-        assert!(thinks(&sent));
-        assert!(sent.iter().any(|message| matches!(message, AgentMessage::User(user) if user.content.iter().filter_map(ContentPart::as_text).any(crate::tasks::is_context))));
-        // Every later one, and the turn's messages as compaction reads them, carry none.
-        let sent = hooks.transform_context(messages.clone(), &CancellationToken::new()).await;
-        assert!(!thinks(&sent));
-        let AgentMessage::Assistant(made) = &messages[1] else { unreachable!() };
-        let context = AgentContext { system_prompt: String::new(), messages: messages.clone(), tools: Vec::new(), cache_points: Vec::new() };
-        let update = hooks.prepare_next_turn(PrepareNextTurnContext { message: made, tool_results: &[], context: &context, new_messages: &[] }).await;
-        assert!(!thinks(&update.and_then(|u| u.context).expect("the thinking went").messages));
+        for _ in 0..2 {
+            let sent = hooks.transform_context(messages.clone(), &CancellationToken::new()).await;
+            assert_eq!(sent.len(), messages.len(), "a request adds no note: {sent:?}");
+            assert!(thinks(&sent), "the thinking still follows what it was bound to");
+        }
     }
 
     #[test]
@@ -4787,14 +4752,12 @@ mod tests {
             plugin_tools: crate::plugins::mcp::bot_catalog(app, bot, &chat.meta.id, Vec::new()),
             steering: None,
             follow_up: None,
-            brief: None,
             trace: None,
             prompt_inputs: PromptInputs { chat: chat.clone(), job: room_job(&chat.meta.id, &bot.id), store: MemoryStore::for_bot(&app.config.home, bot), plugin_briefs: Arc::new(Vec::new()), unattended: false },
             profile: std::sync::Mutex::new(Profile::of(bot)),
             full_tools: full,
             cancel: CancellationToken::new(),
-            noted: std::sync::atomic::AtomicBool::new(false),
-        }
+            }
     }
 
     /// A profile changed mid-turn, in the bot's details or by finish_setup, reaches the next
@@ -7256,19 +7219,15 @@ mod tests {
         let job = Job::local("turn", "dm", "b1", "preview");
         assert_eq!(joined, PromptInputs::for_turn(app, &chef, &dm, &job, false).system_prompt(app, &dm, &chef));
 
-        let hooks = turn_hooks(app, &chef, &dm, None);
-        let sent = futures::executor::block_on(hooks.transform_context(Vec::new(), &CancellationToken::new()));
-        let said: Vec<String> = sent
-            .iter()
-            .filter_map(|message| match message {
-                AgentMessage::User(user) => user.content[0].as_text().map(str::to_string),
-                _ => None,
-            })
-            .collect();
+        // The preview lists the notes a turn opens with, which is where a request reads them now.
+        let after = request_notes(app, &chef, &dm.meta.id, crate::config::now_secs() as i64);
         let shown: Vec<String> = preview["notes"].as_array().unwrap().iter().map(|note| note.as_str().unwrap().to_string()).collect();
         let without_clock = |notes: &[String]| notes.iter().filter(|note| !note.starts_with("[It is now")).cloned().collect::<Vec<_>>();
         assert!(shown.iter().any(|note| note.contains("The user ships on Fridays.")), "{shown:?}");
-        assert_eq!(without_clock(&shown), without_clock(&said));
+        assert_eq!(without_clock(&shown), without_clock(&after));
+        let hooks = turn_hooks(app, &chef, &dm, None);
+        let sent = futures::executor::block_on(hooks.transform_context(Vec::new(), &CancellationToken::new()));
+        assert!(sent.is_empty(), "a request adds nothing to what the turn opened with: {sent:?}");
     }
 
     /// A turn that read a message but did not answer it does not keep it: Stop gives it back,
