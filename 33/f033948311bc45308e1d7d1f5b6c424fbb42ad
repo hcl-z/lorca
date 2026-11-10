@@ -1,0 +1,25 @@
+mobile/app/(main)/chat/[id].tsx
+  s_6d748fa0b7c7be::t_d4772dfc305d00 126
+  s_6d748fa0b7c7be::t_dd2e1081706818 292-298
+  s_6d748fa0b7c7be::t_749ed7eff17ef2 624-626
+  s_6d748fa0b7c7be::t_012a36b749545b 131-133
+  s_6d748fa0b7c7be::t_6b6a52ffe067e0 129-130,134-149
+  s_6d748fa0b7c7be::t_ded2cd5050e69b 839
+  s_6d748fa0b7c7be::t_7d8f5be75571a9 95-98,100-101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.52-trip",
+  "base_commit_sha": "33f033948311bc45308e1d7d1f5b6c424fbb42ad",
+  "prompts": {},
+  "sessions": {
+    "s_6d748fa0b7c7be": {
+      "agent_id": {
+        "tool": "deepseekharness",
+        "id": "session-957c5ee6-03f4-4b97-b511-1afbfacda50c",
+        "model": "ada-cli-golang-ctripcorp-com/claude-deepseek-v4.1-flash[1M]"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
