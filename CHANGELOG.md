@@ -8,6 +8,11 @@ phone app's.
 
 ## [Unreleased]
 
+## [1.0.39]
+
+- Ships the features listed under 1.0.38, which the 1.0.38 build was cut before they merged: the phone's first-screen sync, the message reader that grows out of its bubble, and the failed-fetch retry.
+- A chat nobody is using is compacted so a large one shrinks before the next turn, and a turn learns only the facts that belong to it.
+
 ## [1.0.38]
 
 - The phone opens on your chats at once after pairing or a relay reset: the first sync brings the bot list, the sections, and each chat's latest message with its time, and a chat's messages arrive when you open it — from the relay, or from a Device that still has them — a page at a time as you scroll up.
