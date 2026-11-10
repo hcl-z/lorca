@@ -247,7 +247,14 @@ export function replaceSnapshot(snapshot: {
       const messages = c.messages ?? [];
       const old = loaded.get(c.id);
       const at = old && messages.length ? old.messages.findIndex((m) => m.id === messages[0].id) : -1;
-      const kept = at > 0 ? { messages: [...old!.messages.slice(0, at), ...messages], has_more: old!.has_more } : { messages };
+      // A snapshot can carry no page for a chat this phone already pulled: every message it has
+      // stays, so opening the chat again draws it without asking the core for it.
+      const kept =
+        messages.length === 0
+          ? { messages: old?.messages ?? [], has_more: old?.has_more }
+          : at > 0
+            ? { messages: [...old!.messages.slice(0, at), ...messages], has_more: old!.has_more }
+            : { messages };
       return { ...c, ...kept, unread_count: c.unread_count ?? 0 };
     }),
     routines: snapshot.routines ?? [],
