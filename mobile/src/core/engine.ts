@@ -42,6 +42,7 @@ import {
   replaceSnapshot,
   resetStore,
   setChatUsage,
+  setOlderLoading,
   setRetry,
   setRunning,
   setStatus,
@@ -268,7 +269,7 @@ class Engine {
             chats: s.chats.map((c) => (c.id === event.chatId ? { ...c, messages, has_more: event.hasMore } : c)),
           }));
         }
-        this.loadingOlder.delete(event.chatId);
+        this.clearOlderLoading(event.chatId);
         break;
       }
       case "chat.removed":
@@ -416,8 +417,10 @@ class Engine {
   async loadOlder(chatId: string): Promise<void> {
     const chat = chatById(chatId);
     const first = chat?.messages[0];
-    if (!chat?.has_more || this.loadingOlder.has(chatId)) return;
+    // A chat whose page state is not known yet is asked for once, rather than left empty.
+    if (chat?.has_more === false || this.loadingOlder.has(chatId)) return;
     this.loadingOlder.add(chatId);
+    setOlderLoading(chatId, true);
     let pending = false;
     try {
       const page = await core.request<{
@@ -425,7 +428,7 @@ class Engine {
         has_more: boolean;
         pending?: boolean;
         history_elsewhere?: { device_id: string; device_name: string };
-      }>("chats.messages", first ? { chat_id: chatId, before: first.id } : { chat_id: chatId });
+      }>("chats.messages", first ? { chat_id: chatId, before: first.id, wait_ms: 0 } : { chat_id: chatId, wait_ms: 0 });
       pending = !!page.pending;
       useStore.setState((s) => ({
         chats: s.chats.map((c) => {
@@ -444,8 +447,14 @@ class Engine {
     } finally {
       // A page still on its way arrives through `chat.messages.loaded`; the chat stays marked so
       // a fast scroll does not ask again.
-      if (!pending) this.loadingOlder.delete(chatId);
+      if (!pending) this.clearOlderLoading(chatId);
     }
+  }
+
+  /// The chat's page is no longer on its way.
+  private clearOlderLoading(chatId: string): void {
+    this.loadingOlder.delete(chatId);
+    setOlderLoading(chatId, false);
   }
 
   async searchChats(query: string): Promise<ChatSearchResults> {

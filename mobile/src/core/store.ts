@@ -69,6 +69,9 @@ export interface StoreState {
   pendingTasks: Record<string, true>;
   /// The chat on screen: new replies there do not count as unread.
   openChatId: string | null;
+  /// Chats whose first page is on its way, by chat id: the transcript says so instead of
+  /// showing an empty list.
+  olderLoading: Record<string, true>;
   /// Only foreground UI can acknowledge a reply as read.
   appActive: boolean;
   /// When the app last came to the foreground, in ms.
@@ -129,6 +132,7 @@ function empty(): Omit<StoreState, "ready" | "dictation_lang" | "appActive" | "a
     statuses: {},
     pendingTasks: {},
     openChatId: null,
+    olderLoading: {},
     files: {},
     fileErrors: {},
     outputs: {},
@@ -161,6 +165,17 @@ export function resetStore() {
 }
 
 // MARK: - Lookup
+
+/// Marks a chat's first page as on its way, or no longer. The transcript shows the wait, so an
+/// empty list never reads as an empty chat.
+export function setOlderLoading(chatId: string, loading: boolean) {
+  useStore.setState((s) => {
+    const olderLoading = { ...s.olderLoading };
+    if (loading) olderLoading[chatId] = true;
+    else delete olderLoading[chatId];
+    return { olderLoading };
+  });
+}
 
 export function thisDeviceId(): string | null {
   return useStore.getState().deviceId;

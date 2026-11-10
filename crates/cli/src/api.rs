@@ -676,8 +676,9 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
                 match tokio::time::timeout(std::time::Duration::from_millis(wait_ms), fetch).await {
                     Ok(Ok(())) => page = app.message_page(&chat_id, before, limit),
                     Ok(Err(error)) => {
+                        // The page stays as it is, `has_more` included: a fetch that failed says
+                        // nothing about where the chat's history ends, and the next open asks again.
                         tracing::warn!(%error, %chat_id, "fetching older messages");
-                        page.1 = false;
                     }
                     Err(_) => {
                         pending = true;
@@ -685,10 +686,13 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
                         let background = app.clone();
                         let id = chat_id.clone();
                         tokio::spawn(async move {
-                            if crate::sync::fetch_older(background.clone(), id.clone()).await.is_ok() {
-                                let (messages, has_more) = background.message_page(&id, page_before.as_deref(), SNAPSHOT_MESSAGES);
-                                background.emit(crate::events::Event::ChatMessagesLoaded { chat_id: id, messages, has_more });
+                            if let Err(error) = crate::sync::fetch_older(background.clone(), id.clone()).await {
+                                tracing::warn!(%error, %id, "fetching older messages in the background");
                             }
+                            // Whether it worked or not, the page as it stands settles the client's
+                            // wait; a failed fetch leaves it able to ask again.
+                            let (messages, has_more) = background.message_page(&id, page_before.as_deref(), SNAPSHOT_MESSAGES);
+                            background.emit(crate::events::Event::ChatMessagesLoaded { chat_id: id, messages, has_more });
                         });
                     }
                 }
@@ -1210,6 +1214,42 @@ mod tests {
         let answer = dispatch(app, "chats.messages", json!({ "chat_id": chat, "wait_ms": 0 })).await.unwrap();
         assert_eq!(answer["pending"], true);
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    #[tokio::test]
+    async fn a_background_fetch_that_fails_still_settles_the_page() {
+        let scratch = scratch();
+        let app = &scratch.0;
+        crate::identity::create(app, Some("Runner".into())).unwrap();
+        let chat = app.state.lock().unwrap().chats[0].meta.id.clone();
+        // A relay this Device cannot reach: the fetch holds its call, then fails in the background.
+        app.set_relay_url(Some("http://127.0.0.1:9".into())).unwrap();
+        app.store.set_history_before(&chat, Some(100)).unwrap();
+        let mut events = app.events.subscribe();
+        let answer = dispatch(app, "chats.messages", json!({ "chat_id": chat, "wait_ms": 0 })).await.unwrap();
+        assert_eq!(answer["pending"], true);
+        // The page arrives even though the fetch failed, so the client stops waiting on it.
+        let settled = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                if matches!(events.recv().await, Ok(crate::events::Event::ChatMessagesLoaded { .. })) {
+                    break;
+                }
+            }
+        })
+        .await;
+        assert!(settled.is_ok(), "no page event after a failed background fetch");
+    }
+
+    #[tokio::test]
+    async fn a_failed_fetch_does_not_claim_the_chat_is_complete() {
+        let scratch = scratch();
+        let app = &scratch.0;
+        crate::identity::create(app, Some("Runner".into())).unwrap();
+        let chat = app.state.lock().unwrap().chats[0].meta.id.clone();
+        // A gap the relay holds, with no relay reachable: the fetch fails at once.
+        app.store.set_history_before(&chat, Some(100)).unwrap();
+        let answer = dispatch(app, "chats.messages", json!({ "chat_id": chat, "wait_ms": 1000 })).await.unwrap();
+        assert_eq!(answer["has_more"], true);
     }
 
     #[test]

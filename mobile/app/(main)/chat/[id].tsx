@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Platform, type ScrollViewProps, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Platform, type ScrollViewProps, StyleSheet, Text, View } from "react-native";
 import { Pressable } from "../../../src/ui/Pressable";
 import {
   KeyboardChatScrollView,
@@ -113,6 +113,8 @@ export default function ChatScreen() {
   const isWorking = useIsWorking(id);
   const hasTasks = useRunningTasks(id).length > 0;
   const status = useStore((s) => s.statuses[id] ?? null);
+  // The chat's first page is on its way from the core: the list has nothing to draw until it lands.
+  const loadingOlder = useStore((s) => !!s.olderLoading[id]);
   // A long message read whole, from the place its bubble stands.
   const [reader, setReader] = useState<{ message: Message; frame: MessageFrame } | null>(null);
   const openReader = useCallback((message: Message, frame: MessageFrame) => setReader({ message, frame }), []);
@@ -317,7 +319,7 @@ export default function ChatScreen() {
   // A chat whose page is not here yet: ask for its first page as the screen opens. An empty
   // transcript has no row to scroll into view, so `onLoad`/`onStartReached` never fire for it.
   useEffect(() => {
-    if (chat && chat.messages.length === 0 && chat.has_more) void engine.loadOlder(id);
+    if (chat && chat.messages.length === 0 && chat.has_more !== false) void engine.loadOlder(id);
   }, [id, chat?.messages.length, chat?.has_more]);
   const anchorIndex = anchorKey ? rows.findIndex((row) => row.key === anchorKey) : -1;
   const anchoredEndSpace = useMemo(
@@ -652,7 +654,7 @@ export default function ChatScreen() {
               chatShown();
               // A chat whose window has not been fetched yet is empty; ask for its first page
               // rather than waiting for a scroll that has nothing to scroll.
-              if (chat && chat.messages.length === 0 && chat.has_more) void engine.loadOlder(id);
+              if (chat && chat.messages.length === 0 && chat.has_more !== false) void engine.loadOlder(id);
             }}
             // Nearing the first message: the page before it, once the chat has opened at its end.
             onStartReached={() => {
@@ -667,6 +669,12 @@ export default function ChatScreen() {
             onMomentumScrollEnd={scrollEnded}
           />
         </SoftScrollEdgeView>
+        {rows.length === 0 && loadingOlder ? (
+          <View style={styles.loadingOlder} pointerEvents="none">
+            <ActivityIndicator color={p.secondaryLabel} />
+            <Text style={{ color: p.secondaryLabel, fontSize: 14 }}>{t("Loading…")}</Text>
+          </View>
+        ) : null}
         <KeyboardFoot
           style={[styles.jump, { bottom: composerHeight + 10 }]}
           tuck={insets.bottom}
@@ -894,6 +902,7 @@ const ChatHeader = memo(function ChatHeader({
 
 const styles = StyleSheet.create({
   transcript: { flex: 1 },
+  loadingOlder: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", gap: 10 },
   missing: { flex: 1, alignItems: "center", justifyContent: "center" },
   androidHeader: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 100 },
   androidHeaderControls: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16 },

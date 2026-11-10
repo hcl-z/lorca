@@ -26,12 +26,16 @@ chat messages then.
 ## Paging
 
 `chats.messages` answers from SQLite, then, while the chat is partial, fetches one page with
-`wait_ms` (600 by default). From the relay it reads 100 messages back (`older_messages`); when
+`wait_ms` (600 by default; the phone asks with 0, so its transcript paints the local page at
+once). From the relay it reads 100 messages back (`older_messages`); when
 the relay's copy ends it asks an origin Device for a page of 100 (`history.page`, a signed and
 sealed request/response envelope) capped at 256 KiB. The origin order is the chat's bot Runner
 (the owner's first in a group), then the identity Devices, then any other Device. A candidate
 that does not list the chat answers `not_here` and the next is tried. A page past `wait_ms`
-arrives through `chat.messages.loaded`, with `pending: true` on the first answer.
+arrives through `chat.messages.loaded`, with `pending: true` on the first answer; a fetch that
+failed emits it too, with the page as it stands, so the client stops waiting and its next ask
+tries again. A fetch that failed leaves `has_more` as it was: it says nothing about where the
+history ends.
 
 `has_more` is true while the relay or an origin holds more. When the relay is exhausted and the
 origin that holds more is offline, the answer carries `history_elsewhere { device_id,
