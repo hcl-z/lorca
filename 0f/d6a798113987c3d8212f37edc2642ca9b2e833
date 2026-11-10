@@ -1,0 +1,31 @@
+mobile/src/ui/transcript.tsx
+  s_6d748fa0b7c7be::t_776d4f9e18a29c 35
+  s_6d748fa0b7c7be::t_e65c5f6d25c60b 1410-1411
+docs/architecture/phone-ui.md
+  s_6d748fa0b7c7be::t_5fe4263e1cda9b 7
+mobile/src/ui/readerTransition.ts
+  s_6d748fa0b7c7be::t_6299f6258bca5f 9
+  s_6d748fa0b7c7be::t_aab49f7036bbf8 1-8,10-12,16-26,30-34,38-41,43-44,47-51,53-54
+mobile/src/ui/MessageReader.tsx
+  s_6d748fa0b7c7be::t_bacc09d0dac069 2-6,8-12,18,24,28-33,42,44-46,51,55,58,65-66,71-74,76-80,87-100,108
+mobile/src/ui/readerTransition.test.ts
+  s_6d748fa0b7c7be::t_3d1b84fc747345 66
+  s_6d748fa0b7c7be::t_2556479d890954 2,8-15,18-24,27-45,49-56,61-63,67-71,75-79,82-88
+  s_6d748fa0b7c7be::t_01b1aef0e3485c 57-60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.52-trip",
+  "base_commit_sha": "0fd6a798113987c3d8212f37edc2642ca9b2e833",
+  "prompts": {},
+  "sessions": {
+    "s_6d748fa0b7c7be": {
+      "agent_id": {
+        "tool": "deepseekharness",
+        "id": "session-957c5ee6-03f4-4b97-b511-1afbfacda50c",
+        "model": "ada-cli-golang-ctripcorp-com/claude-deepseek-v4.1-flash[1M]"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
