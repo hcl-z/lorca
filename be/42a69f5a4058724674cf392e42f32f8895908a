@@ -1,0 +1,58 @@
+crates/cli/src/secrets/mod.rs
+  s_afb771e3c1f5ce::t_c1a10eb3d4d877 497-500,502-515,525,527
+crates/cli/src/memory.rs
+  s_afb771e3c1f5ce::t_a3324ffb4aad05 344-347,352-359,361
+  s_afb771e3c1f5ce::t_d23c20ee6efd00 363-364
+  s_afb771e3c1f5ce::t_13bdcbdbd52d49 964-979
+crates/cli/src/memory_capture.rs
+  s_afb771e3c1f5ce::t_c735d34acd6573 903-904,907,909-913
+  s_afb771e3c1f5ce::t_3598fa519f557f 314-326
+  s_afb771e3c1f5ce::t_50e2ebfe021d63 854-856,858
+  s_afb771e3c1f5ce::t_e1403d428fb1e9 200
+  s_afb771e3c1f5ce::t_2c26fce4b4509e 707
+  s_afb771e3c1f5ce::t_aa94bb905f031a 965-968
+  s_afb771e3c1f5ce::t_e57ccc7fdaba38 538-544
+  s_afb771e3c1f5ce::t_aeda16a228fba6 821
+  s_afb771e3c1f5ce::t_6b304798ef19c5 1065-1088
+  s_afb771e3c1f5ce::t_3dc4265494afb0 750-787,794-795
+  s_afb771e3c1f5ce::t_f9bf432d5bef7d 1321
+  s_afb771e3c1f5ce::t_e3d2e1cf8b6c62 1180-1189
+  s_afb771e3c1f5ce::t_228d1b5c842ae1 994,1004
+  s_afb771e3c1f5ce::t_fa8eee6fbe5492 1285,1297
+  s_afb771e3c1f5ce::t_c08139fe0b726c 408-420,422,425-431,434-435
+  s_afb771e3c1f5ce::t_7d9886873d6b1b 1239
+  s_afb771e3c1f5ce::t_e5b28a2241d13d 86-89
+docs/architecture/memory.md
+  s_afb771e3c1f5ce::t_6efb22dcc5898a 33-35
+  s_afb771e3c1f5ce::t_4bc8ab86faf3ae 9
+docs/architecture/turn-context.md
+  s_afb771e3c1f5ce::t_36c6db159e2f51 9
+crates/cli/src/lib.rs
+  s_afb771e3c1f5ce::t_e30975fe491bd0 37-38
+crates/cli/src/turns.rs
+  s_afb771e3c1f5ce::t_6a854e1dff7674 1119
+  s_afb771e3c1f5ce::t_4e5792b200f02a 4637,4640,4642-4643
+  s_afb771e3c1f5ce::t_641abc0af4da0b 56
+  s_afb771e3c1f5ce::t_ec28480e156e08 1301-1304
+  s_afb771e3c1f5ce::t_92fc27d1cbe3fc 4638-4639,4641
+crates/cli/src/secrets/tests.rs
+  s_afb771e3c1f5ce::t_e1f8e7366412d0 153-155
+crates/cli/src/skills_turn.rs
+  s_afb771e3c1f5ce::t_4365cb7cbc713c 26-29,52-53,55-81,83-84,86,88-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.52-trip",
+  "base_commit_sha": "be42a69f5a4058724674cf392e42f32f8895908a",
+  "prompts": {},
+  "sessions": {
+    "s_afb771e3c1f5ce": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1b07ef91-fbc6-4953-b279-ba63b09ff847",
+        "model": "ada-cli-golang-ctripcorp-com/claude-deepseek-v4.1-flash"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
