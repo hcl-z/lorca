@@ -1,0 +1,22 @@
+docs/architecture/phone-ui.md
+  s_6d748fa0b7c7be::t_b90d7da2a9f7b8 7
+mobile/app/(main)/chat/[id].tsx
+  s_6d748fa0b7c7be::t_7ffcdc139d761e 692-693
+  s_6d748fa0b7c7be::t_a2bb688118c560 662-668
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.52-trip",
+  "base_commit_sha": "fa2f8ead06808e3730fe77479fcf326225bf6418",
+  "prompts": {},
+  "sessions": {
+    "s_6d748fa0b7c7be": {
+      "agent_id": {
+        "tool": "deepseekharness",
+        "id": "session-957c5ee6-03f4-4b97-b511-1afbfacda50c",
+        "model": "ada-cli-golang-ctripcorp-com/claude-deepseek-v4.1-flash[1M]"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
