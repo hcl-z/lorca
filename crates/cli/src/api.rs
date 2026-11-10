@@ -1183,6 +1183,18 @@ mod tests {
         }
     }
 
+    /// A relay this Device cannot reach, and that takes a moment to say so: the page is left to
+    /// the background, which then fails.
+    #[cfg(feature = "server")]
+    async fn unreachable_relay() -> (String, tokio::task::JoinHandle<()>) {
+        use axum::{http::StatusCode, Router};
+        let relay = Router::new().fallback(|| async { StatusCode::BAD_GATEWAY });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, relay).await.unwrap() });
+        (format!("http://{addr}"), server)
+    }
+
     #[tokio::test]
     async fn a_local_chat_answers_at_once_without_pending() {
         let scratch = scratch();
@@ -1216,14 +1228,17 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 
+    #[cfg(feature = "server")]
     #[tokio::test]
     async fn a_background_fetch_that_fails_still_settles_the_page() {
         let scratch = scratch();
         let app = &scratch.0;
         crate::identity::create(app, Some("Runner".into())).unwrap();
         let chat = app.state.lock().unwrap().chats[0].meta.id.clone();
-        // A relay this Device cannot reach: the fetch holds its call, then fails in the background.
-        app.set_relay_url(Some("http://127.0.0.1:9".into())).unwrap();
+        // A relay that answers badly rather than being absent: the failure is the same on every
+        // machine, so the timing this test pins is the client's and not the network's.
+        let (url, _relay) = unreachable_relay().await;
+        app.set_relay_url(Some(url)).unwrap();
         app.store.set_history_before(&chat, Some(100)).unwrap();
         let mut events = app.events.subscribe();
         let answer = dispatch(app, "chats.messages", json!({ "chat_id": chat, "wait_ms": 0 })).await.unwrap();
