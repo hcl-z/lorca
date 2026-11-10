@@ -1,6 +1,6 @@
 //! What a turn sends the model besides the chat's transcript: its system prompt, made from the
 //! same inputs when the turn starts, when the bot's profile changes mid-turn, and for the apps'
-//! preview, and the notes every request ends with.
+//! preview, and the notes a turn opens with.
 
 use std::sync::Arc;
 
@@ -50,11 +50,11 @@ impl PromptInputs {
     }
 }
 
-/// The notes every request of a turn ends with, before its brief, made fresh for each request:
-/// the chat's durable tasks, the attention items, then the bot's memory, the user's profile,
-/// the group's shared project context, and the clock. They are kept in no message, so a fact
-/// saved mid-turn reaches the next step, a compaction never drops them, and the transcript before
-/// them stays as the provider cached it.
+/// The notes a turn opens with, made when it starts, before its brief: the chat's durable tasks,
+/// the attention items, then the bot's memory, the user's profile, the group's shared project
+/// context, the secrets, the skills, and the clock. They are not in the system prompt, whose
+/// stable sections the provider caches; the requests after the first add only the bot's replies
+/// and their tool results, so a fact saved mid-turn reaches the next turn.
 pub(super) fn request_notes(app: &Arc<App>, bot: &Bot, chat_id: &str, now: i64) -> Vec<String> {
     let mut notes: Vec<String> = crate::tasks::context(app, &bot.id, chat_id).into_iter().collect();
     notes.extend(crate::attention::items_note(app, &bot.id));
