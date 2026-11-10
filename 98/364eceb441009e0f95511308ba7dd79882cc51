@@ -1,0 +1,19 @@
+crates/cli/src/turns.rs
+  s_2d68e2caaa2c0e::t_d7bd38513c5c3c 5156,5173,5180-5185
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.52-trip",
+  "base_commit_sha": "98364eceb441009e0f95511308ba7dd79882cc51",
+  "prompts": {},
+  "sessions": {
+    "s_2d68e2caaa2c0e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fa05e664-70d8-42a3-bed5-e14e5e739c32",
+        "model": "ada-cli-golang-ctripcorp-com/claude-deepseek-v4.1-flash"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
