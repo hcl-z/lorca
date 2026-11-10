@@ -5153,7 +5153,7 @@ mod tests {
 
     /// Every member reads what the group is for, and a direct chat has no such line.
     #[test]
-    fn memory_and_the_profile_ride_after_the_transcript_not_in_the_prompt() {
+    fn the_prompt_keeps_facts_out_and_the_next_turn_carries_them() {
         let scratch = scratch_app();
         let app = &scratch.0;
         let chef = bot("b1", "Chef");
@@ -5170,13 +5170,19 @@ mod tests {
         assert!(!prompt.contains("ships on Fridays") && !prompt.contains("called Mei"), "{prompt}");
         assert!(prompt.contains("profile_update") && prompt.contains("memory_update"), "the tools are named in the prompt");
 
-        // A fact saved mid-turn leaves the cached prompt as it was and reaches the next request.
+        // A fact saved mid-turn leaves the cached prompt as it was and reaches the next turn.
         store.append_entry("the office is in Goa", None, 0).unwrap();
         assert_eq!(system_prompt(app, &dm, &chef, &room_job("dm", "b1"), &store, false, &[]), prompt);
         let notes = context_notes(app, &chef, "dm", 0);
         assert!(notes[0].contains("ships on Fridays") && notes[0].contains("office is in Goa"), "{notes:?}");
         assert!(notes[1].contains("called Mei"), "{notes:?}");
         assert!(notes.last().unwrap().starts_with("[It is now"), "{notes:?}");
+
+        // The save rides the next turn's opening messages, which is where the model reads it.
+        let after: Vec<String> = request_notes(app, &chef, "dm", 0);
+        let none = TurnNotes { recent_work: None, recalled: None, cue: None, setup: None, named: None, acknowledge: None };
+        let (messages, _) = with_turn_notes(vec![AgentMessage::user("hi")], &none, &after, None, None);
+        assert!(messages.iter().any(|m| said_of(m).contains("the office is in Goa")), "the next turn carries the save: {messages:?}");
     }
 
     #[test]
