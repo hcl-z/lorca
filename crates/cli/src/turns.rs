@@ -369,6 +369,7 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         unattended,
         plugin_tools: plugin_tools.clone(),
         steering: steering.clone(),
+        claims: claims.clone(),
         follow_up: (!chat.meta.is_group() && chat.meta.channel.is_none()).then(FollowUp::default),
         trace: trace.clone(),
         prompt_inputs,
@@ -586,6 +587,9 @@ struct TurnHooks {
     /// Direct chats drain this queue at the agent loop's safe steering boundaries. Group rooms
     /// steer by yielding between member jobs so a new mention can reorder the replacement room.
     steering: Option<AgentMessageQueue>,
+    /// The steering messages this turn has taken as the user's words, so a reply made after one
+    /// answers it and a turn that ends without one gives it back to its own job.
+    claims: Arc<std::sync::Mutex<ClaimLedger>>,
     /// Direct chats only: a group member's reply is its whole turn, and a channel's reply has
     /// gone to the contact.
     follow_up: Option<FollowUp>,
@@ -870,10 +874,10 @@ impl LoopHooks for TurnHooks {
         if let Some(follow_up) = &self.follow_up {
             follow_up.step();
         }
-        // Steering still becomes a user message here until Task 4 moves that to the drain, where
-        // the message is also promoted. What the turn opened with is left as it is: adding to it
-        // would move every later message and strip the thinking bound to them.
-        materialize_steering_messages(&self.app, &self.bot, &self.workdir, messages).await
+        // Steering reached the loop as the user's own words when `steering_messages` drained it,
+        // and what the turn opened with is left as it is: adding to it would move every later
+        // message and strip the thinking bound to them.
+        messages
     }
 
     fn convert_to_llm(&self, messages: &[AgentMessage]) -> Vec<LlmMessage> {
@@ -881,7 +885,21 @@ impl LoopHooks for TurnHooks {
     }
 
     async fn steering_messages(&self) -> Vec<AgentMessage> {
-        self.steering.as_ref().map(AgentMessageQueue::drain).unwrap_or_default()
+        let Some(queue) = &self.steering else { return Vec::new() };
+        let queued = queue.drain();
+        // Promoted as the turn takes it, so the message's own Job becomes a no-op.
+        for message in &queued {
+            let AgentMessage::Custom { kind, data, .. } = message else { continue };
+            if kind != STEERING_MESSAGE_KIND {
+                continue;
+            }
+            let Ok(chat_message) = serde_json::from_value::<Message>(data.clone()) else { continue };
+            if self.app.claim_steering_message(&chat_message.chat_id, &chat_message.id) {
+                self.claims.lock().unwrap().claim(&chat_message.id);
+            }
+        }
+        // The user's words as they wrote them, which is what the model reads.
+        materialize_steering_messages(&self.app, &self.bot, &self.workdir, queued).await
     }
 
     async fn should_stop_after_turn(&self, ctx: ShouldStopAfterTurnContext<'_>) -> bool {
@@ -994,8 +1012,6 @@ impl TurnHooks {
     /// outgrows the window.
     async fn next_turn(&self, ctx: PrepareNextTurnContext<'_>) -> Option<TurnUpdate> {
         let mut context = ctx.context.clone();
-        // Steering still reaches the context here until Task 4 moves it to the drain.
-        context.messages = materialize_steering_messages(&self.app, &self.bot, &self.workdir, context.messages).await;
         let refreshed = self.refresh_profile(&mut context);
         let context_changed = refreshed || context.messages != ctx.context.messages;
 
@@ -1705,15 +1721,6 @@ impl TurnState {
 
     fn handle(&mut self, event: AgentEvent) {
         match event {
-            AgentEvent::MessageEnd {
-                message: AgentMessage::Custom { kind, data, .. },
-            } if kind == STEERING_MESSAGE_KIND => {
-                if let Ok(message) = serde_json::from_value::<Message>(data) {
-                    if self.app.claim_steering_message(&message.chat_id, &message.id) {
-                        self.claims.lock().unwrap().claim(&message.id);
-                    }
-                }
-            }
             // Replies arrive in chunks, not tokens (after Grok Bot, whose server re-sends the
             // whole message as it grows): the reply so far is shown at paragraph boundaries, or
             // at a sentence boundary once a while has passed, never mid-word. A turn that ends
@@ -4760,6 +4767,7 @@ mod tests {
             unattended: false,
             plugin_tools: crate::plugins::mcp::bot_catalog(app, bot, &chat.meta.id, Vec::new()),
             steering: None,
+            claims: Arc::new(std::sync::Mutex::new(ClaimLedger::default())),
             follow_up: None,
             trace: None,
             prompt_inputs: PromptInputs { chat: chat.clone(), job: room_job(&chat.meta.id, &bot.id), store: MemoryStore::for_bot(&app.config.home, bot), plugin_briefs: Arc::new(Vec::new()), unattended: false },
@@ -5360,6 +5368,35 @@ mod tests {
         app.unregister_step_interrupt("chat", "job");
         assert_eq!(send_now(app, "chat", &late.id), Ok(false));
         assert!(!app.message("chat", &late.id).unwrap().queued);
+    }
+
+    /// A message the user sends during a turn reaches the next request as their own words, and
+    /// is promoted when the turn takes it, once.
+    #[tokio::test]
+    async fn a_steering_message_reaches_the_next_request_as_the_users_words() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        let chef = bot("b1", "Chef");
+        let dm = chat("chat", "dm", None, &["b1"]);
+        {
+            let mut state = app.state.lock().unwrap();
+            state.bots.push(chef.clone());
+            state.chats.push(dm.clone());
+        }
+        let steer = said("chat", Author::You, "先别发", 1.0);
+        app.upsert_message(steer.clone(), false);
+        let queue = AgentMessageQueue::new(QueueMode::OneAtATime);
+        app.register_steering_queue("chat", "job", queue.clone());
+        assert!(steer_message(app, &steer));
+        let mut hooks = turn_hooks(app, &chef, &dm, None);
+        hooks.steering = Some(queue);
+
+        let drained = hooks.steering_messages().await;
+        assert_eq!(drained.len(), 1, "{drained:?}");
+        assert!(matches!(&drained[0], AgentMessage::User(_)), "a real user message: {drained:?}");
+        assert!(said_of(&drained[0]).contains("先别发"), "{drained:?}");
+        assert!(app.message("chat", &steer.id).unwrap().promoted_at.is_some(), "its own job becomes a no-op");
+        assert!(hooks.steering_messages().await.is_empty(), "drained once");
     }
 
     #[tokio::test]
@@ -7273,25 +7310,12 @@ mod tests {
     /// reply is still waiting for its own answer.
     #[test]
     fn a_reply_answers_the_steering_messages_read_before_it() {
-        let scratch = scratch_app();
-        let app = &scratch.0;
-        let chef = bot("b1", "Chef");
-        app.state.lock().unwrap().chats.push(chat("chat", "dm", None, &["b1"]));
-        let read = said("chat", Author::You, "read before the reply", 1.0);
-        app.upsert_message(read.clone(), false);
-        let later = said("chat", Author::You, "read after the reply", 2.0);
-        app.upsert_message(later.clone(), false);
-        let mut turn = turn_state(app, &chef, "dev");
-
-        turn.handle(AgentEvent::MessageEnd {
-            message: AgentMessage::Custom { kind: STEERING_MESSAGE_KIND.into(), data: serde_json::to_value(&read).unwrap(), timestamp: 0 },
-        });
-        turn.complete(turn.new_text_message(), "Answered the first one.");
-        turn.handle(AgentEvent::MessageEnd {
-            message: AgentMessage::Custom { kind: STEERING_MESSAGE_KIND.into(), data: serde_json::to_value(&later).unwrap(), timestamp: 0 },
-        });
-
-        assert_eq!(turn.unanswered_claims(), vec![later.id], "the later message is not answered by the earlier reply");
+        let mut ledger = ClaimLedger::default();
+        ledger.claim("msg-read-first");
+        // A reply reaches the chat, answering what the turn had read by then.
+        ledger.answered();
+        ledger.claim("msg-read-later");
+        assert_eq!(ledger.unanswered(), ["msg-read-later".to_string()], "the later message is not answered by the earlier reply");
     }
 
     /// A message still in the turn's queue when Stop came is given back too, though the turn
