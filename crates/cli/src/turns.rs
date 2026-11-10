@@ -7318,6 +7318,31 @@ mod tests {
         assert_eq!(ledger.unanswered(), ["msg-read-later".to_string()], "the later message is not answered by the earlier reply");
     }
 
+    /// A turn that compacts mid-way holds one set of notes: a summary may absorb them, and the
+    /// requests after it add none back.
+    #[tokio::test]
+    async fn a_mid_turn_compaction_leaves_one_set_of_notes() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        let chef = bot("b1", "Chef");
+        let dm = chat("dm", "dm", None, &["b1"]);
+        {
+            let mut state = app.state.lock().unwrap();
+            state.bots.push(chef.clone());
+            state.chats.push(dm.clone());
+        }
+        let notes = TurnNotes { recent_work: None, recalled: None, cue: None, setup: None, named: None, acknowledge: None };
+        let after = vec!["[It is now Tuesday 2026-11-10, 21:45 local time on your Runner (UTC+08:00); trust this over any date you infer.]".to_string()];
+        let (messages, points) = with_turn_notes(vec![AgentMessage::user("Deploy now?")], &notes, &after, None, None);
+        assert_eq!(points, vec![1]);
+        let clock_notes = |messages: &[AgentMessage]| messages.iter().filter(|m| said_of(m).starts_with("[It is now")).count();
+        assert_eq!(clock_notes(&messages), 1, "{messages:?}");
+
+        let hooks = TurnHooks { provider: Arc::new(Scripted { replies: Default::default(), requests: Default::default() }), ..turn_hooks(app, &chef, &dm, None) };
+        let sent = hooks.transform_context(messages.clone(), &CancellationToken::new()).await;
+        assert_eq!(clock_notes(&sent), 1, "a request adds no second set: {sent:?}");
+    }
+
     /// A message still in the turn's queue when Stop came is given back too, though the turn
     /// never read it.
     #[test]
