@@ -92,6 +92,13 @@ const DRAW_DISTANCE = 1000;
 /// `listRef.current?.getState().getAverageItemSizes()`: too small makes the first
 /// `initialScrollAtEnd` land short and jump when the rows measure.
 const ESTIMATED_ROW = 160;
+/// The transcript's backdrop, the same in either appearance: a pastel sky, teal at the head
+/// through periwinkle to a pale foot, so white cards stand out of it. The stops come from the
+/// design's `oklch` gradient, converted to sRGB because the native gradient takes plain colors.
+const BACKDROP = {
+  colors: ["#7CCED7", "#9BCBE2", "#B7CEFB", "#CCDCE9", "#DBE8D9", "#DDF2F3"] as const,
+  locations: [0, 0.2, 0.4, 0.6, 0.8, 1] as const,
+} as const;
 /// The transcript follows its end while the reader rests within this share of the screen of it.
 const FOLLOW_THRESHOLD = 0.1;
 const SCROLL_OWNS_ANCHOR_SPACE = { anchoredEndSpaceOwnerInternal: "scroll" } as object;
@@ -586,11 +593,12 @@ export default function ChatScreen() {
 
   return (
     <View style={{ flex: 1 }}>
-      {/* The transcript sits on a fixed blue gradient: the white bubbles and cards stand out of
-          it, and a message read whole opens onto the same white page. */}
+      {/* The transcript sits on the design's sky gradient: the white bubbles and cards stand out
+          of it, and a message read whole opens onto the same white page. */}
       <LinearGradient
         pointerEvents="none"
-        colors={p.dark ? ["#0A1A30", "#05070C"] : ["#D8E8FF", "#F8FBFF"]}
+        colors={BACKDROP.colors}
+        locations={BACKDROP.locations}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
         style={StyleSheet.absoluteFill}
