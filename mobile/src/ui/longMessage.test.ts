@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { collapsedPrefix, COLLAPSED_HEIGHT, estimatedLines, isLongMessage, PREFIX_CHARS } from "./longMessage";
+import { clearEnd, collapsedPrefix, COLLAPSED_HEIGHT, estimatedLines, isLongMessage, PREFIX_CHARS } from "./longMessage";
 
 test("a short message is not folded, and a long one at a phone's width is", () => {
   expect(isLongMessage("Hi there.", 300, 16.5)).toBe(false);
@@ -33,4 +33,13 @@ test("a prefix never splits a surrogate pair", () => {
   expect(prefix.isWellFormed()).toBe(true);
   expect(prefix.length).toBeLessThanOrEqual(PREFIX_CHARS);
   expect(COLLAPSED_HEIGHT).toBe(320);
+});
+
+test("a folded message's fade starts clear of the bubble's own color, not of black", () => {
+  // `transparent` is rgba(0, 0, 0, 0), which a gradient interpolates through gray.
+  expect(clearEnd("#FFFFFF")).toBe("rgba(255,255,255,0)");
+  expect(clearEnd("#0A0A0A")).toBe("rgba(10,10,10,0)");
+  expect(clearEnd("rgba(255,59,48,0.14)")).toBe("rgba(255,59,48,0)");
+  expect(clearEnd("rgb(10,10,10)")).toBe("rgba(10,10,10,0)");
+  expect(clearEnd("red")).toBe("transparent");
 });

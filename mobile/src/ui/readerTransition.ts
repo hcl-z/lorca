@@ -19,6 +19,13 @@ export function sheetPose(frame: MessageFrame, width: number, height: number, at
   };
 }
 
+/// How solid the page's fill is at `at`: it comes in at once, so the bubble's own text fades
+/// under a fill that grows from it instead of vanishing behind a blank white card.
+export function sheetFill(at: number): number {
+  "worklet";
+  return Math.min(1, Math.max(0, at / 0.25));
+}
+
 /// How visible the page's text is at `at`: the text has no clip of its own, so it waits until the
 /// sheet covers the screen — its padding hides the last sliver of growth — and then fades in as
 /// the sheet settles. Every frame shows either the bubble filling the screen or the page.

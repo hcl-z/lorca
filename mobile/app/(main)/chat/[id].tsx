@@ -583,7 +583,16 @@ export default function ChatScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: p.background }}>
+    <View style={{ flex: 1 }}>
+      {/* The transcript sits on a fixed blue gradient: the white bubbles and cards stand out of
+          it, and a message read whole opens onto the same white page. */}
+      <LinearGradient
+        pointerEvents="none"
+        colors={p.dark ? ["#0A1A30", "#05070C"] : ["#D8E8FF", "#F8FBFF"]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
       <ChatHeader
         id={id}
         title={title}

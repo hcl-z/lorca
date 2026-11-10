@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { pageReveal, sheetPose } from "./readerTransition";
+import { pageReveal, sheetFill, sheetPose } from "./readerTransition";
 
 const frame = { x: 40, y: 500, w: 280, h: 120 };
 const width = 400;
@@ -31,8 +31,19 @@ describe("sheetPose", () => {
   });
 });
 
-describe("pageReveal", () => {
-  test("keeps the page hidden until the sheet covers the screen", () => {
+describe("sheetFill", () => {
+  test("starts clear, so the bubble shows through the growing fill", () => {
+    expect(sheetFill(0)).toBe(0);
+    expect(sheetFill(0.1)).toBeCloseTo(0.4);
+  });
+
+  test("is solid once the fill is on its way", () => {
+    expect(sheetFill(0.25)).toBe(1);
+    expect(sheetFill(1)).toBe(1);
+  });
+});
+
+describe("pageReveal", () => {  test("keeps the page hidden until the sheet covers the screen", () => {
     expect(pageReveal(0)).toBe(0);
     expect(pageReveal(0.7)).toBe(0);
   });
