@@ -1273,8 +1273,8 @@ struct TurnNotes {
     setup: Option<String>,
     /// The teammates outside the chat the user's message names, to hand that work to.
     named: Option<String>,
-    /// A handoff's turn: answer the request in a line before the work. It goes once, after the
-    /// transcript, not in the brief that closes every request, or each step would say it again.
+    /// A handoff's turn: answer the request in a line before the work. It goes once, in the
+    /// messages the turn opens with, not in the brief, so the bot says it once.
     acknowledge: Option<String>,
 }
 
@@ -1291,7 +1291,7 @@ fn context_notes(app: &App, bot: &Bot, chat_id: &str, now: i64) -> Vec<String> {
         memory_note(&MemoryStore::for_bot(&app.config.home, bot)),
         crate::profile::note(&crate::profile::store(&app.config.home)),
         crate::project_context::entries_note(app, chat_id, &bot.id),
-        // What a bot saves mid-session changes these, so they ride a note per request instead of
+        // What a bot saves mid-session changes these, so they ride the turn's opening messages instead of
         // the system prompt, whose stable prefix the provider's cache is built on.
         crate::secrets::note(app, &bot.id),
         crate::skills_turn::note(app, bot, chat_id),
@@ -2301,7 +2301,7 @@ pub fn system_sections(
     push_if(&mut sections, "routines", "Routines", routines_prompt(unattended));
     push_if(&mut sections, "channels", "Channels", crate::channels::prompt(app, bot, chat));
     push_if(&mut sections, "attention", "Attention", crate::attention::prompt(&chat.meta.id));
-    sections.push(Section::new("tasks", "Durable work", "\nDurable work: use tasks to track multi-turn goals, ownership, acceptance criteria, dependencies, next action, blockers, and result/evidence. Open records appear after the transcript on every request, even after compaction. A queued task only runs when explicitly started with tasks run. Read the latest revision before editing; a conflict means reload, never overwrite.\n"));
+    sections.push(Section::new("tasks", "Durable work", "\nDurable work: use tasks to track multi-turn goals, ownership, acceptance criteria, dependencies, next action, blockers, and result/evidence. Open records appear once, in the messages a turn opens with; the requests after that carry only your replies and tool results. A queued task only runs when explicitly started with tasks run. Read the latest revision before editing; a conflict means reload, never overwrite.\n"));
     push_if(&mut sections, "plugins", "Plugins", plugins_prompt(app, bot, plugins));
     push_if(&mut sections, "browser", "Browser", crate::browser::prompt(app, bot));
     push_if(&mut sections, "secrets", "Secrets", crate::secrets::prompt(app, &bot.id));

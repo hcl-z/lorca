@@ -47,7 +47,7 @@ The CLI gives such a bot the name `NEW_BOT_NAME`, no description, and `Bot.setti
 
 ## Durable work
 
-[Durable tasks](tasks.md) keep goals, ownership, dependencies, next actions, blockers, and completion evidence across turns and chats. The `tasks` tool and the apps' Tasks section read and edit them. A bot with open tasks reads them again on every provider request, including after compaction. A Job references its canonical task id; a group's chat owner and a task's owner are independent.
+[Durable tasks](tasks.md) keep goals, ownership, dependencies, next actions, blockers, and completion evidence across turns and chats. The `tasks` tool and the apps' Tasks section read and edit them. A bot with open tasks reads them in the messages that open its turn. A Job references its canonical task id; a group's chat owner and a task's owner are independent.
 
 ## Attention
 

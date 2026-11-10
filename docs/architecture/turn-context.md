@@ -1,6 +1,6 @@
 # Turn context
 
-A coding agent's words are not in the chat, so not in the transcript either; the bot reads what it said and did with `coding_agent read`, which leaves out what the user wrote it on its page. An upstream agent's report in the chat (`Body::AgentMessage`) is read as its delegate's words. What a bot's turn sends the model besides the chat's transcript: its system prompt, the notes that close every request, and the note that asks once more for work a reply announced. The loop itself, and a turn on a Runner, are in [CLI (runtime)](runtime.md#agent-loop).
+A coding agent's words are not in the chat, so not in the transcript either; the bot reads what it said and did with `coding_agent read`, which leaves out what the user wrote it on its page. An upstream agent's report in the chat (`Body::AgentMessage`) is read as its delegate's words. What a bot's turn sends the model besides the chat's transcript: its system prompt, the notes and brief its opening messages carry, and the note that asks once more for work a reply announced. The loop itself, and a turn on a Runner, are in [CLI (runtime)](runtime.md#agent-loop).
 
 ## The system prompt
 
