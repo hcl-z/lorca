@@ -341,16 +341,27 @@ impl MemoryStore {
     }
 
     /// The index under the load budget.
+    /// The index under the load budget. Entries are appended, so the newest are at the end: when
+    /// the file is over its budget the oldest lines are the ones left out, since a fact learned
+    /// yesterday matters more than one learned months ago. A line is never cut in the middle; at
+    /// the byte budget, whole lines are dropped from the front until the rest fits.
     pub fn load_index(&self) -> LoadedIndex {
         let text = self.read_index();
         let lines = text.lines().count();
         let bytes = text.len();
-        let mut shown = text.clone();
-        let mut truncated = false;
-        if lines > self.max_lines {
-            shown = text.lines().take(self.max_lines).collect::<Vec<_>>().join("\n");
-            truncated = true;
+        let mut kept: Vec<&str> = text.lines().collect();
+        let mut truncated = kept.len() > self.max_lines;
+        if truncated {
+            kept = kept.split_off(kept.len() - self.max_lines);
         }
+        let mut shown = kept.join("\n");
+        while shown.len() > self.max_bytes && kept.len() > 1 {
+            kept.remove(0);
+            truncated = true;
+            shown = kept.join("\n");
+        }
+        // One line longer than the whole budget: cut it, a character at a time, so the turn still
+        // gets its start rather than the whole file going unloaded.
         if shown.len() > self.max_bytes {
             let mut cut = self.max_bytes;
             while !shown.is_char_boundary(cut) {
@@ -948,6 +959,22 @@ mod tests {
         let loaded = store.load_index();
         assert!(loaded.truncated);
         assert_eq!(loaded.text.len(), MEMORY_MAX_BYTES);
+    }
+
+    /// Facts are appended, so the newest are last: over the budget, the oldest are the ones a
+    /// turn no longer sees, and a line is never cut in the middle.
+    #[test]
+    fn a_full_index_keeps_the_newest_facts() {
+        let (_dir, store) = store();
+        for i in 0..(MEMORY_MAX_LINES + 5) {
+            store.append_entry(&format!("fact number {i}"), None, 1_700_000_000).unwrap();
+        }
+        let loaded = store.load_index();
+        assert!(loaded.truncated);
+        assert!(!loaded.text.contains("fact number 0"), "the oldest is left out");
+        assert!(loaded.text.contains(&format!("fact number {}", MEMORY_MAX_LINES + 4)), "the newest is there");
+        assert_eq!(loaded.text.lines().count(), MEMORY_MAX_LINES);
+        assert!(loaded.text.lines().all(|line| line.starts_with("- 2023-") && line.contains("fact number")), "whole lines only");
     }
 
     #[test]

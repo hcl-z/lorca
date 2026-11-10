@@ -23,6 +23,10 @@ fn cut(text: &str, chars: usize) -> String {
 
 /// A turn's skills in its system prompt: where each kind lives, and the skills it sees with the
 /// path of each `SKILL.md`, as many as fit the budget. The bot reads one with `read` when it fits.
+/// The skills part of the system prompt: where each kind lives and how to use one. It says
+/// nothing about which skills exist, so a bot that saves one mid-session does not change its
+/// own prompt and throw away the provider's cache for it: the list rides the notes after the
+/// transcript (`note`), which are made for every request.
 pub fn prompt(app: &App, bot: &Bot, chat_id: &str) -> String {
     let mut scopes = skills::scopes_for_turn(app, &bot.id, chat_id);
     scopes.sort_by_key(|scope| match scope.kind.as_str() {
@@ -31,19 +35,6 @@ pub fn prompt(app: &App, bot: &Bot, chat_id: &str) -> String {
         _ => 2,
     });
     let folder = |kind: &str| scopes.iter().find(|scope| scope.kind == kind).and_then(|scope| scope.root(app).ok()).map(|root| root.display().to_string());
-    // ego (lite)'s skill is listed when ego is the browser the turn uses.
-    let ego = crate::browser::skill_offered(app, bot);
-    let found: Vec<Found> = scopes.iter().flat_map(|scope| skills::list_scope(app, scope)).filter(|skill| skill.name != crate::browser::EGO_SKILL || ego).collect();
-    let all: Vec<Skill> = found
-        .iter()
-        .map(|skill| Skill { name: skill.name.clone(), description: cut(&skill.description, 300), content: String::new(), path: skill.skill_file(), disable_model_invocation: false })
-        .collect();
-    let mut shown = all.len();
-    let mut block = format_skills_block(&all);
-    while block.len() > skills::PROMPT_BYTES && shown > 0 {
-        shown -= 1;
-        block = format_skills_block(&all[..shown]);
-    }
     let mut prompt = String::from("\nSkills are folders, each with a SKILL.md. ");
     // The working directory is named once, with the Runner's tools.
     let own = scopes.iter().find(|scope| scope.kind == "bot").and_then(|scope| scope.root(app).ok());
@@ -58,16 +49,44 @@ pub fn prompt(app: &App, bot: &Bot, chat_id: &str) -> String {
     prompt.push_str(
         "Read a skill's SKILL.md when the task matches its description, and resolve its relative paths against its folder. \
          To keep a way of working as a skill, write a folder there named as its SKILL.md's name (the write-skill skill says \
-         how); it is used from your next turn. A skill grants no permissions: every action keeps its usual Auto-review.\n",
+         how); it is used from your next turn. A skill grants no permissions: every action keeps its usual Auto-review. \
+         The skills this turn sees are listed in the note after the transcript.\n",
     );
-    if !block.is_empty() {
-        prompt.push_str(&block);
-        prompt.push('\n');
-    }
-    if shown < all.len() {
-        prompt.push_str(&format!("{} more skills are in those folders; list them to find the one you need.\n", all.len() - shown));
-    }
     prompt
+}
+
+/// The skills a turn sees, as the note after the transcript gives them: agentskills.io's list,
+/// within its budget, the bot's first. `None` when the bot has none it may invoke.
+pub fn note(app: &App, bot: &Bot, chat_id: &str) -> Option<String> {
+    let mut scopes = skills::scopes_for_turn(app, &bot.id, chat_id);
+    scopes.sort_by_key(|scope| match scope.kind.as_str() {
+        "bot" => 0,
+        "project" => 1,
+        _ => 2,
+    });
+    // ego (lite)'s skill is listed when ego is the browser the turn uses.
+    let ego = crate::browser::skill_offered(app, bot);
+    let found: Vec<Found> = scopes.iter().flat_map(|scope| skills::list_scope(app, scope)).filter(|skill| skill.name != crate::browser::EGO_SKILL || ego).collect();
+    if found.is_empty() {
+        return None;
+    }
+    let all: Vec<Skill> = found
+        .iter()
+        .map(|skill| Skill { name: skill.name.clone(), description: cut(&skill.description, 300), content: String::new(), path: skill.skill_file(), disable_model_invocation: false })
+        .collect();
+    let mut shown = all.len();
+    let mut block = format_skills_block(&all);
+    while block.len() > skills::PROMPT_BYTES && shown > 0 {
+        shown -= 1;
+        block = format_skills_block(&all[..shown]);
+    }
+    let mut note = String::from("[Skills you can read this turn:\n");
+    note.push_str(&block);
+    if shown < all.len() {
+        note.push_str(&format!("\n{} more skills are in those folders; list them to find the one you need.", all.len() - shown));
+    }
+    note.push(']');
+    Some(note)
 }
 
 /// What a bot's turn can change: each skill it sees, other than the ones Lorca ships, by a stamp
