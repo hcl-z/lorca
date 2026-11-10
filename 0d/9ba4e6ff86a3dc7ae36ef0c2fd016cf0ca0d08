@@ -1,0 +1,48 @@
+mobile/src/ui/longMessage.test.ts
+  s_3ba4960df8f6a6::t_af5af6566f9055 37-45
+  s_3ba4960df8f6a6::t_bc25fcb106fa8f 2
+mobile/src/ui/theme.ts
+  s_3ba4960df8f6a6::t_bdc25b0a97fe95 65-69
+  s_3ba4960df8f6a6::t_260232017598a2 3-4
+  s_3ba4960df8f6a6::t_b446a7a1f3f4f4 130
+  s_3ba4960df8f6a6::t_7b01fd68e24ad6 15
+  s_3ba4960df8f6a6::t_9580453c6ac344 132
+mobile/src/ui/readerTransition.ts
+  s_3ba4960df8f6a6::t_970c797f13e65e 22-28
+mobile/src/ui/longMessage.ts
+  s_3ba4960df8f6a6::t_b11ab9b8014e0c 63-76
+mobile/src/ui/MessageReader.tsx
+  s_3ba4960df8f6a6::t_b69556024d5865 31
+  s_3ba4960df8f6a6::t_2731ad015aa132 86-87
+  s_3ba4960df8f6a6::t_56da1179c68e41 1-5
+  s_3ba4960df8f6a6::t_c1c7cd08628628 13
+  s_3ba4960df8f6a6::t_77e68a263bddc5 21
+  s_3ba4960df8f6a6::t_65376ef883378d 6-8,19,23,25,39,57,62-64,75,81
+mobile/app/(main)/chat/[id].tsx
+  s_3ba4960df8f6a6::t_045564a6abff97 586,589-590,592-595
+  s_3ba4960df8f6a6::t_1ade3273d544a2 587-588,591
+mobile/src/ui/readerTransition.test.ts
+  s_3ba4960df8f6a6::t_76143b666ee420 2
+  s_3ba4960df8f6a6::t_6d19b6f244709f 34-45
+  s_3ba4960df8f6a6::t_d5be0e3dfe9b87 46
+mobile/src/ui/FoldedText.tsx
+  s_3ba4960df8f6a6::t_f6f8850b2c74fb 48
+  s_3ba4960df8f6a6::t_09f37fc53c6255 9
+  s_3ba4960df8f6a6::t_5d25778c5bab7f 64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.52-trip",
+  "base_commit_sha": "0d9ba4e6ff86a3dc7ae36ef0c2fd016cf0ca0d08",
+  "prompts": {},
+  "sessions": {
+    "s_3ba4960df8f6a6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c562669b-7d97-4140-b9e7-45d30e608e16",
+        "model": "ada-cli-golang-ctripcorp-com/claude-deepseek-v4.1-flash"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
