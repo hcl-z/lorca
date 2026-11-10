@@ -32,6 +32,7 @@ export { messageAuthorName, quoteAuthorName } from "./format";
 import { Markdown } from "./Markdown";
 import { FoldedText } from "./FoldedText";
 import type { MessageFrame } from "./longMessage";
+import { BUBBLE_RADIUS } from "./readerTransition";
 import { Button } from "./Button";
 import { Symbol } from "./Symbol";
 import { usePaneWidth } from "./layout";
@@ -1406,7 +1407,8 @@ const styles = StyleSheet.create({
   held: { opacity: 0.55 },
   sendNow: { alignSelf: "flex-end", marginTop: 4, marginRight: 6 },
   sendNowText: { fontSize: 13, fontWeight: "600" },
-  bubble: { borderRadius: 20, paddingHorizontal: 14, paddingVertical: 10, gap: 2 },
+  // The corner is the reader's too: the panel it grows into the page from starts on this bubble.
+  bubble: { borderRadius: BUBBLE_RADIUS, paddingHorizontal: 14, paddingVertical: 10, gap: 2 },
   // The user's bubble is a capsule while it holds one line, as the reference's.
   bubbleYou: { borderRadius: 22 },
   actions: { flexDirection: "row", alignItems: "center", gap: 2, marginTop: 4, marginLeft: 2 },
