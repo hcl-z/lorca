@@ -1,0 +1,54 @@
+docs/architecture/runtime.md
+  s_2d407c642c0c14::t_a9eaecc91d67e4 74-75
+docs/architecture/stopping.md
+  s_2d407c642c0c14::t_28d52f62d62cda 44-49
+crates/cli/src/profile_sync.rs
+  s_2d407c642c0c14::t_4d171db88b27fb 51-54,57-62
+  s_2d407c642c0c14::t_cc73fbc4243513 204
+  s_2d407c642c0c14::t_e9dd7ef56376fd 217
+  s_2d407c642c0c14::t_f12eb147777934 233
+  s_2d407c642c0c14::t_b315f88a0b296c 350-352,356-359,361-362,365,367
+  s_2d407c642c0c14::t_651181af33abda 353-355,360,363-364
+  s_2d407c642c0c14::t_1fef075b0deb60 366
+crates/cli/src/runtime.rs
+  s_2d407c642c0c14::t_57c1cabc4b581b 796-797
+  s_2d407c642c0c14::t_7d32e322b719bd 420-422,432,434-439
+  s_2d407c642c0c14::t_9502cb5f084779 1425
+  s_2d407c642c0c14::t_fd2c079b317cf7 433
+  s_2d407c642c0c14::t_bf7b530c0d04e5 1446-1463
+  s_2d407c642c0c14::t_766a3f78bbfbb0 798
+  s_2d407c642c0c14::t_d6aeff7b8581b8 417-418,423-431
+  s_2d407c642c0c14::t_0ccead0f3a9d35 393-408,419,440-444
+  s_2d407c642c0c14::t_7192a35513d749 409-416
+  s_2d407c642c0c14::t_fcff37c8f5514e 751-754
+  s_2d407c642c0c14::t_72d3b202756f67 1436-1445,1464-1485
+crates/cli/src/turns.rs
+  s_2d407c642c0c14::t_671db5d9f649d7 6231-6269
+crates/cli/src/app.rs
+  s_2d407c642c0c14::t_fc8583d02fb929 1204-1206,1208-1211,1213-1232
+  s_2d407c642c0c14::t_e7bba4877090ad 1199-1203,1207,1212
+crates/cli/src/local_store.rs
+  s_2d407c642c0c14::t_4b5a9c535cb829 749-757
+crates/cli/src/main.rs
+  s_2d407c642c0c14::t_b972be75518e89 426-430
+crates/cli/src/shell.rs
+  s_2d407c642c0c14::t_ef1fe8e01aa31d 641
+  s_2d407c642c0c14::t_a496637d53c805 31
+  s_2d407c642c0c14::t_6b2a31dba732c0 618-640,642-645
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.52-trip",
+  "base_commit_sha": "93ff7071bcd0c28d53409bbf3ae136be611e019b",
+  "prompts": {},
+  "sessions": {
+    "s_2d407c642c0c14": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5506fc3f-f68c-44d5-8f45-42161c967247",
+        "model": "ada-cli-golang-ctripcorp-com/claude-deepseek-v4.1-flash"
+      },
+      "human_author": "hcl-z <1401859664@qq.com>"
+    }
+  }
+}
