@@ -329,7 +329,9 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         named: if unattended { None } else { named_teammates_note(app, &bot, &chat, job) },
         acknowledge: matches!(job.handoff, Some(crate::handoffs::HandoffJob::Request { .. })).then(|| ACKNOWLEDGE_HANDOFF.to_string()),
     };
-    let (mut messages, mut cache_points) = with_turn_notes(messages, &notes, trigger_message_cue(app, job));
+    // What changes as work goes on is read once, here, and opens every request of the turn.
+    let after: Vec<String> = request_notes(app, &bot, &chat.meta.id, now_secs() as i64);
+    let (mut messages, mut cache_points) = with_turn_notes(messages, &notes, &after, brief.as_deref(), trigger_message_cue(app, job));
 
     let sink = Arc::new(TurnSink(std::sync::Mutex::new(TurnState {
         app: app.clone(),
@@ -367,14 +369,13 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
         unattended,
         plugin_tools: plugin_tools.clone(),
         steering: steering.clone(),
+        claims: claims.clone(),
         follow_up: (!chat.meta.is_group() && chat.meta.channel.is_none()).then(FollowUp::default),
-        brief,
         trace: trace.clone(),
         prompt_inputs,
         profile: std::sync::Mutex::new(Profile::of(&bot)),
         full_tools,
         cancel: cancel.clone(),
-        noted: std::sync::atomic::AtomicBool::new(false),
     });
     let config = AgentLoopConfig {
         provider: provider.clone(),
@@ -429,7 +430,7 @@ async fn run_budgeted_job(app: &Arc<App>, job: &Job, cancel: CancellationToken) 
                 Ok(Some(tokens_before)) => {
                     tracing::info!(bot = %bot.name, chat = %chat.meta.id, tokens_before, "the context overflowed; compacted and retried");
                     let latest = app.chat(&job.chat_id).unwrap_or(latest);
-                    (messages, cache_points) = with_turn_notes(transcript_for(app, &latest, &bot, &workdir), &notes, trigger_message_cue(app, job));
+                    (messages, cache_points) = with_turn_notes(transcript_for(app, &latest, &bot, &workdir), &notes, &after, brief.as_deref(), trigger_message_cue(app, job));
                     let mut state = sink.0.lock().unwrap();
                     state.failed = false;
                     state.last_error = None;
@@ -586,11 +587,12 @@ struct TurnHooks {
     /// Direct chats drain this queue at the agent loop's safe steering boundaries. Group rooms
     /// steer by yielding between member jobs so a new mention can reorder the replacement room.
     steering: Option<AgentMessageQueue>,
+    /// The steering messages this turn has taken as the user's words, so a reply made after one
+    /// answers it and a turn that ends without one gives it back to its own job.
+    claims: Arc<std::sync::Mutex<ClaimLedger>>,
     /// Direct chats only: a group member's reply is its whole turn, and a channel's reply has
     /// gone to the contact.
     follow_up: Option<FollowUp>,
-    /// `turn_brief`, closing every request.
-    brief: Option<String>,
     trace: Option<Arc<crate::traces::Trace>>,
     /// What the system prompt is made of besides the bot, to make it again mid-turn.
     prompt_inputs: PromptInputs,
@@ -599,8 +601,6 @@ struct TurnHooks {
     /// The usual tools, for a turn that starts in setup and finishes it.
     full_tools: Option<Vec<Arc<dyn Tool>>>,
     cancel: CancellationToken,
-    /// Whether a request of this turn carried the open tasks' note.
-    noted: std::sync::atomic::AtomicBool,
 }
 
 /// How the model sees a transcript that may open with a compaction summary.
@@ -874,24 +874,9 @@ impl LoopHooks for TurnHooks {
         if let Some(follow_up) = &self.follow_up {
             follow_up.step();
         }
-        let mut messages = materialize_steering_messages(&self.app, &self.bot, &self.workdir, messages).await;
-        messages.retain(|message| !matches!(message, AgentMessage::User(user) if user.content.iter().filter_map(ContentPart::as_text).any(crate::tasks::is_context)));
-        // The note is the request's last message and moves on with each request, so a reply
-        // made after it no longer follows what it followed, and its thinking (bound to that,
-        // on some models) goes.
-        if self.noted.load(std::sync::atomic::Ordering::Relaxed) {
-            drop_bound_thinking(self.provider.model_id(), &mut messages);
-        }
-        let notes = request_notes(&self.app, &self.bot, &self.chat_id, now_secs() as i64);
-        if notes.iter().any(|note| crate::tasks::is_context(note)) {
-            self.noted.store(true, std::sync::atomic::Ordering::Relaxed);
-        }
-        for note in notes {
-            messages.push(AgentMessage::User(UserMessage::text(note)));
-        }
-        if let Some(brief) = &self.brief {
-            messages.push(AgentMessage::User(UserMessage::text(brief.clone())));
-        }
+        // Steering reached the loop as the user's own words when `steering_messages` drained it,
+        // and what the turn opened with is left as it is: adding to it would move every later
+        // message and strip the thinking bound to them.
         messages
     }
 
@@ -900,7 +885,21 @@ impl LoopHooks for TurnHooks {
     }
 
     async fn steering_messages(&self) -> Vec<AgentMessage> {
-        self.steering.as_ref().map(AgentMessageQueue::drain).unwrap_or_default()
+        let Some(queue) = &self.steering else { return Vec::new() };
+        let queued = queue.drain();
+        // Promoted as the turn takes it, so the message's own Job becomes a no-op.
+        for message in &queued {
+            let AgentMessage::Custom { kind, data, .. } = message else { continue };
+            if kind != STEERING_MESSAGE_KIND {
+                continue;
+            }
+            let Ok(chat_message) = serde_json::from_value::<Message>(data.clone()) else { continue };
+            if self.app.claim_steering_message(&chat_message.chat_id, &chat_message.id) {
+                self.claims.lock().unwrap().claim(&chat_message.id);
+            }
+        }
+        // The user's words as they wrote them, which is what the model reads.
+        materialize_steering_messages(&self.app, &self.bot, &self.workdir, queued).await
     }
 
     async fn should_stop_after_turn(&self, ctx: ShouldStopAfterTurnContext<'_>) -> bool {
@@ -1013,12 +1012,6 @@ impl TurnHooks {
     /// outgrows the window.
     async fn next_turn(&self, ctx: PrepareNextTurnContext<'_>) -> Option<TurnUpdate> {
         let mut context = ctx.context.clone();
-        context.messages = materialize_steering_messages(&self.app, &self.bot, &self.workdir, context.messages).await;
-        // As in `transform_context`, so the memory flush and the summary, which send these
-        // messages without the note, carry no thinking bound to it.
-        if self.noted.load(std::sync::atomic::Ordering::Relaxed) {
-            drop_bound_thinking(self.provider.model_id(), &mut context.messages);
-        }
         let refreshed = self.refresh_profile(&mut context);
         let context_changed = refreshed || context.messages != ctx.context.messages;
 
@@ -1280,8 +1273,8 @@ struct TurnNotes {
     setup: Option<String>,
     /// The teammates outside the chat the user's message names, to hand that work to.
     named: Option<String>,
-    /// A handoff's turn: answer the request in a line before the work. It goes once, after the
-    /// transcript, not in the brief that closes every request, or each step would say it again.
+    /// A handoff's turn: answer the request in a line before the work. It goes once, in the
+    /// messages the turn opens with, not in the brief, so the bot says it once.
     acknowledge: Option<String>,
 }
 
@@ -1298,7 +1291,7 @@ fn context_notes(app: &App, bot: &Bot, chat_id: &str, now: i64) -> Vec<String> {
         memory_note(&MemoryStore::for_bot(&app.config.home, bot)),
         crate::profile::note(&crate::profile::store(&app.config.home)),
         crate::project_context::entries_note(app, chat_id, &bot.id),
-        // What a bot saves mid-session changes these, so they ride a note per request instead of
+        // What a bot saves mid-session changes these, so they ride the turn's opening messages instead of
         // the system prompt, whose stable prefix the provider's cache is built on.
         crate::secrets::note(app, &bot.id),
         crate::skills_turn::note(app, bot, chat_id),
@@ -1398,17 +1391,22 @@ fn turn_brief(app: &App, job: &Job, routine: Option<&Routine>, event: Option<&cr
 /// How the turn's brief opens.
 const TURN_BRIEF_MARKER: &str = "[This turn, from Lorca:";
 
-/// The rebuilt transcript followed by the turn's notes, and the transcript's cache points.
-/// `trigger_cue` stands in for an empty transcript: a failed rebuild, or a chat whose first
-/// message is this turn's trigger, must not turn into "Continue." and lose the message.
+/// The rebuilt transcript followed by the turn's notes, the brief that says what started it, and
+/// the transcript's cache points. `trigger_cue` stands in for an empty transcript: a failed
+/// rebuild, or a chat whose first message is this turn's trigger, must not lose the message.
+///
+/// These are the messages every request of the turn starts from; nothing is added to them later.
+/// `after` is `request_notes` in order, and comes before the brief, as the brief is the last
+/// thing a turn reads.
 fn with_turn_notes(
     mut messages: Vec<AgentMessage>,
     notes: &TurnNotes,
+    after: &[String],
+    brief: Option<&str>,
     trigger_cue: Option<String>,
 ) -> (Vec<AgentMessage>, Vec<usize>) {
     let cache_points = transcript_cache_points(&messages);
     let transcript_empty = messages.is_empty();
-    let ends_with_reply = messages.last().is_some_and(AgentMessage::is_assistant);
     if let Some(recent_work) = &notes.recent_work {
         messages.push(AgentMessage::User(UserMessage::text(recent_work.clone())));
     }
@@ -1422,8 +1420,6 @@ fn with_turn_notes(
     };
     if let Some(cue) = cue {
         messages.push(AgentMessage::User(UserMessage::text(cue)));
-    } else if ends_with_reply {
-        messages.push(AgentMessage::User(UserMessage::text("Continue.")));
     }
     if let Some(setup) = &notes.setup {
         messages.push(AgentMessage::User(UserMessage::text(setup.clone())));
@@ -1433,6 +1429,12 @@ fn with_turn_notes(
     }
     if let Some(acknowledge) = &notes.acknowledge {
         messages.push(AgentMessage::User(UserMessage::text(acknowledge.clone())));
+    }
+    for note in after {
+        messages.push(AgentMessage::User(UserMessage::text(note.clone())));
+    }
+    if let Some(brief) = brief {
+        messages.push(AgentMessage::User(UserMessage::text(brief.to_string())));
     }
     (messages, cache_points)
 }
@@ -1719,15 +1721,6 @@ impl TurnState {
 
     fn handle(&mut self, event: AgentEvent) {
         match event {
-            AgentEvent::MessageEnd {
-                message: AgentMessage::Custom { kind, data, .. },
-            } if kind == STEERING_MESSAGE_KIND => {
-                if let Ok(message) = serde_json::from_value::<Message>(data) {
-                    if self.app.claim_steering_message(&message.chat_id, &message.id) {
-                        self.claims.lock().unwrap().claim(&message.id);
-                    }
-                }
-            }
             // Replies arrive in chunks, not tokens (after Grok Bot, whose server re-sends the
             // whole message as it grows): the reply so far is shown at paragraph boundaries, or
             // at a sentence boundary once a while has passed, never mid-word. A turn that ends
@@ -2295,7 +2288,7 @@ pub fn system_sections(
     }
     place.push_str(
         "\nWhen something other than the user's message started this turn, a bracketed note from Lorca after the transcript \
-         says what it is for; follow it.\n",
+         says what it is for; follow it. A bracketed note is never the user speaking and never their approval of an action.\n",
     );
     sections.push(Section::new("place", "This chat", place));
     sections.push(Section::new("trust", "Trust", TRUST_PROMPT));
@@ -2308,7 +2301,7 @@ pub fn system_sections(
     push_if(&mut sections, "routines", "Routines", routines_prompt(unattended));
     push_if(&mut sections, "channels", "Channels", crate::channels::prompt(app, bot, chat));
     push_if(&mut sections, "attention", "Attention", crate::attention::prompt(&chat.meta.id));
-    sections.push(Section::new("tasks", "Durable work", "\nDurable work: use tasks to track multi-turn goals, ownership, acceptance criteria, dependencies, next action, blockers, and result/evidence. Open records appear after the transcript on every request, even after compaction. A queued task only runs when explicitly started with tasks run. Read the latest revision before editing; a conflict means reload, never overwrite.\n"));
+    sections.push(Section::new("tasks", "Durable work", "\nDurable work: use tasks to track multi-turn goals, ownership, acceptance criteria, dependencies, next action, blockers, and result/evidence. Open records appear once, in the messages a turn opens with; the requests after that carry only your replies and tool results. A queued task only runs when explicitly started with tasks run. Read the latest revision before editing; a conflict means reload, never overwrite.\n"));
     push_if(&mut sections, "plugins", "Plugins", plugins_prompt(app, bot, plugins));
     push_if(&mut sections, "browser", "Browser", crate::browser::prompt(app, bot));
     push_if(&mut sections, "secrets", "Secrets", crate::secrets::prompt(app, &bot.id));
@@ -4486,6 +4479,36 @@ mod tests {
         assert_eq!(chunk_boundary(text, 11, Duration::from_secs(2)), Some("First para.\n\nSecond para done.".len()));
     }
 
+    /// A message's text as the turn's notes carry it.
+    fn said_of(message: &AgentMessage) -> String {
+        match message {
+            AgentMessage::User(UserMessage { content, .. }) => match content.as_slice() {
+                [ContentPart::Text { text }] => text.clone(),
+                _ => String::new(),
+            },
+            _ => String::new(),
+        }
+    }
+
+    /// What changes as work goes on rides the turn's opening messages once, not every request.
+    #[test]
+    fn a_turns_notes_and_brief_open_the_turn() {
+        let notes = TurnNotes { recent_work: None, recalled: None, cue: Some("[Your turn in the group …]".into()), setup: None, named: None, acknowledge: None };
+        let after = vec![
+            "[Durable tasks (current records; use tasks get/list for full records).\n{}]".to_string(),
+            "[It is now Tuesday 2026-11-10, 21:45 local time on your Runner (UTC+08:00); trust this over any date you infer.]".to_string(),
+        ];
+        let brief = "[This turn, from Lorca:\nGitHub 管家 reported back on work you handed off.]";
+        let transcript = vec![AgentMessage::user("发布吧"), AgentMessage::user("[Message from GitHub 管家]: done")];
+        let (messages, points) = with_turn_notes(transcript, &notes, &after, Some(brief), None);
+        assert_eq!(points, vec![2], "the cache point still names the transcript's end, before the notes");
+        assert_eq!(messages.len(), 6, "{messages:?}");
+        assert_eq!(
+            messages[2..].iter().map(said_of).collect::<Vec<_>>(),
+            ["[Your turn in the group …]", after[0].as_str(), after[1].as_str(), brief]
+        );
+    }
+
     #[test]
     fn a_turn_caches_its_transcript_and_the_last_turns_but_not_its_notes() {
         let reply = |text: &str| {
@@ -4512,26 +4535,38 @@ mod tests {
             named: None,
             acknowledge: None,
         };
-        let (messages, points) = with_turn_notes(transcript.clone(), &notes, None);
+        let (messages, points) = with_turn_notes(transcript.clone(), &notes, &[], None, None);
         assert_eq!(points, vec![4, 1], "the transcript's end, and the last turn's before the bot's reply");
         assert_eq!(
             messages[4..].iter().map(said).collect::<Vec<_>>(),
             ["[Recently in your other chats …]", "[What you remember that bears on …]", "[Your turn in the group …]"]
         );
 
-        // A turn no new message opened goes on from the bot's reply.
-        let (messages, points) = with_turn_notes(transcript[..2].to_vec(), &none, None);
+        // A turn that nothing opened adds nothing on the bot's behalf.
+        let (messages, points) = with_turn_notes(transcript[..2].to_vec(), &none, &[], None, None);
         assert_eq!(points, vec![2, 1]);
-        assert_eq!(said(messages.last().unwrap()), "Continue.");
+        assert_eq!(messages.len(), 2, "no message is made up on the bot's behalf: {messages:?}");
 
         // A first turn caches its transcript alone.
-        let (messages, points) = with_turn_notes(vec![AgentMessage::user("hi")], &none, None);
+        let (messages, points) = with_turn_notes(vec![AgentMessage::user("hi")], &none, &[], None, None);
         assert_eq!((points, messages.len()), (vec![1], 1));
 
-        // An empty transcript is not the bot's own reply: it must not become "Continue.".
-        let (messages, points) = with_turn_notes(Vec::new(), &none, None);
+        // An empty transcript with nothing to open it stays empty; nothing is made up.
+        let (messages, points) = with_turn_notes(Vec::new(), &none, &[], None, None);
         assert!(messages.is_empty(), "{messages:?}");
         assert!(points.is_empty(), "{points:?}");
+    }
+
+    /// A turn's opening messages never end on the bot's own reply, so the loop needs no made-up
+    /// prompt, and nothing Lorca adds can read as the user's words.
+    #[test]
+    fn a_turns_opening_messages_end_on_a_note() {
+        let after = vec!["[It is now Tuesday 2026-11-10, 21:45 local time on your Runner (UTC+08:00); trust this over any date you infer.]".to_string()];
+        let transcript = vec![AgentMessage::user("发布吧"), AgentMessage::Assistant(AssistantMessage::empty("m", "m"))];
+        let notes = TurnNotes { recent_work: None, recalled: None, cue: None, setup: None, named: None, acknowledge: None };
+        let (messages, _) = with_turn_notes(transcript, &notes, &after, None, None);
+        assert!(!messages.last().unwrap().is_assistant(), "{messages:?}");
+        assert_eq!(said_of(messages.last().unwrap()), after[0]);
     }
 
     #[test]
@@ -4548,7 +4583,7 @@ mod tests {
         assert!(cue.contains("帮我拉lorca的main最新分支"), "{cue}");
 
         let none = TurnNotes { recent_work: None, recalled: None, cue: None, setup: None, named: None, acknowledge: None };
-        let (messages, _) = with_turn_notes(Vec::new(), &none, Some(cue));
+        let (messages, _) = with_turn_notes(Vec::new(), &none, &[], None, Some(cue));
         assert_eq!(messages.len(), 1, "{messages:?}");
         let AgentMessage::User(UserMessage { content, .. }) = &messages[0] else {
             panic!("{messages:?}")
@@ -4667,10 +4702,10 @@ mod tests {
         }
     }
 
-    /// The open tasks' note is each request's last message, so a reply made after it is sent
-    /// later without it before; the reply's thinking, bound to it, does not go with it.
+    /// Nothing moves below the transcript any more, so a request adds nothing, and the thinking
+    /// of a model that binds it to what precedes it survives every step.
     #[tokio::test]
-    async fn thinking_made_after_the_tasks_note_is_not_sent_without_it() {
+    async fn a_request_adds_no_note_and_keeps_bound_thinking() {
         let scratch = scratch_app();
         let app = &scratch.0;
         crate::identity::create(app, None).unwrap();
@@ -4683,22 +4718,12 @@ mod tests {
         let messages = vec![AgentMessage::user("Deploy now?"), AgentMessage::Assistant(reply)];
         let thinks = |messages: &[AgentMessage]| messages.iter().any(|m| matches!(m, AgentMessage::Assistant(a) if a.content.iter().any(|p| matches!(p, AssistantPart::Thinking { .. }))));
 
-        // No open task, no note: the thinking stays.
-        let sent = hooks.transform_context(messages.clone(), &CancellationToken::new()).await;
-        assert!(thinks(&sent));
-
         crate::tasks::dispatch(app, "tasks.create", json!({"request_id":"r1","owner_bot_id":chef.id,"chat_ids":[chat_id],"goal":"Ship it","acceptance_criteria":["Deployed"],"next_action":"Deploy"})).await.unwrap();
-        // The request that first carries the note sends what came before it as it was.
-        let sent = hooks.transform_context(messages.clone(), &CancellationToken::new()).await;
-        assert!(thinks(&sent));
-        assert!(sent.iter().any(|message| matches!(message, AgentMessage::User(user) if user.content.iter().filter_map(ContentPart::as_text).any(crate::tasks::is_context))));
-        // Every later one, and the turn's messages as compaction reads them, carry none.
-        let sent = hooks.transform_context(messages.clone(), &CancellationToken::new()).await;
-        assert!(!thinks(&sent));
-        let AgentMessage::Assistant(made) = &messages[1] else { unreachable!() };
-        let context = AgentContext { system_prompt: String::new(), messages: messages.clone(), tools: Vec::new(), cache_points: Vec::new() };
-        let update = hooks.prepare_next_turn(PrepareNextTurnContext { message: made, tool_results: &[], context: &context, new_messages: &[] }).await;
-        assert!(!thinks(&update.and_then(|u| u.context).expect("the thinking went").messages));
+        for _ in 0..2 {
+            let sent = hooks.transform_context(messages.clone(), &CancellationToken::new()).await;
+            assert_eq!(sent.len(), messages.len(), "a request adds no note: {sent:?}");
+            assert!(thinks(&sent), "the thinking still follows what it was bound to");
+        }
     }
 
     #[test]
@@ -4742,15 +4767,14 @@ mod tests {
             unattended: false,
             plugin_tools: crate::plugins::mcp::bot_catalog(app, bot, &chat.meta.id, Vec::new()),
             steering: None,
+            claims: Arc::new(std::sync::Mutex::new(ClaimLedger::default())),
             follow_up: None,
-            brief: None,
             trace: None,
             prompt_inputs: PromptInputs { chat: chat.clone(), job: room_job(&chat.meta.id, &bot.id), store: MemoryStore::for_bot(&app.config.home, bot), plugin_briefs: Arc::new(Vec::new()), unattended: false },
             profile: std::sync::Mutex::new(Profile::of(bot)),
             full_tools: full,
             cancel: CancellationToken::new(),
-            noted: std::sync::atomic::AtomicBool::new(false),
-        }
+            }
     }
 
     /// A profile changed mid-turn, in the bot's details or by finish_setup, reaches the next
@@ -5129,7 +5153,7 @@ mod tests {
 
     /// Every member reads what the group is for, and a direct chat has no such line.
     #[test]
-    fn memory_and_the_profile_ride_after_the_transcript_not_in_the_prompt() {
+    fn the_prompt_keeps_facts_out_and_the_next_turn_carries_them() {
         let scratch = scratch_app();
         let app = &scratch.0;
         let chef = bot("b1", "Chef");
@@ -5146,13 +5170,19 @@ mod tests {
         assert!(!prompt.contains("ships on Fridays") && !prompt.contains("called Mei"), "{prompt}");
         assert!(prompt.contains("profile_update") && prompt.contains("memory_update"), "the tools are named in the prompt");
 
-        // A fact saved mid-turn leaves the cached prompt as it was and reaches the next request.
+        // A fact saved mid-turn leaves the cached prompt as it was and reaches the next turn.
         store.append_entry("the office is in Goa", None, 0).unwrap();
         assert_eq!(system_prompt(app, &dm, &chef, &room_job("dm", "b1"), &store, false, &[]), prompt);
         let notes = context_notes(app, &chef, "dm", 0);
         assert!(notes[0].contains("ships on Fridays") && notes[0].contains("office is in Goa"), "{notes:?}");
         assert!(notes[1].contains("called Mei"), "{notes:?}");
         assert!(notes.last().unwrap().starts_with("[It is now"), "{notes:?}");
+
+        // The save rides the next turn's opening messages, which is where the model reads it.
+        let after: Vec<String> = request_notes(app, &chef, "dm", 0);
+        let none = TurnNotes { recent_work: None, recalled: None, cue: None, setup: None, named: None, acknowledge: None };
+        let (messages, _) = with_turn_notes(vec![AgentMessage::user("hi")], &none, &after, None, None);
+        assert!(messages.iter().any(|m| said_of(m).contains("the office is in Goa")), "the next turn carries the save: {messages:?}");
     }
 
     #[test]
@@ -5344,6 +5374,35 @@ mod tests {
         app.unregister_step_interrupt("chat", "job");
         assert_eq!(send_now(app, "chat", &late.id), Ok(false));
         assert!(!app.message("chat", &late.id).unwrap().queued);
+    }
+
+    /// A message the user sends during a turn reaches the next request as their own words, and
+    /// is promoted when the turn takes it, once.
+    #[tokio::test]
+    async fn a_steering_message_reaches_the_next_request_as_the_users_words() {
+        let scratch = scratch_app();
+        let app = &scratch.0;
+        let chef = bot("b1", "Chef");
+        let dm = chat("chat", "dm", None, &["b1"]);
+        {
+            let mut state = app.state.lock().unwrap();
+            state.bots.push(chef.clone());
+            state.chats.push(dm.clone());
+        }
+        let steer = said("chat", Author::You, "先别发", 1.0);
+        app.upsert_message(steer.clone(), false);
+        let queue = AgentMessageQueue::new(QueueMode::OneAtATime);
+        app.register_steering_queue("chat", "job", queue.clone());
+        assert!(steer_message(app, &steer));
+        let mut hooks = turn_hooks(app, &chef, &dm, None);
+        hooks.steering = Some(queue);
+
+        let drained = hooks.steering_messages().await;
+        assert_eq!(drained.len(), 1, "{drained:?}");
+        assert!(matches!(&drained[0], AgentMessage::User(_)), "a real user message: {drained:?}");
+        assert!(said_of(&drained[0]).contains("先别发"), "{drained:?}");
+        assert!(app.message("chat", &steer.id).unwrap().promoted_at.is_some(), "its own job becomes a no-op");
+        assert!(hooks.steering_messages().await.is_empty(), "drained once");
     }
 
     #[tokio::test]
@@ -7212,19 +7271,15 @@ mod tests {
         let job = Job::local("turn", "dm", "b1", "preview");
         assert_eq!(joined, PromptInputs::for_turn(app, &chef, &dm, &job, false).system_prompt(app, &dm, &chef));
 
-        let hooks = turn_hooks(app, &chef, &dm, None);
-        let sent = futures::executor::block_on(hooks.transform_context(Vec::new(), &CancellationToken::new()));
-        let said: Vec<String> = sent
-            .iter()
-            .filter_map(|message| match message {
-                AgentMessage::User(user) => user.content[0].as_text().map(str::to_string),
-                _ => None,
-            })
-            .collect();
+        // The preview lists the notes a turn opens with, which is where a request reads them now.
+        let after = request_notes(app, &chef, &dm.meta.id, crate::config::now_secs() as i64);
         let shown: Vec<String> = preview["notes"].as_array().unwrap().iter().map(|note| note.as_str().unwrap().to_string()).collect();
         let without_clock = |notes: &[String]| notes.iter().filter(|note| !note.starts_with("[It is now")).cloned().collect::<Vec<_>>();
         assert!(shown.iter().any(|note| note.contains("The user ships on Fridays.")), "{shown:?}");
-        assert_eq!(without_clock(&shown), without_clock(&said));
+        assert_eq!(without_clock(&shown), without_clock(&after));
+        let hooks = turn_hooks(app, &chef, &dm, None);
+        let sent = futures::executor::block_on(hooks.transform_context(Vec::new(), &CancellationToken::new()));
+        assert!(sent.is_empty(), "a request adds nothing to what the turn opened with: {sent:?}");
     }
 
     /// A turn that read a message but did not answer it does not keep it: Stop gives it back,
@@ -7261,25 +7316,37 @@ mod tests {
     /// reply is still waiting for its own answer.
     #[test]
     fn a_reply_answers_the_steering_messages_read_before_it() {
+        let mut ledger = ClaimLedger::default();
+        ledger.claim("msg-read-first");
+        // A reply reaches the chat, answering what the turn had read by then.
+        ledger.answered();
+        ledger.claim("msg-read-later");
+        assert_eq!(ledger.unanswered(), ["msg-read-later".to_string()], "the later message is not answered by the earlier reply");
+    }
+
+    /// A turn that compacts mid-way holds one set of notes: a summary may absorb them, and the
+    /// requests after it add none back.
+    #[tokio::test]
+    async fn a_mid_turn_compaction_leaves_one_set_of_notes() {
         let scratch = scratch_app();
         let app = &scratch.0;
         let chef = bot("b1", "Chef");
-        app.state.lock().unwrap().chats.push(chat("chat", "dm", None, &["b1"]));
-        let read = said("chat", Author::You, "read before the reply", 1.0);
-        app.upsert_message(read.clone(), false);
-        let later = said("chat", Author::You, "read after the reply", 2.0);
-        app.upsert_message(later.clone(), false);
-        let mut turn = turn_state(app, &chef, "dev");
+        let dm = chat("dm", "dm", None, &["b1"]);
+        {
+            let mut state = app.state.lock().unwrap();
+            state.bots.push(chef.clone());
+            state.chats.push(dm.clone());
+        }
+        let notes = TurnNotes { recent_work: None, recalled: None, cue: None, setup: None, named: None, acknowledge: None };
+        let after = vec!["[It is now Tuesday 2026-11-10, 21:45 local time on your Runner (UTC+08:00); trust this over any date you infer.]".to_string()];
+        let (messages, points) = with_turn_notes(vec![AgentMessage::user("Deploy now?")], &notes, &after, None, None);
+        assert_eq!(points, vec![1]);
+        let clock_notes = |messages: &[AgentMessage]| messages.iter().filter(|m| said_of(m).starts_with("[It is now")).count();
+        assert_eq!(clock_notes(&messages), 1, "{messages:?}");
 
-        turn.handle(AgentEvent::MessageEnd {
-            message: AgentMessage::Custom { kind: STEERING_MESSAGE_KIND.into(), data: serde_json::to_value(&read).unwrap(), timestamp: 0 },
-        });
-        turn.complete(turn.new_text_message(), "Answered the first one.");
-        turn.handle(AgentEvent::MessageEnd {
-            message: AgentMessage::Custom { kind: STEERING_MESSAGE_KIND.into(), data: serde_json::to_value(&later).unwrap(), timestamp: 0 },
-        });
-
-        assert_eq!(turn.unanswered_claims(), vec![later.id], "the later message is not answered by the earlier reply");
+        let hooks = TurnHooks { provider: Arc::new(Scripted { replies: Default::default(), requests: Default::default() }), ..turn_hooks(app, &chef, &dm, None) };
+        let sent = hooks.transform_context(messages.clone(), &CancellationToken::new()).await;
+        assert_eq!(clock_notes(&sent), 1, "a request adds no second set: {sent:?}");
     }
 
     /// A message still in the turn's queue when Stop came is given back too, though the turn
