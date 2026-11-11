@@ -1,31 +1,33 @@
 // A bot's Access, slid in from its Access row in Details, or opened from a "needs more access"
-// card: the plugins on its Runner, each with how far the bot may use it and a screen of its own
-// for that and its tools, whether its messages wait as drafts, then Files and Shell commands under
-// the Runner's name. Each change saves at once. The desktop apps' Access sheet holds the same.
+// card: the plugins on its Runner, each a switch with a screen of its own for its tools, whether
+// its messages wait as drafts, then the bot's own files and shell commands under the Runner's
+// name. Each change saves at once. The desktop apps' Access sheet holds the same.
 
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect } from "react";
 import { ScrollView, StyleSheet } from "react-native";
 import {
   browserOn,
-  chosenTools,
   draftsOn,
-  filesLevel,
-  levelTitle,
   loadAccessCatalog,
-  LEVELS,
-  pluginLevel,
-  reaches,
-  setBotPermissions,
-  shellOn,
+  pluginOn,
+  readState,
+  shellState,
+  stateTitle,
+  TOOL_STATES,
   toolDoes,
+  toolState,
   toolsSummary,
+  setBotPermissions,
   useAccessStore,
   withBrowser,
+  withDrafts,
+  withOwnTool,
   withPlugin,
   withTool,
+  writeState,
   type AccessPlugin,
-  type FilesLevel,
+  type ToolState,
 } from "../core/access";
 import { BROWSER_PLUGIN_ID, type BotPermissions } from "../core/model";
 import { useStore } from "../core/store";
@@ -74,32 +76,28 @@ export default function AccessScreen() {
                 key={plugin.id}
                 title={plugin.name}
                 subtitle={toolsSummary(policy, plugin)}
-                detail={levelTitle(pluginLevel(policy, plugin.id))}
                 icon={icons.get(plugin.id) || "puzzlepiece.extension"}
-                chevron
+                accessory={
+                  <ToggleRow
+                    title={plugin.name}
+                    value={pluginOn(policy, plugin.id)}
+                    onValueChange={(on) => void save(withPlugin(policy, plugins, plugin.id, on))}
+                  />
+                }
+                chevron={false}
                 onPress={() => router.push({ pathname: "/chat-info/access-plugin", params: { bot: bot.id, plugin: plugin.id } })}
               />
             ))}
           </Section>
         )}
         <Section title={t("Messages")} footer={t("Emails and Slack messages wait in the chat for you to send. Off, {name} sends them itself where the service can.", { name: bot.name })}>
-          <ToggleRow title={t("Draft first")} value={draftsOn(policy)} onValueChange={(on) => void save({ ...policy, filesystem: filesLevel(policy), shell: shellOn(policy), drafts: on })} />
+          <ToggleRow title={t("Draft first")} value={draftsOn(policy)} onValueChange={(on) => void save(withDrafts(policy, on))} />
         </Section>
-        {/* Files and shell commands are the Runner's, so its section goes by the Runner's name. */}
+        {/* The bot's own tools are the Runner's, so its section goes by the Runner's name. */}
         <Section title={runner?.name ?? t("Runner")} footer={t("Shell commands run as you on {runner} and can reach anything you can there.", { runner: runnerName })}>
-          <Row
-            title={t("Files")}
-            menu={{
-              value: levelTitle(filesLevel(policy)),
-              title: t("Files"),
-              choices: (["write", "read", "none"] as FilesLevel[]).map((level) => ({
-                title: levelTitle(level),
-                selected: filesLevel(policy) === level,
-                onPress: () => void save({ ...policy, filesystem: level, shell: shellOn(policy) }),
-              })),
-            }}
-          />
-          <ToggleRow title={t("Shell commands")} value={shellOn(policy)} onValueChange={(on) => void save({ ...policy, filesystem: filesLevel(policy), shell: on })} />
+          <Row title={t("Read files")} menu={stateMenu("read", readState(policy), (state) => void save(withOwnTool(policy, "read", state)))} />
+          <Row title={t("Change files")} menu={stateMenu("write", writeState(policy), (state) => void save(withOwnTool(policy, "write", state)))} />
+          <Row title={t("Shell commands")} menu={stateMenu("shell", shellState(policy), (state) => void save(withOwnTool(policy, "shell", state)))} />
           <ToggleRow title={t("Browser")} value={browserOn(policy)} onValueChange={(on) => void save(withBrowser(policy, plugins, on))} />
         </Section>
       </ScrollView>
@@ -107,9 +105,17 @@ export default function AccessScreen() {
   );
 }
 
-/// One plugin's Access, slid in from its row: how far the bot may use it, then its tools, each a
-/// checkbox with what it does. A tool beyond the level stays off and dimmed until the level
-/// reaches it; Read and draft shows only for a plugin with a tool that drafts.
+/// A row's menu of the three states, with the one in force ticked.
+function stateMenu(key: string, current: ToolState, pick: (state: ToolState) => void) {
+  return {
+    value: stateTitle(current),
+    title: key,
+    choices: TOOL_STATES.map((state) => ({ title: stateTitle(state), selected: current === state, onPress: () => pick(state) })),
+  };
+}
+
+/// One plugin's Access, slid in from its row: its switch, then its tools, each on, asking first,
+/// or off.
 export function AccessPluginScreen() {
   useLanguage();
   const { bot: botId, plugin: pluginId } = useLocalSearchParams<{ bot: string; plugin: string }>();
@@ -117,36 +123,25 @@ export function AccessPluginScreen() {
   const plugin = plugins.find((each) => each.id === pluginId);
   if (!bot || !plugin) return null;
   const policy = bot.permissions;
-  const level = pluginLevel(policy, plugin.id);
-  const drafts = level === "draft" || plugin.tools.some((tool) => tool.capability === "draft");
-  const chosen = chosenTools(policy, plugin.id);
+  const on = pluginOn(policy, plugin.id);
 
   return (
     <>
       <Stack.Screen options={{ title: plugin.name }} />
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
-        <Section>
-          {LEVELS.filter((each) => each !== "draft" || drafts).map((each) => (
-            <CheckRow key={each} title={levelTitle(each)} checked={level === each} onPress={() => void save(withPlugin(policy, plugins, plugin.id, each, chosen))} />
-          ))}
+        <Section footer={t("A tool set to ask waits for you every time, whatever the bot's review mode says.")}>
+          <ToggleRow title={t("Use this plugin")} value={on} onValueChange={(next) => void save(withPlugin(policy, plugins, plugin.id, next))} />
         </Section>
-        {plugin.tools.length > 0 && level !== "none" && (
+        {plugin.tools.length > 0 && on && (
           <Section title={t("Tools")}>
-            {plugin.tools.map((tool) => {
-              const reached = reaches(level, tool.capability);
-              const on = reached && (!chosen || chosen.includes(tool.name));
-              return (
-                <CheckRow
-                  key={tool.name}
-                  multiple
-                  title={tool.title || tool.name}
-                  subtitle={toolDoes(tool.capability)}
-                  checked={on}
-                  disabled={!reached}
-                  onPress={() => void save(withTool(policy, plugins, plugin, tool.name, !on))}
-                />
-              );
-            })}
+            {plugin.tools.map((tool) => (
+              <Row
+                key={tool.name}
+                title={tool.title || tool.name}
+                subtitle={toolDoes(tool.capability)}
+                menu={stateMenu(tool.name, toolState(policy, plugin.id, tool.name), (state) => void save(withTool(policy, plugins, plugin, tool.name, state)))}
+              />
+            ))}
           </Section>
         )}
       </ScrollView>

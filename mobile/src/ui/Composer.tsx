@@ -22,7 +22,8 @@ import { ImagePasteView, type PastedImage } from "../../modules/lorca-core/Image
 import type { PickedFile } from "../core/engine";
 import { fileSize, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "../core/model";
 import { BotAvatar } from "./Avatar";
-import { AttachSheet, type AttachSource } from "./AttachSheet";
+import { ComposerMenu, type AttachSource, type ComposerActions } from "./ComposerMenu";
+import type { ReviewMode } from "../core/model";
 import { insertMention as insertMentionText, mentionTrigger, pickMentions, type MentionPick } from "../core/mentions";
 import type { MentionTarget } from "../core/participants";
 import { automaticLanguage, languageName, pickDictationLanguage, setDictationLanguage, useDictationLanguage, useSupportedLanguages } from "./dictation";
@@ -51,6 +52,9 @@ export const Composer = memo(function Composer({
   responding = false,
   onStop,
   onSend,
+  reviewMode,
+  onNextReviewMode,
+  onCompact,
 }: {
   mentionTargets: MentionTarget[];
   placeholder: string;
@@ -65,6 +69,10 @@ export const Composer = memo(function Composer({
   onStop?: () => Promise<void>;
   /** The text, its files, and the bots its `@Name`s picked. */
   onSend: (text: string, attachments: PickedFile[], mentions: string[]) => void;
+  /** What the drawer the + opens can do: the bot's review mode and compacting the chat. */
+  reviewMode: ReviewMode;
+  onNextReviewMode: () => void;
+  onCompact: () => void;
 }) {
   const { language: appLanguage } = useLanguage();
   const p = usePalette();
@@ -80,7 +88,8 @@ export const Composer = memo(function Composer({
   const inputRef = useRef<TextInput>(null);
   /// The bots picked from the `@` chips since the last send, in order.
   const pickedMentions = useRef<MentionTarget[]>([]);
-  const [attachOpen, setAttachOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [composerHeight, setComposerHeight] = useState(56);
   const dictationMenuRef = useRef<MenuComponentRef>(null);
   const { language, setting: dictationSetting } = useDictationLanguage();
   const dictationLanguages = useSupportedLanguages();
@@ -315,13 +324,20 @@ export const Composer = memo(function Composer({
       label={t("Attach")}
       disabled={!!editing}
       onPress={() => {
-        // The attach sheet comes over the composer: the chat's keyboard goes down behind it.
+        // The drawer comes over the composer: the chat's keyboard goes down behind it.
         void KeyboardController.dismiss();
         haptic.open();
-        setAttachOpen(true);
+        setMenuOpen(true);
       }}
     />
   );
+
+  const composerActions: ComposerActions = {
+    mode: reviewMode,
+    onNextMode: onNextReviewMode,
+    onAttach: (source) => void attach(source),
+    onCompact,
+  };
 
   const recording = (
     <Pressable
@@ -455,7 +471,7 @@ export const Composer = memo(function Composer({
           ))}
         </ScrollView>
       )}
-      <View style={styles.bar} pointerEvents="box-none">
+      <View style={styles.bar} pointerEvents="box-none" onLayout={(e) => setComposerHeight(e.nativeEvent.layout.height)}>
         {plus}
         <Pressable onPress={() => inputRef.current?.focus()} accessible={false} ripple="none" style={styles.pillPress}>
           <Float style={styles.pill} radius={ROUND / 2}>
@@ -521,7 +537,7 @@ export const Composer = memo(function Composer({
           </Float>
         </Pressable>
       </View>
-      <AttachSheet visible={attachOpen} onClose={() => setAttachOpen(false)} onPick={(source) => void attach(source)} />
+      <ComposerMenu visible={menuOpen} onClose={() => setMenuOpen(false)} bottom={composerHeight} actions={composerActions} />
     </View>
   );
 });

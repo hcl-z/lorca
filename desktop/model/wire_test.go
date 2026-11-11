@@ -52,7 +52,7 @@ func TestAutoReviewKeepsItsModels(t *testing.T) {
 	expect(t, picked.Models, map[ProviderKind]string{"custom:typesafe": "jev-1.13", "anthropic": "claude-opus-5"})
 	// Absent, and a kind this build does not know, are the bot's own provider.
 	own := ToAutoReview(decodeJSON[*WireAutoReview](t, `{"is_enabled": false, "rules": []}`))
-	expect(t, []any{own.IsEnabled, own.Provider, len(own.Models)}, []any{false, "", 0})
+	expect(t, []any{own.Mode, own.Provider, len(own.Models)}, []any{ReviewDefault, "", 0})
 	unknown := ToAutoReview(decodeJSON[*WireAutoReview](t, `{"is_enabled": true, "provider": "mistral"}`))
 	expect(t, unknown.Provider, "")
 	// The catalog marks its decision models, and a decision provider keeps its API; each status

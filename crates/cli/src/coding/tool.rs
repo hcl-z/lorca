@@ -416,7 +416,7 @@ pub async fn review_start(app: &Arc<App>, bot: &Bot, job: &crate::model::Job, ch
     };
     let always_rule = rule.map(|text| crate::model::AutoReviewRule { id: uuid::Uuid::new_v4().to_string(), text, behavior: "allow".into(), tool: None });
     let question = AgentQuestion { kind: "start".into(), reason, rule: always_rule.as_ref().map(|rule| rule.text.clone()), ..Default::default() };
-    let decision = crate::plugins::mcp::await_answer(app, chat_id, &message_id, always_rule, ctx.cancel, || {
+    let decision = crate::plugins::mcp::await_answer(app, chat_id, &message_id, &bot.id, always_rule, ctx.cancel, || {
         app.coding_agents.update_row(app, chat_id, &message_id, |card| {
             card.state = "asking".into();
             card.question = Some(question);

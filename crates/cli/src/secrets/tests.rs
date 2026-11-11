@@ -252,7 +252,7 @@ async fn requests_say_where_a_secret_goes_and_check_access() {
     assert_eq!(request(json!({ "use": "command", "why": "x", "secrets": [{ "name": "A", "label": "A" }, { "name": "A", "label": "B" }] })), "Each secret needs a name of its own.");
     assert_eq!(request(json!({ "use": "command", "why": " ", "secrets": field })), "why is required: say why you need it");
     let mut shell_off = bot.clone();
-    shell_off.permissions = Some(serde_json::from_value(json!({ "shell": false })).unwrap());
+    shell_off.permissions = Some(serde_json::from_value(json!({ "tools": {"shell": {"enabled": false}} })).unwrap());
     app.state.lock().unwrap().bots[0] = shell_off;
     assert!(request(json!({ "use": "command", "why": "x", "secrets": field })).contains("shell commands are off for this bot"));
 

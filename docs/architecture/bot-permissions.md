@@ -1,6 +1,6 @@
 # Bot permissions
 
-A bot's Access belongs to the user. It limits which plugins on the bot's Runner the bot may use, how far (read, draft, write), down to single tools, and whether the bot reads or changes files and runs shell commands there. The CLI checks it before [Auto-review](auto-review.md) and again when a call runs; an account rule, Allow once, or Always allow cannot widen it. A bot's description tells it what to do; its Access decides what its tools may do.
+A bot's Access belongs to the user. It limits which plugins on the bot's Runner the bot may use, each plugin on or off and each of its tools on or asking first, whether the bot reads and changes files and runs shell commands there, and which skills it reads. The CLI checks it before [Auto-review](auto-review.md) and again when a call runs; an account rule, Allow once, or Always allow cannot widen it. A bot's description tells it what to do; its Access decides what its tools may do.
 
 ## Profile and wire shape
 
@@ -10,21 +10,36 @@ A bot's Access belongs to the user. It limits which plugins on the bot's Runner 
 {
   "connections": {
     "mail-work": {
-      "capabilities": ["read", "draft"],
-      "tools": ["list_messages", "create_draft"]
+      "enabled": true,
+      "tools": {
+        "send_message": { "enabled": true, "ask": true },
+        "delete_message": { "enabled": false }
+      }
     }
   },
-  "filesystem": "read",
-  "shell": false,
+  "tools": {
+    "read": { "enabled": true },
+    "write": { "enabled": true, "ask": true },
+    "shell": { "enabled": false }
+  },
+  "skills": { "enabled": ["bot/pdf-tools"], "disabled": ["shared/old-notes"] },
   "drafts": true
 }
 ```
 
-`connections` is keyed by the installed plugin's id on the bot's Runner, so two accounts of one service, installed as two plugins, get separate grants. Without `connections` the bot may use every plugin on the Runner, one installed later included; with it, only the plugins it lists, each with a non-empty `capabilities` set. A grant's `tools` holds original MCP tool names; without it every tool of that plugin is allowed, one the server adds later included. Names match exactly. `filesystem` is `none`, `read`, or `write` (default `write`), and `shell` is a boolean (default true). `drafts` (default true) has the bot's emails and Slack messages in a chat wait as drafts for the user to send ([Message drafts](drafts.md)); `bots.update { id, drafts }` sets it alone. A bot with no policy has full access. `crates/cli/src/permissions.rs` holds the types and the checks.
+**One switch, two flags.** `{ "enabled": bool, "ask": bool }` is every switch: off, on, or on and asking first. A tool that asks runs only when the user answers its card, whatever Auto-review or an `allow` rule says (`permissions::tool_asks`, `permissions::connection_asks`).
 
-The three capabilities are separate grants: `write` does not take in `read`. The apps offer them as levels that each take in the ones below (Read only; Read and draft; Read and write; No access), and write those sets. A tool needs `read` when its live server marks it `readOnlyHint`, its manifest lists it in `tools.readonly`, or it is one of a server's resource readers; `draft` when the manifest lists it in `tools.draft` (a draft still crosses Auto-review); `write` otherwise. What `catalog.json` saved never decides a capability at execution, since a bot can write that file: the check connects the server, through the pool, and reads the live mark.
+`connections` is keyed by the installed plugin's id on the bot's Runner, so two accounts of one service, installed as two plugins, get separate switches. Without `connections` the bot may use every plugin on the Runner, one installed later included; with it, only the plugins it lists with `enabled`. A tool name in a grant's `tools` decides that tool; one not listed takes the plugin's switch. A policy from before the switches carries `filesystem`, `shell`, and each plugin's `capabilities` and tool list, and is read into these switches on load: `filesystem: none` switches reading and writing off, `read` switches writing off, and an old tool list becomes the listed tools, with the rest off (`listed_only`).
 
-`bots.create` and `bots.update { id, permissions }` take the user's policy. An update leaves it alone when the field is absent and refuses `null` and malformed fields. A user gives full access back by saving the default policy. A roster from a Device that predates policies keeps the policy the Device already had (`keep_policies`) and uploads it again. `create_bot` and `edit_bot` take no policy and refuse one; a teammate a bot creates gets its creator's current policy. A plugin a bot recommends with `recommend_plugins` never changes its policy: one the policy leaves out gets no card ([A new bot sets itself up](bots.md#a-new-bot-sets-itself-up)). A handoff (`message_bot`) asks another bot to work with that bot's own Access, and a group gives each member a turn under its own.
+`tools` holds the bot's own tools: `read` (`read`, `grep`, `find`, `ls`), `write` (`write`, `edit`), and `shell` (`bash`, `bash_input`, `bash_output`, `coding_agent`). A bot made before the switches has every one on.
+
+`skills` is exceptions over the default: a bot sees the shared skills every bot has, except those Lorca ships, which always show and are how a bot reads its docs and writes one; a bot's own and a group's start off. `shows(scope, name, builtin)` answers for one skill, and a turn's list and its `read` both go through it.
+
+`drafts` (default true) has the bot's emails and Slack messages in a chat wait as drafts for the user to send ([Message drafts](drafts.md)); `bots.update { id, drafts }` sets it alone. A bot with no policy has full access. `crates/cli/src/permissions.rs` holds the types and the checks.
+
+A tool's `ask` is set by the user, never by a model: the apps show one three-way choice per tool (on, ask first, off), and the CLI refuses nothing for a tool that asks, it only puts up the card.
+
+`bots.create` and `bots.update { id, permissions }` take the user's policy. An update leaves it alone when the field is absent and refuses `null` and malformed fields. A bot the user makes starts with every plugin off (`BotPermissions::new_bot`), so its setup turn asks `recommend_plugins` what its job needs and the user turns those on; a bot a teammate creates starts the same way. A roster from a Device that predates policies keeps the policy the Device already had (`keep_policies`) and uploads it again. `create_bot` and `edit_bot` take no policy and refuse one. A plugin a bot recommends with `recommend_plugins` never changes its policy: one the policy leaves out gets no card ([A new bot sets itself up](bots.md#a-new-bot-sets-itself-up)). A handoff (`message_bot`) asks another bot to work with that bot's own Access, and a group gives each member a turn under its own.
 
 ## Execution boundary
 

@@ -2407,7 +2407,7 @@ fn access_plugins(app: &App, bot: &Bot) -> Option<Vec<String>> {
     Some(
         connections
             .iter()
-            .filter(|(_, grant)| !grant.capabilities.is_empty())
+            .filter(|(_, grant)| grant.enabled)
             .map(|(id, _)| app.plugins.lock().unwrap().status(id).map(|s| s.name).unwrap_or_else(|| id.clone()))
             .collect(),
     )
@@ -3553,7 +3553,9 @@ impl Tool for CreateBot {
         let (model, thinking) = (field("model"), field("thinking"));
         let runs = Runs { provider, model: None, thinking: None }.change(&self.app, None, model, thinking)?;
         let runs_with = (args["provider"].is_string() || model.is_some() || thinking.is_some()).then(|| runs.describe(&self.app));
-        let permissions = self.app.bot(&self.bot.id).ok_or("The calling bot is gone")?.permissions;
+        // A new bot starts with every plugin off and its own tools on, whether the user made it
+        // or a teammate did: it works out what it needs with the user, who turns those on.
+        let permissions = Some(crate::permissions::BotPermissions::new_bot());
         let bot = Bot {
             id: String::new(),
             name: crate::model::NEW_BOT_NAME.into(),
@@ -3568,6 +3570,8 @@ impl Tool for CreateBot {
             legacy_instructions: String::new(), setting_up: true,
             workdir: args["workdir"].as_str().map(|w| w.trim().to_string()).filter(|w| !w.is_empty()),
             permissions,
+            // It follows the Runner's global mode and rules until the user changes them for it.
+            auto_review: None,
             created_at: 0.0,
         };
         let (created, dm) = self.app.create_bot_with_dm(bot, None).map_err(|e| ToolError(e.to_string()))?;
@@ -3880,7 +3884,7 @@ async fn resolve_connectors(app: &Arc<App>, wanted: &[String], bot: &Bot) -> Vec
             Some(m) => {
                 // Installed, a single-account plugin keeps its id; a named account gets a new one,
                 // which only an Access that lists no plugins takes in.
-                let off_in_access = !bot.permissions.as_ref().and_then(|p| p.connections.as_ref()).is_none_or(|listed| !m.named_accounts && listed.get(&m.id).is_some_and(|grant| !grant.capabilities.is_empty()));
+                let off_in_access = !bot.permissions.as_ref().is_none_or(|p| p.allows_connection(&m.id));
                 Connector { wanted: m.id.clone(), name: m.name.clone(), installed: None, in_marketplace: true, off_in_access }
             }
             None => Connector { wanted: name.clone(), name: name.clone(), installed: None, in_marketplace: false, off_in_access: false },
@@ -5029,12 +5033,12 @@ mod tests {
         crate::identity::create(app, Some("Runner".into())).unwrap();
         let caller = app.state.lock().unwrap().bots[0].clone();
         let create = CreateBot { app: app.clone(), bot: caller.clone() };
-        let policy = serde_json::from_value(json!({"connections":{},"shell":false,"filesystem":"none"})).unwrap();
+        let policy = serde_json::from_value(json!({"connections":{},"tools":{"read":{"enabled":false},"write":{"enabled":false},"shell":{"enabled":false}}})).unwrap();
         app.update_bot(&caller.id, |bot| bot.permissions = Some(policy)).unwrap();
         let update: ToolUpdateFn = Arc::new(|_| {});
         create.execute("new", json!({"brief":"Read selected inbox"}), CancellationToken::new(), update.clone()).await.unwrap();
         let created = app.state.lock().unwrap().bots.iter().find(|bot| bot.setting_up).unwrap().clone();
-        assert_eq!(created.permissions, app.bot(&caller.id).unwrap().permissions, "inherit current policy, not the turn's snapshot");
+        assert_eq!(created.permissions, Some(crate::permissions::BotPermissions::new_bot()), "a new bot starts with every plugin off, whoever made it");
         let edit = EditBot { app: app.clone(), bot: caller.clone() };
         let refused = edit.execute("grant", json!({"bot_id":caller.id,"permissions":{}}), CancellationToken::new(), update.clone()).await.unwrap_err();
         assert!(refused.0.contains("Only the user"));
@@ -5059,6 +5063,7 @@ mod tests {
             legacy_instructions: String::new(), setting_up: false,
             workdir: None,
             permissions: None,
+            auto_review: None,
             created_at: 0.0,
         }
     }
@@ -5215,7 +5220,7 @@ mod tests {
         let chef = Bot { description: "Chief of staff".into(), ..bot("b1", "Chef") };
         let scout = Bot {
             description: "Finds sources and links every claim.\nNever publishes.".into(),
-            permissions: Some(serde_json::from_value(json!({ "connections": { "notes": { "capabilities": ["read"] } } })).unwrap()),
+            permissions: Some(serde_json::from_value(json!({ "connections": { "notes": { "enabled": true } } })).unwrap()),
             ..bot("b2", "Scout")
         };
         let writer = Bot { description: "Turns findings into drafts".into(), ..bot("b3", "Writer") };
@@ -5453,7 +5458,7 @@ mod tests {
             state.bots.push(chef.clone());
             state.chats.push(chat("chat", "dm", None, &["b1"]));
         }
-        app.set_auto_review(AutoReview { is_enabled: false, ..AutoReview::default() });
+        app.set_auto_review(AutoReview { mode: crate::model::ReviewMode::Default, ..AutoReview::default() });
         let catalog = linear_catalog(app);
         let assistant = AssistantMessage::empty("test", "test");
         let context = AgentContext { system_prompt: String::new(), messages: Vec::new(), tools: Vec::new(), cache_points: Vec::new() };
@@ -5762,7 +5767,7 @@ mod tests {
     /// With Auto-review off, every command asks.
     fn every_command_asks(app: &App) {
         let mut review = app.auto_review();
-        review.is_enabled = false;
+        review.mode = crate::model::ReviewMode::Default;
         app.set_auto_review(review);
     }
 
@@ -6503,6 +6508,10 @@ mod tests {
         use lorca_agent::tools::{BashSessions, BashTool};
         let (scratch, chef) = chef_in_a_dm();
         let app = &scratch.0;
+        // Typed input is an effect like a command, so the mode that asks about every one is set.
+        let mut review = app.auto_review();
+        review.mode = crate::model::ReviewMode::Default;
+        app.set_auto_review(review);
         let mut turn = turn_state(app, &chef, "dev");
         let sessions: Arc<dyn BashSessions> = Arc::new(crate::shell::TurnSessions::new(app, "chat", "b1"));
         let bash = BashTool::with_sessions(scratch.1.clone(), sessions).waiting_after(Duration::from_millis(300));
@@ -6769,7 +6778,7 @@ mod tests {
         let app = &scratch.0;
         crate::identity::create(app, Some("Runner".into())).unwrap();
         let chef = Bot { runner_id: app.this_device_id().unwrap(), ..bot("b1", "Chef") };
-        let policy = serde_json::from_value(json!({ "shell": false })).unwrap();
+        let policy = serde_json::from_value(json!({ "tools": {"shell": {"enabled": false}} })).unwrap();
         app.state.lock().unwrap().bots = vec![Bot { permissions: Some(policy), ..chef.clone() }];
         let create = CreateBot { app: app.clone(), bot: chef.clone() };
         let no_updates: ToolUpdateFn = Arc::new(|_| {});
@@ -6777,7 +6786,7 @@ mod tests {
         assert!(result.content[0].as_text().unwrap().contains("It is talking with the user in its own chat now"));
         let made = app.state.lock().unwrap().bots.iter().find(|b| b.setting_up).cloned().unwrap();
         assert_eq!((made.name.as_str(), made.description.as_str()), (crate::model::NEW_BOT_NAME, ""));
-        assert_eq!(made.permissions, app.bot(&chef.id).unwrap().permissions);
+        assert_eq!(made.permissions, Some(crate::permissions::BotPermissions::new_bot()), "a new bot always starts with every plugin off");
         let dm = app.dm_with(&made.id, None).unwrap();
         let marker = app.message(&dm.meta.id, &format!("setup-{}", made.id)).unwrap();
         assert!(matches!(marker.body, Body::Handoff { ref from, ref reason, .. } if from == "b1" && reason.starts_with("帮我建")));
@@ -6897,7 +6906,7 @@ mod tests {
         assert_eq!(installs(app), ["github"]);
 
         // An Access kept to Notes: GitHub and any Gmail account stay off, with no card.
-        let policy = serde_json::from_value(json!({ "connections": { "notes": { "capabilities": ["read"] } } })).unwrap();
+        let policy = serde_json::from_value(json!({ "connections": { "notes": { "enabled": true } } })).unwrap();
         app.update_bot(&scout.id, |bot| bot.permissions = Some(policy)).unwrap();
         let other = app.dm_with(&scout.id, None).unwrap().meta.id;
         assert_eq!(other, dm);

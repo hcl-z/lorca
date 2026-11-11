@@ -1057,6 +1057,7 @@ mod tests {
                 legacy_instructions: String::new(), setting_up: false,
                 workdir: None,
                 permissions: None,
+                auto_review: None,
                 created_at: 0.0,
             });
         }
@@ -1069,7 +1070,7 @@ mod tests {
         let scratch = scratch_app();
         let app = &scratch.0;
         let routine = create(app, "b1", "Inbox", "every 1h", "Report changes", Some("return await tools.ls({});"), true).unwrap();
-        let policy = serde_json::from_value(serde_json::json!({"filesystem":"none","shell":false})).unwrap();
+        let policy = serde_json::from_value(serde_json::json!({"tools": {"read": {"enabled": false}, "write": {"enabled": false}, "shell": {"enabled": false}}})).unwrap();
         app.update_bot("b1", |bot| bot.permissions = Some(policy)).unwrap();
         let result = run_check(app, &routine, &CancellationToken::new()).await;
         assert!(result.error.as_deref().is_some_and(|error| error.contains("reading files is off")), "{:?}", result.error);

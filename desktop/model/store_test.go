@@ -39,7 +39,7 @@ func (r recordingTransport) next(t *testing.T) recordedCall {
 func TestReviewModelsAreSentAsAPatch(t *testing.T) {
 	transport := recordingTransport{calls: make(chan recordedCall, 8)}
 	s := NewStore(transport, func(fn func()) { fn() }, false)
-	s.AutoReview = AutoReview{IsEnabled: true, Provider: "anthropic", Models: map[ProviderKind]string{"anthropic": "claude-opus-5"}}
+	s.AutoReview = AutoReview{Mode: ReviewAuto, Provider: "anthropic", Models: map[ProviderKind]string{"anthropic": "claude-opus-5"}}
 
 	s.SetReviewModel("jev-1.13", "custom:typesafe")
 	expect(t, transport.next(t), recordedCall{"auto_review.set", `{"models":{"custom:typesafe":"jev-1.13"}}`})
@@ -55,9 +55,9 @@ func TestReviewModelsAreSentAsAPatch(t *testing.T) {
 	expect(t, transport.next(t), recordedCall{"auto_review.set", `{"provider":"custom:typesafe"}`})
 
 	next := s.AutoReview
-	next.IsEnabled = false
+	next.Mode = ReviewOpen
 	s.SetAutoReview(next)
-	expect(t, transport.next(t), recordedCall{"auto_review.set", `{"is_enabled":false,"rules":[]}`})
+	expect(t, transport.next(t), recordedCall{"auto_review.set", `{"mode":"open","rules":[]}`})
 	expect(t, []any{s.AutoReview.Provider, s.AutoReview.Models["custom:typesafe"]}, []any{"custom:typesafe", "jev-1.13"})
 }
 

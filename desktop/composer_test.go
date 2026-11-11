@@ -189,3 +189,32 @@ func TestComposerPastesPicturesAndFiles(t *testing.T) {
 	}
 	renderTo(t, tt, "composer-pasted")
 }
+
+// The drawer the + opens cycles the review mode of the bot in the chat: a press on its row moves
+// to the next mode, and the choice goes to that bot rather than the Runner's global setting.
+func TestComposerMenuCyclesTheBotMode(t *testing.T) {
+	m := demoWindow(t)
+	m.selectChat("chat-quill")
+	tt := ui.NewTester(m.frame(m.view), 1000, 780)
+	settleTransitions(tt)
+	bot := store.Bot("bot-quill")
+	global := store.AutoReview.Mode
+	start := store.BotReviewMode(bot.ID)
+	for i := 1; i <= len(model.ReviewModes); i++ {
+		if !m.chat.composer.menu {
+			click(t, tt, L("Attach files"))
+		}
+		if !m.chat.composer.menu || !tt.HasText(L("Permission")) {
+			t.Fatalf("no drawer: %q", tt.Texts())
+		}
+		click(t, tt, L("Permission"))
+		want := nextReviewMode(start)
+		if got := store.BotReviewMode(bot.ID); got != want {
+			t.Fatalf("press %d: %q, want %q", i, got, want)
+		}
+		start = want
+		if store.AutoReview.Mode != global {
+			t.Fatalf("a bot's mode changed the Runner's: %q", store.AutoReview.Mode)
+		}
+	}
+}

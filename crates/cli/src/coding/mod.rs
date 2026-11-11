@@ -1237,7 +1237,7 @@ async fn approve(app: &Arc<App>, agent: &Arc<Agent>, approval: Approval) -> Resu
     }
     let folder = std::fs::canonicalize(&record.folder).unwrap_or(record.folder.clone());
     let runner_name = app.device(&bot.runner_id).map(|device| device.name).unwrap_or_else(|| "this Runner".into());
-    let auto_review = app.auto_review().is_enabled;
+    let auto_review = app.auto_review().mode.reviews();
     let (tool, description, args, question) = match &approval {
         Approval::Command { command } => {
             // Memory is the bot's, and only memory_update writes it.
@@ -1326,9 +1326,9 @@ async fn approve(app: &Arc<App>, agent: &Arc<Agent>, approval: Approval) -> Resu
 /// Puts `question` on the agent's card and waits for the user's Allow or Deny from any Device
 /// (`chats.permission` names the card's row), as a command's card does.
 async fn ask_on_card(app: &Arc<App>, agent: &Arc<Agent>, question: AgentQuestion, always_rule: Option<crate::model::AutoReviewRule>) -> crate::plugins::mcp::Decision {
-    let (chat_id, message_id) = {
+    let (chat_id, message_id, bot_id) = {
         let record = agent.record.lock().unwrap();
-        (record.chat_id.clone(), record.message_id.clone())
+        (record.chat_id.clone(), record.message_id.clone(), record.bot_id.clone())
     };
     let cancel = tokio_util::sync::CancellationToken::new();
     // Stopping the agent stops the question.
@@ -1344,7 +1344,7 @@ async fn ask_on_card(app: &Arc<App>, agent: &Arc<Agent>, question: AgentQuestion
             }
         })
     };
-    let decision = crate::plugins::mcp::await_answer(app, &chat_id, &message_id, always_rule, &cancel, || {
+    let decision = crate::plugins::mcp::await_answer(app, &chat_id, &message_id, &bot_id, always_rule, &cancel, || {
         *agent.question.lock().unwrap() = Some(question);
         app.coding_agents.sync(app, agent);
         if let Some(message) = app.message(&chat_id, &message_id) {

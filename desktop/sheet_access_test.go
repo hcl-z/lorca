@@ -1,7 +1,6 @@
 package main
 
 import (
-	"slices"
 	"testing"
 
 	"github.com/egoist/lorca/desktop/model"
@@ -38,43 +37,42 @@ func choose(t *testing.T, tt *ui.Tester, popUp, item string) {
 	settle(tt)
 }
 
-func TestAccessSheetSavesLevelsToolsFilesAndShell(t *testing.T) {
+func TestAccessSheetSavesLevelsAndTools(t *testing.T) {
 	m, _, tt := accessSheet(t, "bot-nova")
 	click(t, tt, L("%@ tools", "GitHub"))
 	if !tt.HasText("Merge a pull request") || !tt.HasText(L("All tools")) {
 		t.Fatal("GitHub's tools did not show")
 	}
-	click(t, tt, "Merge a pull request")
-	if !tt.HasText(L("%d of %d tools", 4, 5)) {
-		t.Fatal("the tools summary did not follow the checkbox")
-	}
-	choose(t, tt, L("Access to %@", "Linear"), L("No access"))
-	choose(t, tt, L("Access to %@", "deepwiki"), L("Read only"))
-	// The Files and Shell commands rows share their controls' names: each control is at its
-	// row's end.
-	files, _ := tt.Find(L("Files"))
-	tt.ClickAt(files.X+files.W-40, files.Y+files.H/2)
-	if err := tt.ChooseMenuItem(L("Read only")); err != nil {
-		t.Fatal(err)
-	}
+	// A tool's choice: on, ask first, or off, as the three symbols at its row's end. The first
+	// "Off" is the first row's, which is Search issues.
+	offIcon, _ := tt.Find(L("Off"))
+	tt.ClickAt(offIcon.X+offIcon.W/2, offIcon.Y+offIcon.H/2)
 	settle(tt)
-	shell, _ := tt.Find(L("Shell commands"))
-	tt.ClickAt(shell.X+shell.W-18, shell.Y+shell.H/2)
+	if !tt.HasText(L("%d of %d tools", 4, 5)) {
+		t.Fatal("the tools summary did not follow the choice")
+	}
+	// The plugin's own switch.
+	linear, _ := tt.Find(L("Access to %@", "Linear"))
+	tt.ClickAt(linear.X+linear.W-18, linear.Y+linear.H/2)
 	settle(tt)
 	click(t, tt, L("Save"))
 	if m.hasSheet() {
 		t.Fatal("Save did not close the sheet")
 	}
 	policy := store.Bot("bot-nova").Permissions
-	if policy == nil || policy.Connections == nil || policy.Shell || policy.Filesystem != model.AccessRead {
+	if policy == nil || policy.Connections == nil {
 		t.Fatalf("saved policy: %+v", policy)
 	}
 	grants := *policy.Connections
-	if _, ok := grants["linear"]; ok || policy.Level("deepwiki") != model.AccessRead || policy.Level("filesystem") != model.AccessWrite {
+	if _, ok := grants["linear"]; ok || policy.Level("deepwiki") != model.AccessOn || policy.Level("filesystem") != model.AccessOn {
 		t.Fatalf("plugin levels: %+v", grants)
 	}
-	if tools := grants["github"].Tools; tools == nil || len(*tools) != 4 || slices.Contains(*tools, "merge_pull_request") {
-		t.Fatalf("GitHub's tools: %+v", grants["github"])
+	if policy.ToolLevel("github", "search_issues") != model.AccessNone {
+		t.Fatalf("a tool switched off: %+v", policy.ToolLevel("github", "search_issues"))
+	}
+	// A tool left alone keeps its plugin's switch.
+	if policy.ToolLevel("github", "create_issue") != model.AccessOn {
+		t.Fatal("a tool left alone keeps its plugin's switch")
 	}
 }
 
@@ -98,9 +96,9 @@ func TestAccessSheetKeepsChoicesWhenTheToolsArrive(t *testing.T) {
 	if len(st.plugins) == 0 || len(st.plugins[0].Tools) != 0 {
 		t.Fatal("the sheet opens on the Runner's own list")
 	}
-	st.levels["linear"] = model.AccessRead
+	st.levels["linear"] = model.AccessAsk
 	runPosts()
-	if st.levels["linear"] != model.AccessRead || len(st.plugins[0].Tools) == 0 {
+	if st.levels["linear"] != model.AccessAsk || len(st.plugins[0].Tools) == 0 {
 		t.Fatal("the tools replaced what the user chose")
 	}
 	closed := m.presentBotAccess("bot-quill")

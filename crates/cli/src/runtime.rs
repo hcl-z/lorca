@@ -915,6 +915,7 @@ mod tests {
             legacy_instructions: String::new(), setting_up: false,
             workdir: None,
             permissions: None,
+            auto_review: None,
             created_at: 0.0,
         }
     }

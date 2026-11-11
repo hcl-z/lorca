@@ -6,7 +6,7 @@
 #![cfg(unix)]
 
 use super::*;
-use crate::model::{Bot, Chat, ChatMeta, MessageState};
+use crate::model::{Bot, Chat, ChatMeta, MessageState, ReviewMode};
 use crate::plugins::mcp::Decision;
 use lorca_agent::Tool;
 use tokio_util::sync::CancellationToken;
@@ -232,6 +232,7 @@ async fn setup() -> Scratch {
         legacy_instructions: String::new(), setting_up: false,
         workdir: Some(home.join("work").to_string_lossy().to_string()),
         permissions: None,
+        auto_review: None,
         created_at: 0.0,
     };
     {
@@ -345,7 +346,7 @@ async fn claude_code_works_in_a_worktree_asks_on_its_card_and_its_bot_hears_how_
     let scratch = setup().await;
     let app = &scratch.app;
     let mut auto_review = app.auto_review();
-    auto_review.is_enabled = false;
+    auto_review.mode = ReviewMode::Default;
     app.set_auto_review(auto_review);
     let tool = tool(&scratch);
     let row = start_row(app, "call-1");
@@ -428,7 +429,7 @@ async fn an_unattended_agent_is_told_at_once_instead_of_asking_nobody() {
     let scratch = setup().await;
     let app = &scratch.app;
     let mut auto_review = app.auto_review();
-    auto_review.is_enabled = false;
+    auto_review.mode = ReviewMode::Default;
     app.set_auto_review(auto_review);
     let mut record = record(scratch.repo.clone());
     record.unattended = true;
@@ -443,7 +444,7 @@ async fn a_restart_keeps_the_handle_and_a_follow_up_resumes_the_session() {
     let scratch = setup().await;
     let app = &scratch.app;
     let mut auto_review = app.auto_review();
-    auto_review.is_enabled = false;
+    auto_review.mode = ReviewMode::Default;
     app.set_auto_review(auto_review);
     let tool = tool(&scratch);
     let row = start_row(app, "call-1");
@@ -493,7 +494,7 @@ async fn an_agent_asking_when_lorca_quits_is_cut_off_and_the_bot_hears_it() {
     let scratch = setup().await;
     let app = &scratch.app;
     let mut auto_review = app.auto_review();
-    auto_review.is_enabled = false;
+    auto_review.mode = ReviewMode::Default;
     app.set_auto_review(auto_review);
     let tool = tool(&scratch);
     let row = start_row(app, "call-1");
@@ -523,7 +524,7 @@ async fn an_agent_that_was_done_when_lorca_quit_leaves_the_bot_nothing_to_hear()
     let scratch = setup().await;
     let app = &scratch.app;
     let mut auto_review = app.auto_review();
-    auto_review.is_enabled = false;
+    auto_review.mode = ReviewMode::Default;
     app.set_auto_review(auto_review);
     let tool = tool(&scratch);
     let row = start_row(app, "call-1");
@@ -659,7 +660,7 @@ async fn a_bot_cannot_answer_a_question_in_a_conversation_the_user_drives() {
     let scratch = setup().await;
     let app = &scratch.app;
     let mut auto_review = app.auto_review();
-    auto_review.is_enabled = false;
+    auto_review.mode = ReviewMode::Default;
     app.set_auto_review(auto_review);
     let tool = tool(&scratch);
     let row = start_row(app, "call-1");
@@ -694,7 +695,7 @@ async fn a_bot_cannot_answer_a_question_in_a_conversation_the_user_drives() {
 async fn a_bot_without_shell_access_lets_its_agent_run_nothing() {
     let scratch = setup().await;
     let app = &scratch.app;
-    let policy = serde_json::from_value(json!({ "shell": false })).unwrap();
+    let policy = serde_json::from_value(json!({ "tools": {"shell": {"enabled": false}} })).unwrap();
     app.update_bot("b1", |bot| bot.permissions = Some(policy)).unwrap();
     let agent = Agent::new(record(scratch.repo.clone()));
     let refused = approve(app, &agent, Approval::Command { command: "ls".into() }).await.unwrap_err();
@@ -706,7 +707,7 @@ async fn a_saved_secret_reaches_only_the_environment_the_bot_names_it_for() {
     let scratch = setup().await;
     let app = &scratch.app;
     let mut auto_review = app.auto_review();
-    auto_review.is_enabled = false;
+    auto_review.mode = ReviewMode::Default;
     app.set_auto_review(auto_review);
     let value = "npm_s3cr3t_value_42";
     let ask = crate::model::SecretAsk { target: crate::secrets::COMMAND.into(), site: None, fields: vec![crate::model::SecretField { name: "NPM_TOKEN".into(), label: "npm token".into() }] };
@@ -818,7 +819,7 @@ async fn an_agent_over_acp_asks_on_its_card_takes_messages_in_turn_and_resumes_i
     let scratch = setup().await;
     let app = &scratch.app;
     let mut auto_review = app.auto_review();
-    auto_review.is_enabled = false;
+    auto_review.mode = ReviewMode::Default;
     app.set_auto_review(auto_review);
     let tool = tool(&scratch);
     let row = start_row(app, "call-1");
@@ -884,7 +885,7 @@ async fn the_user_writes_to_an_agent_on_its_page_and_neither_the_chat_nor_the_bo
     let scratch = setup().await;
     let app = &scratch.app;
     let mut auto_review = app.auto_review();
-    auto_review.is_enabled = false;
+    auto_review.mode = ReviewMode::Default;
     app.set_auto_review(auto_review);
     let tool = tool(&scratch);
     let row = start_row(app, "call-1");
@@ -930,7 +931,7 @@ async fn an_image_from_the_page_reaches_an_agent_that_takes_images_and_no_other(
     let scratch = setup().await;
     let app = &scratch.app;
     let mut auto_review = app.auto_review();
-    auto_review.is_enabled = false;
+    auto_review.mode = ReviewMode::Default;
     app.set_auto_review(auto_review);
     let tool = tool(&scratch);
     // A 1×1 PNG, kept as the chat's files keep one.
@@ -985,7 +986,7 @@ async fn a_message_from_the_page_waits_for_the_turn_under_way() {
     let scratch = setup().await;
     let app = &scratch.app;
     let mut auto_review = app.auto_review();
-    auto_review.is_enabled = false;
+    auto_review.mode = ReviewMode::Default;
     app.set_auto_review(auto_review);
     let tool = tool(&scratch);
     let row = start_row(app, "call-1");
@@ -1006,7 +1007,7 @@ async fn an_acp_agent_refused_a_command_goes_on_and_one_that_says_nothing_is_not
     let scratch = setup().await;
     let app = &scratch.app;
     let mut auto_review = app.auto_review();
-    auto_review.is_enabled = false;
+    auto_review.mode = ReviewMode::Default;
     app.set_auto_review(auto_review);
     let tool = tool(&scratch);
     let row = start_row(app, "call-1");
@@ -1060,7 +1061,7 @@ async fn a_turn_the_user_drove_that_fails_still_tells_the_bot() {
     let scratch = setup().await;
     let app = &scratch.app;
     let mut auto_review = app.auto_review();
-    auto_review.is_enabled = false;
+    auto_review.mode = ReviewMode::Default;
     app.set_auto_review(auto_review);
     let tool = tool(&scratch);
     let row = start_row(app, "call-1");
@@ -1102,7 +1103,7 @@ async fn an_acp_agent_that_cannot_start_tells_the_bot_why() {
 async fn asking_agent(scratch: &Scratch, row: &str) -> (Arc<Agent>, String) {
     let app = &scratch.app;
     let mut auto_review = app.auto_review();
-    auto_review.is_enabled = false;
+    auto_review.mode = ReviewMode::Default;
     app.set_auto_review(auto_review);
     call(&unattended_tool(scratch), "call-1", json!({ "action": "start", "agent": "claude", "prompt": "Pick a database (ask)" })).await.unwrap();
     let card = card_when(app, row, |card| card.asking.is_some()).await;
@@ -1239,7 +1240,7 @@ async fn the_bot_may_start_an_agent_in_plan_mode_on_a_model_and_with_an_effort()
     let scratch = setup().await;
     let app = &scratch.app;
     let mut auto_review = app.auto_review();
-    auto_review.is_enabled = false;
+    auto_review.mode = ReviewMode::Default;
     app.set_auto_review(auto_review);
     let tool = tool(&scratch);
     let row = start_row(app, "call-1");
@@ -1265,7 +1266,7 @@ async fn the_model_and_effort_of_a_running_agent_change_without_starting_another
     let scratch = setup().await;
     let app = &scratch.app;
     let mut auto_review = app.auto_review();
-    auto_review.is_enabled = false;
+    auto_review.mode = ReviewMode::Default;
     app.set_auto_review(auto_review);
     let tool = tool(&scratch);
     let row = start_row(app, "call-1");
@@ -1329,7 +1330,7 @@ async fn the_apps_get_the_transcript_as_entries_with_a_commands_terminal_output(
     let scratch = setup().await;
     let app = &scratch.app;
     let mut auto_review = app.auto_review();
-    auto_review.is_enabled = false;
+    auto_review.mode = ReviewMode::Default;
     app.set_auto_review(auto_review);
     let row = start_row(app, "call-1");
     call(&tool(&scratch), "call-1", json!({ "action": "start", "agent": "claude", "prompt": "Run the tests (term)" })).await.unwrap();

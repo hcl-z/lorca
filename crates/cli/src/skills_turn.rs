@@ -66,7 +66,11 @@ pub fn note(app: &App, bot: &Bot, chat_id: &str) -> Option<String> {
     });
     // ego (lite)'s skill is listed when ego is the browser the turn uses.
     let ego = crate::browser::skill_offered(app, bot);
-    let found: Vec<Found> = scopes.iter().flat_map(|scope| skills::list_scope(app, scope)).filter(|skill| skill.name != crate::browser::EGO_SKILL || ego).collect();
+    let found: Vec<Found> = scopes
+        .iter()
+        .flat_map(|scope| skills::list_visible(app, bot, scope))
+        .filter(|skill| skill.name != crate::browser::EGO_SKILL || ego)
+        .collect();
     if found.is_empty() {
         return None;
     }

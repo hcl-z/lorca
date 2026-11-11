@@ -190,15 +190,10 @@ func TestSettingsReviewsWith(t *testing.T) {
 	if got := store.AutoReview; got.Provider != "anthropic" || got.Models["anthropic"] != "claude-opus-5" || len(got.Rules) != 2 {
 		t.Fatalf("after the provider: %+v", got)
 	}
-	// The switch keeps the provider.
-	r, ok := tt.Find(autoReviewSwitchEntry().row)
-	if !ok {
-		t.Fatal("no switch row")
-	}
-	tt.ClickAt(r.X+r.W-25, r.Y+r.H/2)
-	settle(tt)
-	if got := store.AutoReview; got.IsEnabled || got.Provider != "anthropic" {
-		t.Errorf("after the switch: %+v", got)
+	// The Runner's mode is the default a new bot starts on; each bot keeps its own, set beside
+	// its message box.
+	if !tt.HasText(L("Each bot's review mode is set beside its message box. A new bot starts on %@.", store.AutoReview.Mode.Title())) {
+		t.Errorf("no mode note: %q", tt.Texts())
 	}
 	// A provider no longer connected reads as the bot's own.
 	store.Credential("anthropic").IsConnected = false

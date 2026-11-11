@@ -15,16 +15,9 @@ func (s settingsPane) autoReview(c *ui.Context) {
 	review := store.AutoReview
 	s.frame(c, string(model.PaneAutoReview), func() {
 		s.section(c, L("Auto-review"), nil, func(k *card) {
-			label := autoReviewSwitchEntry().row
-			s.mark(c, accessoryRow(c, k, label, "", func() {
-				on := review.IsEnabled
-				if settingsSwitch(c, &on, label, false) {
-					next := store.AutoReview
-					next.IsEnabled = on
-					store.SetAutoReview(next)
-				}
-			}), label)
-			noteRow(c, k, L("Lorca checks each action before it runs and asks you first when needed. Add rules to customize what bots can do automatically."), nil)
+			// The Runner's mode is the default a bot starts on: each bot keeps its own, changed
+			// from the button beside its composer. The rules here apply to every bot.
+			noteRow(c, k, L("Each bot's review mode is set beside its message box. A new bot starts on %@.", store.AutoReview.Mode.Title()), nil)
 		})
 		s.reviewsWith(c, review)
 		addRule := func() {
@@ -166,4 +159,13 @@ func settingsSaveRule(rule *model.AutoReviewRule, text, behavior string) {
 	}
 	next.Rules = rules
 	store.SetAutoReview(next)
+}
+
+// reviewModeTabs are the four modes as the settings' control shows them: an icon and its words.
+func reviewModeTabs() []iconTab {
+	tabs := make([]iconTab, 0, len(model.ReviewModes))
+	for _, mode := range model.ReviewModes {
+		tabs = append(tabs, iconTab{Symbol: mode.Symbol(), Title: mode.Title()})
+	}
+	return tabs
 }

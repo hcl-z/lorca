@@ -9,17 +9,17 @@ import (
 func TestPermissionsWireKeepsFullAndEmptyGrantsApart(t *testing.T) {
 	base := `{"id":"b","name":"Inbox","provider":"deepseek","created_at":1,"permissions":%s}`
 	full := ToBot(decodeJSON[WireBot](t, sprintf(base, `{}`))).Permissions
-	if full == nil || full.Connections != nil || !full.Shell || full.Filesystem != AccessWrite || full.Level("github") != AccessWrite || full.Summary() != L("Full access") {
+	if full == nil || full.Connections != nil || !full.Tools.Shell.Enabled || full.Level("github") != AccessOn || full.Summary() != L("Full access") {
 		t.Fatalf("full policy: %+v", full)
 	}
-	none := ToBot(decodeJSON[WireBot](t, sprintf(base, `{"connections":{},"filesystem":"none","shell":false}`))).Permissions
+	none := ToBot(decodeJSON[WireBot](t, sprintf(base, `{"connections":{},"tools":{"shell":{"enabled":false},"read":{"enabled":false},"write":{"enabled":false}}}`))).Permissions
 	data, err := json.Marshal(none)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var wire map[string]any
 	_ = json.Unmarshal(data, &wire)
-	if !reflect.DeepEqual(wire["connections"], map[string]any{}) || wire["shell"] != false || wire["filesystem"] != "none" {
+	if !reflect.DeepEqual(wire["connections"], map[string]any{}) || wire["tools"].(map[string]any)["shell"].(map[string]any)["enabled"] != false {
 		t.Fatalf("empty grant widened: %s", data)
 	}
 	if none.Level("github") != AccessNone || none.Summary() != L("Limited") {
@@ -29,18 +29,27 @@ func TestPermissionsWireKeepsFullAndEmptyGrantsApart(t *testing.T) {
 		t.Fatal("a bot with no policy should have none")
 	}
 	copy := none.Clone()
-	(*copy.Connections)["work"] = ConnectionPermissions{Capabilities: []string{"read"}}
+	(*copy.Connections)["work"] = ConnectionPermissions{Enabled: true}
 	if len(*none.Connections) != 0 {
 		t.Fatal("a clone shares its grants")
 	}
 }
 
-func TestLevelsTakeInTheOnesBelowThem(t *testing.T) {
-	if LevelOf([]string{"read", "draft"}) != AccessDraft || LevelOf(nil) != AccessNone {
-		t.Fatal("level of capabilities")
+func TestSwitchesAreOnAskOrOff(t *testing.T) {
+	if ToolOn.Level() != AccessOn || ToolAsks.Level() != AccessAsk || ToolOff.Level() != AccessNone {
+		t.Fatal("a switch's three states")
 	}
-	if !AccessDraft.Allows("read") || AccessDraft.Allows("write") || !reflect.DeepEqual(AccessWrite.Capabilities(), []string{"read", "draft", "write"}) {
-		t.Fatal("levels")
+	if AccessAsk.Permission() != ToolAsks || !AccessAsk.Permission().Enabled || !AccessAsk.Permission().Ask {
+		t.Fatal("asking is on, and asks")
+	}
+	// A tool with no switch of its own takes the plugin's.
+	grant := ConnectionPermissions{Enabled: true}
+	if grant.Tool("any").Level() != AccessOn {
+		t.Fatal("an unlisted tool takes its plugin's switch")
+	}
+	pluginOff := ConnectionPermissions{Enabled: false, Tools: map[string]ToolPermission{"kept": ToolOn}}
+	if pluginOff.Tool("other").Level() != AccessNone || pluginOff.Tool("kept").Level() != AccessOn {
+		t.Fatal("a tool's own switch decides over a plugin that is off")
 	}
 }
 
@@ -64,8 +73,11 @@ func TestAccessRequestOnlyOpensAccessOrIsDismissed(t *testing.T) {
 
 func TestMockWriterAccessMatchesTheCatalog(t *testing.T) {
 	access := mockWriterAccess()
-	if access.Level("github") != AccessDraft || access.Level("linear") != AccessNone || access.Shell {
+	if access.Level("github") != AccessOn || access.Level("linear") != AccessNone || access.Tools.Shell.Enabled {
 		t.Fatalf("writer access: %+v", access)
+	}
+	if access.ToolLevel("github", "create_pull_request_review") != AccessAsk {
+		t.Fatal("reviewing a pull request asks first")
 	}
 	if len(MockAccessCatalog().Connections) != 5 {
 		t.Fatal("the catalog lists Workbench's enabled plugins")

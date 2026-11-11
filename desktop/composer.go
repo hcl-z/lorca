@@ -43,6 +43,8 @@ type composerEdit struct {
 type composerState struct {
 	draft       string
 	attachments []model.OutgoingAttachment
+	// menu is the drawer the + opens: files, the review mode, and compacting the chat.
+	menu bool
 	// picked are the bots chosen from the `@` menu, which count while their `@Name` is in the text.
 	picked []string
 	reply  *composerReply
@@ -396,12 +398,7 @@ func (m *mainWindow) composerView(c *ui.Context, chat *model.Chat, members []*mo
 			}
 			attach.Children(func() { symbol(c, "plus", 17, 2) })
 			if attach.Clicked() {
-				chooseFiles(m.win, "", L("Attach files to your message"), L("Attach"), true, false, func(files []fileInfo) {
-					if len(files) > 0 {
-						m.addFiles(s, files, nil)
-					}
-					s.focus = true
-				})
+				s.menu = !s.menu
 			}
 			holder := ui.Box(c.Key("text")).RowStart(textRow).MinWidth(0)
 			if expanded {
@@ -535,6 +532,9 @@ func (m *mainWindow) composerView(c *ui.Context, chat *model.Chat, members []*mo
 	if len(mentions) > 0 {
 		m.mentionPanel(c, field, mentions, s, insertMention)
 	}
+	if s.menu {
+		m.composerMenu(c, field, chat, members, s)
+	}
 	return outer
 }
 
@@ -666,4 +666,92 @@ func (s *composerState) cancelEdit() {
 		s.draft, s.attachments, s.caret = edit.draft, edit.attachments, len([]rune(edit.draft))
 	}
 	s.editing, s.editError, s.focus = nil, "", true
+}
+
+// composerMenu is the drawer the + opens, above the composer. It is chrome, not content: small
+// type, one accent, and rows that line up. A press outside it or Escape closes it.
+func (m *mainWindow) composerMenu(c *ui.Context, field ui.Element, chat *model.Chat, members []*model.Bot, s *composerState) {
+	p := colors(c)
+	bot := reviewBot(chat, members)
+	mode := model.ReviewDefault
+	if bot != nil {
+		mode = store.BotReviewMode(bot.ID)
+	}
+	// One column layout for every row: symbol, label, then what it does. The label column is
+	// fixed, so the descriptions start on one line and the eye reads down, not across.
+	item := func(key, symbolName, title, detail string, action func()) {
+		row := ui.Row(c.Key(key)).Height(32).Gap(9).Padding(0, 8).Radius(radiusSM).Cursor(ui.CursorPointer).Label(title)
+		if row.Hovered() {
+			row.Background(p.Hover)
+		}
+		row.Children(func() {
+			ui.Box(c).Size(15, 15).Shrink(0).Center().TextColor(p.Label2).Children(func() { symbol(c, symbolName, 12.5, 2) })
+			ui.Text(c, title).Shrink(0).FontSize(12).TextColor(p.Label).SingleLine()
+			ui.Box(c).Grow(1).Shrink(1).MinWidth(0)
+			ui.Text(c, detail).Shrink(0).FontSize(11).TextColor(p.Label3).SingleLine()
+		})
+		if row.Clicked() {
+			action()
+		}
+	}
+	heading := func(text string) {
+		ui.Text(c, text).FontSize(10.5).FontWeight(590).TextColor(p.Label3).Padding(7, 8, 2, 8)
+	}
+	ui.PopoverBase(c, field, &s.menu, func(panel ui.Element) {
+		width := field.Bounds().W
+		if width < 420 {
+			width = 420
+		}
+		panel.Width(width).Padding(5).Radius(radiusXL).Background(p.Popover).
+			Shadow(0, 12, 36, 0, ui.RGBA(0, 0, 0, 0.14)).Border(0.5, p.ShadowEdge).
+			AttachTo(field, ui.AnchorTopLeft, ui.AnchorBottomLeft).Margin(-10, 0, 0, 0)
+		heading(L("Add"))
+		item("files", "paperclip", L("Files"), L("Attach a file to your message"), func() {
+			s.menu = false
+			chooseFiles(m.win, "", L("Attach files to your message"), L("Attach"), true, false, func(files []fileInfo) {
+				if len(files) > 0 {
+					m.addFiles(s, files, nil)
+				}
+				s.focus = true
+			})
+		})
+		heading(L("Instructions"))
+		item("review-mode", mode.Symbol(), L("Permission"), mode.Title(), func() {
+			if bot != nil {
+				store.SetBotReviewMode(bot.ID, nextReviewMode(mode))
+			}
+		})
+		item("compact", "circle.bottomhalf.filled", L("Compact"), L("Summarize older messages"), func() {
+			s.menu = false
+			store.CompactChat(chat.ID, func(err error) {
+				if err != nil {
+					m.showAlert(alertOptions{Message: L("Couldn't compact the chat"), Informative: model.ErrorText(err)}, nil)
+				}
+			})
+		})
+	})
+}
+
+// reviewBot is the bot whose review mode the drawer shows: the DM's bot, else the group's owner,
+// else its first member.
+func reviewBot(chat *model.Chat, members []*model.Bot) *model.Bot {
+	if chat.IsDM() {
+		if bot := store.Bot(chat.BotIDs[0]); bot != nil {
+			return bot
+		}
+	}
+	if owner := chat.OwnerBotID; owner != "" {
+		if bot := store.Bot(owner); bot != nil {
+			return bot
+		}
+	}
+	if len(members) > 0 {
+		return members[0]
+	}
+	return nil
+}
+
+// nextReviewMode is the mode one press moves to, in the order the settings list them.
+func nextReviewMode(mode model.ReviewMode) model.ReviewMode {
+	return model.ReviewModes[(slices.Index(model.ReviewModes, mode)+1)%len(model.ReviewModes)]
 }

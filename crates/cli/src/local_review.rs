@@ -53,12 +53,13 @@ pub async fn before_tool_call(
     }
     // A command given saved secrets is always reviewed, knowing which: it holds credentials.
     let secrets = crate::secrets::named_in(ctx.args);
-    if app.auto_review().is_enabled
-        && secrets.is_empty()
-        && needs_no_review(app, command, &workdir)
-    {
+    // A command the parser proves harmless runs in every mode; a tool the user set to ask still
+    // asks, below.
+    if secrets.is_empty() && needs_no_review(app, command, &workdir) {
         return None;
     }
+    // A tool the user set to ask asks here, before any review.
+    let asking = crate::permissions::tool_asks(app, bot, "bash");
     let runner_id = app.this_device_id().unwrap_or_else(|| bot.runner_id.clone());
     let runner_name = app.device(&runner_id).map(|device| device.name).unwrap_or_else(|| "this Runner".into());
     let mut description = format!(
@@ -90,24 +91,29 @@ pub async fn before_tool_call(
     // A command from a codemode script comes with the script, which says what the batch is for.
     let script = ctx.parent.filter(|parent| parent.name == CODEMODE_TOOL_NAME).and_then(|parent| parent.arguments["code"].as_str());
     let facts = facts(app, command, &workdir).await;
-    let action = Action { target_name: &runner_name, tool: "bash", description: &description, args: &args, script, facts: &facts, propose_rule: true };
-    let (reason, rule) = match review::review(app, bot, chat_id, trigger, action, ctx.cancel).await {
-        Outcome::Allow => {
-            update(&|run| run.state = "running".into());
-            return None;
+    let action = Action { target_name: &runner_name, tool: "bash", description: &description, args: &args, script, facts: &facts, propose_rule: !asking };
+    let (reason, rule) = if asking {
+        // The user set this tool to ask: no model's verdict and no Allow rule can clear it.
+        (None, None)
+    } else {
+        match review::review(app, bot, chat_id, trigger, action, ctx.cancel).await {
+            Outcome::Allow => {
+                update(&|run| run.state = "running".into());
+                return None;
+            }
+            // The bot reads why and finds another way, or asks the user in the chat.
+            Outcome::Held { reason, note, .. } if !unattended => {
+                update(&|run| {
+                    run.state = "denied".into();
+                    run.held = true;
+                    run.reason = Some(reason.clone());
+                    run.outcome = Some("Held by Auto-review".into());
+                });
+                return Some(blocked(note));
+            }
+            Outcome::Held { reason, rule, .. } => (Some(reason), rule),
+            Outcome::Ask { reason, rule } => (reason, rule),
         }
-        // The bot reads why and finds another way, or asks the user in the chat.
-        Outcome::Held { reason, note, .. } if !unattended => {
-            update(&|run| {
-                run.state = "denied".into();
-                run.held = true;
-                run.reason = Some(reason.clone());
-                run.outcome = Some("Held by Auto-review".into());
-            });
-            return Some(blocked(note));
-        }
-        Outcome::Held { reason, rule, .. } => (Some(reason), rule),
-        Outcome::Ask { reason, rule } => (reason, rule),
     };
     if unattended {
         let staged = crate::review_execution::stage_call(app, bot, chat_id, trigger, &ctx.tool_call.id,
@@ -131,7 +137,7 @@ pub async fn before_tool_call(
 
     let always_rule = rule.map(|text| AutoReviewRule { id: uuid::Uuid::new_v4().to_string(), text, behavior: "allow".into(), tool: None });
     let decision = match &card {
-        Some(message_id) => ask_on_card(app, chat_id, message_id, reason, always_rule, ctx.cancel).await,
+        Some(message_id) => ask_on_card(app, chat_id, message_id, &bot.id, reason, always_rule, ctx.cancel).await,
         None => {
             mcp::ask_with_rule(app, chat_id, &bot.id, LOCAL_TARGET_ID, &runner_name, "bash", &command_summary(command), ctx.args.clone(), reason, always_rule, ctx.cancel)
                 .await
@@ -154,12 +160,13 @@ async fn ask_on_card(
     app: &Arc<App>,
     chat_id: &str,
     message_id: &str,
+    bot_id: &str,
     reason: Option<String>,
     always_rule: Option<AutoReviewRule>,
     cancel: &tokio_util::sync::CancellationToken,
 ) -> Decision {
     let rule = always_rule.as_ref().map(|rule| rule.text.clone());
-    let decision = mcp::await_answer(app, chat_id, message_id, always_rule, cancel, || {
+    let decision = mcp::await_answer(app, chat_id, message_id, bot_id, always_rule, cancel, || {
         app.shell_sessions.update_card(app, chat_id, message_id, |run| {
             run.state = "asking".into();
             run.reason = reason;
@@ -1596,7 +1603,7 @@ mod tests {
         let app = App::load(crate::config::Config { home: home.clone(), port: 0 }).unwrap();
         let bot = Bot {
             id: "bot".into(), name: "Bot".into(), description: String::new(), symbol_name: String::new(), accent: String::new(), avatar: None,
-            runner_id: "runner".into(), provider: "deepseek".into(), model: None, thinking: None, legacy_instructions: String::new(), setting_up: false, workdir: Some(work.display().to_string()), permissions: None, created_at: 0.0,
+            runner_id: "runner".into(), provider: "deepseek".into(), model: None, thinking: None, legacy_instructions: String::new(), setting_up: false, workdir: Some(work.display().to_string()), permissions: None, auto_review: None, created_at: 0.0,
         };
         let assistant = AssistantMessage::empty("test", "test");
         let context = AgentContext { system_prompt: String::new(), messages: Vec::new(), tools: Vec::new(), cache_points: Vec::new() };
@@ -1615,17 +1622,23 @@ mod tests {
         assert!(before_tool_call(&app, "chat", &Trigger::default(), &bot, &own_workspace, true, ctx).await.is_none());
 
         // With no provider connected the review cannot run, so the command asks, and nobody is there.
+        let mut review = app.auto_review();
+        review.mode = crate::model::ReviewMode::Auto;
+        app.set_auto_review(review);
         let ctx = BeforeToolCallContext { assistant_message: &assistant, tool_call: &call, args: &args, context: &context, cancel: &cancel, parent: None };
         let blocked = before_tool_call(&app, "chat", &Trigger::default(), &bot, &work, true, ctx).await.unwrap();
         assert!(blocked.block);
         assert!(blocked.reason.as_deref().is_some_and(|reason| reason.contains("could not check")), "{:?}", blocked.reason);
 
-        let mut review = app.auto_review();
-        review.is_enabled = false;
-        app.set_auto_review(review);
+        // A bot whose shell asks first: the card goes up before any review.
+        app.update_bot("Bot", |bot| bot.permissions = Some(crate::permissions::BotPermissions {
+            tools: crate::permissions::LocalPermissions { shell: crate::permissions::ToolPermission::ASK, ..Default::default() },
+            ..Default::default()
+        }))
+        .ok();
         let ctx = BeforeToolCallContext { assistant_message: &assistant, tool_call: &call, args: &args, context: &context, cancel: &cancel, parent: None };
         let blocked = before_tool_call(&app, "chat", &Trigger::default(), &bot, &work, true, ctx).await.unwrap();
-        assert!(blocked.reason.as_deref().is_some_and(|reason| reason.contains("Auto-review is off")), "{:?}", blocked.reason);
+        assert!(blocked.reason.as_deref().is_some_and(|reason| reason.contains("needs the user's permission")), "{:?}", blocked.reason);
         let _ = std::fs::remove_dir_all(scratch);
     }
 
@@ -1646,9 +1659,12 @@ mod tests {
         }))
         .unwrap();
         app.state.lock().unwrap().chats.push(serde_json::from_value(serde_json::json!({ "id": "chat", "kind": "dm", "bot_ids": ["bot"], "created_at": 0.0 })).unwrap());
-        let mut review = app.auto_review();
-        review.is_enabled = false;
-        app.set_auto_review(review);
+        // Its shell tool asks first.
+        app.update_bot("bot", |bot| bot.permissions = Some(crate::permissions::BotPermissions {
+            tools: crate::permissions::LocalPermissions { shell: crate::permissions::ToolPermission::ASK, ..Default::default() },
+            ..Default::default()
+        }))
+        .ok();
 
         let assistant = AssistantMessage::empty("test", "test");
         let context = AgentContext { system_prompt: String::new(), messages: Vec::new(), tools: Vec::new(), cache_points: Vec::new() };

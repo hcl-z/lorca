@@ -802,7 +802,10 @@ type Bot struct {
 	// place of the symbol and accent once this computer has the bytes.
 	Avatar      *Attachment
 	Permissions *BotPermissions
-	CreatedAt   time.Time
+	// AutoReview is this bot's own mode and rules, beside the Runner's global ones. A review reads
+	// both, and its mode wins when it has one; nil follows the global mode and adds no rules.
+	AutoReview *AutoReview
+	CreatedAt  time.Time
 }
 
 // MARK: - Auto-review
@@ -824,12 +827,63 @@ func BehaviorTitle(behavior string) string {
 	return L("Ask first")
 }
 
+// ReviewMode is how much Auto-review checks before an action that may have effects. Default lets
+// the bot's Access decide and asks no model; Auto adds the review model; Ask asks about every
+// effect; Open checks nothing.
+type ReviewMode string
+
+const (
+	ReviewDefault ReviewMode = "default"
+	ReviewAuto    ReviewMode = "auto"
+
+	ReviewOpen ReviewMode = "open"
+)
+
+// ReviewModes are the modes, the least cautious first, as the settings show them.
+var ReviewModes = []ReviewMode{ReviewDefault, ReviewAuto, ReviewOpen}
+
+// Title is what the settings call a mode.
+func (m ReviewMode) Title() string {
+	switch m {
+	case ReviewAuto:
+		return L("Automatic")
+	case ReviewOpen:
+		return L("Off")
+	}
+	return L("By Access")
+}
+
+// Symbol is the mode's icon in the settings' control.
+func (m ReviewMode) Symbol() string {
+	switch m {
+	case ReviewAuto:
+		return "checkmark.shield"
+	case ReviewOpen:
+		return "shield.slash"
+	}
+	return "slider.horizontal.3"
+}
+
+// Note is what a mode does, as the settings say under it.
+func (m ReviewMode) Note() string {
+	switch m {
+	case ReviewAuto:
+		return L("The bot's Access decides first, then a review model judges what it allows and does not ask about, so routine work runs and risky work is held or asks.")
+	case ReviewOpen:
+		return L("Nothing is checked: every tool this bot may use runs at once. A tool set to ask still asks.")
+	}
+	return L("This bot's Access decides: a tool that is on runs, one set to ask asks, and no model is consulted.")
+}
+
+// Reviews is whether a model judges an action at all.
+func (m ReviewMode) Reviews() bool { return m == ReviewAuto }
+
 // AutoReview is the check on effectful plugin actions and shell commands, shared by every Device
-// through the roster: on, a model asks only when needed; off, each one asks. The model is the
-// review model of the picked provider, else of the bot's provider.
+// through the roster: the user's mode, the rules, and the provider whose review model judges. The
+// model is the reviewed provider's, else the bot's provider's.
 type AutoReview struct {
-	IsEnabled bool
-	Rules     []AutoReviewRule
+	Mode  ReviewMode
+	Rules []AutoReviewRule
 	// Provider is the provider that reviews; empty for the bot's own.
 	Provider ProviderKind
 	// Models are the review models the user picked, by provider; a provider without one reviews

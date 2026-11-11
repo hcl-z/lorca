@@ -762,10 +762,23 @@ pub fn uninstall(app: &Arc<App>, id: &str) -> Result<(), String> {
         let _ = std::fs::remove_dir_all(&dir);
     }
     let prefix = format!("{id}/");
-    let mut auto_review = app.auto_review();
-    if auto_review.rules.iter().any(|r| r.tool.as_deref().is_some_and(|t| t.starts_with(&prefix))) {
-        auto_review.rules.retain(|r| !r.tool.as_deref().is_some_and(|t| t.starts_with(&prefix)));
-        app.set_auto_review(auto_review);
+    // A rule for one of the removed plugin's tools goes from the Runner's rules and from every
+    // bot's own, since nothing it named is left to review.
+    let names_removed = |r: &crate::model::AutoReviewRule| r.tool.as_deref().is_some_and(|t| t.starts_with(&prefix));
+    let mut global = app.auto_review();
+    let global_changed = global.rules.iter().any(names_removed);
+    if global_changed {
+        global.rules.retain(|r| !names_removed(r));
+        app.set_auto_review(global);
+    }
+    let bots_with_rules: Vec<String> = app.state.lock().unwrap().bots.iter().filter(|bot| bot.auto_review.as_ref().is_some_and(|own| own.rules.iter().any(names_removed))).map(|bot| bot.id.clone()).collect();
+    for bot_id in bots_with_rules {
+        let mut own = app.bot(&bot_id).and_then(|bot| bot.auto_review);
+        if let Some(own) = own.as_mut() {
+            own.rules.retain(|r| !names_removed(r));
+            let rules_empty = own.rules.is_empty() && own.mode == crate::model::ReviewMode::Default;
+            app.set_bot_auto_review(&bot_id, (!rules_empty).then_some(own.clone()));
+        }
     }
     crate::workflows::plugin_removed(app, id);
     announce(app);

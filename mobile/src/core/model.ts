@@ -159,15 +159,38 @@ export interface Bot {
   workdir?: string;
   /** The user's Access for it (`src/core/access.ts`); none is full access. */
   permissions?: BotPermissions;
+  /** Its own Auto-review, beside the Runner's global one; none follows the global mode. */
+  auto_review?: AutoReview;
   created_at: number;
 }
 
-/// A bot's Access, as the CLI keeps it in the encrypted roster: without `connections` every plugin
-/// on the Runner, else only those it lists; files `write` and shell on unless they say otherwise.
+/// One switch in a bot's Access: on or off, and whether an on tool asks first. A tool that asks
+/// runs only when the user answers its card, whatever Auto-review or an allow rule says.
+export interface ToolPermission {
+  enabled: boolean;
+  ask?: boolean;
+}
+
+/// The bot's own tools, each switched like a plugin's.
+export interface LocalPermissions {
+  shell?: ToolPermission;
+  read?: ToolPermission;
+  write?: ToolPermission;
+}
+
+/// The skills a bot sees: exceptions over the default, which leaves a bot's own and a group's off
+/// and the shared ones on. A skill Lorca ships always shows.
+export interface SkillPermissions {
+  enabled?: string[];
+  disabled?: string[];
+}
+
+/// A bot's Access, as the CLI keeps it in the encrypted roster: a plugin a policy's map leaves out
+/// is off, and without the map every plugin on the Runner is on (a bot made before the switches).
 export interface BotPermissions {
-  connections?: Record<string, { capabilities: string[]; tools?: string[] }>;
-  filesystem?: "none" | "read" | "write";
-  shell?: boolean;
+  connections?: Record<string, { enabled: boolean; tools?: Record<string, ToolPermission> }>;
+  tools?: LocalPermissions;
+  skills?: SkillPermissions;
   /** Whether the bot's emails and Slack messages wait in the chat as drafts for the user to send; on unless false. */
   drafts?: boolean;
 }
@@ -566,7 +589,18 @@ export type AutoReviewRule = { id: string; text: string; behavior: "allow" | "as
 /// the review model of `provider`, any provider the account has connected, or without one of the
 /// bot's own provider. `models` holds the review models the user picked, by provider kind; any
 /// other provider runs its status's `review_model`.
-export type AutoReview = { is_enabled: boolean; rules: AutoReviewRule[]; provider?: string; models?: Record<string, string> };
+/// How much Auto-review checks before an effectful action: the bot's Access alone (default), a
+/// model too (auto), or nothing (open). A tool set to ask still asks, in every mode.
+export type ReviewMode = "default" | "auto" | "open";
+
+export const REVIEW_MODES: ReviewMode[] = ["default", "auto", "open"];
+
+/// One press moves to the next mode, in the order the settings list them.
+export function nextReviewMode(mode: ReviewMode): ReviewMode {
+  return REVIEW_MODES[(REVIEW_MODES.indexOf(mode) + 1) % REVIEW_MODES.length];
+}
+
+export type AutoReview = { mode?: ReviewMode; rules: AutoReviewRule[]; provider?: string; models?: Record<string, string> };
 
 export type MessageState =
   | { kind: "thinking" }

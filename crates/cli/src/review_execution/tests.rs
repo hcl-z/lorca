@@ -173,7 +173,10 @@ async fn authorization_changes_after_approval_invalidate_execution() {
     let item = draft(&scratch.app).await;
     approve(&scratch.app, &item).await;
     let mut policy = scratch.app.auto_review();
-    policy.is_enabled = !policy.is_enabled;
+    policy.mode = match policy.mode {
+        crate::model::ReviewMode::Auto => crate::model::ReviewMode::Default,
+        _ => crate::model::ReviewMode::Auto,
+    };
     scratch.app.set_auto_review(policy);
     execute_approved(&scratch.app, &item.id).await.unwrap();
     let refreshed = queue::get(&scratch.app, &item.id).unwrap();
@@ -354,7 +357,7 @@ async fn a_routine_stages_a_held_call_without_a_live_permission_wait() {
         event: None,
     };
     let mut auto = scratch.app.auto_review();
-    auto.is_enabled = false;
+    auto.mode = crate::model::ReviewMode::Default;
     scratch.app.set_auto_review(auto);
     let workdir = bot.working_directory(&scratch.app.config.home);
     std::fs::create_dir_all(&workdir).unwrap();

@@ -586,7 +586,14 @@ mod tests {
         let f = Fixture::new();
         f.file(b"private notes");
         f.app.state.lock().unwrap().bots[0].permissions =
-            Some(crate::permissions::BotPermissions { filesystem: crate::permissions::FilesystemAccess::None, ..Default::default() });
+            Some(crate::permissions::BotPermissions {
+                tools: crate::permissions::LocalPermissions {
+                    read: crate::permissions::ToolPermission::OFF,
+                    write: crate::permissions::ToolPermission::OFF,
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
         let tool = PublishOutputTool { app: f.app.clone(), chat_id: f.chat.clone(), bot: f.app.bot(&f.bot).unwrap(), workdir: f.workdir.clone() };
         let run = |args: serde_json::Value| tool.execute("publish", args, tokio_util::sync::CancellationToken::new(), Arc::new(|_| {}));
         let refused = run(json!({"name":"Notes","path":"report.txt"})).await.unwrap_err();
