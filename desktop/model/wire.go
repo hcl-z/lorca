@@ -115,7 +115,9 @@ type WireBot struct {
 	Thinking    *string         `json:"thinking"`
 	Avatar      *WireAttachment `json:"avatar"`
 	Permissions *BotPermissions `json:"permissions"`
-	CreatedAt   float64         `json:"created_at"`
+	// AutoReview is the bot's own, absent when it follows the Runner's global one.
+	AutoReview *WireAutoReview `json:"auto_review"`
+	CreatedAt  float64         `json:"created_at"`
 }
 
 type WireRun struct {
@@ -422,7 +424,10 @@ type WireRoutine struct {
 }
 
 type WireAutoReview struct {
-	IsEnabled bool `json:"is_enabled"`
+	// Mode is what the user picked: default, auto, ask, or open. A roster from before it carries
+	// only IsEnabled.
+	Mode      *string `json:"mode"`
+	IsEnabled bool    `json:"is_enabled"`
 	Rules     []struct {
 		ID       string  `json:"id"`
 		Text     string  `json:"text"`
@@ -914,6 +919,10 @@ func ToBot(wire WireBot) *Bot {
 		avatar := ToAttachment(*wire.Avatar)
 		bot.Avatar = &avatar
 	}
+	if wire.AutoReview != nil {
+		own := ToAutoReview(wire.AutoReview)
+		bot.AutoReview = &own
+	}
 	return bot
 }
 
@@ -1254,9 +1263,17 @@ func ToRoutine(wire WireRoutine) *Routine {
 
 func ToAutoReview(wire *WireAutoReview) AutoReview {
 	if wire == nil {
-		return AutoReview{IsEnabled: true}
+		return AutoReview{Mode: ReviewDefault}
 	}
-	review := AutoReview{IsEnabled: wire.IsEnabled}
+	review := AutoReview{Mode: ReviewDefault}
+	// A roster from before the modes means what its switch meant: on was Auto; off asked about
+	// every effect, which is now a tool's own switch, so it reads as the default.
+	if wire.IsEnabled {
+		review.Mode = ReviewAuto
+	}
+	if mode := str(wire.Mode); mode != "" {
+		review.Mode = ReviewMode(mode)
+	}
 	if provider := str(wire.Provider); IsProviderKind(provider) {
 		review.Provider = provider
 	}

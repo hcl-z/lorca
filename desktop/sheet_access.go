@@ -7,10 +7,10 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// botAccessSheet is a bot's Access, after the Mac's BotAccessViewController: how far it may use
-// each plugin on its Runner, down to single tools, and whether it reads or changes files and runs
-// shell commands there. Only the user changes it; a chat's access request opens this sheet too.
-// The choices live here, across frames, until Save.
+// botAccessSheet is a bot's Access in one place: which plugins on its Runner it may use, each
+// plugin on or off with each of its tools on or asking first, the skills it knows, and its own
+// files and shell commands. Only the user changes it; a chat's access request opens this sheet
+// too. The choices live here, across frames, until Save.
 type botAccessSheet struct {
 	botID, botName string
 	runner         *model.Device
@@ -18,15 +18,18 @@ type botAccessSheet struct {
 	// plugins are the Runner's own list until it says what tools each one has.
 	plugins []model.AccessPlugin
 	levels  map[string]model.AccessLevel
-	// chosen holds the tools chosen for a plugin; none here is all of them, one added later
-	// included.
-	chosen     map[string][]string
-	expanded   map[string]bool
-	filesystem model.AccessLevel
-	shell      bool
-	drafts     bool
+	// tools holds each plugin's own switches, by tool name; a tool not here takes the plugin's.
+	tools    map[string]map[string]model.AccessLevel
+	expanded map[string]bool
+	drafts   bool
+	// read, write, and shell are the bot's own tools: on or off, as the Runner's permission is.
+	read, write, shell model.AccessLevel
 	// browser is the one switch for Browser, whichever browser the Runner uses.
 	browser bool
+	// skills are the ones this bot may read, each switch on or off. Lorca's own are not listed:
+	// they are how a bot reads its docs and writes one, and no switch hides them.
+	skills []model.PlaybookSummary
+	shown  map[string]bool
 	// problem is why the tools could not be listed.
 	problem string
 	closed  bool
@@ -43,9 +46,28 @@ func (w *appWindow) presentBotAccess(botID string) *botAccessSheet {
 	}
 	st := &botAccessSheet{
 		botID: botID, botName: bot.Name, runner: store.Device(bot.RunnerID), saved: saved.Clone(),
-		levels: map[string]model.AccessLevel{}, chosen: map[string][]string{}, expanded: map[string]bool{},
-		filesystem: saved.Filesystem, shell: saved.Shell, drafts: saved.Drafts,
+		levels: map[string]model.AccessLevel{}, tools: map[string]map[string]model.AccessLevel{}, expanded: map[string]bool{},
+		drafts:  saved.Drafts,
+		read:    saved.Tools.Read.Level(),
+		write:   saved.Tools.Write.Level(),
+		shell:   saved.Tools.Shell.Level(),
 		browser: saved.Level(model.BrowserPluginID) != model.AccessNone,
+		shown:   map[string]bool{},
+	}
+	// The skills a bot sees, other than Lorca's own, each with its switch where it starts.
+	var chatID string
+	if chat := selectedChat(); chat != nil {
+		chatID = chat.ID
+	}
+	scope, ok := model.SkillScope(store.Chat(chatID), []*model.Bot{bot})
+	if ok {
+		store.EnsureSkills(bot.ID, chatID)
+		st.skills = append(store.Skills(scope), store.SharedSkills()...)
+	}
+	st.skills = slices.DeleteFunc(st.skills, func(skill model.PlaybookSummary) bool { return skill.Builtin })
+	for _, skill := range st.skills {
+		key := skill.Scope.Kind + "/" + skill.ID
+		st.shown[key] = saved.ShowsSkill(skill.Scope.Kind, skill.ID, skill.Builtin)
 	}
 	// The Runner's own list first, so the sheet opens complete while it is asked for tools.
 	var listed []model.AccessPlugin
@@ -88,8 +110,12 @@ func (st *botAccessSheet) show(listed []model.AccessPlugin) {
 		}
 		st.levels[plugin.ID] = st.saved.Level(plugin.ID)
 		if st.saved.Connections != nil {
-			if tools := (*st.saved.Connections)[plugin.ID].Tools; tools != nil {
-				st.chosen[plugin.ID] = slices.Clone(*tools)
+			own := map[string]model.AccessLevel{}
+			for name, permission := range (*st.saved.Connections)[plugin.ID].Tools {
+				own[name] = permission.Level()
+			}
+			if len(own) > 0 {
+				st.tools[plugin.ID] = own
 			}
 		}
 	}
@@ -98,51 +124,77 @@ func (st *botAccessSheet) show(listed []model.AccessPlugin) {
 // toolsSummary is "All tools", or how many of them the bot may use. Nothing before the plugin
 // has connected once, or when it is off.
 func (st *botAccessSheet) toolsSummary(plugin model.AccessPlugin) string {
-	if len(plugin.Tools) == 0 || st.levels[plugin.ID] == model.AccessNone {
+	level := st.levels[plugin.ID]
+	if len(plugin.Tools) == 0 || level == model.AccessNone {
 		return ""
 	}
-	chosen, ok := st.chosen[plugin.ID]
-	if !ok {
+	on := 0
+	for _, tool := range plugin.Tools {
+		if st.toolLevel(plugin.ID, tool.Name) != model.AccessNone {
+			on++
+		}
+	}
+	if on == len(plugin.Tools) {
 		return L("All tools")
 	}
-	count := 0
-	for _, tool := range plugin.Tools {
-		if slices.Contains(chosen, tool.Name) {
-			count++
-		}
-	}
-	return L("%d of %d tools", count, len(plugin.Tools))
+	return L("%d of %d tools", on, len(plugin.Tools))
 }
 
-// toggleTool chooses or leaves out one tool. Every tool chosen is all of them.
-func (st *botAccessSheet) toggleTool(plugin model.AccessPlugin, name string, on bool) {
-	chosen, ok := st.chosen[plugin.ID]
-	if !ok {
-		for _, tool := range plugin.Tools {
-			chosen = append(chosen, tool.Name)
+// toolLevel is a tool's own switch, else the plugin's.
+func (st *botAccessSheet) toolLevel(pluginID, tool string) model.AccessLevel {
+	if own, ok := st.tools[pluginID]; ok {
+		if level, ok := own[tool]; ok {
+			return level
 		}
 	}
-	chosen = slices.DeleteFunc(slices.Clone(chosen), func(each string) bool { return each == name })
-	if on {
-		chosen = append(chosen, name)
-	}
-	for _, tool := range plugin.Tools {
-		if !slices.Contains(chosen, tool.Name) {
-			slices.Sort(chosen)
-			st.chosen[plugin.ID] = chosen
-			return
+	return st.levels[pluginID]
+}
+
+// setTool gives one tool its own switch, or takes it back when it matches the plugin's again.
+func (st *botAccessSheet) setTool(pluginID, tool string, level model.AccessLevel) {
+	if level == st.levels[pluginID] {
+		delete(st.tools[pluginID], tool)
+		if len(st.tools[pluginID]) == 0 {
+			delete(st.tools, pluginID)
 		}
+		return
 	}
-	delete(st.chosen, plugin.ID)
+	if st.tools[pluginID] == nil {
+		st.tools[pluginID] = map[string]model.AccessLevel{}
+	}
+	st.tools[pluginID][tool] = level
 }
 
 // policy is what Save writes. Every plugin fully open is the Runner's every plugin, one installed
 // later included.
 func (st *botAccessSheet) policy() *model.BotPermissions {
-	policy := &model.BotPermissions{Filesystem: st.filesystem, Shell: st.shell, Drafts: st.drafts}
+	policy := &model.BotPermissions{Drafts: st.drafts}
+	// The bot's own reads are not on this sheet: they carry over as saved, and a bot that may
+	// change files needs them, so they come back on if they were off.
+	// The bot's own tools are each on or off, and reading comes back on when changing files does:
+	// a bot that may write reads what it writes.
+	read := st.read
+	if st.write != model.AccessNone {
+		read = model.AccessOn
+	}
+	policy.Tools = model.LocalPermissions{Shell: st.shell.Permission(), Read: read.Permission(), Write: st.write.Permission()}
+	if st.saved != nil {
+		policy.Skills = st.saved.Skills
+	}
+	// Each skill's switch is where the bot turned it from the default.
+	for _, skill := range st.skills {
+		key := skill.Scope.Kind + "/" + skill.ID
+		on, was := st.shown[key], st.saved.ShowsSkill(skill.Scope.Kind, skill.ID, skill.Builtin)
+		if on != was {
+			policy.SetSkill(skill.Scope.Kind, skill.ID, on, skill.Builtin)
+		}
+	}
 	open := st.browser
 	for _, plugin := range st.plugins {
-		if _, picked := st.chosen[plugin.ID]; st.levels[plugin.ID] != model.AccessWrite || picked {
+		// A plugin's own switch at "on" with no tool of its own changed keeps it open, so a
+		// plugin installed later starts on rather than off.
+		changed := len(st.tools[plugin.ID]) > 0
+		if st.levels[plugin.ID] != model.AccessOn || changed {
 			open = false
 		}
 	}
@@ -153,24 +205,70 @@ func (st *botAccessSheet) policy() *model.BotPermissions {
 			if level == model.AccessNone {
 				continue
 			}
-			grant := model.ConnectionPermissions{Capabilities: level.Capabilities()}
-			if chosen, ok := st.chosen[plugin.ID]; ok {
-				tools := slices.Clone(chosen)
-				grant.Tools = &tools
+			grant := model.ConnectionPermissions{Enabled: true}
+			for _, tool := range plugin.Tools {
+				if own, ok := st.tools[plugin.ID][tool.Name]; ok {
+					if grant.Tools == nil {
+						grant.Tools = map[string]model.ToolPermission{}
+					}
+					grant.Tools[tool.Name] = own.Permission()
+				}
 			}
 			connections[plugin.ID] = grant
 		}
 		if st.browser {
-			connections[model.BrowserPluginID] = model.ConnectionPermissions{Capabilities: model.AccessWrite.Capabilities()}
+			connections[model.BrowserPluginID] = model.ConnectionPermissions{Enabled: true}
 		}
 		policy.Connections = &connections
 	}
 	return policy
 }
 
+// A tool's three choices, as the icons their control shows: on, ask first, and off.
+var toolChoices = []iconTab{
+	{Symbol: "checkmark.circle.fill", Title: L("On")},
+	{Symbol: "questionmark.circle", Title: L("Ask first")},
+	{Symbol: "xmark.circle", Title: L("Off")},
+}
+
+// toolChoice is the segment a tool's switch sits on.
+func toolChoice(level model.AccessLevel) int {
+	switch level {
+	case model.AccessNone:
+		return 2
+	case model.AccessAsk:
+		return 1
+	}
+	return 0
+}
+
+// accessLevel is the switch a segment stands for.
+func accessLevel(choice int) model.AccessLevel {
+	switch choice {
+	case 2:
+		return model.AccessNone
+	case 1:
+		return model.AccessAsk
+	}
+	return model.AccessOn
+}
+
+// toolChoice draws a tool's on, ask, or off choice at its row's end: the inspector's own tab
+// control, with a symbol per choice. It is short enough to sit in a row: 26 high, the capsule 20.
+func (st *botAccessSheet) toolChoice(c *ui.Context, key string, choice *int, name string) bool {
+	before := *choice
+	c.Key(key)
+	track := iconTabsSized(c, choice, L("%@ access", name), toolChoices, 24).Width(78).Shrink(0)
+	// A tool that is off reads as set aside, not as a choice among equals.
+	if *choice == 2 {
+		track.Opacity(0.55)
+	}
+	return *choice != before
+}
+
 func (st *botAccessSheet) view(c *ui.Context, s *sheet) {
 	p := colors(c)
-	result := sheetFrame(c, sheetOptions{Title: L("Access for %@", st.botName), Width: 460, Confirm: L("Save")}, func() {
+	result := sheetFrame(c, sheetOptions{Title: L("Access for %@", st.botName), Width: 560, Confirm: L("Save")}, func() {
 		if len(st.plugins) > 0 {
 			ui.Column(c).Gap(6).Children(func() {
 				section(c, L("Plugins"), sectionCaption, nil, func(k *card) {
@@ -183,6 +281,26 @@ func (st *botAccessSheet) view(c *ui.Context, s *sheet) {
 				}
 			})
 		}
+		ui.Column(c).Gap(6).Margin(4, 0, 0, 0).Children(func() {
+			section(c, L("Skills"), sectionCaption, nil, func(k *card) {
+				if len(st.skills) == 0 {
+					noteRow(c, k, L("No skills on this bot's Runner yet."), nil)
+					return
+				}
+				for _, skill := range st.skills {
+					skill := skill
+					key := skill.Scope.Kind + "/" + skill.ID
+					on := st.shown[key]
+					accessoryRow(c, k, skill.Name, skill.Description, func() {
+						settingsSwitch(c, &on, skill.Name, false)
+						if on != st.shown[key] {
+							st.shown[key] = on
+						}
+					})
+				}
+			})
+			ui.Text(c, L("Lorca's own skills always show: they are how %@ reads its docs and writes one.", st.botName)).FontSize(textCaption).TextColor(p.Label2).LineHeight(1.4)
+		})
 		ui.Column(c).Gap(6).Margin(4, 0, 0, 0).Children(func() {
 			section(c, L("Messages"), sectionCaption, nil, func(k *card) {
 				accessoryRow(c, k, L("Draft first"), "", func() {
@@ -198,18 +316,25 @@ func (st *botAccessSheet) view(c *ui.Context, s *sheet) {
 				title = st.runner.Name
 			}
 			section(c, title, sectionCaption, nil, func(k *card) {
-				accessoryRow(c, k, L("Files"), "", func() {
-					var options []popUpOption
-					for _, level := range []model.AccessLevel{model.AccessWrite, model.AccessRead, model.AccessNone} {
-						options = append(options, popUpOption{Value: string(level), Label: level.Title()})
-					}
-					if picked, changed, _ := popUpButton(c, popUp{Options: options, Value: string(st.filesystem), Style: popUpSettings, Label: L("Files")}); changed {
-						st.filesystem = model.AccessLevel(picked)
-					}
-				})
-				accessoryRow(c, k, L("Shell commands"), "", func() {
-					settingsSwitch(c, &st.shell, L("Shell commands"), false)
-				})
+				// The own tools are each on or off, as the Runner's own permission is.
+				for _, own := range []struct {
+					title string
+					level *model.AccessLevel
+				}{
+					{L("Read files"), &st.read},
+					{L("Change files"), &st.write},
+					{L("Shell commands"), &st.shell},
+				} {
+					own := own
+					on := *own.level != model.AccessNone
+					accessoryRow(c, k, own.title, "", func() {
+						settingsSwitch(c, &on, own.title, false)
+						*own.level = model.AccessOn
+						if !on {
+							*own.level = model.AccessNone
+						}
+					})
+				}
 				accessoryRow(c, k, L("Browser"), "", func() {
 					settingsSwitch(c, &st.browser, L("Browser"), false)
 				})
@@ -279,53 +404,45 @@ func (st *botAccessSheet) pluginRow(c *ui.Context, k *card, plugin model.AccessP
 		if canExpand && head.Hovered() {
 			r.Background(p.RowHover)
 		}
-		// Read and draft only for a plugin with a tool that drafts.
-		drafts := level == model.AccessDraft || slices.ContainsFunc(plugin.Tools, func(tool model.AccessTool) bool { return tool.Capability == "draft" })
-		var options []popUpOption
-		for _, each := range model.AccessLevels {
-			if each != model.AccessDraft || drafts {
-				options = append(options, popUpOption{Value: string(each), Label: each.Title()})
+		// A plugin has an on switch; each of its tools has its own on and ask switches.
+		enabled := level != model.AccessNone
+		if settingsSwitch(c, &enabled, L("Access to %@", plugin.Name), false) {
+			st.levels[plugin.ID] = model.AccessOn
+			if !enabled {
+				st.levels[plugin.ID] = model.AccessNone
 			}
-		}
-		if picked, changed, _ := popUpButton(c, popUp{Options: options, Value: string(level), Style: popUpSettings, Label: L("Access to %@", plugin.Name)}); changed {
-			st.levels[plugin.ID] = model.AccessLevel(picked)
 		}
 	})
 	if !expanded {
 		return
 	}
-	// The tools, each with a checkbox for whether the bot may use it and what it does. A tool
-	// beyond the plugin's level stays off until the level reaches it. Long lists scroll.
-	k.row(ui.Scroll(c.Key("tools")).MaxHeight(168).Padding(5, 14, 5, 54)).Children(func() {
+	// The tools, each with what it does and one three-way choice: on, ask first, or off. Long
+	// lists scroll.
+	k.row(ui.Scroll(c.Key("tools")).MaxHeight(180).Padding(2, 0, 2, 0)).Children(func() {
 		for _, tool := range plugin.Tools {
 			capability := tool.Capability
 			if capability == "" {
 				capability = "write"
 			}
-			reached := level.Allows(capability)
-			_, picked := st.chosen[plugin.ID]
-			on := reached && (!picked || slices.Contains(st.chosen[plugin.ID], tool.Name))
-			ui.Row(c.Key(tool.Name)).Height(24).Gap(8).Children(func() {
-				box := ui.CheckboxBase(c, &on).Grow(1).Shrink(1).MinWidth(0).Gap(7).Label(tool.Shown()).Disabled(!reached).
-					OnChange(func() { st.toggleTool(plugin, tool.Name, on) })
-				if tool.Description != "" {
-					box.Tooltip(tool.Description)
-				}
-				box.Children(func() {
-					mark := ui.Box(c).Size(14, 14).Radius(3.5).Shrink(0).Center()
-					if on {
-						mark.Background(p.Accent).TextColor(p.AccentText).Children(func() { symbol(c, "checkmark", 10, 3) })
-					} else {
-						mark.Background(p.Field).Border(1, p.Label3)
-					}
-					ui.Text(c, tool.Shown()).FontSize(12).TextColor(p.Label).SingleLine()
-				})
+			toolLevel := st.toolLevel(plugin.ID, tool.Name)
+			row := ui.Row(c.Key(tool.Name)).Height(30).Gap(10).Padding(0, 10, 0, 8).Radius(radiusSM).AlignItems(ui.Center)
+			row.Children(func() {
+				ui.Text(c, tool.Shown()).Grow(1).Shrink(1).MinWidth(0).FontSize(12).TextColor(p.Label).SingleLine()
 				does := map[string]string{"read": L("Reads"), "draft": L("Drafts")}[capability]
 				if does == "" {
 					does = L("Changes")
 				}
 				ui.Text(c, does).Shrink(0).FontSize(11).TextColor(p.Label3).SingleLine()
+				// On, ask first, or off, in one control: asking waits for the user every time,
+				// whatever Auto-review says.
+				choice := toolChoice(toolLevel)
+				if st.toolChoice(c, "tool:"+tool.Name, &choice, tool.Shown()) {
+					st.setTool(plugin.ID, tool.Name, accessLevel(choice))
+				}
 			})
+			if row.Hovered() {
+				row.Background(p.RowHover)
+			}
 		}
 	})
 }

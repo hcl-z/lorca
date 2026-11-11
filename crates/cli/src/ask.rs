@@ -104,7 +104,7 @@ impl Tool for AskUser {
                 agent_ask: None,
             },
         );
-        let decision = mcp::await_answer(&self.app, &self.chat_id, &message.id, None, &cancel, || {
+        let decision = mcp::await_answer(&self.app, &self.chat_id, &message.id, &self.bot.id, None, &cancel, || {
             self.app.upsert_message(message.clone(), true);
             crate::push::permission(&self.app, &message);
         })

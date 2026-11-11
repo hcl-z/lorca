@@ -284,7 +284,15 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
                 // description, then clears this rolling-upgrade slot.
                 legacy_instructions: opt_string(&params, "instructions").unwrap_or_default(), setting_up,
                 workdir: opt_string(&params, "workdir"),
-                permissions: parse_permissions(&params)?,
+                permissions: match parse_permissions(&params)? {
+                    Some(policy) => Some(policy),
+                    // A bot the user just made starts with every plugin off: its setup turn asks
+                    // `recommend_plugins` what its job needs, and the user turns those on.
+                    None => Some(crate::permissions::BotPermissions::new_bot()),
+                },
+                // A new bot starts on the Runner's global mode, with no rules of its own; the
+                // global rules every review reads apply to it already.
+                auto_review: None,
                 created_at: 0.0,
             };
             // Every bot has one direct chat; both land in a single roster change.
@@ -933,9 +941,22 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
         // provider's review model by kind, or with null or "" puts back its default; the
         // providers it leaves out keep theirs.
         "auto_review.set" => {
-            let mut auto_review = app.auto_review();
-            if let Some(enabled) = params["is_enabled"].as_bool() {
-                auto_review.is_enabled = enabled;
+            // `bot_id` names a bot whose own mode and rules change; without one the Runner's
+            // global setting does, and every bot without its own mode follows it.
+            let bot_id = opt_string(&params, "bot_id").filter(|id| !id.trim().is_empty());
+            let mut auto_review = match &bot_id {
+                Some(id) => {
+                    let bot = app.bot(id).ok_or("Unknown bot")?;
+                    bot.auto_review.clone().unwrap_or_else(|| crate::model::AutoReview { mode: app.auto_review().mode, ..Default::default() })
+                }
+                None => app.auto_review(),
+            };
+            if let Some(mode) = params["mode"].as_str() {
+                auto_review.mode = serde_json::from_value(json!(mode)).map_err(|_| "mode is default, auto, ask, or open")?;
+            } else if let Some(enabled) = params["is_enabled"].as_bool() {
+                // Older apps send the switch: it meant Auto-review on (a model judged) or off
+                // (every effectful action asked).
+                auto_review.mode = crate::model::ReviewMode::from_legacy(enabled);
             }
             if let Some(provider) = params.get("provider") {
                 let provider = provider.as_str().map(str::trim).filter(|kind| !kind.is_empty());
@@ -973,8 +994,11 @@ pub async fn dispatch(app: &Arc<App>, method: &str, params: Value) -> Result<Val
                     })
                     .collect();
             }
-            app.set_auto_review(auto_review.clone());
-            Ok(json!({ "auto_review": auto_review }))
+            match &bot_id {
+                Some(id) => app.set_bot_auto_review(id, Some(auto_review.clone())),
+                None => app.set_auto_review(auto_review.clone()),
+            }
+            Ok(json!({ "auto_review": auto_review, "bot_id": bot_id }))
         }
         // The user answered a permission card: here when the bot runs here, else sealed to
         // its Runner.

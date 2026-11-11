@@ -47,7 +47,7 @@ function state(extra: Record<string, unknown> = {}) {
     budgets: [],
     shared_links: [],
     sections: [],
-    auto_review: { is_enabled: true, rules: [] },
+    auto_review: { mode: "default" as const, rules: [] },
     attention: { items: [] },
     providers: [],
     models: [],

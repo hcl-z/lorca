@@ -57,7 +57,8 @@ pub fn engine_for(app: &App, bot: &Bot) -> Option<Engine> {
         return None;
     }
     let setting = app.settings.lock().unwrap().browser_engine;
-    Some(resolve(setting, ego_installed(), policy.is_none_or(|policy| policy.shell)))
+    // ego runs in the bot's shell, so it is only offered while shell is on.
+    Some(resolve(setting, ego_installed(), policy.is_none_or(|policy| policy.tools.shell.enabled)))
 }
 
 /// Whether the turn's plugin catalog lists the Browser plugin.

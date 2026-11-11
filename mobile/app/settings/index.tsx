@@ -11,6 +11,7 @@ import { CUSTOM_PRESETS, customProviderNamed, deviceName, isCustomProvider, isRu
 import { deviceIsOnline, useStore } from "../../src/core/store";
 import { deviceLanguage, languageNames, languages, setAppLanguage, t, useLanguage } from "../../src/i18n";
 import { FieldRow, MenuRow, Row, Section, ToggleRow, type MenuChoice } from "../../src/ui/forms";
+import { reviewModeTitle } from "../../src/ui/ComposerMenu";
 import { lastSeen } from "../../src/ui/format";
 import { Symbol } from "../../src/ui/Symbol";
 import { TimingSection } from "../../src/ui/TimingSection";
@@ -284,19 +285,9 @@ export default function SettingsScreen() {
 
         <Section
           title={t("Auto-review")}
-          footer={
-            autoReview.is_enabled
-              ? t('Lorca checks effectful plugin actions and every shell command before they run. Safe commands normally run automatically; risky commands ask you first. Add rules to customize what bots can do automatically; "Ask first" wins if rules conflict.')
-              : t("Off: every shell command and effectful plugin action asks you first.")
-          }
+          footer={t("Each bot's review mode is set beside its message box. A new bot starts on {mode}.", { mode: reviewModeTitle(autoReview.mode ?? "default") })}
         >
-          <ToggleRow
-            title={t("Check actions before they run")}
-            value={autoReview.is_enabled}
-            onValueChange={(v) =>
-              engine.setAutoReview({ ...autoReview, is_enabled: v })
-            }
-          />
+          <Row title={t("Review mode")} detail={reviewModeTitle(autoReview.mode ?? "default")} />
         </Section>
 
         <Section title={t("Reviews with")}>

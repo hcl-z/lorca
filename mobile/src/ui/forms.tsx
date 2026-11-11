@@ -225,7 +225,7 @@ export function Row({
           {detail}
         </Text>
       ) : null}
-      {accessory}
+      {accessory ? <View style={styles.rowAccessory}>{accessory}</View> : null}
       {/* A disclosure chevron is iOS's; a Material list item that opens a screen has none. */}
       {chevron && Platform.OS === "ios" && <Symbol name="chevron.right" size={14} color={p.tertiaryLabel} weight="semibold" />}
     </Pressable>
@@ -318,6 +318,7 @@ const styles = StyleSheet.create({
   rowMultiline: { alignItems: "flex-start" },
   rowText: { flex: 1, gap: 2 },
   rowTextWhole: { flexShrink: 0, gap: 2 },
+  rowAccessory: { flexShrink: 0, marginRight: -8 },
   menu: { flex: 1, minWidth: 0 },
   menuRow: { alignSelf: "stretch" },
   androidMenu: { flex: 1, minWidth: 0, alignItems: "flex-end" },

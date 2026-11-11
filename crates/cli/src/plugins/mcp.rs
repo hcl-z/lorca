@@ -2132,7 +2132,7 @@ pub struct PluginBrief {
 enum Access {
     ReadOnly,
     /// It may change things. `description` is its live server's, for the review.
-    Changes { description: String, capability: crate::permissions::Capability },
+    Changes { description: String },
     Stopped,
 }
 
@@ -2162,9 +2162,9 @@ async fn access(app: &Arc<App>, tool: &PluginTool, cancel: &CancellationToken) -
     }
     let draft = app.plugins.lock().unwrap().get(&tool.plugin_id)
         .is_some_and(|plugin| plugin.manifest.tools.draft.iter().any(|pattern| pattern_matches(pattern, &name)));
+    let _ = draft;
     Access::Changes {
         description: live_tool.and_then(|live| live.description.map(|description| description.to_string())).unwrap_or_default(),
-        capability: if draft { crate::permissions::Capability::Draft } else { crate::permissions::Capability::Write },
     }
 }
 
@@ -2177,27 +2177,23 @@ pub async fn is_read_only(app: &Arc<App>, catalog: &PluginCatalog, name: &str, c
 }
 
 async fn authorize_plugin(app: &Arc<App>, bot: &Bot, tool: &PluginTool, cancel: &CancellationToken) -> Result<(), crate::permissions::AccessDenied> {
-    use crate::permissions::{self, Capability};
+    use crate::permissions;
     let name = tool.tool.name.as_ref();
     if tool.plugin_id == crate::browser::PLUGIN_ID {
         return permissions::check_plugin(app, bot, &tool.plugin_id, name);
     }
-    permissions::check_connection(app, bot, &tool.plugin_id, name, None)?;
-    let capability = match access(app, tool, cancel).await {
-        Access::ReadOnly => Capability::Read,
-        Access::Changes { capability, .. } => capability,
-        Access::Stopped => {
-            return Err(permissions::AccessDenied { tool: name.into(), connection_id: Some(tool.plugin_id.clone()), capability: None, reason: "the call was stopped".into(), grantable: false })
-        }
-    };
-    permissions::check_connection(app, bot, &tool.plugin_id, name, Some(capability))
+    permissions::check_connection(app, bot, &tool.plugin_id, name)?;
+    if matches!(access(app, tool, cancel).await, Access::Stopped) {
+        return Err(permissions::AccessDenied { tool: name.into(), connection_id: Some(tool.plugin_id.clone()), asks: false, reason: "the call was stopped".into(), grantable: false });
+    }
+    Ok(())
 }
 
 /// The bot's Access for a script's call by name, with the live or trusted classification of
 /// what the tool does: a routine check's.
 pub async fn authorize_catalog_tool(app: &Arc<App>, catalog: &PluginCatalog, bot: &Bot, name: &str, cancel: &CancellationToken) -> Result<(), crate::permissions::AccessDenied> {
     let tool = catalog.plugin_tool(name).ok_or_else(|| crate::permissions::AccessDenied {
-        tool: name.into(), connection_id: None, capability: None, reason: "the tool is no longer available".into(), grantable: false,
+        tool: name.into(), connection_id: None, asks: false, reason: "the tool is no longer available".into(), grantable: false,
     })?;
     authorize_plugin(app, bot, &tool, cancel).await
 }
@@ -2221,18 +2217,20 @@ pub async fn review_call(
     if tool.plugin_id == crate::browser::PLUGIN_ID {
         return crate::permissions::check_plugin(app, bot, &tool.plugin_id, &name).err().map(|denied| crate::permissions::refuse(app, chat_id, bot, denied));
     }
-    if let Err(denied) = crate::permissions::check_connection(app, bot, &tool.plugin_id, &name, None) {
+    if let Err(denied) = crate::permissions::check_connection(app, bot, &tool.plugin_id, &name) {
         return Some(crate::permissions::refuse(app, chat_id, bot, denied));
     }
-    let (capability, review_description) = match access(app, &tool, ctx.cancel).await {
-        Access::ReadOnly => (crate::permissions::Capability::Read, String::new()),
+    let (read_only, review_description) = match access(app, &tool, ctx.cancel).await {
+        Access::ReadOnly => (true, String::new()),
         Access::Stopped => return Some(crate::local_review::blocked("Stopped".into())),
-        Access::Changes { description, capability } => (capability, description),
+        Access::Changes { description } => (false, description),
     };
-    if let Err(denied) = crate::permissions::check_connection(app, bot, &tool.plugin_id, &name, Some(capability)) {
-        return Some(crate::permissions::refuse(app, chat_id, bot, denied));
+    // A tool the user set to ask first asks, whatever the review mode or an Allow rule says.
+    let asks = crate::permissions::connection_asks(app, bot, Some(&tool.plugin_id), &name);
+    // A reading tool runs at once.
+    if read_only && !asks {
+        return None;
     }
-    if capability == crate::permissions::Capability::Read { return None; }
     // An email or Slack message the bot writes in a chat waits as a draft for the user to send,
     // who reviews it on its card, so Auto-review does not judge it.
     if !unattended && crate::permissions::drafts_messages(bot) {
@@ -2244,13 +2242,17 @@ pub async fn review_call(
     }
     // The script the call comes from says what the whole batch is for.
     let script = ctx.parent.filter(|parent| parent.name == codemode::CODEMODE_TOOL_NAME).and_then(|parent| parent.arguments["code"].as_str());
-    let outcome = super::review::decide(app, bot, chat_id, trigger, &tool.plugin_id, &tool.plugin_name, &name, &review_description, ctx.args, script, ctx.cancel).await;
-    let reason = match outcome {
-        super::review::Outcome::Allow => return None,
-        // The bot reads why and finds another way, or asks the user in the chat.
-        super::review::Outcome::Held { note, .. } if !unattended => return Some(crate::local_review::blocked(note)),
-        super::review::Outcome::Held { reason, .. } => Some(reason),
-        super::review::Outcome::Ask { reason, .. } => reason,
+    let reason = if asks {
+        None
+    } else {
+        let outcome = super::review::decide(app, bot, chat_id, trigger, &tool.plugin_id, &tool.plugin_name, &name, &review_description, ctx.args, script, ctx.cancel).await;
+        match outcome {
+            super::review::Outcome::Allow => return None,
+            // The bot reads why and finds another way, or asks the user in the chat.
+            super::review::Outcome::Held { note, .. } if !unattended => return Some(crate::local_review::blocked(note)),
+            super::review::Outcome::Held { reason, .. } => Some(reason),
+            super::review::Outcome::Ask { reason, .. } => reason,
+        }
     };
     if unattended {
         let staged = crate::review_execution::stage_call(app, bot, chat_id, trigger, &ctx.tool_call.id,
@@ -2947,7 +2949,7 @@ pub async fn ask_with_rule(
             agent_ask: None,
         },
     );
-    let decision = await_answer(app, chat_id, &message.id, always_rule, cancel, || {
+    let decision = await_answer(app, chat_id, &message.id, bot_id, always_rule, cancel, || {
         app.upsert_message(message.clone(), true);
         crate::push::permission(app, &message);
     })
@@ -2969,7 +2971,7 @@ pub async fn ask_with_rule(
 /// holds back what the user wrote: one that would go up while a direct turn has a message of
 /// theirs still to read is dismissed without asking, and a message that arrives while it waits
 /// dismisses it (`dismiss_questions`). An Always allow adds `always_rule` before this returns.
-pub async fn await_answer(app: &Arc<App>, chat_id: &str, message_id: &str, always_rule: Option<AutoReviewRule>, cancel: &CancellationToken, ask: impl FnOnce()) -> Decision {
+pub async fn await_answer(app: &Arc<App>, chat_id: &str, message_id: &str, bot_id: &str, always_rule: Option<AutoReviewRule>, cancel: &CancellationToken, ask: impl FnOnce()) -> Decision {
     // A call stopped before its question went up puts nothing in the chat.
     if cancel.is_cancelled() {
         return Decision::Denied;
@@ -2990,7 +2992,9 @@ pub async fn await_answer(app: &Arc<App>, chat_id: &str, message_id: &str, alway
     app.pending_permissions.lock().unwrap().remove(message_id);
     if decision == Decision::Always {
         if let Some(rule) = always_rule {
-            app.add_auto_review_rule(rule);
+            // A card's Always allow saves the rule for the bot that asked, so it does not widen
+            // every other bot on the Runner.
+            app.add_auto_review_rule(Some(bot_id), rule);
         }
     }
     decision
@@ -3053,7 +3057,7 @@ pub(crate) mod tests {
     #[cfg(unix)]
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn bot_permissions_gate_real_mcp_calls_and_ignore_forged_cached_readonly() {
-        use crate::permissions::{BotPermissions, Capability};
+        use crate::permissions::BotPermissions;
         use lorca_agent::{AgentContext, DirectRunner};
         use lorca_agent::types::{AssistantMessage, ToolCall};
         let scratch = scratch_app();
@@ -3089,14 +3093,19 @@ for line in sys.stdin:
             "tools": {"draft": ["create_draft"]}
         })).unwrap();
         super::super::install(app, manifest, "inline").unwrap();
-        let policy: BotPermissions = serde_json::from_value(json!({"connections":{"mail-work":{"capabilities":["read","draft"]}},"shell":false,"filesystem":"none"})).unwrap();
+        let policy: BotPermissions = serde_json::from_value(json!({
+            "connections": {"mail-work": {"enabled": true, "tools": {
+                "send_message": {"enabled": false}, "cached_readonly": {"enabled": false}
+            }}},
+            "tools": {"read": {"enabled": false}, "write": {"enabled": false}, "shell": {"enabled": false}}
+        })).unwrap();
         app.update_bot(&bot.id, |bot| bot.permissions = Some(policy.clone())).unwrap();
         // The Access sheet lists the instance by its name with the tools it last offered.
         let listed = crate::api::dispatch(app, "bots.permissions", json!({"id": bot.id})).await.unwrap();
         let connection = listed["connections"].as_array().unwrap().iter().find(|entry| entry["id"] == "mail-work").unwrap();
         assert_eq!(connection["name"], "Mail Work");
         assert_eq!(connection["tools"].as_array().unwrap().len(), 4);
-        app.add_auto_review_rule(AutoReviewRule { id: "always".into(), text: "Always send".into(), behavior: "allow".into(), tool: Some("mail-work/send_message".into()) });
+        app.add_auto_review_rule(None, AutoReviewRule { id: "always".into(), text: "Always send".into(), behavior: "allow".into(), tool: Some("mail-work/send_message".into()) });
         let catalog = bot_catalog(app, &bot, &chat_id, Vec::new());
         let cancel = CancellationToken::new();
         let assistant = AssistantMessage::empty("test", "test");
@@ -3108,12 +3117,12 @@ for line in sys.stdin:
             let parent = ToolCall { id: "script".into(), name: "codemode".into(), arguments: json!({"code":"await tools.mail_work__send_message({})"}) };
             let ctx = BeforeToolCallContext { assistant_message: &assistant, tool_call: &call, args: &args, context: &context, cancel: &cancel, parent: Some(&parent) };
             let refused = review_call(app, &catalog, &chat_id, &super::super::review::Trigger::default(), &bot, false, &ctx).await.unwrap();
-            assert!(refused.block && refused.reason.unwrap().contains("write access"));
+            assert!(refused.block && refused.reason.unwrap().contains("off for this bot"));
             assert!(catalog.plugin_tool(&name).unwrap().execute("direct", args.clone(), cancel.clone(), Arc::new(|_| {})).await.is_err());
         }
         assert!(!calls_path.exists(), "no denied MCP call ran");
         assert!(authorize_catalog_tool(app, &catalog, &bot, "mail_work__create_draft", &cancel).await.is_ok());
-        assert!(matches!(access(app, &catalog.plugin_tool("mail_work__create_draft").unwrap(), &cancel).await, Access::Changes { capability: Capability::Draft, .. }));
+        assert!(matches!(access(app, &catalog.plugin_tool("mail_work__create_draft").unwrap(), &cancel).await, Access::Changes { .. }));
         let script = "const result = await tools.mail_work__list_messages({}); text(result);";
         let codemode = lorca_agent::codemode::CodemodeTool::new(catalog.clone(), Default::default());
         let run = codemode.run_script("read", script, cancel.clone(), &DirectRunner).await.unwrap();

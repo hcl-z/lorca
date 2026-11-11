@@ -120,7 +120,7 @@ async fn an_unattended_plugin_proposal_executes_the_edited_version_on_its_exact_
         .unwrap()
         .name
         .clone();
-    app.set_auto_review(crate::model::AutoReview { is_enabled: false, ..Default::default() });
+    app.set_auto_review(crate::model::AutoReview { mode: crate::model::ReviewMode::Default, ..Default::default() });
     let routine = crate::routines::create(
         &app,
         &bot.id,
@@ -284,7 +284,7 @@ async fn a_message_in_a_chat_waits_as_a_draft_the_user_edits_and_sends() {
         "properties": { "channel_id": { "type": "string" }, "message": { "type": "string" }, "thread_ts": { "type": "string" } }, "required": ["channel_id", "message"] } });
     let _server = serve_fake(&app, "slack-test", "slack", vec![send], json!({ "content": [{ "type": "text", "text": "ok" }] }), seen.clone()).await;
     // With Auto-review off every change asks on a card; a draft is the user's to send instead.
-    app.set_auto_review(crate::model::AutoReview { is_enabled: false, ..Default::default() });
+    app.set_auto_review(crate::model::AutoReview { mode: crate::model::ReviewMode::Default, ..Default::default() });
     let trigger = asked(&app, &chat_id, "Tell #launch we ship Friday");
 
     let arguments = json!({ "channel_id": "C024BE91L", "message": "We ship Friday." });
@@ -323,8 +323,8 @@ async fn a_message_in_a_chat_waits_as_a_draft_the_user_edits_and_sends() {
     crate::api::dispatch(&app, "bots.update", json!({ "id": bot.id, "drafts": false })).await.unwrap();
     let bot = app.bot(&bot.id).unwrap();
     assert!(!crate::permissions::drafts_messages(&bot));
-    app.set_auto_review(crate::model::AutoReview { is_enabled: true, ..Default::default() });
-    app.add_auto_review_rule(crate::model::AutoReviewRule { id: "r".into(), text: "use Slack slack_send_message".into(), behavior: "allow".into(), tool: Some("slack-test/slack_send_message".into()) });
+    app.set_auto_review(crate::model::AutoReview { mode: crate::model::ReviewMode::Auto, ..Default::default() });
+    app.add_auto_review_rule(None, crate::model::AutoReviewRule { id: "r".into(), text: "use Slack slack_send_message".into(), behavior: "allow".into(), tool: Some("slack-test/slack_send_message".into()) });
     assert!(before_call(&app, &chat_id, &trigger, &bot, "slack-test", "slack_send_message", &arguments).await.is_none(), "it runs on its own");
     assert_eq!(queue::list(&app).unwrap().len(), 1);
     app.mcp.servers.lock().unwrap().clear();
@@ -451,8 +451,8 @@ async fn a_saved_secret_never_goes_into_a_draft_and_unattended_runs_ask_auto_rev
 
     // A routine's, a watch's, or an event's run (a webhook's included) has nobody to send a draft:
     // its message goes to Auto-review, which here lets it run.
-    app.set_auto_review(crate::model::AutoReview { is_enabled: true, ..Default::default() });
-    app.add_auto_review_rule(crate::model::AutoReviewRule { id: "r".into(), text: "use Gmail create_draft".into(), behavior: "allow".into(), tool: Some("gmail-test/create_draft".into()) });
+    app.set_auto_review(crate::model::AutoReview { mode: crate::model::ReviewMode::Auto, ..Default::default() });
+    app.add_auto_review_rule(None, crate::model::AutoReviewRule { id: "r".into(), text: "use Gmail create_draft".into(), behavior: "allow".into(), tool: Some("gmail-test/create_draft".into()) });
     let plain = json!({ "to": ["ana@example.com"], "body": "Weekly numbers attached." });
     assert!(before_call_until(&app, &chat_id, &trigger, &bot, "gmail-test", "create_draft", &plain, &CancellationToken::new(), true).await.is_none());
     assert!(queue::list(&app).unwrap().is_empty());

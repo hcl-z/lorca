@@ -247,7 +247,7 @@ func NewStore(transport Transport, post func(func()), mock bool) *Store {
 		transport:          transport,
 		post:               post,
 		IsStarting:         true,
-		AutoReview:         AutoReview{IsEnabled: true},
+		AutoReview:         AutoReview{Mode: ReviewAuto},
 		Attention:          DefaultAttention(),
 		CLI:                CLIState{Connection: "disconnected", Launcher: LauncherStatus{Kind: "idle"}, Starting: true},
 		jobStarts:          map[string]time.Time{},
@@ -1753,7 +1753,44 @@ func (s *Store) SetAutoReview(value AutoReview) {
 		}
 		rules = append(rules, entry)
 	}
-	s.perform("auto_review.set", map[string]any{"is_enabled": value.IsEnabled, "rules": rules})
+	s.perform("auto_review.set", map[string]any{"mode": string(value.Mode), "rules": rules})
+}
+
+// SetBotReviewMode picks one bot's own review mode, leaving the Runner's global one as it is.
+// The bot's own rules stay; a review reads its mode and both rule lists.
+func (s *Store) SetBotReviewMode(botID string, mode ReviewMode) {
+	bot := s.Bot(botID)
+	if bot == nil {
+		return
+	}
+	own := AutoReview{Mode: mode}
+	if bot.AutoReview != nil {
+		own = *bot.AutoReview
+		own.Mode = mode
+	}
+	bot.AutoReview = &own
+	s.emit(Event{Kind: EventRosterChanged})
+	s.perform("auto_review.set", map[string]any{"bot_id": botID, "mode": string(mode), "rules": ruleParams(own.Rules)})
+}
+
+// ReviewMode is the mode one bot's review runs with: its own when it has one, else the Runner's.
+func (s *Store) BotReviewMode(botID string) ReviewMode {
+	if bot := s.Bot(botID); bot != nil && bot.AutoReview != nil {
+		return bot.AutoReview.Mode
+	}
+	return s.AutoReview.Mode
+}
+
+func ruleParams(rules []AutoReviewRule) []map[string]any {
+	out := make([]map[string]any, 0, len(rules))
+	for _, rule := range rules {
+		entry := map[string]any{"id": rule.ID, "text": rule.Text, "behavior": rule.Behavior}
+		if rule.Tool != "" {
+			entry["tool"] = rule.Tool
+		}
+		out = append(out, entry)
+	}
+	return out
 }
 
 // SetReviewProvider picks the provider Auto-review runs the review model of, or "" for the bot's

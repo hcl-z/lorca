@@ -1,23 +1,19 @@
-// A bot's Access, after the desktop apps' Access sheet: how far it may use each plugin on its
-// Runner, down to single tools, and whether it reads or changes files and runs shell commands
-// there. Only the user changes it; here each change saves at once, as iOS Settings does. The
+// A bot's Access, after the desktop apps' Access sheet: which plugins on its Runner it may use,
+// each plugin on or off with each of its tools on or asking first, and its own files and shell
+// commands. Only the user changes it; here each change saves at once, as iOS Settings does. The
 // plugins and the tools each offered come from the Runner (`bots.permissions`, a sealed request
 // through the core); the policy itself is in the roster.
 
 import { create } from "zustand";
 import * as core from "../../modules/lorca-core";
 import { t } from "../i18n";
-import { BROWSER_PLUGIN_ID, type BotPermissions } from "./model";
+import { BROWSER_PLUGIN_ID, type BotPermissions, type ToolPermission } from "./model";
 import { useStore } from "./store";
 
-/// How far a grant reaches, each level taking in the ones below it: a plugin's read, draft, and
-/// write capabilities, or files read or changed.
-export type AccessLevel = "write" | "draft" | "read" | "none";
+/// A tool's three states, as its switch shows them: on, asking first, or off.
+export type ToolState = "on" | "ask" | "off";
 
-export const LEVELS: AccessLevel[] = ["write", "draft", "read", "none"];
-
-/// Files have no drafts: read and write, read only, or none.
-export type FilesLevel = Exclude<AccessLevel, "draft">;
+export const TOOL_STATES: ToolState[] = ["on", "ask", "off"];
 
 export interface AccessTool {
   name: string;
@@ -33,28 +29,39 @@ export interface AccessPlugin {
   tools: AccessTool[];
 }
 
-export function capabilities(level: AccessLevel): string[] {
-  return { write: ["read", "draft", "write"], draft: ["read", "draft"], read: ["read"], none: [] }[level];
+export function permission(state: ToolState): ToolPermission {
+  return { enabled: state !== "off", ask: state === "ask" };
 }
 
-export function levelOf(caps: string[] | undefined): AccessLevel {
-  if (caps?.includes("write")) return "write";
-  if (caps?.includes("draft")) return "draft";
-  if (caps?.includes("read")) return "read";
-  return "none";
+export function stateOf(permission: ToolPermission | undefined, fallback: ToolState = "on"): ToolState {
+  if (!permission) return fallback;
+  if (!permission.enabled) return "off";
+  return permission.ask ? "ask" : "on";
 }
 
-/// What the bot may do with a plugin; a plugin a policy's map leaves out is off.
-export function pluginLevel(policy: BotPermissions | undefined, pluginId: string): AccessLevel {
-  return policy?.connections ? levelOf(policy.connections[pluginId]?.capabilities) : "write";
+/// Whether the bot may use a plugin at all; a plugin a policy's map leaves out is off.
+export function pluginOn(policy: BotPermissions | undefined, pluginId: string): boolean {
+  if (!policy?.connections) return true;
+  return policy.connections[pluginId]?.enabled ?? false;
 }
 
-export function filesLevel(policy: BotPermissions | undefined): FilesLevel {
-  return policy?.filesystem ?? "write";
+/// One tool of a plugin: its own switch, else the plugin's.
+export function toolState(policy: BotPermissions | undefined, pluginId: string, tool: string): ToolState {
+  if (!pluginOn(policy, pluginId)) return "off";
+  return stateOf(policy?.connections?.[pluginId]?.tools?.[tool]);
 }
 
-export function shellOn(policy: BotPermissions | undefined): boolean {
-  return policy?.shell ?? true;
+/// The bot's own tools. A bot made before the switches has every one on.
+export function readState(policy: BotPermissions | undefined): ToolState {
+  return stateOf(policy?.tools?.read);
+}
+
+export function writeState(policy: BotPermissions | undefined): ToolState {
+  return stateOf(policy?.tools?.write);
+}
+
+export function shellState(policy: BotPermissions | undefined): ToolState {
+  return stateOf(policy?.tools?.shell);
 }
 
 /// Whether the bot's emails and Slack messages wait in the chat as drafts.
@@ -62,58 +69,56 @@ export function draftsOn(policy: BotPermissions | undefined): boolean {
   return policy?.drafts ?? true;
 }
 
-/// The tools chosen for a plugin; none is all of them, one it adds later included.
-export function chosenTools(policy: BotPermissions | undefined, pluginId: string): string[] | undefined {
-  return policy?.connections?.[pluginId]?.tools;
-}
-
 /// Whether the bot may use a browser. Browser has one switch, whichever browser the Runner uses.
 export function browserOn(policy: BotPermissions | undefined): boolean {
-  return pluginLevel(policy, BROWSER_PLUGIN_ID) !== "none";
+  return pluginOn(policy, BROWSER_PLUGIN_ID);
 }
 
 export function isFullAccess(policy: BotPermissions | undefined): boolean {
-  return !policy?.connections && filesLevel(policy) === "write" && shellOn(policy);
+  return !policy?.connections && readState(policy) !== "off" && writeState(policy) !== "off" && shellState(policy) !== "off";
 }
 
-export function reaches(level: AccessLevel, capability: string | null | undefined): boolean {
-  return capabilities(level).includes(capability || "write");
-}
-
-/// The policy with `pluginId` at `level` and with `tools`, the other listed plugins as they are.
-/// Every plugin at Read and write with all its tools is the Runner's every plugin, one installed
-/// later included; otherwise only the plugins given a level are listed.
-export function withPlugin(policy: BotPermissions | undefined, plugins: AccessPlugin[], pluginId: string, level: AccessLevel, tools: string[] | undefined): BotPermissions {
-  // Browser is not among the listed plugins; its switch keeps its place in the policy.
+/// The policy with one plugin on or off, the others as they are, and its own tools as saved.
+export function withPlugin(policy: BotPermissions | undefined, plugins: AccessPlugin[], pluginId: string, on: boolean): BotPermissions {
   const listed = plugins.filter((plugin) => plugin.id !== BROWSER_PLUGIN_ID);
-  const grants = [
-    ...listed.map((plugin) =>
-      plugin.id === pluginId ? { id: plugin.id, level, tools } : { id: plugin.id, level: pluginLevel(policy, plugin.id), tools: chosenTools(policy, plugin.id) },
-    ),
-    { id: BROWSER_PLUGIN_ID, level: pluginId === BROWSER_PLUGIN_ID ? level : browserOn(policy) ? ("write" as const) : ("none" as const), tools: undefined },
-  ];
-  const open = grants.every((grant) => grant.level === "write" && !grant.tools);
-  const connections: BotPermissions["connections"] = {};
-  for (const grant of grants) {
-    if (grant.level === "none") continue;
-    connections[grant.id] = { capabilities: capabilities(grant.level), ...(grant.tools ? { tools: [...grant.tools].sort() } : {}) };
+  const connections: NonNullable<BotPermissions["connections"]> = {};
+  for (const plugin of listed) {
+    const enabled = plugin.id === pluginId ? on : pluginOn(policy, plugin.id);
+    if (!enabled) continue;
+    const tools = policy?.connections?.[plugin.id]?.tools;
+    connections[plugin.id] = { enabled: true, ...(tools && Object.keys(tools).length > 0 ? { tools } : {}) };
   }
-  return { ...(open ? {} : { connections }), filesystem: filesLevel(policy), shell: shellOn(policy) };
+  if (pluginId === BROWSER_PLUGIN_ID ? on : browserOn(policy)) {
+    connections[BROWSER_PLUGIN_ID] = { enabled: true };
+  }
+  return { ...policy, connections };
 }
 
 /// The policy with Browser on or off.
 export function withBrowser(policy: BotPermissions | undefined, plugins: AccessPlugin[], on: boolean): BotPermissions {
-  return withPlugin(policy, plugins, BROWSER_PLUGIN_ID, on ? "write" : "none", undefined);
+  return withPlugin(policy, plugins, BROWSER_PLUGIN_ID, on);
 }
 
-/// The policy with one tool of `plugin` chosen or left out. Every tool chosen is all of them.
-export function withTool(policy: BotPermissions | undefined, plugins: AccessPlugin[], plugin: AccessPlugin, name: string, on: boolean): BotPermissions {
-  const all = plugin.tools.map((tool) => tool.name);
-  const chosen = new Set(chosenTools(policy, plugin.id) ?? all);
-  if (on) chosen.add(name);
-  else chosen.delete(name);
-  const tools = all.every((each) => chosen.has(each)) ? undefined : [...chosen];
-  return withPlugin(policy, plugins, plugin.id, pluginLevel(policy, plugin.id), tools);
+/// The policy with one tool of `plugin` at `state`. A tool back at its plugin's own state drops
+/// its own entry, so a plugin installed later still follows the plugin's switch.
+export function withTool(policy: BotPermissions | undefined, plugins: AccessPlugin[], plugin: AccessPlugin, name: string, state: ToolState): BotPermissions {
+  const tools: Record<string, ToolPermission> = { ...(policy?.connections?.[plugin.id]?.tools ?? {}) };
+  if (state === "on") delete tools[name];
+  else tools[name] = permission(state);
+  const connections: NonNullable<BotPermissions["connections"]> = { ...(policy?.connections ?? {}) };
+  if (pluginOn(policy, plugin.id)) {
+    connections[plugin.id] = { enabled: true, ...(Object.keys(tools).length > 0 ? { tools } : {}) };
+  }
+  return { ...policy, connections };
+}
+
+/// The policy with one of the bot's own tools, or its drafts, set.
+export function withOwnTool(policy: BotPermissions | undefined, key: "read" | "write" | "shell", state: ToolState): BotPermissions {
+  return { ...policy, tools: { ...(policy?.tools ?? {}), [key]: permission(state) } };
+}
+
+export function withDrafts(policy: BotPermissions | undefined, on: boolean): BotPermissions {
+  return { ...policy, drafts: on };
 }
 
 // MARK: - Words
@@ -122,8 +127,8 @@ export function accessSummary(policy: BotPermissions | undefined): string {
   return isFullAccess(policy) ? t("Full access") : t("Limited");
 }
 
-export function levelTitle(level: AccessLevel): string {
-  return { write: t("Read and write"), draft: t("Read and draft"), read: t("Read only"), none: t("No access") }[level];
+export function stateTitle(state: ToolState): string {
+  return { on: t("Allowed"), ask: t("Ask first"), off: t("Off") }[state];
 }
 
 /// What a tool does, in a word.
@@ -131,13 +136,13 @@ export function toolDoes(capability: string | null | undefined): string {
   return capability === "read" ? t("Reads") : capability === "draft" ? t("Drafts") : t("Changes");
 }
 
-/// "All tools", or how many of them the bot may use. Nothing before the plugin has connected
-/// once, or when it is off.
+/// The tools summary: "All tools", or how many of them the bot may use. Nothing while the plugin
+/// is off, or before it has connected once.
 export function toolsSummary(policy: BotPermissions | undefined, plugin: AccessPlugin): string | undefined {
-  if (plugin.tools.length === 0 || pluginLevel(policy, plugin.id) === "none") return undefined;
-  const chosen = chosenTools(policy, plugin.id);
-  if (!chosen) return t("All tools");
-  return t("{count} of {total} tools", { count: plugin.tools.filter((tool) => chosen.includes(tool.name)).length, total: plugin.tools.length });
+  if (plugin.tools.length === 0 || !pluginOn(policy, plugin.id)) return undefined;
+  const off = plugin.tools.filter((tool) => toolState(policy, plugin.id, tool.name) === "off").length;
+  if (off === 0) return t("All tools");
+  return t("{count} of {total} tools", { count: plugin.tools.length - off, total: plugin.tools.length });
 }
 
 // MARK: - The Runner's plugins, and saving

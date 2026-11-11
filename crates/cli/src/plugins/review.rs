@@ -104,23 +104,27 @@ pub async fn decide(
     script: Option<&str>,
     cancel: &CancellationToken,
 ) -> Outcome {
-    let auto_review = app.auto_review();
-    if let Some(rule) = auto_review.rule_for(plugin_id, tool).filter(|_| auto_review.is_enabled) {
+    let auto_review = app.auto_review_for(&bot.id);
+    if let Some(rule) = auto_review.rule_for(plugin_id, tool).filter(|_| auto_review.mode.reviews()) {
         return if rule.behavior == "allow" { Outcome::Allow } else { Outcome::ask(format!("Your rule: {}", rule.text)) };
     }
     let action = Action { target_name: plugin_name, tool, description, args, script, facts: &[], propose_rule: false };
     review(app, bot, chat_id, trigger, action, cancel).await
 }
 
-/// Reviews one action of the turn that `trigger` started. With Auto-review off it asks; on, its
-/// model ([`reviewer`](crate::providers::reviewer)) judges it ([`classify`]) against the chat
-/// that asked for it ([`request`]), the facts, and the user's rules. A hold goes back to the bot
-/// until it has had three in a row or twenty in the turn; then the user decides. A review that
-/// could not run judged nothing, so it asks the user at once rather than holding the action.
+/// Reviews one action of the turn that `trigger` started, when the user's mode asks for a
+/// model. Default mode lets a tool that is on run, Ask mode asks about every effect, and Open
+/// mode runs it too; a tool set to ask is handled before this is reached, in every mode. With
+/// a model, its verdict ([`classify`]) is read against the chat that asked for it
+/// ([`request`]), the facts, and the user's rules. A hold goes back to the bot until it has had
+/// three in a row or twenty in the turn; then the user decides. A review that could not run
+/// judged nothing, so it asks the user at once rather than holding the action.
 pub async fn review(app: &Arc<App>, bot: &Bot, chat_id: &str, trigger: &Trigger, action: Action<'_>, cancel: &CancellationToken) -> Outcome {
-    let auto_review = app.auto_review();
-    if !auto_review.is_enabled {
-        return Outcome::Ask { reason: None, rule: None };
+    let auto_review = app.auto_review_for(&bot.id);
+    match auto_review.mode {
+        // Only Auto asks a model; a tool's own "ask first" is settled before this.
+        crate::model::ReviewMode::Open | crate::model::ReviewMode::Default => return Outcome::Allow,
+        crate::model::ReviewMode::Auto => {}
     }
     let request = request(app, chat_id, trigger);
     let read = Reading::new(&auto_review, request.as_ref(), &action);
@@ -968,6 +972,8 @@ mod tests {
     /// empty reply standing for a server error and one starting `LENGTH:` for a reply cut off at
     /// its token limit, and keeps what it was asked.
     async fn scripted_model(app: &App, replies: Vec<&str>) -> (Arc<Mutex<VecDeque<String>>>, Arc<Mutex<Vec<String>>>) {
+        // A review model is only asked in the mode that uses one.
+        app.set_auto_review(crate::model::AutoReview { mode: crate::model::ReviewMode::Auto, ..app.auto_review() });
         use axum::routing::post;
 
         let replies: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(replies.into_iter().map(str::to_string).collect()));
@@ -1131,7 +1137,7 @@ mod tests {
         });
         let bot = |id: &str, name: &str| Bot {
             id: id.into(), name: name.into(), description: String::new(), symbol_name: String::new(), accent: String::new(), avatar: None,
-            runner_id: "runner".into(), provider: "deepseek".into(), model: None, thinking: None, legacy_instructions: String::new(), setting_up: false, workdir: None, permissions: None, created_at: 0.0,
+            runner_id: "runner".into(), provider: "deepseek".into(), model: None, thinking: None, legacy_instructions: String::new(), setting_up: false, workdir: None, permissions: None, auto_review: None, created_at: 0.0,
         };
         let (devops, dm) = app.create_bot_with_dm(bot("bot-devops", "DevOps"), None).unwrap();
         app.create_bot_with_dm(bot("bot-chef", "Chef"), None).unwrap();

@@ -28,7 +28,7 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SoftScrollEdgeView } from "../../../modules/lorca-core/SoftScrollEdgeView";
 import { chatTitle, engine, type PickedFile } from "../../../src/core/engine";
-import { isLive, showsSpeakers, type AgentRun, type Bot, type Message } from "../../../src/core/model";
+import { isLive, nextReviewMode, showsSpeakers, type AgentRun, type Bot, type Message } from "../../../src/core/model";
 import { agentAskCard, chatAgents, mentionTargets } from "../../../src/core/participants";
 import {
   useBotMap,
@@ -126,27 +126,13 @@ export default function ChatScreen() {
   const listRef = useRef<LegendListRef>(null);
   // A long message read whole, from the place its bubble stands.
   const [reader, setReader] = useState<{ message: Message; frame: MessageFrame } | null>(null);
-  /// Set while the reader covers the chat, which on Android is a window of its own.
-  const readerOver = useRef(false);
-  /// The chat's own content insets — the last ones the list was given — kept across the reader,
-  /// whose window reports insets of its own.
-  const chatInset = useRef<{ top: number; bottom: number; left: number; right: number } | null>(null);
   const openReader = useCallback((message: Message, frame: MessageFrame) => {
     // The reader takes the screen, as a sheet or an agent page does: the chat's keyboard goes down
     // behind it rather than being found lifted on the way back.
     void KeyboardController.dismiss();
-    readerOver.current = true;
     setReader({ message, frame });
   }, []);
-  const closeReader = useCallback(() => {
-    readerOver.current = false;
-    setReader(null);
-    // The list measures its end in the chat's insets. Android's reader is a window of its own, so
-    // what arrived while it was up was that window's: the chat's last one is given back now that it
-    // is gone.
-    const inset = chatInset.current;
-    if (Platform.OS === "android" && inset) requestAnimationFrame(() => listRef.current?.reportContentInset(inset));
-  }, []);
+  const closeReader = useCallback(() => setReader(null), []);
   // The composer floats over the transcript and rides the keyboard (KeyboardFoot). The
   // list is never resized: the chat scroll view keeps a bottom inset for the composer and adds
   // the keyboard's height to it frame by frame, lifting the last messages with the keys.
@@ -289,19 +275,15 @@ export default function ChatScreen() {
   // own KeyboardAwareLegendList, with the composer's resting space under the anchor's as its floor.
   // Its insets are reported back to the list, which counts them in where its end is.
   const reportInset = useCallback((inset: { top: number; bottom: number; left: number; right: number }) => {
-    // On Android the reader is a window of its own, and the insets the scroll view reports while it
-    // is over the chat are that window's, not the chat's. The list's end is measured in these, and an
-    // end measured against a window that is not the chat's puts the transcript somewhere it never
-    // was; so while the reader is up the reports are held, and the chat's last one is given back when
-    // it is gone.
-    if (Platform.OS === "android" && readerOver.current) return;
-    chatInset.current = inset;
     listRef.current?.reportContentInset(inset);
   }, []);
   const ChatScroll = useCallback(
     (props: ScrollViewProps) => (
       <KeyboardChatScrollView
         {...props}
+        // The header's capsule sits in the band iOS reads as the status bar, and its tap-to-scroll-
+        // to-top gesture fires along with the capsule's own tap. A chat follows its end instead.
+        scrollsToTop={false}
         blankSpace={blankSpace}
         extraContentPadding={composerExtra}
         onContentInsetChange={reportInset}
@@ -391,6 +373,13 @@ export default function ChatScreen() {
         .filter((b): b is Bot => !!b),
     [botIds, bots],
   );
+  // The bot whose review mode the composer's drawer shows: the DM's, else the group's owner,
+  // else its first member.
+  const reviewBot = useMemo(() => {
+    if (chat?.kind !== "group") return members[0];
+    const owner = chat?.owner_bot_id ? bots.get(chat.owner_bot_id) : undefined;
+    return owner ?? members[0];
+  }, [chat, bots, members]);
   const isGroup = chat?.kind === "group";
   // A channel's conversation shows its speakers by name, as a group does.
   const speakers = chat ? showsSpeakers(chat) : false;
@@ -769,6 +758,9 @@ export default function ChatScreen() {
             responding={isWorking}
             onStop={stopResponding}
             onSend={send}
+            reviewMode={engine.botReviewMode(reviewBot.id)}
+            onNextReviewMode={() => engine.setBotReviewMode(reviewBot.id, nextReviewMode(engine.botReviewMode(reviewBot.id)))}
+            onCompact={() => void engine.compactChat(chat.id).catch((error) => alert(t("Couldn't compact the chat"), error instanceof Error ? error.message : String(error)))}
           />
         </KeyboardFoot>
       </View>

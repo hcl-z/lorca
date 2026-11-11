@@ -744,12 +744,22 @@ type iconTab struct {
 // iconTabs is a row of tabs that are symbols alone, sharing the width: a segmented control whose
 // selection is a raised capsule on a neutral track.
 func iconTabs(c *ui.Context, selected *int, label string, tabs []iconTab) ui.Element {
+	return iconTabsSized(c, selected, label, tabs, 34)
+}
+
+// iconTabsSized is iconTabs at a height, for a row that has less room: a sheet's tool rows.
+func iconTabsSized(c *ui.Context, selected *int, label string, tabs []iconTab, height float32) ui.Element {
 	p := colors(c)
+	segHeight := height - 6
+	iconSize := float32(15)
+	if height < 30 {
+		iconSize = 12
+	}
 	parts := ui.SegmentedBase(c, selected, len(tabs))
-	parts.Track.Height(34).Padding(3).Gap(2).Radius(radiusCapsule).Background(p.Chip).Label(label)
+	parts.Track.Height(height).Padding(3).Gap(2).Radius(radiusCapsule).Background(p.Chip).Label(label)
 	parts.Track.Children(func() {
 		for i, tab := range tabs {
-			seg := parts.Segment(i).Grow(1).Basis(0).Height(28).Radius(radiusCapsule).TextColor(p.Label2).Justify(ui.Center).Label(tab.Title).Tooltip(tab.Title)
+			seg := parts.Segment(i).Grow(1).Basis(0).Height(segHeight).Radius(radiusCapsule).TextColor(p.Label2).Justify(ui.Center).Label(tab.Title).Tooltip(tab.Title)
 			on := i == *selected
 			switch {
 			case on:
@@ -762,7 +772,7 @@ func iconTabs(c *ui.Context, selected *int, label string, tabs []iconTab) ui.Ele
 				if on {
 					selectionThumb(c, thumbMatch{label}, p.ButtonBG, radiusCapsule)
 				}
-				segmentContent(c).Children(func() { symbol(c, tab.Symbol, 15, 1.9) })
+				segmentContent(c).Children(func() { symbol(c, tab.Symbol, iconSize, 1.9) })
 			})
 		}
 	})
@@ -772,4 +782,36 @@ func iconTabs(c *ui.Context, selected *int, label string, tabs []iconTab) ui.Ele
 // caption is a small line of secondary text.
 func caption(c *ui.Context, text string) ui.Element {
 	return ui.Text(c, text).FontSize(textCaption).TextColor(colors(c).Label2)
+}
+
+// iconTabsWithTitles is iconTabsSized with each segment's words beside its symbol, for a control
+// wide enough to name its choices: the settings' review modes.
+func iconTabsWithTitles(c *ui.Context, selected *int, label string, tabs []iconTab, height float32) ui.Element {
+	p := colors(c)
+	segHeight := height - 6
+	parts := ui.SegmentedBase(c, selected, len(tabs))
+	parts.Track.Height(height).Padding(3).Gap(2).Radius(radiusCapsule).Background(p.Chip).Label(label)
+	parts.Track.Children(func() {
+		for i, tab := range tabs {
+			seg := parts.Segment(i).Grow(1).Basis(0).Height(segHeight).Radius(radiusCapsule).TextColor(p.Label2).Justify(ui.Center).Label(tab.Title).Tooltip(tab.Title)
+			on := i == *selected
+			switch {
+			case on:
+				seg.TextColor(p.Label)
+			case seg.Hovered():
+				seg.TextColor(p.Label).Background(p.Hover)
+			}
+			seg.Transition(controlFade)
+			seg.Children(func() {
+				if on {
+					selectionThumb(c, thumbMatch{label}, p.ButtonBG, radiusCapsule)
+				}
+				segmentContent(c).Row().Gap(5).Children(func() {
+					symbol(c, tab.Symbol, 12, 1.9)
+					ui.Text(c, tab.Title).FontSize(12).SingleLine()
+				})
+			})
+		}
+	})
+	return parts.Track
 }

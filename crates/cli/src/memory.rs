@@ -1109,6 +1109,7 @@ mod tests {
             setting_up: false,
             workdir: None,
             permissions: None,
+            auto_review: None,
             created_at: 0.0,
         };
         let store = MemoryStore::for_bot(&dir, &bot);

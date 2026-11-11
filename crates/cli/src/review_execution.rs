@@ -37,7 +37,7 @@ pub fn authorize_execution(app: &Arc<App>, item: &ReviewItem) -> Result<crate::m
     }
     let access = match &item.payload {
         ReviewPayload::Shell { .. } => crate::permissions::check_tool(app, &bot, "bash"),
-        ReviewPayload::Plugin { plugin_id, tool, .. } => crate::permissions::check_connection(app, &bot, plugin_id, tool, None),
+        ReviewPayload::Plugin { plugin_id, tool, .. } => crate::permissions::check_connection(app, &bot, plugin_id, tool),
         ReviewPayload::Draft { .. } => Ok(()),
     };
     access.map_err(|denied| denied.to_string())?;

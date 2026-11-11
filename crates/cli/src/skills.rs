@@ -395,6 +395,16 @@ pub fn list_scope(app: &App, scope: &Scope) -> Vec<Found> {
     found
 }
 
+/// The skills of `scope` this bot may read: its Access leaves a skill on or off, and a skill of
+/// Lorca's own always shows. `list_scope` is every one on the Runner, which the apps show.
+pub fn list_visible(app: &App, bot: &crate::model::Bot, scope: &Scope) -> Vec<Found> {
+    let Some(policy) = &bot.permissions else { return list_scope(app, scope) };
+    list_scope(app, scope)
+        .into_iter()
+        .filter(|found| policy.skills.shows(&scope.kind, &found.name, found.builtin))
+        .collect()
+}
+
 /// The skills a bot sees in a chat: the shared ones, its own, and its group's.
 pub fn scopes_for_turn(app: &App, bot_id: &str, chat_id: &str) -> Vec<Scope> {
     let mut scopes = vec![Scope::shared(), Scope::bot(bot_id)];

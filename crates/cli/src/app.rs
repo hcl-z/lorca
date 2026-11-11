@@ -1270,25 +1270,55 @@ impl App {
         }
     }
 
+    /// The Runner's global Auto-review: the mode a bot without its own follows, and the rules
+    /// every bot's review reads.
     pub fn auto_review(&self) -> AutoReview {
         self.state.lock().unwrap().auto_review.clone()
     }
 
-    /// Replaces the Auto-review setting and publishes the roster.
+    /// What a bot's review reads: its own mode when it set one, else the Runner's, and its own
+    /// rules before the Runner's. The two lists are joined as they stand, with no merge.
+    pub fn auto_review_for(&self, bot_id: &str) -> AutoReview {
+        let state = self.state.lock().unwrap();
+        let global = state.auto_review.clone();
+        let Some(own) = state.bots.iter().find(|bot| bot.id == bot_id).and_then(|bot| bot.auto_review.clone()) else {
+            return global;
+        };
+        let mut rules = own.rules;
+        rules.extend(global.rules);
+        AutoReview { mode: own.mode, rules, provider: global.provider, models: global.models }
+    }
+
+    /// Replaces the Runner's Auto-review and publishes the roster.
     pub fn set_auto_review(&self, auto_review: AutoReview) {
         self.state.lock().unwrap().auto_review = auto_review;
         self.roster_changed(true);
     }
 
-    /// Adds a rule, replacing one for the same exact tool or with the same words.
-    pub fn add_auto_review_rule(&self, rule: AutoReviewRule) {
+    /// Replaces one bot's own Auto-review, leaving the Runner's as it is.
+    pub fn set_bot_auto_review(&self, bot_id: &str, auto_review: Option<AutoReview>) {
         {
             let mut state = self.state.lock().unwrap();
-            state.auto_review.rules.retain(|r| match &rule.tool {
+            let Some(bot) = state.bots.iter_mut().find(|bot| bot.id == bot_id) else { return };
+            bot.auto_review = auto_review;
+        }
+        self.roster_changed(true);
+    }
+
+    /// Adds a rule, replacing one for the same exact tool or with the same words. A bot's own
+    /// rules are added to that bot; without one they go to the Runner's, which every bot reads.
+    pub fn add_auto_review_rule(&self, bot_id: Option<&str>, rule: AutoReviewRule) {
+        {
+            let mut state = self.state.lock().unwrap();
+            let rules = match bot_id.and_then(|id| state.bots.iter_mut().find(|bot| bot.id == id)) {
+                Some(bot) => &mut bot.auto_review.get_or_insert_with(AutoReview::default).rules,
+                None => &mut state.auto_review.rules,
+            };
+            rules.retain(|r| match &rule.tool {
                 Some(tool) => r.tool.as_deref() != Some(tool.as_str()),
                 None => r.tool.is_some() || !r.text.eq_ignore_ascii_case(&rule.text),
             });
-            state.auto_review.rules.push(rule);
+            rules.push(rule);
         }
         self.roster_changed(true);
     }
@@ -2543,6 +2573,7 @@ mod tests {
             legacy_instructions: String::new(), setting_up: false,
             workdir: None,
             permissions: None,
+            auto_review: None,
             created_at: 1.0,
         }
     }

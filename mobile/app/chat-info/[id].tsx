@@ -30,7 +30,7 @@ import { countsLine, isEmpty, targetName } from "../../src/ui/feedback";
 import { isStopped, limitsSummary, stoppedLabel } from "../../src/ui/limits";
 import { accentColor, Font } from "../../src/ui/theme";
 import { sharedLinkFor } from "../../src/core/templates";
-import { accessSummary, pluginLevel } from "../../src/core/access";
+import { accessSummary, pluginOn } from "../../src/core/access";
 
 export default function ChatInfoScreen() {
   useLanguage();
@@ -456,7 +456,7 @@ export default function ChatInfoScreen() {
               <Row
                 key={plugin.id}
                 title={plugin.name}
-                detail={pluginLevel(bot.permissions, plugin.id) === "none" ? t("No access") : pluginStateWord(plugin)}
+                detail={!pluginOn(bot.permissions, plugin.id) ? t("No access") : pluginStateWord(plugin)}
                 icon={plugin.icon || "puzzlepiece.extension"}
                 chevron
                 onPress={() => router.push({ pathname: "/chat-info/account/[id]", params: { id: plugin.id, runner: runner.id } })}
@@ -466,7 +466,7 @@ export default function ChatInfoScreen() {
                 key={plugin.id}
                 title={plugin.name}
                 subtitle={plugin.state === "ready" ? plugin.description : plugin.detail}
-                detail={pluginLevel(bot.permissions, plugin.id) === "none" ? t("No access") : undefined}
+                detail={!pluginOn(bot.permissions, plugin.id) ? t("No access") : undefined}
                 icon={plugin.icon || "puzzlepiece.extension"}
                 chevron
                 onPress={() => router.push({ pathname: "/chat-info/account/[id]", params: { id: plugin.id, runner: runner.id } })}

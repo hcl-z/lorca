@@ -162,6 +162,11 @@ pub struct Bot {
     /// existing access; an explicit policy can only be changed through the user's API.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permissions: Option<crate::permissions::BotPermissions>,
+    /// This bot's Auto-review: its own mode and rules, kept beside the Runner's global ones. A
+    /// review reads both, its rules first, and a bot's mode wins when it set one. Missing means
+    /// the bot follows the global mode and adds no rules of its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_review: Option<AutoReview>,
     pub created_at: f64,
 }
 
@@ -183,12 +188,42 @@ pub struct AutoReviewRule {
     pub tool: Option<String>,
 }
 
-/// Auto-review, after Grok Bot: with it on, a Runner checks effectful plugin actions and shell
-/// commands before they run and asks the user only when needed; off, every such action asks.
-/// Shared by every Device through the roster.
+/// How much a Runner checks before an action that may have effects. The user picks it in
+/// Settings › Auto-review, and it decides whether a model is asked at all.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewMode {
+    /// The bot's Access decides: a tool that is on runs, one set to ask asks, and no model is
+    /// consulted.
+    #[default]
+    Default,
+    /// The bot's Access decides first, then Auto-review judges what is on and does not ask.
+    Auto,
+    /// Nothing is checked: every tool that is on runs, and a tool set to ask still asks.
+    Open,
+}
+
+impl ReviewMode {
+    /// Whether a model reviews an action that is on and not set to ask.
+    pub fn reviews(self) -> bool {
+        self == ReviewMode::Auto
+    }
+
+    /// The mode an older roster's switch stands for: `true` held a review model's verdict,
+    /// `false` was the older "ask about every effect", which is now a tool's own switch.
+    pub fn from_legacy(enabled: bool) -> Self {
+        if enabled { ReviewMode::Auto } else { ReviewMode::Default }
+    }
+}
+
+/// Auto-review, after Grok Bot: a Runner checks effectful plugin actions and shell commands
+/// before they run, to the degree the user picked. Shared by every Device through the roster;
+/// each bot carries its own beside the Runner's global one, and a review reads both.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AutoReview {
-    pub is_enabled: bool,
+    /// What the user picked. An older roster carries only `is_enabled`.
+    #[serde(default)]
+    pub mode: ReviewMode,
     #[serde(default)]
     pub rules: Vec<AutoReviewRule>,
     /// The provider that reviews, any the account has connected; unset for the bot's own.
@@ -203,7 +238,7 @@ pub struct AutoReview {
 
 impl Default for AutoReview {
     fn default() -> Self {
-        AutoReview { is_enabled: true, rules: Vec::new(), provider: None, models: Default::default() }
+        AutoReview { mode: ReviewMode::default(), rules: Vec::new(), provider: None, models: Default::default() }
     }
 }
 

@@ -105,6 +105,8 @@ export function SheetHeader({ title, subtitle, onClose, closeLabel }: { title: s
 export interface SheetAction {
   label: string;
   icon?: string;
+  /// What the action does, in a few words at the row's end.
+  detail?: string;
   destructive?: boolean;
   disabled?: boolean;
   onPress: () => void;
@@ -159,6 +161,7 @@ export function SheetActionRow({
 }
 
 export function ActionSheet({ visible, title, subtitle, actions, onClose, snapPoints }: { visible: boolean; title?: string; subtitle?: string; actions: SheetAction[]; onClose: () => void; snapPoints?: (string | number)[] }) {
+  const p = usePalette();
   return (
     <Sheet visible={visible} onClose={onClose} title={title} subtitle={subtitle} snapPoints={snapPoints ?? SHEET_PRESETS.actions} scroll={actions.length > 6}>
       {orderActions(actions).map((action) => (
@@ -166,6 +169,7 @@ export function ActionSheet({ visible, title, subtitle, actions, onClose, snapPo
           key={action.label}
           icon={action.icon}
           title={action.label}
+          trailing={action.detail ? <Text style={[styles.rowDetail, { color: p.secondaryLabel }]} numberOfLines={1}>{action.detail}</Text> : undefined}
           destructive={action.destructive}
           disabled={action.disabled}
           onPress={() => {
@@ -252,5 +256,6 @@ const styles = StyleSheet.create({
   rowText: { flex: 1, gap: 2 },
   rowTitle: { fontSize: 16, fontWeight: "500" },
   rowSubtitle: { fontSize: 13, lineHeight: 17 },
+  rowDetail: { fontSize: 15, maxWidth: "50%", marginLeft: "auto" },
   search: { height: 38, borderRadius: 10, paddingHorizontal: 12, fontSize: 16, marginHorizontal: 16, marginBottom: 8 },
 });

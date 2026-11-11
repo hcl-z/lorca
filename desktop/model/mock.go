@@ -247,7 +247,7 @@ func mockSharedLinks() []SharedLink {
 
 func mockAutoReview() AutoReview {
 	return AutoReview{
-		IsEnabled: true,
+		Mode: ReviewAuto,
 		Rules: []AutoReviewRule{
 			{ID: "ar-1", Text: "use GitHub create_issue", Behavior: "allow", Tool: "github/create_issue"},
 			{ID: "ar-2", Text: "comment on a pull request", Behavior: "ask"},

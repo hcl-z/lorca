@@ -16,7 +16,7 @@ import { editedText, rerunnable } from "./rerun";
 import { chatsSendParams } from "./send";
 import type { AskAnswer } from "./ask";
 import { hostFacts } from "./host";
-import { connectedProviders, isRunner, PROVIDER_KINDS, orderProjectEntries, providerConnectMethod, sectionName, withReviewModel, sameDraft, skillInputOf, skillRecordOf, skillSummaryOf, type SkillRow, type SkillView, type Section, type PlaybookContent, type PlaybookRecord, type PlaybookScope, type ProjectContext, type ProjectEntry, type ProjectKind, type ProjectSource, type Attachment, type AutoReview, type Bot, type BudgetLimits, type BudgetState, type CallLimits, type Chat, type ChatMeta, type ChatSearchResults, type ChatUsage, type CustomAPI, type CustomModel, type DurableTask, type Message, type MessageDraft, type ReviewItem, type PluginDetail, type PluginStatus, type ProviderKind, type ProviderStatus, type SavedSecret, routinesAwaitingSetup } from "./model";
+import { connectedProviders, isRunner, PROVIDER_KINDS, orderProjectEntries, providerConnectMethod, sectionName, withReviewModel, sameDraft, skillInputOf, skillRecordOf, skillSummaryOf, type SkillRow, type SkillView, type Section, type PlaybookContent, type PlaybookRecord, type PlaybookScope, type ProjectContext, type ProjectEntry, type ProjectKind, type ProjectSource, type Attachment, type AutoReview, type Bot, type ReviewMode, type BudgetLimits, type BudgetState, type CallLimits, type Chat, type ChatMeta, type ChatSearchResults, type ChatUsage, type CustomAPI, type CustomModel, type DurableTask, type Message, type MessageDraft, type ReviewItem, type PluginDetail, type PluginStatus, type ProviderKind, type ProviderStatus, type SavedSecret, routinesAwaitingSetup } from "./model";
 import { coreHome, loadPrefs, pathOf, wipePrefs } from "./prefs";
 import { clearCachedSnapshot, loadCachedSnapshot, saveCachedSnapshot } from "./startupCache";
 import type { SharedLink, TemplateContents, TemplateImportPreview, TemplateSelection } from "./templates";
@@ -825,6 +825,28 @@ class Engine {
     return { bot, chatId: chat_id };
   }
 
+  /// Sets one bot's own review mode, leaving the Runner's global one as it is. The bot's rules
+  /// stay: a review reads its mode and the rules of both.
+  setBotReviewMode(botId: string, mode: ReviewMode): void {
+    const bot = useStore.getState().bots.find((each) => each.id === botId);
+    const own = { ...(bot?.auto_review ?? { rules: [] }), mode };
+    useStore.setState((s) => ({ bots: s.bots.map((each) => (each.id === botId ? { ...each, auto_review: own } : each)) }));
+    void core.request("auto_review.set", { bot_id: botId, mode, rules: own.rules }).catch((error) => {
+      console.warn("setting the bot's review mode", error instanceof Error ? error.message : error);
+    });
+  }
+
+  /// The review mode a bot runs with: its own, else the Runner's.
+  botReviewMode(botId: string): ReviewMode {
+    const state = useStore.getState();
+    return state.bots.find((each) => each.id === botId)?.auto_review?.mode ?? state.auto_review.mode ?? "default";
+  }
+
+  /// Summarizes the older part of a chat for its bot now, on the Runner.
+  async compactChat(chatId: string): Promise<void> {
+    await core.request("chats.compact", { chat_id: chatId });
+  }
+
   async updateBot(id: string, update: Partial<Pick<Bot, "name" | "description">>): Promise<Bot> {
     const { bot } = await core.request<{ bot: Bot }>("bots.update", { id, ...update });
     useStore.setState((s) => ({ bots: s.bots.map((current) => (current.id === id ? bot : current)) }));
@@ -983,7 +1005,7 @@ class Engine {
   /// gives a new rule its id.
   setAutoReview(value: AutoReview) {
     useStore.setState({ auto_review: value });
-    void core.request("auto_review.set", { is_enabled: value.is_enabled, rules: value.rules });
+    void core.request("auto_review.set", { mode: value.mode ?? "default", rules: value.rules });
   }
 
   /// Picks the provider whose review model Auto-review runs, or none for the bot's own. Only
