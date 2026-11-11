@@ -746,6 +746,15 @@ impl LocalStore {
         collect_messages(rows)
     }
 
+    /// Every tool row still marked running (`Body::Tool.is_running`), in any chat: for the ones a
+    /// turn that died left spinning, since only that turn would have settled them.
+    pub fn running_tool_rows(&self) -> anyhow::Result<Vec<Message>> {
+        let connection = self.connection.lock().unwrap();
+        let mut statement = connection.prepare("SELECT id, chat_id, position, message_json FROM messages WHERE body_kind = 'tool' AND message_json LIKE '%\"is_running\":true%'")?;
+        let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))?;
+        Ok(collect_messages(rows)?.into_iter().filter(|message| matches!(&message.body, Body::Tool { is_running: true, .. })).collect())
+    }
+
     /// A plugin's sign-in cards (`Body::Permission` with `tool` `connect`) in one chat, or in
     /// every chat, in order, each with whether it came after the user last wrote in its chat.
     pub fn sign_in_cards(&self, chat_id: Option<&str>, plugin_id: &str) -> anyhow::Result<Vec<(Message, bool)>> {

@@ -6228,6 +6228,45 @@ mod tests {
         assert_eq!(quit, 2);
     }
 
+    /// A tool row a quit left spinning, with no turn and no command card behind it, says it
+    /// stopped; a command's or an agent's card is its own to close, and another Runner's rows are
+    /// its own to keep.
+    #[test]
+    fn rows_left_running_by_a_lorca_that_quit_say_it_stopped() {
+        let (scratch, chef) = chef_in_a_dm();
+        let app = &scratch.0;
+        let mut elsewhere = bot("b3", "Atlas");
+        elsewhere.runner_id = "another-mac".into();
+        {
+            let mut state = app.state.lock().unwrap();
+            state.bots.push(elsewhere.clone());
+            state.chats[1].meta.bot_ids.push("b3".into());
+        }
+        let spinning = |bot: &Bot, name: &str| {
+            let mut message = Message::new("chat", Author::Bot { bot_id: bot.id.clone() }, Body::Tool {
+                name: name.into(), summary: "Running …".into(), detail: String::new(), is_running: true, call_id: format!("call-{name}-{}", bot.id),
+                arguments: json!({}), result: None, is_error: false, description: None, target_bot_id: None, script_command: None, run: None, agent: None,
+            });
+            message.state = MessageState::Streaming;
+            app.upsert_message(message.clone(), false);
+            message.id
+        };
+        let here = spinning(&chef, "routines");
+        let command = spinning(&chef, "bash");
+        let there = spinning(&elsewhere, "routines");
+
+        crate::shell::close_stale_tool_rows(app);
+
+        let tool = |id: &str| {
+            let message = app.message("chat", id).unwrap();
+            let Body::Tool { is_running, summary, .. } = &message.body else { panic!("a tool row") };
+            (*is_running, summary.clone(), message.state)
+        };
+        assert_eq!(tool(&here), (false, "Stopped".into(), MessageState::Complete));
+        assert_eq!(tool(&command).0, true, "a command's card is close_stale_rows'");
+        assert_eq!(tool(&there).0, true, "another Runner's row is its own");
+    }
+
     #[test]
     fn rows_left_waiting_by_a_lorca_that_quit_say_it_stopped() {
         let (scratch, chef) = chef_in_a_dm();

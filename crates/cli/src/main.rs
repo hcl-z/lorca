@@ -423,7 +423,11 @@ async fn main() -> anyhow::Result<()> {
             // A command a Lorca that quit left waiting went with it; its row says so now.
             {
                 let app = app.clone();
-                tokio::task::spawn_blocking(move || lorca::shell::close_stale_rows(&app));
+                tokio::task::spawn_blocking(move || {
+                    lorca::shell::close_stale_rows(&app);
+                    // A turn that died left its tool rows spinning; no turn is left to settle them.
+                    lorca::shell::close_stale_tool_rows(&app);
+                });
             }
             // The coding agents the last run left: their cards and handles stay, and one in a
             // terminal host is followed again.

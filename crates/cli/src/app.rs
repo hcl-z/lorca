@@ -1196,6 +1196,40 @@ impl App {
         self.turns_changed();
     }
 
+    /// A turn that died before it could settle its tool rows: each row it left spinning in
+    /// `chat_id` is closed as stopped, so no app keeps showing "Running …" for a turn that is
+    /// gone. The row is all there is to go on, since the turn's own list of its calls died with
+    /// it.
+    pub fn stop_running_turn_rows(&self, chat_id: &str) {
+        let rows = match self.store.running_tool_rows() {
+            Ok(rows) => rows,
+            Err(error) => {
+                tracing::warn!(%error, %chat_id, "reading the rows a turn left running");
+                return;
+            }
+        };
+        for mut message in rows.into_iter().filter(|message| message.chat_id == chat_id) {
+            let Body::Tool { is_running, summary, run, agent, .. } = &mut message.body else { continue };
+            if !*is_running {
+                continue;
+            }
+            *is_running = false;
+            *summary = "Stopped".into();
+            message.state = MessageState::Complete;
+            if let Some(run) = run.as_mut().filter(|run| run.is_open()) {
+                run.state = "stopped".into();
+                run.prompt = None;
+                run.outcome = Some("Stopped".into());
+            }
+            if let Some(agent) = agent.as_mut().filter(|agent| agent.is_open()) {
+                agent.state = "stopped".into();
+                agent.question = None;
+                agent.outcome = Some("Stopped".into());
+            }
+            self.upsert_message(message, true);
+        }
+    }
+
     /// What a turn running here is doing between its messages.
     pub fn set_job_activity(&self, job_id: &str, activity: JobActivity) {
         let changed = match self.running_jobs.lock().unwrap().get_mut(job_id) {
