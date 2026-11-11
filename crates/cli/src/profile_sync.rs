@@ -48,8 +48,18 @@ struct Kept {
     seen: Option<BTreeSet<String>>,
 }
 
-/// One Device's account.json is read and written by one thread at a time.
+/// One Device's account.json is read and written by one thread at a time. A thread that panicked
+/// holding it poisoned nothing a reader would see wrong: the file it guards is read and written
+/// whole, so a later reader takes the lock back instead of panicking, which would take the roster
+/// down with it.
 static KEPT: Mutex<()> = Mutex::new(());
+
+fn hold() -> std::sync::MutexGuard<'static, ()> {
+    KEPT.lock().unwrap_or_else(|poisoned| {
+        KEPT.clear_poison();
+        poisoned.into_inner()
+    })
+}
 
 /// Where a Device keeps the account's entries. Unpairing deletes it with the rest of the
 /// account; `PROFILE.md` stays, as this Runner's bots' memory does.
@@ -191,7 +201,7 @@ fn reconcile(store: &MemoryStore, kept: &mut Kept, now: f64) -> bool {
 /// folded in first. `runner` is false on a Device whose bots run elsewhere: it only carries the
 /// account's entries on.
 pub fn for_roster(home: &Path, runner: bool) -> Entries {
-    let _held = KEPT.lock().unwrap();
+    let _held = hold();
     let mut kept = load(home);
     if runner {
         reconcile(&crate::profile::store(home), &mut kept, crate::config::now_secs());
@@ -204,7 +214,7 @@ pub fn for_roster(home: &Path, runner: bool) -> Entries {
 /// into `PROFILE.md`. True when this Device's roster should go out again. A roster from a build
 /// that does not know the profile carries `None` and changes nothing.
 pub fn take(home: &Path, theirs: Option<Entries>, runner: bool) -> bool {
-    let _held = KEPT.lock().unwrap();
+    let _held = hold();
     let mut kept = load(home);
     let Some(theirs) = theirs else { return !kept.entries.is_empty() };
     merge(&mut kept.entries, theirs.clone());
@@ -220,7 +230,7 @@ pub fn take(home: &Path, theirs: Option<Entries>, runner: bool) -> bool {
 /// Whether `PROFILE.md` changed since it and the entries last matched: a bot wrote it, the capture
 /// did, or the user edited it. The scheduler's tick sends the roster again when it did.
 pub fn changed_here(home: &Path) -> bool {
-    let _held = KEPT.lock().unwrap();
+    let _held = hold();
     let kept = load(home);
     let file: BTreeSet<String> = live(&crate::profile::store(home).read_index()).into_keys().collect();
     kept.seen.as_ref() != Some(&file)
@@ -336,5 +346,23 @@ mod tests {
         let a = Entry { line: "- x".into(), changed_at: 5.0, gone: false, forgotten: false };
         let b = Entry { line: "- x".into(), changed_at: 5.0, gone: true, forgotten: false };
         assert!(later(&b, &a) && !later(&a, &b));
+    }
+
+    /// A thread that panicked while holding the lock must not leave every later roster read and
+    /// write panicking too: the roster carries every bot's profile, so a poisoned lock here stops
+    /// each turn that changes a bot or a routine. What is asserted is the guarantee, not the
+    /// poison flag: tests run in parallel, and one of them taking the lock back first is the same
+    /// guarantee holding early.
+    #[test]
+    fn a_poisoned_lock_is_taken_back() {
+        let mac = Runner::new();
+        mac.store().append_entry("the user lives in Hangzhou", None, 0).unwrap();
+        let died = std::panic::catch_unwind(|| {
+            let _held = hold();
+            panic!("a thread that dies holding the lock");
+        });
+        assert!(died.is_err());
+        assert_eq!(for_roster(&mac.0, true).len(), 1, "a later reader still reads it");
+        assert!(take(&mac.0, None, true), "a later writer still works: an older build's roster lacks it, so ours goes again");
     }
 }

@@ -41,3 +41,9 @@ So stopping a continuation stops the rest of the work the first turn handed off,
 - Whatever a cut-off call, or a plugin server that ignores the cancellation, was still doing.
 - Draft cards and review items already in the chat: they wait for the user, and one the user sent or approved finishes on its Runner.
 - On a Runner that is offline, the turn until it reconnects and reads its `job_cancel` from the relay; its handoffs' cancellations are account-wide records and sync like any other.
+
+## A turn that dies, and a CLI that quits
+
+None of the above is a crash. A turn that panics unwinds past the code that settles it, so `runtime::JobEnded` ends the job as the turn drops and closes the tool rows it left spinning as "Stopped" (`App::stop_running_turn_rows`); the apps stop showing the bot at work at once. A panic still leaves the process holding any lock it poisoned, so `lorca serve` is restarted rather than repaired.
+
+A CLI that quits or is killed leaves its rows behind too. The next start closes them: `shell::close_stale_rows` settles a command's card that was open (checking, asking, running, or waiting) as "Stopped when Lorca quit", and `shell::close_stale_tool_rows` does the same for a tool row left running by a turn that never came back, `bash` and `coding_agent` excepted since their cards are the other sweep's. Both touch this Runner's bots' rows only.

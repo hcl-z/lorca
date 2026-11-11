@@ -28,7 +28,7 @@ use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 use crate::app::App;
-use crate::model::{Author, Body, CommandRun, Message};
+use crate::model::{Author, Body, CommandRun, Message, MessageState};
 
 /// A session with no output and no input for this long is stopped. Something that waited this
 /// long for an answer is not getting one, and one blocked on something outside its terminal (a
@@ -611,6 +611,34 @@ pub fn close_stale_rows(app: &App) {
         run.prompt = None;
         run.outcome = Some(reason.clone());
         *summary = reason;
+        app.upsert_message(message, true);
+    }
+}
+
+/// A tool row still marked running by a Lorca that quit before its turn could settle it: the
+/// turn went with the process. Rows of this Runner's own bots only, as a command's card is; a
+/// `bash` row's own card is `close_stale_rows`' to say, and this one leaves it alone.
+pub fn close_stale_tool_rows(app: &App) {
+    let Some(this_device) = app.this_device_id() else { return };
+    let rows = match app.store.running_tool_rows() {
+        Ok(rows) => rows,
+        Err(error) => {
+            tracing::warn!(%error, "reading the rows a turn left running");
+            return;
+        }
+    };
+    for mut message in rows {
+        let Author::Bot { bot_id } = &message.author else { continue };
+        if app.bot(bot_id).is_none_or(|bot| bot.runner_id != this_device) {
+            continue;
+        }
+        let Body::Tool { is_running, summary, name, .. } = &mut message.body else { continue };
+        if !*is_running || name == "bash" || name == "coding_agent" {
+            continue;
+        }
+        *is_running = false;
+        *summary = "Stopped".into();
+        message.state = MessageState::Complete;
         app.upsert_message(message, true);
     }
 }

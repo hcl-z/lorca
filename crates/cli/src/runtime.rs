@@ -390,6 +390,58 @@ fn finish_job(app: &App, job_id: &str) {
     app.local_turns_changed();
 }
 
+/// A job's end, run however the turn that owns it returns. A turn killed by a panic unwinds
+/// past `finish_job`; the drop still takes the job out of `running_jobs` and settles the tool row
+/// it left spinning, so the apps stop showing the bot at work.
+struct JobEnded {
+    app: Arc<App>,
+    job_id: String,
+}
+
+impl JobEnded {
+    fn new(app: Arc<App>, job_id: String) -> Self {
+        JobEnded { app, job_id }
+    }
+}
+
+impl Drop for JobEnded {
+    fn drop(&mut self) {
+        // A turn that ran to its end finished its job already; only one that never got there, as
+        // a panic skips it, is left for the drop.
+        let live = match self.app.running_jobs.lock() {
+            Ok(jobs) => jobs.contains_key(&self.job_id),
+            // A lock poisoned by the very panic unwinding now: settle it anyway.
+            Err(_) => true,
+        };
+        if !live {
+            return;
+        }
+        if std::thread::panicking() {
+            // The turn unwound and may have left a lock it held poisoned, and a panic here would
+            // end the process on top of the one already unwinding. Settling the job and its rows
+            // is worth a try, never the CLI.
+            let app = self.app.clone();
+            let job_id = self.job_id.clone();
+            let settled = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let chat_id = app.running_jobs.lock().unwrap().get(&job_id).map(|job| job.chat_id.clone());
+                if let Some(chat_id) = chat_id {
+                    app.stop_running_turn_rows(&chat_id);
+                }
+            }));
+            if let Err(panic) = settled {
+                tracing::warn!(?panic, %self.job_id, "settling the rows a panicking turn left running");
+            }
+            // As much of the end as can be done without panicking again: the list is the lock
+            // most likely left poisoned, so a failure there is logged and the rest is skipped.
+            if self.app.running_jobs.lock().map(|mut jobs| jobs.remove(&self.job_id).is_some()).unwrap_or(false) {
+                self.app.local_turns_changed();
+            }
+            return;
+        }
+        finish_job(&self.app, &self.job_id);
+    }
+}
+
 /// Registers a room before it waits for the chat lock. A later message is admitted behind it
 /// and takes over at the next member boundary.
 fn start_room(app: Arc<App>, chat_id: String, trigger: String, members: Vec<Bot>) {
@@ -696,6 +748,10 @@ pub fn dispatch_job(app: &Arc<App>, job: Job) -> Dispatch {
 /// Runs a job on this Runner in the background. Turns in one chat run one at a time; the
 /// outcome goes back to the requesting Device when the job came from another one. It registers
 /// before taking the lock, so hard Stop also cancels jobs waiting behind another turn.
+///
+/// A turn that panics never reaches the code that settles it, so the job would stay in
+/// `running_jobs` and every app would show the bot working until the next start. The turn runs
+/// on a guard that ends the job however it returns, panic included.
 pub fn spawn_local_job(app: Arc<App>, job: Job, remote_blob_id: Option<String>) {
     // A Device from before the agent's page addressed agents in the chat with this job. The user
     // writes to an agent on its page now (`coding.send`), so the job is dropped, never a turn.
@@ -737,6 +793,9 @@ pub fn spawn_local_job(app: Arc<App>, job: Job, remote_blob_id: Option<String>) 
     tokio::spawn(async move {
         let lock = app.chat_lock(&job.chat_id);
         let _guard = lock.lock().await;
+        // Whatever the turn does, even a panic, the job ends here: the apps stop showing the
+        // bot at work, and the next turn in the chat is free to start.
+        let _ended = JobEnded::new(app.clone(), job.id.clone());
         if job.kind == "task" {
             match crate::tasks::admit(&app, &job).await {
                 Ok(true) => {},
@@ -1363,6 +1422,7 @@ mod tests {
 #[cfg(test)]
 mod agent_message_job_tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn a_job_from_a_device_that_addressed_an_agent_in_the_chat_starts_no_turn() {
@@ -1371,6 +1431,56 @@ mod agent_message_job_tests {
         let job = Job::local(crate::model::AGENT_MESSAGE_JOB, "chat", "b1", "phone");
         spawn_local_job(app.clone(), job, None);
         assert!(app.running_chat_ids().is_empty());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A turn killed by a panic unwinds past every line that would have settled it. The job still
+    /// ends, and the tool row it left spinning says so, instead of the app showing the bot at
+    /// work until the next start.
+    #[test]
+    fn a_turn_that_panics_still_ends_its_job_and_its_row() {
+        let home = std::env::temp_dir().join(format!("lorca-panicking-turn-{}", uuid::Uuid::new_v4()));
+        let app = App::load(crate::config::Config { home: home.clone(), port: 0 }).unwrap();
+        crate::identity::create(&app, Some("Runner".into())).unwrap();
+        let this_device = app.this_device_id().unwrap();
+        let chef = Bot {
+            id: "b1".into(),
+            name: "Chef".into(),
+            description: String::new(),
+            symbol_name: String::new(),
+            accent: String::new(),
+            avatar: None,
+            runner_id: this_device,
+            provider: "deepseek".into(),
+            model: None,
+            thinking: None,
+            legacy_instructions: String::new(),
+            setting_up: false,
+            workdir: None,
+            permissions: None,
+            created_at: 0.0,
+        };
+        app.state.lock().unwrap().bots.push(chef.clone());
+        let chat_id = app.dm_with(&chef.id, None).unwrap().meta.id;
+        let mut row = Message::new(&chat_id, Author::Bot { bot_id: chef.id.clone() }, Body::Tool {
+            name: "routines".into(), summary: "Running routines…".into(), detail: String::new(), is_running: true, call_id: "call-1".into(),
+            arguments: json!({}), result: None, is_error: false, description: None, target_bot_id: None, script_command: None, run: None, agent: None,
+        });
+        row.state = MessageState::Streaming;
+        app.upsert_message(row.clone(), false);
+        begin_job(&app, "job-1", &chat_id, &chef.id, None, None, CancellationToken::new());
+
+        // The job's guard, dropped as a panicking turn unwinds it.
+        let ended = JobEnded::new(app.clone(), "job-1".into());
+        let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ended = ended;
+            panic!("a turn dies mid-tool-call");
+        }));
+
+        assert!(unwound.is_err());
+        assert!(app.running_jobs.lock().unwrap().is_empty(), "the job ended");
+        let Body::Tool { is_running, summary, .. } = &app.message(&chat_id, &row.id).unwrap().body else { panic!("a tool row") };
+        assert!(!*is_running && summary == "Stopped", "{summary}");
         let _ = std::fs::remove_dir_all(&home);
     }
 }
